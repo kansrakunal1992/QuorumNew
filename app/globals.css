@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-deep: #04060f;
+  --bg-card: #0d1426;
+  --bg-card-hover: #131d36;
+  --border: #1a2645;
+  --text-primary: #e8eaf0;
+  --text-secondary: #8892a4;
+  --text-muted: #4a5568;
+  --gold: #d4a843;
+  --gold-dim: #7a5f25;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: 'Inter', 'system-ui', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #2a3a5c; }
+
+/* Streaming text cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor::after {
+  content: '|';
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--gold);
+  animation: blink 1s step-end infinite;
+}
+
+/* Persona card */
+.persona-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.2s;
+}
+.persona-card.streaming {
+  border-color: var(--gold-dim);
+}
+.persona-card.done {
+  border-color: #1f3a5f;
+}
+
+/* Gold accent line at top of card when streaming */
+.persona-card.streaming::before {
+  content: '';
+  display: block;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 12px 12px 0 0;
+  opacity: 0.6;
+}
+
+/* Pushback textarea */
+textarea {
+  background: #080d1a;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  resize: none;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+textarea:focus {
+  border-color: var(--gold-dim);
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--gold);
+  color: #04060f;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 28px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+  letter-spacing: 0.01em;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-ghost:hover {
+  border-color: var(--gold-dim);
+  color: var(--gold);
+}
+
+.btn-pushback {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid #1a2645;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-pushback:hover {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+}
+
+/* Prose styles for persona responses */
+.persona-response {
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: #c8d0dc;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Input form */
+.decision-input {
+  background: #080d1a;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 15px;
+  resize: none;
+  width: 100%;
+  outline: none;
+  line-height: 1.6;
+  transition: border-color 0.2s;
+}
+.decision-input:focus {
+  border-color: #2a3a5c;
+}
+.decision-input::placeholder {
+  color: var(--text-muted);
+}
