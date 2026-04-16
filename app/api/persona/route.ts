@@ -1,11 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { PERSONAS } from '@/lib/personas'
 import { createServiceClient } from '@/lib/supabase'
+import { createStream } from '@/lib/ai-client'
 import type { PersonaKey, Message } from '@/lib/types'
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
 
 export async function POST(req: Request) {
   try {
@@ -28,111 +24,74 @@ export async function POST(req: Request) {
       return new Response('Unknown persona', { status: 400 })
     }
 
-    // Build the user message with full context
     const contextBlock = contextText
       ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n`
       : ''
 
-    const conversationBlock =
-      messages.length > 0
-        ? `\nCONVERSATION SO FAR:\n${messages
-            .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-            .join('\n\n')}\n`
-        : ''
-
-    const userMessage =
-      `DECISION: ${decisionText}${contextBlock}${conversationBlock}\n` +
-      `Please give your full assessment as ${persona.label}.`
-
-    // Build Anthropic messages array
-    // For pushback turns, we pass conversation history properly
-    const anthropicMessages: Anthropic.MessageParam[] =
+    // Build message history for the provider
+    const chatMessages: { role: 'user' | 'assistant'; content: string }[] =
       messages.length === 0
-        ? [{ role: 'user', content: userMessage }]
-        : [
-            // First turn: the original decision
+        ? [
             {
               role: 'user',
-              content: `DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+              content:
+                `DECISION: ${decisionText}${contextBlock}\n` +
+                `Please give your full assessment as ${persona.label}.`,
             },
-            // Assistant's prior responses + user pushbacks interleaved
-            ...buildAnthropicHistory(messages, persona.label),
+          ]
+        : [
+            {
+              role: 'user',
+              content:
+                `DECISION: ${decisionText}${contextBlock}\n` +
+                `Please give your full assessment as ${persona.label}.`,
+            },
+            ...messages.map((m) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+            })),
           ]
 
-    // Stream from Claude
-    const stream = await anthropic.messages.stream({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1200,
-      system: persona.prompt,
-      messages: anthropicMessages,
-    })
+    const { readable, getContent } = await createStream(persona.prompt, chatMessages)
 
+    // Persist after stream — wrap readable so we can intercept close
     const encoder = new TextEncoder()
-    let fullContent = ''
-
-    const readable = new ReadableStream({
+    const passthrough = new ReadableStream<Uint8Array>({
       async start(controller) {
+        const reader = readable.getReader()
         try {
-          for await (const event of stream) {
-            if (
-              event.type === 'content_block_delta' &&
-              event.delta.type === 'text_delta'
-            ) {
-              const text = event.delta.text
-              fullContent += text
-              controller.enqueue(encoder.encode(text))
-            }
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            controller.enqueue(value)
           }
-
-          // Persist to Supabase after stream completes
-          if (sessionId && fullContent) {
+          // Save to Supabase once fully streamed
+          const content = getContent()
+          if (sessionId && content) {
             const supabase = createServiceClient()
             await supabase.from('messages').insert({
               session_id: sessionId,
               persona: personaKey,
               role: 'assistant',
-              content: fullContent,
+              content,
             })
           }
-
           controller.close()
         } catch (err) {
-          console.error('Stream error:', err)
           controller.error(err)
         }
       },
     })
 
-    return new Response(readable, {
+    return new Response(passthrough, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-cache',
-        'X-Accel-Buffering': 'no', // disables Nginx buffering on Railway
+        'X-Accel-Buffering': 'no',
       },
     })
   } catch (err) {
     console.error('Persona route error:', err)
     return new Response('Internal server error', { status: 500 })
   }
-}
-
-// Converts flat Message[] into Anthropic's alternating user/assistant format
-function buildAnthropicHistory(
-  messages: Message[],
-  personaLabel: string
-): Anthropic.MessageParam[] {
-  const result: Anthropic.MessageParam[] = []
-
-  // We need at least one prior assistant turn to build history
-  // The messages array contains only pushback exchanges (user + assistant pairs)
-  // The initial response is streamed directly, so messages here are pushback turns
-  for (const msg of messages) {
-    if (msg.role === 'user') {
-      result.push({ role: 'user', content: msg.content })
-    } else {
-      result.push({ role: 'assistant', content: msg.content })
-    }
-  }
-
-  return result
 }

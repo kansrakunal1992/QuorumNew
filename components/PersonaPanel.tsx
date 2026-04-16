@@ -3,6 +3,53 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { PersonaMeta, Message } from '@/lib/types'
 
+/* ── Persona icon map ───────────────────────────────────── */
+const ICONS: Record<string, React.ReactNode> = {
+  contrarian: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+    </svg>
+  ),
+  risk_architect: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+  ),
+  pattern_analyst: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+  ),
+  stakeholder_mirror: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  ),
+  elder: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+    </svg>
+  ),
+  competitor: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
+      <line x1="13" y1="19" x2="19" y2="13"/>
+      <line x1="16" y1="16" x2="20" y2="20"/>
+      <line x1="19" y1="21" x2="21" y2="19"/>
+    </svg>
+  ),
+}
+
+const ACCENT_COLORS: Record<string, string> = {
+  contrarian:        '#7c2020',
+  risk_architect:    '#1e3a6e',
+  pattern_analyst:   '#1a4a36',
+  stakeholder_mirror:'#4a2070',
+  elder:             '#5c3a10',
+  competitor:        '#3a2a10',
+}
+
 interface Props {
   persona: PersonaMeta
   sessionId: string
@@ -12,224 +59,176 @@ interface Props {
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({
-  persona,
-  sessionId,
-  decisionText,
-  contextText,
-}: Props) {
-  const [response, setResponse] = useState('')
-  const [panelState, setPanelState] = useState<PanelState>('idle')
-  const [messages, setMessages] = useState<Message[]>([])
-  const [pushback, setPushback] = useState('')
-  const [showPushback, setShowPushback] = useState(false)
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText }: Props) {
+  const [response, setResponse]           = useState('')
+  const [panelState, setPanelState]       = useState<PanelState>('idle')
+  const [messages, setMessages]           = useState<Message[]>([])
+  const [pushback, setPushback]           = useState('')
+  const [showPushback, setShowPushback]   = useState(false)
   const [isPushingBack, setIsPushingBack] = useState(false)
-  const [pushbackHistory, setPushbackHistory] = useState<
-    { user: string; reply: string }[]
-  >([])
+  const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
 
-  const streamResponse = useCallback(
-    async (msgs: Message[], isFirstLoad: boolean) => {
-      setPanelState('streaming')
-      if (isFirstLoad) setResponse('')
+  const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
+  const icon = ICONS[persona.key]
 
-      try {
-        const res = await fetch('/api/persona', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId,
-            personaKey: persona.key,
-            messages: msgs,
-            decisionText,
-            contextText,
-          }),
-        })
+  const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
+    setPanelState('streaming')
+    if (isFirst) setResponse('')
 
-        if (!res.ok || !res.body) {
-          setPanelState('error')
-          setResponse('Failed to load response. Check your API key.')
-          return
-        }
+    try {
+      const res = await fetch('/api/persona', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText }),
+      })
+      if (!res.ok || !res.body) { setPanelState('error'); setResponse('Failed to load. Check API key.'); return }
 
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let accumulated = ''
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let acc = ''
 
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const chunk = decoder.decode(value, { stream: true })
-          accumulated += chunk
-          if (isFirstLoad) {
-            setResponse(accumulated)
-          }
-        }
-
-        if (!isFirstLoad) {
-          setPushbackHistory((prev) => [
-            ...prev,
-            { user: msgs[msgs.length - 1].content, reply: accumulated },
-          ])
-          setIsPushingBack(false)
-        }
-
-        setPanelState('done')
-      } catch {
-        setPanelState('error')
-        setResponse('Connection error. Please try again.')
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        acc += decoder.decode(value, { stream: true })
+        if (isFirst) setResponse(acc)
       }
-    },
-    [sessionId, persona.key, decisionText, contextText]
-  )
 
-  useEffect(() => {
-    streamResponse([], true)
-  }, [streamResponse])
+      if (!isFirst) {
+        const userContent = msgs[msgs.length - 1].content
+        setExchanges((prev) => [...prev, { user: userContent, reply: acc }])
+        setIsPushingBack(false)
+      }
+      setPanelState('done')
+    } catch {
+      setPanelState('error')
+      setResponse('Connection error.')
+    }
+  }, [sessionId, persona.key, decisionText, contextText])
+
+  useEffect(() => { streamResponse([], true) }, [streamResponse])
 
   const handlePushback = async () => {
     if (!pushback.trim()) return
-    const userMsg: Message = {
-      persona: persona.key,
-      role: 'user',
-      content: pushback.trim(),
-    }
-    const updatedMessages = [...messages, userMsg]
-    setMessages(updatedMessages)
+    const userMsg: Message = { persona: persona.key, role: 'user', content: pushback.trim() }
+    const updated = [...messages, userMsg]
+    setMessages(updated)
     setPushback('')
     setShowPushback(false)
     setIsPushingBack(true)
-    await streamResponse(updatedMessages, false)
+    await streamResponse(updated, false)
   }
 
-  const cardClass = `persona-card ${
-    panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''
-  } flex flex-col h-full`
+  /* ── Status badge ────────────────────────────────────────── */
+  const StatusBadge = () => {
+    if (panelState === 'streaming') return (
+      <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+        Analysing
+      </span>
+    )
+    if (panelState === 'done') return (
+      <span style={{ fontSize: 11, color: '#4ade80' }}>✓</span>
+    )
+    if (panelState === 'error') return (
+      <span style={{ fontSize: 11, color: '#e05050' }}>✗ error</span>
+    )
+    return null
+  }
 
   return (
-    <div className={cardClass}>
-      {/* Header */}
-      <div
-        className="px-4 py-3 flex items-center justify-between"
-        style={{ borderBottom: '1px solid #131d36' }}
-      >
-        <div>
-          <p className="text-sm font-semibold" style={{ color: '#d4a843' }}>
-            {persona.label}
-          </p>
-          <p className="text-xs" style={{ color: '#4a5568' }}>
-            {persona.tagline}
-          </p>
+    <div
+      className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`}
+      style={{ minHeight: 320 }}
+    >
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div style={{
+        padding: '14px 16px 12px',
+        borderBottom: '1px solid var(--border-dim)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        background: `${accentColor}55`,
+        borderRadius: '14px 14px 0 0',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 8,
+            background: `${accentColor}99`,
+            border: `1px solid ${accentColor}ff`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--gold)',
+            flexShrink: 0,
+          }}>
+            {icon}
+          </div>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.2 }}>
+              {persona.label}
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.2, marginTop: 1 }}>
+              {persona.tagline}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {panelState === 'streaming' && (
-            <span className="text-xs" style={{ color: '#d4a843' }}>
-              ▸ reading
-            </span>
-          )}
-          {panelState === 'done' && (
-            <span className="text-xs" style={{ color: '#2a5c3a' }}>
-              ✓ done
-            </span>
-          )}
-          {panelState === 'error' && (
-            <span className="text-xs" style={{ color: '#e05050' }}>
-              ✗ error
-            </span>
-          )}
-        </div>
+        <StatusBadge />
       </div>
 
-      {/* Response body */}
-      <div className="flex-1 px-4 py-4 overflow-y-auto" style={{ maxHeight: '360px' }}>
-        {/* Initial response */}
+      {/* ── Body ───────────────────────────────────────────── */}
+      <div style={{ flex: 1, padding: '16px', overflowY: 'auto', maxHeight: 380 }}>
         {response && (
-          <p
-            className={`persona-response ${
-              panelState === 'streaming' ? 'cursor' : ''
-            }`}
-          >
+          <p className={`persona-response ${panelState === 'streaming' ? 'cursor' : ''}`}>
             {response}
           </p>
         )}
 
-        {/* Pushback exchange history */}
-        {pushbackHistory.map((exchange, i) => (
-          <div key={i} className="mt-4">
-            <div
-              className="rounded-lg px-3 py-2 mb-2"
-              style={{ background: '#080d1a', border: '1px solid #131d36' }}
-            >
-              <p className="text-xs mb-1" style={{ color: '#4a5568' }}>
-                Your pushback
-              </p>
-              <p className="text-sm" style={{ color: '#8892a4' }}>
-                {exchange.user}
-              </p>
+        {exchanges.map((ex, i) => (
+          <div key={i} style={{ marginTop: 20 }}>
+            <div style={{
+              borderRadius: 8,
+              padding: '10px 14px',
+              background: 'var(--bg-inset)',
+              border: '1px solid var(--border-dim)',
+              marginBottom: 12,
+            }}>
+              <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 4 }}>Your pushback</p>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>{ex.user}</p>
             </div>
-            <p className="persona-response">{exchange.reply}</p>
+            <p className="persona-response">{ex.reply}</p>
           </div>
         ))}
 
-        {/* Live pushback streaming */}
         {isPushingBack && (
-          <div className="mt-4">
-            <p className="text-xs mb-2" style={{ color: '#4a5568' }}>
-              Responding to your pushback…
-            </p>
-          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 16 }}>Responding…</p>
         )}
 
-        {/* Empty state */}
         {panelState === 'idle' && (
-          <div className="flex items-center justify-center h-full py-8">
-            <div
-              className="w-4 h-4 rounded-full animate-pulse"
-              style={{ background: '#1a2645' }}
-            />
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 60 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--border-mid)', animation: 'blink 1.2s ease-in-out infinite' }} />
           </div>
         )}
       </div>
 
-      {/* Footer — pushback */}
+      {/* ── Footer ─────────────────────────────────────────── */}
       {panelState === 'done' && !isPushingBack && (
-        <div
-          className="px-4 pb-4 pt-2"
-          style={{ borderTop: '1px solid #0d1426' }}
-        >
+        <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border-dim)' }}>
           {!showPushback ? (
-            <button
-              className="btn-pushback"
-              onClick={() => setShowPushback(true)}
-            >
+            <button className="btn-pushback" onClick={() => setShowPushback(true)}>
               ↩ Push back
             </button>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <textarea
                 rows={2}
-                placeholder="Challenge this or add information…"
+                style={{ fontSize: 13, padding: '10px 12px' }}
+                placeholder="Challenge this or add new information…"
                 value={pushback}
                 onChange={(e) => setPushback(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    handlePushback()
-                  }
-                }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePushback() }}
               />
-              <div className="flex gap-2">
-                <button className="btn-primary" style={{ padding: '6px 16px', fontSize: '12px' }} onClick={handlePushback}>
-                  Send
-                </button>
-                <button
-                  className="btn-ghost"
-                  onClick={() => {
-                    setShowPushback(false)
-                    setPushback('')
-                  }}
-                >
-                  Cancel
-                </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary" style={{ padding: '7px 18px', fontSize: 12 }} onClick={handlePushback}>Send</button>
+                <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback('') }}>Cancel</button>
               </div>
             </div>
           )}

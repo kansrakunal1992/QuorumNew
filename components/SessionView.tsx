@@ -39,13 +39,13 @@ export default function SessionView({ session }: Props) {
             <div className="flex items-center gap-3 mb-2">
               <span
                 className="text-lg font-semibold tracking-widest uppercase"
-                style={{ color: '#d4a843' }}
+                style={{ color: 'var(--gold)', letterSpacing: '0.2em' }}
               >
                 Quorum
               </span>
               <span
                 className="text-xs px-2 py-1 rounded"
-                style={{ background: '#0d1426', color: '#4a5568', border: '1px solid #1a2645' }}
+                style={{ background: 'var(--bg-inset)', color: 'var(--text-4)', border: '1px solid var(--border-dim)' }}
               >
                 Session active
               </span>
