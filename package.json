@@ -2,17 +2,18 @@
   "name": "quorum",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "next start -p $PORT -H 0.0.0.0",
     "lint": "next lint"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "openai": "^4.77.0",
-    "@supabase/supabase-js": "^2.47.0",
-    "next": "15.1.0",
+    "@supabase/supabase-js": "^2.50.0",
+    "next": "15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "jspdf": "^2.5.2",
