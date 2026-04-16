@@ -8,182 +8,353 @@ interface Props {
   record: DecisionRecord
 }
 
+// ── Segment type for inline bold rendering ─────────────────────
+type Segment = { text: string; bold: boolean }
+
+// Parse a line into plain + bold segments  (**word** → bold)
+function parseInline(line: string): Segment[] {
+  const segments: Segment[] = []
+  const regex = /\*\*(.+?)\*\*/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = regex.exec(line)) !== null) {
+    if (m.index > last) segments.push({ text: line.slice(last, m.index), bold: false })
+    segments.push({ text: m[1], bold: true })
+    last = regex.lastIndex
+  }
+  if (last < line.length) segments.push({ text: line.slice(last), bold: false })
+  return segments.length ? segments : [{ text: line, bold: false }]
+}
+
+// Strip markdown for plain-text contexts
+function stripMd(s: string): string {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#+\s*/gm, '')
+    .replace(/^[-*]\s+/gm, '• ')
+    .replace(/`(.+?)`/g, '$1')
+    .trim()
+}
+
+// Is this line a standalone section header:  **Header**  or  **Header**:
+function extractHeader(line: string): string | null {
+  const m = line.match(/^\*\*(.+?)\*\*:?\s*$/)
+  return m ? m[1] : null
+}
+
 export default function RecordExport({ record }: Props) {
   const [exporting, setExporting] = useState(false)
 
   const handleExport = async () => {
     setExporting(true)
     try {
-      // Dynamic import to avoid SSR issues
       const { jsPDF } = await import('jspdf')
       const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
 
-      const pageW = doc.internal.pageSize.getWidth()
-      const pageH = doc.internal.pageSize.getHeight()
-      const margin = 18
-      const contentW = pageW - margin * 2
-      let y = margin
+      const pageW = doc.internal.pageSize.getWidth()   // 210
+      const pageH = doc.internal.pageSize.getHeight()  // 297
+      const ML = 18   // left margin
+      const MR = 18   // right margin
+      const CW = pageW - ML - MR  // content width ~174mm
+      let y = ML
 
-      const addPage = () => {
-        doc.addPage()
-        y = margin
+      const checkBreak = (needed: number) => {
+        if (y + needed > pageH - MR) { doc.addPage(); y = ML }
       }
 
-      const checkPageBreak = (needed: number) => {
-        if (y + needed > pageH - margin) addPage()
+      // ── Helpers ──────────────────────────────────────────────
+
+      // Render a single wrapped line with inline bold segments
+      const renderLine = (
+        rawLine: string,
+        opts: { size: number; colorR: number; colorG: number; colorB: number; indent?: number }
+      ) => {
+        const { size, colorR, colorG, colorB, indent = 0 } = opts
+        const xStart = ML + indent
+        const lineW  = CW - indent
+
+        // Split into wrapped words using splitTextToSize on plain text
+        const plain = stripMd(rawLine)
+        const wrapped: string[] = doc.setFontSize(size).splitTextToSize(plain, lineW) as string[]
+
+        for (const wLine of wrapped) {
+          checkBreak(size * 0.4)
+          doc.setFontSize(size)
+          doc.setTextColor(colorR, colorG, colorB)
+
+          // Try to render with inline bold if original had **marks**
+          if (rawLine.includes('**')) {
+            // We render the plain version (jsPDF doesn't support inline styles natively)
+            // Bold segments: if the whole wrapped line came from a bold region, render bold
+            const segs = parseInline(rawLine)
+            const isAllBold = segs.every(s => s.bold)
+            doc.setFont('helvetica', isAllBold ? 'bold' : 'normal')
+          } else {
+            doc.setFont('helvetica', 'normal')
+          }
+
+          doc.text(wLine, xStart, y)
+          y += size * 0.42
+        }
       }
 
-      // ── Cover header ───────────────────────────────────────
+      // Render a full persona response, parsing markdown properly
+      const renderContent = (content: string, baseSize: number) => {
+        const lines = content.split('\n')
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trimEnd()
+
+          // Skip empty lines — add small vertical space
+          if (!line.trim()) { y += baseSize * 0.25; continue }
+
+          // Horizontal rule  ---
+          if (/^---+$/.test(line.trim())) {
+            checkBreak(4)
+            doc.setDrawColor(26, 38, 69)
+            doc.setLineWidth(0.3)
+            doc.line(ML, y, ML + CW, y)
+            y += 3
+            continue
+          }
+
+          // Standalone section header:  **Header**  or  **Header**:
+          const header = extractHeader(line.trim())
+          if (header) {
+            checkBreak(baseSize * 0.7)
+            y += baseSize * 0.18  // small gap before header
+            doc.setFont('helvetica', 'bold')
+            doc.setFontSize(baseSize + 0.5)
+            doc.setTextColor(212, 168, 67)  // gold
+            const hLines: string[] = doc.splitTextToSize(header, CW) as string[]
+            for (const hl of hLines) {
+              checkBreak(baseSize * 0.5)
+              doc.text(hl, ML, y)
+              y += (baseSize + 0.5) * 0.42
+            }
+            y += baseSize * 0.1
+            continue
+          }
+
+          // Bullet list item: starts with - , * , or •
+          if (/^[-*•]\s+/.test(line.trim())) {
+            const bulletText = line.trim().replace(/^[-*•]\s+/, '')
+            const cleanText = stripMd(bulletText)
+            checkBreak(baseSize * 0.45)
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(baseSize)
+            doc.setTextColor(180, 188, 212)
+            const bulletLines: string[] = doc.splitTextToSize(cleanText, CW - 5) as string[]
+            for (let bi = 0; bi < bulletLines.length; bi++) {
+              checkBreak(baseSize * 0.42)
+              if (bi === 0) doc.text('•', ML, y)
+              doc.text(bulletLines[bi], ML + 4, y)
+              y += baseSize * 0.42
+            }
+            continue
+          }
+
+          // Normal paragraph line — strip markdown, render with appropriate weight
+          const hasInlineBold = line.includes('**')
+          const cleanLine = stripMd(line)
+
+          doc.setFontSize(baseSize)
+          doc.setTextColor(195, 205, 220)
+
+          if (hasInlineBold) {
+            // Check if first segment is bold (paragraph starts with bold label like "**Execution risk**:")
+            const segs = parseInline(line)
+            const firstIsBold = segs[0]?.bold
+
+            if (firstIsBold && segs.length > 1) {
+              // Render first bold part, then rest normal
+              const boldPart  = segs.filter(s => s.bold).map(s => s.text).join(' ')
+              const normalPart = segs.filter(s => !s.bold).map(s => s.text).join('').replace(/^:\s*/, ': ')
+              const fullLine   = `${boldPart}: ${normalPart.trimStart()}`
+              const wrapped: string[] = doc.splitTextToSize(fullLine, CW) as string[]
+              for (let wi = 0; wi < wrapped.length; wi++) {
+                checkBreak(baseSize * 0.42)
+                // Bold the first wrapped line (contains the label)
+                doc.setFont('helvetica', wi === 0 ? 'bold' : 'normal')
+                doc.setTextColor(wi === 0 ? 220 : 195, wi === 0 ? 210 : 205, wi === 0 ? 230 : 220)
+                doc.text(wrapped[wi], ML, y)
+                y += baseSize * 0.42
+              }
+              continue
+            }
+          }
+
+          // Plain text
+          doc.setFont('helvetica', 'normal')
+          const wrapped: string[] = doc.splitTextToSize(cleanLine, CW) as string[]
+          for (const wl of wrapped) {
+            checkBreak(baseSize * 0.42)
+            doc.text(wl, ML, y)
+            y += baseSize * 0.42
+          }
+        }
+      }
+
+      // ── Cover page ────────────────────────────────────────────
       doc.setFillColor(4, 6, 15)
       doc.rect(0, 0, pageW, pageH, 'F')
 
-      // Gold rule
-      doc.setDrawColor(212, 168, 67)
-      doc.setLineWidth(0.5)
-      doc.line(margin, y + 4, pageW - margin, y + 4)
-      y += 8
+      // Gold top rule
+      doc.setDrawColor(201, 168, 76)
+      doc.setLineWidth(0.8)
+      doc.line(ML, y + 3, pageW - MR, y + 3)
+      y += 10
 
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(20)
-      doc.setTextColor(212, 168, 67)
-      doc.text('QUORUM', margin, y + 8)
-      y += 12
+      doc.setFontSize(22)
+      doc.setTextColor(201, 168, 76)
+      doc.text('QUORUM', ML, y + 8)
+      y += 14
 
+      doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(74, 85, 104)
-      doc.setFont('helvetica', 'normal')
-      doc.text('DECISION RECORD', margin, y)
-      y += 6
+      doc.text('PRIVATE DECISION INTELLIGENCE', ML, y)
+      y += 5
 
-      doc.setDrawColor(26, 38, 69)
-      doc.line(margin, y, pageW - margin, y)
-      y += 8
+      doc.setDrawColor(28, 43, 74)
+      doc.setLineWidth(0.4)
+      doc.line(ML, y, pageW - MR, y)
+      y += 9
 
-      // Date
+      // Date + session ID
       const dateStr = new Date(record.session.created_at).toLocaleDateString('en-IN', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
+        day: 'numeric', month: 'long', year: 'numeric',
       })
       doc.setFontSize(8)
       doc.setTextColor(74, 85, 104)
-      doc.text(dateStr, margin, y)
+      doc.text(`${dateStr}  ·  Session ${record.session.id.slice(0, 8)}`, ML, y)
       y += 10
 
-      // Decision text
-      doc.setFontSize(12)
-      doc.setTextColor(232, 234, 240)
+      // Decision label
       doc.setFont('helvetica', 'bold')
-      doc.text('The Decision', margin, y)
+      doc.setFontSize(11)
+      doc.setTextColor(232, 234, 240)
+      doc.text('THE DECISION', ML, y)
+      y += 7
+
+      // Decision text
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+      doc.setTextColor(176, 188, 212)
+      const decLines: string[] = doc.splitTextToSize(record.session.decision_text, CW) as string[]
+      for (const dl of decLines) {
+        checkBreak(5)
+        doc.text(dl, ML, y)
+        y += 5
+      }
       y += 6
 
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(9.5)
-      doc.setTextColor(136, 146, 164)
-      const decisionLines = doc.splitTextToSize(record.session.decision_text, contentW)
-      checkPageBreak(decisionLines.length * 5 + 10)
-      doc.text(decisionLines, margin, y)
-      y += decisionLines.length * 5 + 8
-
+      // Context block
       if (record.session.context_text) {
-        checkPageBreak(20)
-        doc.setFontSize(8)
-        doc.setTextColor(42, 58, 92)
-        doc.text('Context provided:', margin, y)
-        y += 5
+        checkBreak(16)
+        doc.setDrawColor(28, 43, 74)
+        doc.setLineWidth(0.3)
+        doc.line(ML, y, ML, y + 10)
+        doc.setFont('helvetica', 'italic')
+        doc.setFontSize(8.5)
         doc.setTextColor(74, 85, 104)
-        const ctxLines = doc.splitTextToSize(record.session.context_text, contentW)
-        const ctxH = Math.min(ctxLines.length, 6) * 4.5
-        checkPageBreak(ctxH)
-        doc.text(ctxLines.slice(0, 6), margin, y)
-        y += ctxH + 6
-      }
-
-      // ── Persona sections ───────────────────────────────────
-      // Group messages by persona
-      const personaMessages: Record<string, { assistant: string[]; user: string[] }> = {}
-      for (const msg of record.messages) {
-        if (!personaMessages[msg.persona]) {
-          personaMessages[msg.persona] = { assistant: [], user: [] }
+        const ctxLines: string[] = doc.splitTextToSize(record.session.context_text, CW - 4) as string[]
+        const shown = ctxLines.slice(0, 8)
+        for (const cl of shown) {
+          checkBreak(4.5)
+          doc.text(cl, ML + 3, y)
+          y += 4.5
         }
-        personaMessages[msg.persona][msg.role].push(msg.content)
+        if (ctxLines.length > 8) {
+          doc.text(`… (${ctxLines.length - 8} more lines)`, ML + 3, y)
+          y += 4.5
+        }
+        y += 5
       }
 
+      // ── Persona pages ─────────────────────────────────────────
       const personaOrder = [
-        'contrarian',
-        'risk_architect',
-        'pattern_analyst',
-        'stakeholder_mirror',
-        'elder',
-        'competitor',
+        'contrarian', 'risk_architect', 'pattern_analyst',
+        'stakeholder_mirror', 'elder', 'competitor',
       ]
 
+      // Group messages by persona in order
+      const byPersona: Record<string, { assistant: string[]; user: string[] }> = {}
+      for (const msg of record.messages) {
+        if (!byPersona[msg.persona]) byPersona[msg.persona] = { assistant: [], user: [] }
+        byPersona[msg.persona][msg.role as 'assistant' | 'user'].push(msg.content)
+      }
+
       for (const key of personaOrder) {
-        const msgs = personaMessages[key]
-        if (!msgs) continue
+        const msgs = byPersona[key]
+        if (!msgs || msgs.assistant.length === 0) continue
         const persona = PERSONAS[key as keyof typeof PERSONAS]
 
-        // New page per persona for clean reading
-        addPage()
+        // New page per persona
+        doc.addPage()
+        doc.setFillColor(4, 6, 15)
+        doc.rect(0, 0, pageW, pageH, 'F')
+        y = ML
 
-        // Persona header
-        doc.setFillColor(13, 20, 38)
-        doc.rect(margin - 2, y - 2, contentW + 4, 14, 'F')
+        // Persona header band
+        doc.setFillColor(11, 16, 32)
+        doc.rect(0, y - 2, pageW, 18, 'F')
+        doc.setDrawColor(201, 168, 76)
+        doc.setLineWidth(0.5)
+        doc.line(0, y - 2, 0, y + 16)
 
         doc.setFont('helvetica', 'bold')
-        doc.setFontSize(11)
-        doc.setTextColor(212, 168, 67)
-        doc.text(persona.label.toUpperCase(), margin, y + 6)
+        doc.setFontSize(12)
+        doc.setTextColor(201, 168, 76)
+        doc.text(persona.label.toUpperCase(), ML, y + 7)
 
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(8)
         doc.setTextColor(74, 85, 104)
-        doc.text(persona.tagline, margin, y + 11)
-        y += 18
+        doc.text(persona.tagline, ML, y + 13)
+        y += 22
 
-        // Assistant responses
+        // Thin gold divider
+        doc.setDrawColor(42, 38, 18)
+        doc.setLineWidth(0.3)
+        doc.line(ML, y, ML + CW, y)
+        y += 5
+
+        // Render each assistant turn (with pushback labels before turns 2+)
         for (let i = 0; i < msgs.assistant.length; i++) {
-          const content = msgs.assistant[i]
-          const lines = doc.splitTextToSize(content, contentW)
-
-          // If there was a prior user pushback, show it first
+          // Pushback header for turns after the first
           if (i > 0 && msgs.user[i - 1]) {
-            checkPageBreak(16)
-            doc.setFillColor(8, 13, 26)
-            doc.rect(margin, y, contentW, 12, 'F')
+            checkBreak(12)
+            y += 3
+            doc.setFillColor(7, 12, 24)
+            doc.rect(ML - 1, y - 2, CW + 2, 10, 'F')
             doc.setFont('helvetica', 'italic')
             doc.setFontSize(8)
             doc.setTextColor(74, 85, 104)
-            const pbLines = doc.splitTextToSize(
-              `Your pushback: ${msgs.user[i - 1]}`,
-              contentW - 4
-            )
-            doc.text(pbLines.slice(0, 2), margin + 2, y + 4)
-            y += 14
+            const pbText = `Your pushback: ${msgs.user[i - 1]}`
+            const pbLines: string[] = doc.splitTextToSize(pbText, CW - 2) as string[]
+            doc.text(pbLines.slice(0, 2), ML + 1, y + 2)
+            y += 12
           }
 
-          doc.setFont('helvetica', 'normal')
-          doc.setFontSize(9)
-          doc.setTextColor(200, 208, 220)
-
-          for (const line of lines) {
-            checkPageBreak(5)
-            doc.text(line, margin, y)
-            y += 5
-          }
-          y += 4
+          renderContent(msgs.assistant[i], 9.5)
+          y += 3
         }
       }
 
-      // ── Footer on last page ────────────────────────────────
-      checkPageBreak(16)
-      doc.setDrawColor(26, 38, 69)
-      doc.line(margin, y, pageW - margin, y)
-      y += 6
+      // ── Final footer ──────────────────────────────────────────
+      checkBreak(12)
+      doc.setDrawColor(28, 43, 74)
+      doc.setLineWidth(0.3)
+      doc.line(ML, y, ML + CW, y)
+      y += 5
+      doc.setFont('helvetica', 'normal')
       doc.setFontSize(7)
       doc.setTextColor(42, 58, 92)
-      doc.text('Generated by Quorum — Private Decision Intelligence', margin, y)
-      doc.text(dateStr, pageW - margin, y, { align: 'right' })
+      doc.text('Generated by Quorum — Private Decision Intelligence', ML, y)
+      doc.text(dateStr, pageW - MR, y, { align: 'right' })
 
       const filename = `quorum-record-${record.session.id.slice(0, 8)}.pdf`
       doc.save(filename)
