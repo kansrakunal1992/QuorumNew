@@ -30,7 +30,7 @@ export default function SessionView({ session: initialSession }: Props) {
   const handleNewDecision = () => {
     if (!saved) {
       const ok = window.confirm(
-        'Start a new decision?\n\nThis session will still be available at its URL, but you haven't saved the Decision Record yet. Save it first if you want a PDF export.'
+        `Start a new decision?\n\nThis session will still be available at its URL, but you haven\u2019t saved the Decision Record yet. Save it first if you want a PDF export.`
       )
       if (!ok) return
     }
