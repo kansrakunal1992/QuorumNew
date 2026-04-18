@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import type { PersonaMeta, Message } from '@/lib/types'
 
 const ICONS: Record<string, React.ReactNode> = {
@@ -68,8 +68,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
 
+  // Keep a ref to the latest initial response for building full content on pushback
+  const responseRef = useRef('')
+
   const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
   const icon = ICONS[persona.key]
+
+  const buildFullContent = (initialResp: string, exs: { user: string; reply: string }[]) => {
+    if (exs.length === 0) return initialResp
+    const exchangeText = exs
+      .map(e => `[After pushback: "${e.user}"]\n${e.reply}`)
+      .join('\n\n')
+    return `${initialResp}\n\n${exchangeText}`
+  }
 
   const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
     setPanelState('streaming')
@@ -94,20 +105,24 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         if (isFirst) setResponse(acc)
       }
 
-      if (!isFirst) {
-        const userContent = msgs[msgs.length - 1].content
-        setExchanges((prev) => [...prev, { user: userContent, reply: acc }])
-        setIsPushingBack(false)
-      } else {
-        // Notify parent that this persona is done
+      if (isFirst) {
+        responseRef.current = acc
         onComplete?.(persona.key, acc)
+      } else {
+        // Pushback completed — build full content and notify parent for synthesis recalibration
+        const newExchanges = [...exchanges, { user: msgs[msgs.length - 1].content, reply: acc }]
+        setExchanges(newExchanges)
+        setIsPushingBack(false)
+        const fullContent = buildFullContent(responseRef.current, newExchanges)
+        onComplete?.(persona.key, fullContent)
       }
       setPanelState('done')
     } catch {
       setPanelState('error')
       setResponse('Connection error.')
     }
-  }, [sessionId, persona.key, decisionText, contextText, onComplete])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, persona.key, decisionText, contextText, onComplete, exchanges])
 
   useEffect(() => { streamResponse([], true) }, [streamResponse])
 
@@ -136,7 +151,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
   return (
     <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280 }}>
-      {/* Header */}
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: `${accentColor}55`, borderRadius: '14px 14px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 28, height: 28, borderRadius: 7, background: `${accentColor}99`, border: `1px solid ${accentColor}ff`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
@@ -150,7 +164,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         <StatusBadge />
       </div>
 
-      {/* Body */}
       <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 340 }}>
         {response && (
           <p className={`persona-response ${panelState === 'streaming' ? 'cursor' : ''}`}>{response}</p>
@@ -172,7 +185,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
       </div>
 
-      {/* Footer */}
       {panelState === 'done' && !isPushingBack && (
         <div style={{ padding: '8px 16px 12px', borderTop: '1px solid var(--border-dim)' }}>
           {!showPushback ? (

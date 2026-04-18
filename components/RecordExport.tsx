@@ -276,6 +276,7 @@ export default function RecordExport({ record }: Props) {
 
       // ── Persona pages ─────────────────────────────────────────
       const personaOrder = [
+        'synthesis',
         'contrarian', 'risk_architect', 'pattern_analyst',
         'stakeholder_mirror', 'elder', 'competitor',
       ]
@@ -298,15 +299,18 @@ export default function RecordExport({ record }: Props) {
         doc.rect(0, 0, pageW, pageH, 'F')
         y = ML
 
+        // Synthesis gets special full-width header treatment
+        const isSynthesis = key === 'synthesis'
+
         // Persona header band
-        doc.setFillColor(11, 16, 32)
+        doc.setFillColor(isSynthesis ? 15 : 11, isSynthesis ? 22 : 16, isSynthesis ? 15 : 32)
         doc.rect(0, y - 2, pageW, 18, 'F')
         doc.setDrawColor(201, 168, 76)
-        doc.setLineWidth(0.5)
-        doc.line(0, y - 2, 0, y + 16)
+        doc.setLineWidth(isSynthesis ? 1.5 : 0.5)
+        doc.line(0, y - 2, pageW, y - 2)  // top rule for synthesis
 
         doc.setFont('helvetica', 'bold')
-        doc.setFontSize(12)
+        doc.setFontSize(isSynthesis ? 14 : 12)
         doc.setTextColor(201, 168, 76)
         doc.text(persona.label.toUpperCase(), ML, y + 7)
 
