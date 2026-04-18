@@ -68,20 +68,20 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
 
-  // Keep a ref to the latest initial response for building full content on pushback
-  const responseRef = useRef('')
+  // Refs for values needed inside callbacks — avoids stale closure bugs
+  // and prevents streamResponse from changing identity when these update
+  const responseRef   = useRef('')           // initial response text
+  const exchangesRef  = useRef(exchanges)    // latest exchanges
+  const onCompleteRef = useRef(onComplete)
+
+  useEffect(() => { exchangesRef.current  = exchanges  }, [exchanges])
+  useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
 
   const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
   const icon = ICONS[persona.key]
 
-  const buildFullContent = (initialResp: string, exs: { user: string; reply: string }[]) => {
-    if (exs.length === 0) return initialResp
-    const exchangeText = exs
-      .map(e => `[After pushback: "${e.user}"]\n${e.reply}`)
-      .join('\n\n')
-    return `${initialResp}\n\n${exchangeText}`
-  }
-
+  // Stable callback — no array deps that change frequently
+  // Reads exchanges/onComplete via refs to avoid re-creating the function
   const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
     setPanelState('streaming')
     if (isFirst) setResponse('')
@@ -92,7 +92,11 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText }),
       })
-      if (!res.ok || !res.body) { setPanelState('error'); setResponse('Failed to load. Check API key.'); return }
+      if (!res.ok || !res.body) {
+        setPanelState('error')
+        setResponse('Failed to load. Check API key.')
+        return
+      }
 
       const reader  = res.body.getReader()
       const decoder = new TextDecoder()
@@ -102,28 +106,39 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         const { done, value } = await reader.read()
         if (done) break
         acc += decoder.decode(value, { stream: true })
+        // Only update visible response for the initial load — pushback adds via exchanges
         if (isFirst) setResponse(acc)
       }
 
       if (isFirst) {
+        // Store initial response and notify parent
         responseRef.current = acc
-        onComplete?.(persona.key, acc)
+        onCompleteRef.current?.(persona.key, acc)
       } else {
-        // Pushback completed — build full content and notify parent for synthesis recalibration
-        const newExchanges = [...exchanges, { user: msgs[msgs.length - 1].content, reply: acc }]
+        // Pushback completed — append exchange, keep original response untouched
+        const userText = msgs[msgs.length - 1].content
+        const newExchanges = [...exchangesRef.current, { user: userText, reply: acc }]
         setExchanges(newExchanges)
         setIsPushingBack(false)
-        const fullContent = buildFullContent(responseRef.current, newExchanges)
-        onComplete?.(persona.key, fullContent)
+
+        // Build full content (original + all exchanges) for synthesis recalibration
+        const fullContent = [
+          responseRef.current,
+          ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
+        ].join('\n\n')
+        onCompleteRef.current?.(persona.key, fullContent)
       }
       setPanelState('done')
     } catch {
       setPanelState('error')
       setResponse('Connection error.')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, persona.key, decisionText, contextText, onComplete, exchanges])
+  }, [sessionId, persona.key, decisionText, contextText])
+  // exchanges & onComplete intentionally omitted — accessed via refs above
 
+  // Run initial analysis exactly once on mount
+  // useEffect only re-fires if streamResponse identity changes (which now only happens
+  // if session/persona/decision/context changes — i.e. a full remount scenario)
   useEffect(() => { streamResponse([], true) }, [streamResponse])
 
   const handlePushback = async () => {
@@ -138,7 +153,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   }
 
   const StatusBadge = () => {
-    if (panelState === 'streaming') return (
+    if (panelState === 'streaming' && !isPushingBack) return (
       <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
         Reading
@@ -151,6 +166,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
   return (
     <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280 }}>
+      {/* Header */}
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: `${accentColor}55`, borderRadius: '14px 14px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 28, height: 28, borderRadius: 7, background: `${accentColor}99`, border: `1px solid ${accentColor}ff`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
@@ -164,20 +180,36 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         <StatusBadge />
       </div>
 
+      {/* Body */}
       <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 340 }}>
+        {/* Original response — never mutated after initial load */}
         {response && (
-          <p className={`persona-response ${panelState === 'streaming' ? 'cursor' : ''}`}>{response}</p>
+          <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>
+            {response}
+          </p>
         )}
+
+        {/* Pushback exchanges appended below */}
         {exchanges.map((ex, i) => (
-          <div key={i} style={{ marginTop: 16 }}>
-            <div style={{ borderRadius: 8, padding: '8px 12px', background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', marginBottom: 10 }}>
-              <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 3 }}>Your pushback</p>
-              <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5 }}>{ex.user}</p>
+          <div key={i} style={{ marginTop: 18 }}>
+            <div style={{ borderRadius: 8, padding: '8px 12px', background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', marginBottom: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 11, color: 'var(--gold)', flexShrink: 0, marginTop: 1 }}>↩</span>
+              <div>
+                <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>Your pushback</p>
+                <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5 }}>{ex.user}</p>
+              </div>
             </div>
             <p className="persona-response">{ex.reply}</p>
           </div>
         ))}
-        {isPushingBack && <p style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 14 }}>Responding…</p>}
+
+        {isPushingBack && (
+          <p style={{ fontSize: 12, color: 'var(--gold)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+            Responding…
+          </p>
+        )}
+
         {panelState === 'idle' && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 50 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--border-mid)', animation: 'blink 1.2s ease-in-out infinite' }} />
@@ -185,15 +217,60 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
       </div>
 
+      {/* Pushback footer — prominent, always visible when done */}
       {panelState === 'done' && !isPushingBack && (
-        <div style={{ padding: '8px 16px 12px', borderTop: '1px solid var(--border-dim)' }}>
+        <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border-dim)' }}>
           {!showPushback ? (
-            <button className="btn-pushback" onClick={() => setShowPushback(true)}>↩ Push back</button>
+            <button
+              title="Disagree with this analysis, add new information, or ask a follow-up question"
+              onClick={() => setShowPushback(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                background: 'transparent',
+                border: '1px solid var(--border-hi)',
+                borderRadius: 8,
+                padding: '7px 14px',
+                fontSize: 12,
+                color: 'var(--gold)',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontFamily: 'inherit',
+                letterSpacing: '0.02em',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.08)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-hi)'
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+              </svg>
+              Challenge this · add context
+            </button>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <textarea rows={2} style={{ fontSize: 13, padding: '8px 12px' }} placeholder="Challenge this or add new information…" value={pushback} onChange={(e) => setPushback(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePushback() }} />
+              <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
+                Disagree, add new information, or ask a follow-up
+              </p>
+              <textarea
+                rows={2}
+                style={{ fontSize: 13, padding: '8px 12px' }}
+                placeholder="e.g. But I already have diversified exposure… / What if the timeline is shorter?"
+                value={pushback}
+                onChange={(e) => setPushback(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePushback() }}
+                autoFocus
+              />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-primary" style={{ padding: '6px 16px', fontSize: 12 }} onClick={handlePushback}>Send</button>
+                <button className="btn-primary" style={{ padding: '7px 18px', fontSize: 12 }} onClick={handlePushback}>
+                  Send ↵
+                </button>
                 <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback('') }}>Cancel</button>
               </div>
             </div>

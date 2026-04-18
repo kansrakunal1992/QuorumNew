@@ -8,7 +8,7 @@ interface Props {
   contextText?: string
   personaResponses: Record<string, string>
   totalPersonas: number
-  version: number   // increments on any pushback — triggers recalibration
+  version: number
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -23,11 +23,14 @@ export default function SynthesisCard({
   const completedCount            = Object.keys(personaResponses).length
   const allDone                   = completedCount >= totalPersonas
 
-  // Reset synthesis when version changes (a pushback completed)
+  // Always keep a ref to latest personaResponses so the effect closure is never stale
+  const responsesRef = useRef(personaResponses)
+  useEffect(() => { responsesRef.current = personaResponses }, [personaResponses])
+
+  // Reset when version bumps (pushback completed after synthesis ran)
   useEffect(() => {
     if (version !== prevVersionRef.current) {
       prevVersionRef.current = version
-      // Only recalibrate if we had previously completed a synthesis
       if (state === 'done' || state === 'error') {
         setSynthesis('')
         setState('waiting')
@@ -35,7 +38,7 @@ export default function SynthesisCard({
     }
   }, [version, state])
 
-  // Fire synthesis when all done and in waiting state
+  // Fire synthesis once all personas done and state is 'waiting'
   useEffect(() => {
     if (!allDone || state !== 'waiting') return
 
@@ -44,12 +47,13 @@ export default function SynthesisCard({
     const run = async () => {
       setState('streaming')
 
-      const personaBlock = Object.entries(personaResponses)
+      // Use ref so we always have fresh responses even if effect closure is stale
+      const latestResponses = responsesRef.current
+      const personaBlock = Object.entries(latestResponses)
         .map(([key, content]) => `[${key.toUpperCase().replace(/_/g, ' ')}]\n${content}`)
         .join('\n\n---\n\n')
 
       const contextBlock = contextText ? `\nCONTEXT:\n${contextText}\n` : ''
-
       const userMessage =
         `DECISION: ${decisionText}${contextBlock}\n\n` +
         `ADVISOR RESPONSES:\n\n${personaBlock}\n\n` +
@@ -90,7 +94,7 @@ export default function SynthesisCard({
 
     run()
     return () => { cancelled = true }
-  }, [allDone, state])  // state dep intentional — re-runs when reset to 'waiting'
+  }, [allDone, state]) // personaResponses intentionally omitted — read via ref to avoid stale closures
 
   const isRecalibrating = state === 'waiting' && completedCount >= totalPersonas
 
@@ -104,7 +108,6 @@ export default function SynthesisCard({
       overflow: 'hidden',
       transition: 'border-color 0.3s',
     }}>
-      {/* Header */}
       <div style={{
         padding: '14px 20px 12px',
         borderBottom: '1px solid var(--border-dim)',
@@ -135,7 +138,6 @@ export default function SynthesisCard({
           </div>
         </div>
 
-        {/* Progress dots (waiting) */}
         {state === 'waiting' && !isRecalibrating && (
           <div style={{ display: 'flex', gap: 4 }}>
             {Array.from({ length: totalPersonas }).map((_, i) => (
@@ -153,16 +155,15 @@ export default function SynthesisCard({
         {state === 'error' && <span style={{ fontSize: 11, color: '#e05050' }}>✗ Error</span>}
       </div>
 
-      {/* Body */}
       <div style={{ padding: '18px 20px' }}>
         {state === 'waiting' && !isRecalibrating && (
           <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
-            Synthesis will appear here once all six advisors have completed their assessment.
+            Synthesis will appear once all six advisors complete their assessment.
           </p>
         )}
         {isRecalibrating && !synthesis && (
           <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
-            A pushback changed the council&apos;s position. Recalibrating synthesis…
+            A pushback updated the council. Recalibrating synthesis…
           </p>
         )}
         {(state === 'streaming' || state === 'done') && synthesis && (
@@ -174,7 +175,7 @@ export default function SynthesisCard({
           </p>
         )}
         {state === 'error' && (
-          <p style={{ fontSize: 13, color: '#e05050' }}>Synthesis failed. The advisor responses are still available below.</p>
+          <p style={{ fontSize: 13, color: '#e05050' }}>Synthesis failed. Advisor responses are still available below.</p>
         )}
       </div>
     </div>
