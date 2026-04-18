@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { PersonaMeta, Message } from '@/lib/types'
 
-/* ── Persona icon map ───────────────────────────────────── */
 const ICONS: Record<string, React.ReactNode> = {
   contrarian: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -55,11 +54,12 @@ interface Props {
   sessionId: string
   decisionText: string
   contextText?: string
+  onComplete?: (personaKey: string, content: string) => void
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, onComplete }: Props) {
   const [response, setResponse]           = useState('')
   const [panelState, setPanelState]       = useState<PanelState>('idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -98,13 +98,16 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         const userContent = msgs[msgs.length - 1].content
         setExchanges((prev) => [...prev, { user: userContent, reply: acc }])
         setIsPushingBack(false)
+      } else {
+        // Notify parent that this persona is done
+        onComplete?.(persona.key, acc)
       }
       setPanelState('done')
     } catch {
       setPanelState('error')
       setResponse('Connection error.')
     }
-  }, [sessionId, persona.key, decisionText, contextText])
+  }, [sessionId, persona.key, decisionText, contextText, onComplete])
 
   useEffect(() => { streamResponse([], true) }, [streamResponse])
 
@@ -119,115 +122,66 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     await streamResponse(updated, false)
   }
 
-  /* ── Status badge ────────────────────────────────────────── */
   const StatusBadge = () => {
     if (panelState === 'streaming') return (
       <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
-        Analysing
+        Reading
       </span>
     )
-    if (panelState === 'done') return (
-      <span style={{ fontSize: 11, color: '#4ade80' }}>✓</span>
-    )
-    if (panelState === 'error') return (
-      <span style={{ fontSize: 11, color: '#e05050' }}>✗ error</span>
-    )
+    if (panelState === 'done') return <span style={{ fontSize: 11, color: '#4ade80' }}>✓</span>
+    if (panelState === 'error') return <span style={{ fontSize: 11, color: '#e05050' }}>✗ error</span>
     return null
   }
 
   return (
-    <div
-      className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`}
-      style={{ minHeight: 320 }}
-    >
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div style={{
-        padding: '14px 16px 12px',
-        borderBottom: '1px solid var(--border-dim)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: `${accentColor}55`,
-        borderRadius: '14px 14px 0 0',
-      }}>
+    <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280 }}>
+      {/* Header */}
+      <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: `${accentColor}55`, borderRadius: '14px 14px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 8,
-            background: `${accentColor}99`,
-            border: `1px solid ${accentColor}ff`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--gold)',
-            flexShrink: 0,
-          }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: `${accentColor}99`, border: `1px solid ${accentColor}ff`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
             {icon}
           </div>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.2 }}>
-              {persona.label}
-            </p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.2, marginTop: 1 }}>
-              {persona.tagline}
-            </p>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.2 }}>{persona.label}</p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
           </div>
         </div>
         <StatusBadge />
       </div>
 
-      {/* ── Body ───────────────────────────────────────────── */}
-      <div style={{ flex: 1, padding: '16px', overflowY: 'auto', maxHeight: 380 }}>
+      {/* Body */}
+      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 340 }}>
         {response && (
-          <p className={`persona-response ${panelState === 'streaming' ? 'cursor' : ''}`}>
-            {response}
-          </p>
+          <p className={`persona-response ${panelState === 'streaming' ? 'cursor' : ''}`}>{response}</p>
         )}
-
         {exchanges.map((ex, i) => (
-          <div key={i} style={{ marginTop: 20 }}>
-            <div style={{
-              borderRadius: 8,
-              padding: '10px 14px',
-              background: 'var(--bg-inset)',
-              border: '1px solid var(--border-dim)',
-              marginBottom: 12,
-            }}>
-              <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 4 }}>Your pushback</p>
-              <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>{ex.user}</p>
+          <div key={i} style={{ marginTop: 16 }}>
+            <div style={{ borderRadius: 8, padding: '8px 12px', background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', marginBottom: 10 }}>
+              <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 3 }}>Your pushback</p>
+              <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5 }}>{ex.user}</p>
             </div>
             <p className="persona-response">{ex.reply}</p>
           </div>
         ))}
-
-        {isPushingBack && (
-          <p style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 16 }}>Responding…</p>
-        )}
-
+        {isPushingBack && <p style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 14 }}>Responding…</p>}
         {panelState === 'idle' && (
-          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 60 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--border-mid)', animation: 'blink 1.2s ease-in-out infinite' }} />
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 50 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--border-mid)', animation: 'blink 1.2s ease-in-out infinite' }} />
           </div>
         )}
       </div>
 
-      {/* ── Footer ─────────────────────────────────────────── */}
+      {/* Footer */}
       {panelState === 'done' && !isPushingBack && (
-        <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border-dim)' }}>
+        <div style={{ padding: '8px 16px 12px', borderTop: '1px solid var(--border-dim)' }}>
           {!showPushback ? (
-            <button className="btn-pushback" onClick={() => setShowPushback(true)}>
-              ↩ Push back
-            </button>
+            <button className="btn-pushback" onClick={() => setShowPushback(true)}>↩ Push back</button>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <textarea
-                rows={2}
-                style={{ fontSize: 13, padding: '10px 12px' }}
-                placeholder="Challenge this or add new information…"
-                value={pushback}
-                onChange={(e) => setPushback(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePushback() }}
-              />
+              <textarea rows={2} style={{ fontSize: 13, padding: '8px 12px' }} placeholder="Challenge this or add new information…" value={pushback} onChange={(e) => setPushback(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePushback() }} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-primary" style={{ padding: '7px 18px', fontSize: 12 }} onClick={handlePushback}>Send</button>
+                <button className="btn-primary" style={{ padding: '6px 16px', fontSize: 12 }} onClick={handlePushback}>Send</button>
                 <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback('') }}>Cancel</button>
               </div>
             </div>

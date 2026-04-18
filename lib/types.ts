@@ -5,6 +5,7 @@ export type PersonaKey =
   | 'stakeholder_mirror'
   | 'elder'
   | 'competitor'
+  | 'synthesis'
 
 export interface PersonaMeta {
   key: PersonaKey

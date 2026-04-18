@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useCallback } from 'react'
 import PersonaPanel from './PersonaPanel'
+import SynthesisCard from './SynthesisCard'
 import { PERSONAS, PERSONA_ORDER } from '@/lib/personas'
 import type { Session } from '@/lib/types'
 
@@ -15,9 +16,15 @@ export default function SessionView({ session: initialSession }: Props) {
   const [saving,  setSaving]  = useState(false)
   const [saved,   setSaved]   = useState(false)
 
-  // Live session state — replaced on Reanalyze
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
+
+  // Track which personas have completed + their response text
+  const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
+
+  const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
+    setCompletedResponses(prev => ({ ...prev, [personaKey]: content }))
+  }, [])
 
   // Reanalyze drawer
   const [drawerOpen,     setDrawerOpen]     = useState(false)
@@ -26,11 +33,10 @@ export default function SessionView({ session: initialSession }: Props) {
   const [reanalyzing,    setReanalyzing]     = useState(false)
   const [reanalyzeError, setReanalyzeError] = useState('')
 
-  // New Decision — confirm if unsaved
   const handleNewDecision = () => {
     if (!saved) {
       const ok = window.confirm(
-        `Start a new decision?\n\nThis session will still be available at its URL, but you haven\u2019t saved the Decision Record yet. Save it first if you want a PDF export.`
+        `Start a new decision?\n\nThis session is still available at its URL, but you haven\u2019t saved the Decision Record yet.`
       )
       if (!ok) return
     }
@@ -74,6 +80,7 @@ export default function SessionView({ session: initialSession }: Props) {
       const newSession: Session = await sessionRes.json()
       setSession(newSession)
       setSessionKey(k => k + 1)
+      setCompletedResponses({})  // reset synthesis tracking
       setSaved(false)
       setDrawerOpen(false)
       setReanalyzing(false)
@@ -88,7 +95,7 @@ export default function SessionView({ session: initialSession }: Props) {
     <div className="min-h-screen px-4 py-8" style={{ background: 'var(--bg-void)' }}>
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto mb-8">
+      <div className="max-w-7xl mx-auto mb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div style={{ flex: 1, minWidth: 240 }}>
             <div className="flex items-center gap-3 mb-2">
@@ -107,57 +114,50 @@ export default function SessionView({ session: initialSession }: Props) {
             </p>
           </div>
 
-          {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexShrink: 0, flexWrap: 'wrap' }}>
-            {/* New Decision */}
-            <button
-              className="btn-ghost"
-              style={{ fontSize: 13, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 7 }}
-              onClick={handleNewDecision}
-            >
+            <button className="btn-ghost" style={{ fontSize: 13, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={handleNewDecision}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
               New Decision
             </button>
-            {/* Reanalyze */}
-            <button
-              className="btn-ghost"
-              style={{ fontSize: 13, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 7 }}
-              onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}
-            >
+            <button className="btn-ghost" style={{ fontSize: 13, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
                 <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
               </svg>
               Reanalyze
             </button>
-            {/* Save */}
-            <button
-              className="btn-primary"
-              style={{ fontSize: 13, padding: '10px 18px' }}
-              onClick={handleSaveRecord}
-              disabled={saving}
-            >
+            <button className="btn-primary" style={{ fontSize: 13, padding: '10px 18px' }} onClick={handleSaveRecord} disabled={saving}>
               {saving ? 'Saving…' : 'Save Record → PDF'}
             </button>
           </div>
         </div>
 
         {session.context_text && (
-          <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 8, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', fontSize: 12, color: 'var(--text-4)', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', fontSize: 12, color: 'var(--text-4)', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             <span style={{ color: 'var(--text-3)' }}>Context · </span>{session.context_text}
           </div>
         )}
-
-        {/* Privacy note */}
-        <p style={{ marginTop: 10, fontSize: 11, color: 'var(--text-4)', letterSpacing: '0.02em' }}>
+        <p style={{ marginTop: 8, fontSize: 11, color: 'var(--text-4)' }}>
           Sessions are private by URL. No account or identity is linked to this decision.
         </p>
       </div>
 
-      {/* ── 6-panel grid ─────────────────────────────────────── */}
+      {/* ── Grid: Synthesis card first (full width), then 6 panels ── */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+        {/* Synthesis spans all 3 columns */}
+        <SynthesisCard
+          key={`synthesis-${sessionKey}`}
+          sessionId={session.id}
+          decisionText={session.decision_text}
+          contextText={session.context_text ?? undefined}
+          personaResponses={completedResponses}
+          totalPersonas={PERSONA_ORDER.length}
+        />
+
+        {/* 6 persona panels */}
         {PERSONA_ORDER.map((key) => (
           <PersonaPanel
             key={`${key}-${sessionKey}`}
@@ -165,39 +165,27 @@ export default function SessionView({ session: initialSession }: Props) {
             sessionId={session.id}
             decisionText={session.decision_text}
             contextText={session.context_text ?? undefined}
+            onComplete={handlePersonaComplete}
           />
         ))}
       </div>
 
-      {/* ── Bottom action bar ────────────────────────────────── */}
-      <div style={{ maxWidth: '80rem', margin: '32px auto 0', display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button
-          className="btn-ghost"
-          style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }}
-          onClick={handleNewDecision}
-        >
+      {/* ── Bottom bar ────────────────────────────────────────── */}
+      <div style={{ maxWidth: '80rem', margin: '28px auto 0', display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <button className="btn-ghost" style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={handleNewDecision}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           New Decision
         </button>
-        <button
-          className="btn-ghost"
-          style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }}
-          onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}
-        >
+        <button className="btn-ghost" style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
             <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
           </svg>
-          Reanalyze with changes
+          Reanalyze
         </button>
-        <button
-          className="btn-primary"
-          style={{ fontSize: 13, padding: '11px 28px' }}
-          onClick={handleSaveRecord}
-          disabled={saving}
-        >
+        <button className="btn-primary" style={{ fontSize: 13, padding: '11px 28px' }} onClick={handleSaveRecord} disabled={saving}>
           {saving ? 'Saving…' : 'Save Decision Record → Export PDF'}
         </button>
       </div>
@@ -206,15 +194,7 @@ export default function SessionView({ session: initialSession }: Props) {
       {drawerOpen && (
         <>
           <div onClick={() => setDrawerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(2,4,10,0.78)', zIndex: 40 }} />
-          <div style={{
-            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-mid)',
-            borderBottom: 'none',
-            borderRadius: '18px 18px 0 0',
-            padding: '28px 28px 40px',
-            maxWidth: 760, margin: '0 auto',
-          }}>
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50, background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderBottom: 'none', borderRadius: '18px 18px 0 0', padding: '28px 28px 40px', maxWidth: 760, margin: '0 auto' }}>
             <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--border-mid)', margin: '0 auto 22px' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
               <div>
@@ -228,10 +208,10 @@ export default function SessionView({ session: initialSession }: Props) {
             <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6, fontWeight: 500 }}>
               Additional context <span style={{ color: 'var(--text-4)', fontWeight: 400 }}>(optional)</span>
             </label>
-            <textarea rows={3} value={reContext} onChange={(e) => setReContext(e.target.value)} style={{ fontSize: 13, marginBottom: 18 }} placeholder="Add new information, emails, context that has emerged…" />
+            <textarea rows={3} value={reContext} onChange={(e) => setReContext(e.target.value)} style={{ fontSize: 13, marginBottom: 18 }} placeholder="Add new information that has emerged…" />
             {reanalyzeError && <p style={{ fontSize: 12, color: '#e05050', marginBottom: 12 }}>{reanalyzeError}</p>}
             <div style={{ display: 'flex', gap: 10 }}>
-              <button className="btn-primary" style={{ flex: 1, fontSize: 14, padding: '13px', letterSpacing: '0.04em' }} onClick={handleReanalyze} disabled={reanalyzing || !reDecision.trim()}>
+              <button className="btn-primary" style={{ flex: 1, fontSize: 14, padding: '13px' }} onClick={handleReanalyze} disabled={reanalyzing || !reDecision.trim()}>
                 {reanalyzing ? 'Convening new Council…' : 'Convene New Council'}
               </button>
               <button className="btn-ghost" style={{ padding: '13px 20px', fontSize: 13 }} onClick={() => setDrawerOpen(false)}>Cancel</button>

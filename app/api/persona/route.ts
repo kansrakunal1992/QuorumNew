@@ -11,50 +11,47 @@ export async function POST(req: Request) {
       messages,
       decisionText,
       contextText,
+      rawMessages,  // if true, messages[0].content is already the full user turn
     }: {
       sessionId: string
       personaKey: PersonaKey
       messages: Message[]
       decisionText: string
       contextText?: string
+      rawMessages?: boolean
     } = await req.json()
 
     const persona = PERSONAS[personaKey]
-    if (!persona) {
-      return new Response('Unknown persona', { status: 400 })
+    if (!persona) return new Response('Unknown persona', { status: 400 })
+
+    // Build chat messages for the AI provider
+    let chatMessages: { role: 'user' | 'assistant'; content: string }[]
+
+    if (rawMessages && messages.length > 0) {
+      // Synthesis path: messages[0] is already the complete user turn
+      chatMessages = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    } else {
+      // Normal persona path
+      const contextBlock = contextText ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n` : ''
+
+      if (messages.length === 0) {
+        chatMessages = [{
+          role: 'user',
+          content: `DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+        }]
+      } else {
+        chatMessages = [
+          {
+            role: 'user',
+            content: `DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+          },
+          ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+        ]
+      }
     }
-
-    const contextBlock = contextText
-      ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n`
-      : ''
-
-    // Build message history for the provider
-    const chatMessages: { role: 'user' | 'assistant'; content: string }[] =
-      messages.length === 0
-        ? [
-            {
-              role: 'user',
-              content:
-                `DECISION: ${decisionText}${contextBlock}\n` +
-                `Please give your full assessment as ${persona.label}.`,
-            },
-          ]
-        : [
-            {
-              role: 'user',
-              content:
-                `DECISION: ${decisionText}${contextBlock}\n` +
-                `Please give your full assessment as ${persona.label}.`,
-            },
-            ...messages.map((m) => ({
-              role: m.role as 'user' | 'assistant',
-              content: m.content,
-            })),
-          ]
 
     const { readable, getContent } = await createStream(persona.prompt, chatMessages)
 
-    // Persist after stream — wrap readable so we can intercept close
     const encoder = new TextEncoder()
     const passthrough = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -65,9 +62,9 @@ export async function POST(req: Request) {
             if (done) break
             controller.enqueue(value)
           }
-          // Save to Supabase once fully streamed
           const content = getContent()
-          if (sessionId && content) {
+          if (sessionId && content && personaKey !== 'synthesis') {
+            // Don't save synthesis to messages table (not a persona exchange)
             const supabase = createServiceClient()
             await supabase.from('messages').insert({
               session_id: sessionId,
