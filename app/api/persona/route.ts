@@ -62,16 +62,20 @@ export async function POST(req: Request) {
             if (done) break
             controller.enqueue(value)
           }
-          const content = getContent()
-          if (sessionId if (sessionId && content && personaKey !== 'synthesis') {if (sessionId && content && personaKey !== 'synthesis') { content) {
+          const content = getContent()?.trim()
+          if (sessionId && content && personaKey !== 'synthesis') {
             // Don't save synthesis to messages table (not a persona exchange)
             const supabase = createServiceClient()
-            await supabase.from('messages').insert({
-              session_id: sessionId,
-              persona: personaKey,
-              role: 'assistant',
-              content,
-            })
+            const { error } = await supabase.from('messages').insert({
+                session_id: sessionId,
+                persona: personaKey,
+                role: 'assistant',
+                content,
+              })
+
+              if (error) {
+                console.error('Supabase insert error:', error)
+              }
           }
           controller.close()
         } catch (err) {
