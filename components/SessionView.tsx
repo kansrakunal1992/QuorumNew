@@ -155,6 +155,7 @@ export default function SessionView({ session: initialSession }: Props) {
           contextText={session.context_text ?? undefined}
           personaResponses={completedResponses}
           totalPersonas={PERSONA_ORDER.length}
+          version={sessionKey}   // 👈 ADD THIS LINE
         />
 
         {/* 6 persona panels */}
