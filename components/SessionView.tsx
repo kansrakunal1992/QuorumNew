@@ -22,8 +22,14 @@ export default function SessionView({ session: initialSession }: Props) {
   // Track which personas have completed + their response text
   const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
 
+  const [synthesisVersion, setSynthesisVersion] = useState(0)
+
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
-    setCompletedResponses(prev => ({ ...prev, [personaKey]: content }))
+    setCompletedResponses(prev => {
+      const isUpdate = personaKey in prev  // true = pushback update
+      if (isUpdate) setSynthesisVersion(v => v + 1)
+      return { ...prev, [personaKey]: content }
+    })
   }, [])
 
   // Reanalyze drawer
@@ -81,6 +87,7 @@ export default function SessionView({ session: initialSession }: Props) {
       setSession(newSession)
       setSessionKey(k => k + 1)
       setCompletedResponses({})  // reset synthesis tracking
+      setSynthesisVersion(0)
       setSaved(false)
       setDrawerOpen(false)
       setReanalyzing(false)
@@ -155,7 +162,7 @@ export default function SessionView({ session: initialSession }: Props) {
           contextText={session.context_text ?? undefined}
           personaResponses={completedResponses}
           totalPersonas={PERSONA_ORDER.length}
-          version={sessionKey}   // 👈 ADD THIS LINE
+          version={synthesisVersion}
         />
 
         {/* 6 persona panels */}

@@ -19,43 +19,51 @@ export default function SynthesisCard({
 }: Props) {
   const [synthesis, setSynthesis] = useState('')
   const [state, setState]         = useState<State>('waiting')
-  const prevVersionRef            = useRef(version)
-  const completedCount            = Object.keys(personaResponses).length
-  const allDone                   = completedCount >= totalPersonas
 
-  // Always keep a ref to latest personaResponses so the effect closure is never stale
-  const responsesRef = useRef(personaResponses)
-  useEffect(() => { responsesRef.current = personaResponses }, [personaResponses])
+  const completedCount = Object.keys(personaResponses).length
+  const allDone        = completedCount >= totalPersonas
 
-  // Reset when version bumps (pushback completed after synthesis ran)
+  // AbortController ref — lets cleanup cancel the fetch without touching state
+  const abortRef    = useRef<AbortController | null>(null)
+  // Refs for values needed inside async function (avoids stale closures)
+  const responsesRef    = useRef(personaResponses)
+  const decisionRef     = useRef(decisionText)
+  const contextRef      = useRef(contextText)
+  const sessionIdRef    = useRef(sessionId)
+
+  useEffect(() => { responsesRef.current   = personaResponses }, [personaResponses])
+  useEffect(() => { decisionRef.current    = decisionText     }, [decisionText])
+  useEffect(() => { contextRef.current     = contextText      }, [contextText])
+  useEffect(() => { sessionIdRef.current   = sessionId        }, [sessionId])
+
+  // Reset and re-run when version bumps (pushback) or when allDone first becomes true
+  // state is NOT a dep — changing state from inside run() would trigger cleanup+cancel
   useEffect(() => {
-    if (version !== prevVersionRef.current) {
-      prevVersionRef.current = version
-      if (state === 'done' || state === 'error') {
-        setSynthesis('')
-        setState('waiting')
-      }
-    }
-  }, [version, state])
+    if (!allDone) return
 
-  // Fire synthesis once all personas done and state is 'waiting'
-  useEffect(() => {
-    if (!allDone || state !== 'waiting') return
+    // Cancel any in-flight request
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
 
-    let cancelled = false
+    setSynthesis('')
+    setState('streaming')
 
     const run = async () => {
-      setState('streaming')
-
-      // Use ref so we always have fresh responses even if effect closure is stale
       const latestResponses = responsesRef.current
       const personaBlock = Object.entries(latestResponses)
-        .map(([key, content]) => `[${key.toUpperCase().replace(/_/g, ' ')}]\n${content}`)
+        .map(([key, content]) => {
+          // Trim each response to first 800 chars to keep payload lean
+          const trimmed = content.length > 800 ? content.slice(0, 800) + '…' : content
+          return `[${key.toUpperCase().replace(/_/g, ' ')}]\n${trimmed}`
+        })
         .join('\n\n---\n\n')
 
-      const contextBlock = contextText ? `\nCONTEXT:\n${contextText}\n` : ''
+      const contextBlock = contextRef.current
+        ? `\nCONTEXT:\n${contextRef.current}\n`
+        : ''
       const userMessage =
-        `DECISION: ${decisionText}${contextBlock}\n\n` +
+        `DECISION: ${decisionRef.current}${contextBlock}\n\n` +
         `ADVISOR RESPONSES:\n\n${personaBlock}\n\n` +
         `Now produce the council synthesis.`
 
@@ -63,17 +71,18 @@ export default function SynthesisCard({
         const res = await fetch('/api/persona', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
-            sessionId,
+            sessionId: sessionIdRef.current,
             personaKey: 'synthesis',
             messages: [{ role: 'user', content: userMessage }],
-            decisionText,
-            contextText,
-            rawMessages: true,
+            decisionText: decisionRef.current,
+            contextText:  contextRef.current,
+            rawMessages:  true,
           }),
         })
 
-        if (!res.ok || !res.body) { if (!cancelled) setState('error'); return }
+        if (!res.ok || !res.body) { setState('error'); return }
 
         const reader  = res.body.getReader()
         const decoder = new TextDecoder()
@@ -82,32 +91,45 @@ export default function SynthesisCard({
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          if (cancelled) return
+          if (controller.signal.aborted) return
           acc += decoder.decode(value, { stream: true })
           setSynthesis(acc)
         }
-        if (!cancelled) setState('done')
-      } catch {
-        if (!cancelled) setState('error')
+        setState('done')
+      } catch (err: unknown) {
+        // AbortError is expected when component unmounts or version changes — not an error
+        if (err instanceof Error && err.name === 'AbortError') return
+        setState('error')
       }
     }
 
     run()
-    return () => { cancelled = true }
-  }, [allDone, state]) // personaResponses intentionally omitted — read via ref to avoid stale closures
 
-  const isRecalibrating = state === 'waiting' && completedCount >= totalPersonas
+    return () => { controller.abort() }
+    // version in deps: re-fires when a pushback changes the council's position
+    // allDone in deps: fires when the 6th persona completes
+    // state deliberately NOT in deps to avoid the cancel-on-setState race condition
+  }, [allDone, version]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isRecalibrating = state === 'streaming' && version > 0
 
   return (
     <div style={{
       gridColumn: '1 / -1',
       background: 'var(--bg-card)',
-      border: `1px solid ${state === 'done' ? '#2a4a2e' : state === 'streaming' || isRecalibrating ? 'var(--gold-dim)' : 'var(--border-dim)'}`,
+      border: `1px solid ${
+        state === 'done'
+          ? '#2a4a2e'
+          : state === 'streaming'
+          ? 'var(--gold-dim)'
+          : 'var(--border-dim)'
+      }`,
       borderRadius: 14,
       marginBottom: 4,
       overflow: 'hidden',
       transition: 'border-color 0.3s',
     }}>
+      {/* Header */}
       <div style={{
         padding: '14px 20px 12px',
         borderBottom: '1px solid var(--border-dim)',
@@ -127,9 +149,9 @@ export default function SynthesisCard({
               Council Synthesis
             </p>
             <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
-              {state === 'waiting' && !isRecalibrating
+              {state === 'waiting'
                 ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
-                : isRecalibrating
+                : state === 'streaming' && isRecalibrating
                 ? 'Recalibrating after pushback…'
                 : state === 'streaming'
                 ? 'Synthesising across all perspectives…'
@@ -138,32 +160,28 @@ export default function SynthesisCard({
           </div>
         </div>
 
-        {state === 'waiting' && !isRecalibrating && (
+        {state === 'waiting' && (
           <div style={{ display: 'flex', gap: 4 }}>
             {Array.from({ length: totalPersonas }).map((_, i) => (
               <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: i < completedCount ? 'var(--gold)' : 'var(--border-mid)', transition: 'background 0.3s' }} />
             ))}
           </div>
         )}
-        {(state === 'streaming' || isRecalibrating) && (
+        {state === 'streaming' && (
           <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
             {isRecalibrating ? 'Recalibrating' : 'Synthesising'}
           </span>
         )}
-        {state === 'done' && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Complete</span>}
+        {state === 'done'  && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Complete</span>}
         {state === 'error' && <span style={{ fontSize: 11, color: '#e05050' }}>✗ Error</span>}
       </div>
 
+      {/* Body */}
       <div style={{ padding: '18px 20px' }}>
-        {state === 'waiting' && !isRecalibrating && (
+        {state === 'waiting' && (
           <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
             Synthesis will appear once all six advisors complete their assessment.
-          </p>
-        )}
-        {isRecalibrating && !synthesis && (
-          <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
-            A pushback updated the council. Recalibrating synthesis…
           </p>
         )}
         {(state === 'streaming' || state === 'done') && synthesis && (
@@ -172,6 +190,11 @@ export default function SynthesisCard({
             className={state === 'streaming' ? 'cursor' : ''}
           >
             {synthesis}
+          </p>
+        )}
+        {state === 'streaming' && !synthesis && (
+          <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
+            Reading all perspectives…
           </p>
         )}
         {state === 'error' && (
