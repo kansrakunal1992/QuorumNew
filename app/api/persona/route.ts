@@ -63,8 +63,7 @@ export async function POST(req: Request) {
             controller.enqueue(value)
           }
           const content = getContent()?.trim()
-          if (sessionId && content && personaKey !== 'synthesis') {
-            // Don't save synthesis to messages table (not a persona exchange)
+          if (sessionId && content) {
             const supabase = createServiceClient()
             const { error } = await supabase.from('messages').insert({
                 session_id: sessionId,

@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { pushSessionId } from '@/lib/storage'
 import { useState, useCallback } from 'react'
 import PersonaPanel from './PersonaPanel'
 import SynthesisCard from './SynthesisCard'
@@ -14,6 +15,19 @@ interface Props {
 export default function SessionView({ session: initialSession }: Props) {
   const router = useRouter()
   const [saving,  setSaving]  = useState(false)
+
+  // Register this session in localStorage history on first load
+  useEffect(() => {
+    try {
+      const key = 'quorum_session_ids'
+      const raw = localStorage.getItem(key)
+      const ids: string[] = raw ? JSON.parse(raw) : []
+      if (!ids.includes(initialSession.id)) {
+        const updated = [initialSession.id, ...ids].slice(0, 20)
+        localStorage.setItem(key, JSON.stringify(updated))
+      }
+    } catch {}
+  }, [initialSession.id])
   const [saved,   setSaved]   = useState(false)
 
   const [session,    setSession]    = useState<Session>(initialSession)
