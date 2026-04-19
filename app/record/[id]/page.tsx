@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase'
 import RecordExport from '@/components/RecordExport'
+import OutcomeTracker from '@/components/OutcomeTracker'
 import Link from 'next/link'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
@@ -10,6 +11,7 @@ interface Props {
 }
 
 const PERSONA_ORDER: PersonaKey[] = [
+  'synthesis',
   'contrarian',
   'risk_architect',
   'pattern_analyst',
@@ -22,21 +24,21 @@ export default async function RecordPage({ params }: Props) {
   const { id } = await params
   const supabase = createServiceClient()
 
-  const [sessionResult, messagesResult] = await Promise.all([
+  const [sessionResult, messagesResult, outcomeResult] = await Promise.all([
     supabase.from('sessions').select('*').eq('id', id).single(),
-    supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', id)
-      .order('created_at', { ascending: true }),
+    supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
+    supabase.from('outcomes').select('*').eq('session_id', id).single(),
   ])
 
-  if (sessionResult.error || !sessionResult.data) {
-    notFound()
-  }
+  if (sessionResult.error || !sessionResult.data) notFound()
 
-  const session = sessionResult.data
+  const session  = sessionResult.data
   const messages = messagesResult.data ?? []
+  const outcome  = outcomeResult.data ?? null
+
+  const dateStr = new Date(session.created_at).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
 
   // Group by persona
   const byPersona: Record<string, { role: string; content: string }[]> = {}
@@ -45,34 +47,20 @@ export default async function RecordPage({ params }: Props) {
     byPersona[msg.persona].push({ role: msg.role, content: msg.content })
   }
 
-  const dateStr = new Date(session.created_at).toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-
   return (
-    <div className="min-h-screen px-4 py-10">
+    <div className="min-h-screen px-4 py-10" style={{ background: 'var(--bg-void)' }}>
       <div className="max-w-3xl mx-auto">
+
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <Link
-              href="/"
-              className="text-xs mb-3 block"
-              style={{ color: '#4a5568' }}
-            >
+            <Link href="/" className="text-xs mb-3 block" style={{ color: 'var(--text-4)' }}>
               ← New decision
             </Link>
-            <span
-              className="text-xl font-semibold tracking-widest uppercase"
-              style={{ color: '#d4a843' }}
-            >
+            <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--gold)', textTransform: 'uppercase' }}>
               Quorum
             </span>
-            <p className="text-xs mt-1" style={{ color: '#4a5568' }}>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 4 }}>
               Decision Record · {dateStr}
             </p>
           </div>
@@ -80,74 +68,67 @@ export default async function RecordPage({ params }: Props) {
         </div>
 
         {/* Decision */}
-        <div
-          className="rounded-xl p-6 mb-8"
-          style={{ background: '#0d1426', border: '1px solid #1a2645' }}
-        >
-          <p className="text-xs mb-3 font-medium" style={{ color: '#4a5568', letterSpacing: '0.1em' }}>
-            THE DECISION
+        <div style={{ borderRadius: 14, padding: '20px 24px', marginBottom: 20, background: 'var(--bg-card)', border: '1px solid var(--border-mid)' }}>
+          <p style={{ fontSize: 11, marginBottom: 8, fontWeight: 500, color: 'var(--text-4)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            The Decision
           </p>
-          <p className="text-sm leading-relaxed" style={{ color: '#c8d0dc' }}>
+          <p style={{ fontSize: 14, lineHeight: 1.65, color: 'var(--text-2)' }}>
             {session.decision_text}
           </p>
           {session.context_text && (
-            <div
-              className="mt-4 pt-4 text-xs leading-relaxed"
-              style={{ borderTop: '1px solid #131d36', color: '#4a5568' }}
-            >
-              <span style={{ color: '#2a3a5c' }}>Context: </span>
+            <div style={{ marginTop: 12, paddingTop: 12, fontSize: 12, color: 'var(--text-4)', borderTop: '1px solid var(--border-dim)', lineHeight: 1.6 }}>
+              <span style={{ color: 'var(--text-3)' }}>Context: </span>
               {session.context_text}
             </div>
           )}
         </div>
 
+        {/* Outcome tracker — prominent, right after the decision */}
+        <div style={{ marginBottom: 24 }}>
+          <OutcomeTracker sessionId={session.id} existingOutcome={outcome} />
+        </div>
+
         {/* Persona sections */}
-        <div className="flex flex-col gap-6">
-          {PERSONA_ORDER.map((key) => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {PERSONA_ORDER.map(key => {
             const msgs = byPersona[key]
             if (!msgs || msgs.length === 0) return null
             const persona = PERSONAS[key]
+            const isSynthesis = key === 'synthesis'
 
             return (
               <div
                 key={key}
-                className="rounded-xl overflow-hidden"
-                style={{ background: '#0d1426', border: '1px solid #1a2645' }}
+                style={{
+                  borderRadius: 14,
+                  overflow: 'hidden',
+                  background: 'var(--bg-card)',
+                  border: isSynthesis ? '1px solid #2a4a2e' : '1px solid var(--border-dim)',
+                }}
               >
-                {/* Persona header */}
-                <div
-                  className="px-6 py-4"
-                  style={{ borderBottom: '1px solid #131d36', background: '#080d1a' }}
-                >
-                  <p className="text-sm font-semibold" style={{ color: '#d4a843' }}>
+                <div style={{
+                  padding: '14px 20px',
+                  borderBottom: '1px solid var(--border-dim)',
+                  background: isSynthesis ? 'rgba(26,58,34,0.5)' : 'rgba(201,168,76,0.04)',
+                }}>
+                  <p style={{ fontSize: isSynthesis ? 13 : 12.5, fontWeight: 700, color: 'var(--gold)' }}>
                     {persona.label}
                   </p>
-                  <p className="text-xs mt-0.5" style={{ color: '#4a5568' }}>
+                  <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
                     {persona.tagline}
                   </p>
                 </div>
 
-                {/* Messages */}
-                <div className="px-6 py-5 flex flex-col gap-5">
+                <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {msgs.map((msg, i) => (
                     <div key={i}>
                       {msg.role === 'user' ? (
-                        <div
-                          className="rounded-lg px-4 py-3"
-                          style={{ background: '#080d1a', border: '1px solid #131d36' }}
-                        >
-                          <p className="text-xs mb-1" style={{ color: '#4a5568' }}>
-                            Your pushback
-                          </p>
-                          <p className="text-sm" style={{ color: '#8892a4' }}>
-                            {msg.content}
-                          </p>
+                        <div style={{ borderRadius: 8, padding: '10px 14px', background: 'var(--bg-inset)', border: '1px solid var(--border-dim)' }}>
+                          <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 4 }}>Your pushback</p>
+                          <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>{msg.content}</p>
                         </div>
                       ) : (
-                        <p
-                          className="text-sm leading-relaxed"
-                          style={{ color: '#c8d0dc', whiteSpace: 'pre-wrap' }}
-                        >
+                        <p style={{ fontSize: 13.5, lineHeight: 1.8, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
                           {msg.content}
                         </p>
                       )}
@@ -159,18 +140,18 @@ export default async function RecordPage({ params }: Props) {
           })}
         </div>
 
-        {/* Bottom export */}
-        <div className="mt-10 flex justify-center gap-4">
+        {/* Bottom */}
+        <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
           <RecordExport record={{ session, messages }} />
           <Link href="/">
-            <button className="btn-ghost" style={{ padding: '10px 20px', fontSize: '13px' }}>
+            <button className="btn-ghost" style={{ padding: '10px 20px', fontSize: 13 }}>
               New decision
             </button>
           </Link>
         </div>
 
-        <p className="mt-8 text-center text-xs" style={{ color: '#1a2645' }}>
-          Quorum · Private Decision Intelligence · Session {id.slice(0, 8)}
+        <p style={{ marginTop: 24, textAlign: 'center', fontSize: 11, color: 'var(--text-4)' }}>
+          Quorum · Session {id.slice(0, 8)}
         </p>
       </div>
     </div>
