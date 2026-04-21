@@ -217,22 +217,25 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
       </div>
 
-      {/* Pushback footer — prominent, always visible when done */}
+      {/* Pushback footer — always visible, gold-filled background to ensure discoverability */}
       {panelState === 'done' && !isPushingBack && (
         <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border-dim)' }}>
           {!showPushback ? (
             <button
-              title="Disagree with this analysis, add new information, or ask a follow-up question"
+              title="Disagree with this analysis, add new information, or ask a follow-up"
               onClick={() => setShowPushback(true)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 7,
-                background: 'transparent',
-                border: '1px solid var(--border-hi)',
+                justifyContent: 'center',
+                gap: 8,
+                width: '100%',
+                background: 'rgba(201,168,76,0.1)',
+                border: '1px solid var(--gold-dim)',
                 borderRadius: 8,
-                padding: '7px 14px',
-                fontSize: 12,
+                padding: '9px 14px',
+                fontSize: 12.5,
+                fontWeight: 600,
                 color: 'var(--gold)',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
@@ -240,15 +243,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
                 letterSpacing: '0.02em',
               }}
               onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.08)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.18)'
                 ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
               }}
               onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-hi)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.1)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
               </svg>
               Challenge this · add context

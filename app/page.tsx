@@ -179,7 +179,7 @@ export default function Home() {
         </div>
 
         {/* ── Persona grid ─────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 40 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
           {PERSONAS_GRID.map(p => (
             <div key={p.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <div style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 7, background: `${p.col}44`, border: `1px solid ${p.col}88`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -191,6 +191,43 @@ export default function Home() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* ── How to get the most out of Quorum ────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 36 }}>
+          {/* Pushback tip */}
+          <div style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid var(--gold-dim)', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 24, height: 24, borderRadius: 6, background: 'rgba(201,168,76,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+                </svg>
+              </div>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>
+                Challenge the advisors
+              </p>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+              After each advisor responds, you&apos;ll see a <span style={{ color: 'var(--gold)', fontWeight: 600 }}>&quot;Challenge this · add context&quot;</span> button. Use it. Disagree with their analysis, add information they missed, or ask a follow-up. The Council re-synthesises after every pushback.
+            </p>
+          </div>
+
+          {/* Outcome tip */}
+          <div style={{ background: 'rgba(26,58,34,0.3)', border: '1px solid #2a4a2e', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 24, height: 24, borderRadius: 6, background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              <p style={{ fontSize: 12, fontWeight: 700, color: '#4ade80', margin: 0 }}>
+                Log what you decided
+              </p>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+              Decisions often take time. Once you decide, return to this page — your past sessions appear below. Open any session and log your outcome. Over time this builds a private record of how you actually decide.
+            </p>
+          </div>
         </div>
 
         {/* ── Decision history ─────────────────────────── */}

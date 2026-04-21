@@ -674,23 +674,23 @@ You have failed if the decision-maker simply feels more vigilant about competiti
 `
 
 // ── Word limit appended to every persona ──────────────────────
-const WORD_LIMIT = `
+const WORD_LIMIT_PREFIX = `HARD CONSTRAINT — READ FIRST: Your response must be 220–280 words. Count carefully. If you exceed 280 words, cut the weakest paragraph before responding. Do not exceed this under any circumstances.
+
+`
+
+const WORD_LIMIT_SUFFIX = `
 
 ---
 
-BREVITY AND LANE DISCIPLINE
+LANE DISCIPLINE: Stay strictly in your lane. Do not cover ground another advisor owns:
+- Contrarian owns: hidden assumption, motivated reasoning, one reversal scenario
+- Risk Architect owns: pre-mortem narrative, three risk categories, point of irreversibility  
+- Pattern Analyst owns: named analogues with outcomes, base rate, discriminating condition
+- Stakeholder Mirror owns: unstated stakeholders, second-order reactions, alignment gap
+- Elder owns: reversibility, urgency test, decade horizon
+- Competitor owns: adversarial framing, signal, one counter-move
 
-Your entire response must be under 300 words. Every sentence must earn its place. Hard lane boundaries are enforced below — do not stray into another advisor's territory.
-
-YOUR LANE:
-- The Contrarian: the single hidden assumption, the motivated reasoning test, one specific reversal scenario. NOT risks, NOT analogies, NOT stakeholders.
-- The Risk Architect: pre-mortem narrative in past tense, three named risk categories (execution/assumption/dependency), the point of irreversibility. NOT historical case studies, NOT base rates, NOT analogies — those belong to the Pattern Analyst.
-- The Pattern Analyst: two or three named historical analogues with named outcomes, the base rate, the one discriminating condition. NOT a pre-mortem, NOT risk categories, NOT failure mechanics — those belong to the Risk Architect.
-- The Stakeholder Mirror: unstated stakeholders, second-order reactions, the alignment gap. NOT risks, NOT patterns.
-- The Elder: reversibility architecture, urgency test, decade-horizon view. NOT risks, NOT stakeholders.
-- The Competitor: adversarial framing, signal analysis, one specific counter-move. NOT risks, NOT patterns.
-
-300 words maximum. No exceptions.`
+OPTIONAL OPENER: If a critical piece of information is missing from the decision description that your analysis depends on, begin with one direct question. If nothing is missing, proceed immediately with your assessment.`
 
 // ── Synthesis prompt ──────────────────────────────────────────
 export const SYNTHESIS = `You are the synthesis layer of Quorum, a private decision intelligence system. You have just received the independent assessments of six specialist advisors on a single high-stakes decision.
@@ -714,37 +714,37 @@ export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
     key: 'contrarian',
     label: 'The Contrarian',
     tagline: 'Argues your instinct away',
-    prompt: CONTRARIAN + WORD_LIMIT,
+    prompt: WORD_LIMIT_PREFIX + CONTRARIAN + WORD_LIMIT_SUFFIX,
   },
   risk_architect: {
     key: 'risk_architect',
     label: 'The Risk Architect',
     tagline: 'Pre-mortems all failures',
-    prompt: RISK_ARCHITECT + WORD_LIMIT,
+    prompt: WORD_LIMIT_PREFIX + RISK_ARCHITECT + WORD_LIMIT_SUFFIX,
   },
   pattern_analyst: {
     key: 'pattern_analyst',
     label: 'The Pattern Analyst',
     tagline: 'Finds your past analogues',
-    prompt: PATTERN_ANALYST + WORD_LIMIT,
+    prompt: WORD_LIMIT_PREFIX + PATTERN_ANALYST + WORD_LIMIT_SUFFIX,
   },
   stakeholder_mirror: {
     key: 'stakeholder_mirror',
     label: 'The Stakeholder Mirror',
     tagline: 'Who else is affected',
-    prompt: STAKEHOLDER_MIRROR + WORD_LIMIT,
+    prompt: WORD_LIMIT_PREFIX + STAKEHOLDER_MIRROR + WORD_LIMIT_SUFFIX,
   },
   elder: {
     key: 'elder',
     label: 'The Elder',
     tagline: 'Slow, long-term wisdom',
-    prompt: ELDER + WORD_LIMIT,
+    prompt: WORD_LIMIT_PREFIX + ELDER + WORD_LIMIT_SUFFIX,
   },
   competitor: {
     key: 'competitor',
     label: 'The Competitor',
     tagline: 'Bets against your choice',
-    prompt: COMPETITOR + WORD_LIMIT,
+    prompt: WORD_LIMIT_PREFIX + COMPETITOR + WORD_LIMIT_SUFFIX,
   },
   synthesis: {
     key: 'synthesis',
