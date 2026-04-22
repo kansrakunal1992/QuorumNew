@@ -6,6 +6,7 @@ export type PersonaKey =
   | 'elder'
   | 'competitor'
   | 'synthesis'
+  | 'decision_brief'
 
 export interface PersonaMeta {
   key: PersonaKey

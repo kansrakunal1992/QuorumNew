@@ -11,6 +11,7 @@ interface Props {
 }
 
 const PERSONA_ORDER: PersonaKey[] = [
+  'decision_brief',
   'synthesis',
   'contrarian',
   'risk_architect',
@@ -95,6 +96,7 @@ export default async function RecordPage({ params }: Props) {
             if (!msgs || msgs.length === 0) return null
             const persona = PERSONAS[key]
             const isSynthesis = key === 'synthesis'
+            const isBrief = key === 'decision_brief'
 
             return (
               <div
@@ -103,15 +105,15 @@ export default async function RecordPage({ params }: Props) {
                   borderRadius: 14,
                   overflow: 'hidden',
                   background: 'var(--bg-card)',
-                  border: isSynthesis ? '1px solid #2a4a2e' : '1px solid var(--border-dim)',
+                  border: isBrief ? '1px solid rgba(201,168,76,0.3)' : isSynthesis ? '1px solid #2a4a2e' : '1px solid var(--border-dim)',
                 }}
               >
                 <div style={{
                   padding: '14px 20px',
                   borderBottom: '1px solid var(--border-dim)',
-                  background: isSynthesis ? 'rgba(26,58,34,0.5)' : 'rgba(201,168,76,0.04)',
+                  background: isBrief ? 'rgba(201,168,76,0.08)' : isSynthesis ? 'rgba(26,58,34,0.5)' : 'rgba(201,168,76,0.04)',
                 }}>
-                  <p style={{ fontSize: isSynthesis ? 13 : 12.5, fontWeight: 700, color: 'var(--gold)' }}>
+                  <p style={{ fontSize: isBrief ? 14 : isSynthesis ? 13 : 12.5, fontWeight: 700, color: 'var(--gold)', letterSpacing: isBrief ? '0.1em' : '0' }}>
                     {persona.label}
                   </p>
                   <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>

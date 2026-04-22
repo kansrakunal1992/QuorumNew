@@ -17,99 +17,111 @@ export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
 }: Props) {
-  const [synthesis, setSynthesis] = useState('')
-  const [state, setState]         = useState<State>('waiting')
+  const [synthesis,    setSynthesis]   = useState('')
+  const [state,        setState]       = useState<State>('waiting')
+  const [briefText,    setBriefText]   = useState('')
+  const [briefState,   setBriefState]  = useState<'idle'|'streaming'|'done'|'error'>('idle')
+  const [showBrief,    setShowBrief]   = useState(false)
 
   const completedCount = Object.keys(personaResponses).length
   const allDone        = completedCount >= totalPersonas
+  const abortRef       = useRef<AbortController | null>(null)
+  const briefAbortRef  = useRef<AbortController | null>(null)
+  const responsesRef   = useRef(personaResponses)
+  const decisionRef    = useRef(decisionText)
+  const contextRef     = useRef(contextText)
+  const sessionIdRef   = useRef(sessionId)
 
-  // AbortController ref — lets cleanup cancel the fetch without touching state
-  const abortRef    = useRef<AbortController | null>(null)
-  // Refs for values needed inside async function (avoids stale closures)
-  const responsesRef    = useRef(personaResponses)
-  const decisionRef     = useRef(decisionText)
-  const contextRef      = useRef(contextText)
-  const sessionIdRef    = useRef(sessionId)
+  useEffect(() => { responsesRef.current  = personaResponses }, [personaResponses])
+  useEffect(() => { decisionRef.current   = decisionText     }, [decisionText])
+  useEffect(() => { contextRef.current    = contextText      }, [contextText])
+  useEffect(() => { sessionIdRef.current  = sessionId        }, [sessionId])
 
-  useEffect(() => { responsesRef.current   = personaResponses }, [personaResponses])
-  useEffect(() => { decisionRef.current    = decisionText     }, [decisionText])
-  useEffect(() => { contextRef.current     = contextText      }, [contextText])
-  useEffect(() => { sessionIdRef.current   = sessionId        }, [sessionId])
-
-  // Reset and re-run when version bumps (pushback) or when allDone first becomes true
-  // state is NOT a dep — changing state from inside run() would trigger cleanup+cancel
+  // Fire synthesis
   useEffect(() => {
     if (!allDone) return
-
-    // Cancel any in-flight request
     abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
     setSynthesis('')
     setState('streaming')
+    setBriefText('')
+    setBriefState('idle')
+    setShowBrief(false)
 
     const run = async () => {
-      const latestResponses = responsesRef.current
-      const personaBlock = Object.entries(latestResponses)
-        .map(([key, content]) => {
-          // Trim each response to first 800 chars to keep payload lean
-          const trimmed = content.length > 800 ? content.slice(0, 800) + '…' : content
-          return `[${key.toUpperCase().replace(/_/g, ' ')}]\n${trimmed}`
-        })
+      const latest = responsesRef.current
+      const personaBlock = Object.entries(latest)
+        .map(([k, v]) => `[${k.toUpperCase().replace(/_/g, ' ')}]\n${v.slice(0, 800)}`)
         .join('\n\n---\n\n')
-
-      const contextBlock = contextRef.current
-        ? `\nCONTEXT:\n${contextRef.current}\n`
-        : ''
-      const userMessage =
-        `DECISION: ${decisionRef.current}${contextBlock}\n\n` +
-        `ADVISOR RESPONSES:\n\n${personaBlock}\n\n` +
-        `Now produce the council synthesis.`
+      const ctx = contextRef.current ? `\nCONTEXT:\n${contextRef.current}\n` : ''
+      const msg = `DECISION: ${decisionRef.current}${ctx}\n\nADVISOR RESPONSES:\n\n${personaBlock}\n\nNow produce the council synthesis.`
 
       try {
         const res = await fetch('/api/persona', {
-          method: 'POST',
+          method: 'POST', signal: ctrl.signal,
           headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            sessionId: sessionIdRef.current,
-            personaKey: 'synthesis',
-            messages: [{ role: 'user', content: userMessage }],
-            decisionText: decisionRef.current,
-            contextText:  contextRef.current,
-            rawMessages:  true,
-          }),
+          body: JSON.stringify({ sessionId: sessionIdRef.current, personaKey: 'synthesis', messages: [{ role: 'user', content: msg }], decisionText: decisionRef.current, contextText: contextRef.current, rawMessages: true }),
         })
-
         if (!res.ok || !res.body) { setState('error'); return }
-
-        const reader  = res.body.getReader()
-        const decoder = new TextDecoder()
+        const reader = res.body.getReader()
+        const dec    = new TextDecoder()
         let acc = ''
-
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          if (controller.signal.aborted) return
-          acc += decoder.decode(value, { stream: true })
+          if (ctrl.signal.aborted) return
+          acc += dec.decode(value, { stream: true })
           setSynthesis(acc)
         }
         setState('done')
-      } catch (err: unknown) {
-        // AbortError is expected when component unmounts or version changes — not an error
-        if (err instanceof Error && err.name === 'AbortError') return
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === 'AbortError') return
         setState('error')
       }
     }
-
     run()
-
-    return () => { controller.abort() }
-    // version in deps: re-fires when a pushback changes the council's position
-    // allDone in deps: fires when the 6th persona completes
-    // state deliberately NOT in deps to avoid the cancel-on-setState race condition
+    return () => { ctrl.abort() }
   }, [allDone, version]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleGenerateBrief = async () => {
+    briefAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    briefAbortRef.current = ctrl
+    setBriefText('')
+    setBriefState('streaming')
+    setShowBrief(true)
+
+    const latest = responsesRef.current
+    const personaBlock = Object.entries(latest)
+      .map(([k, v]) => `[${k.toUpperCase().replace(/_/g, ' ')}]\n${v.slice(0, 800)}`)
+      .join('\n\n---\n\n')
+    const ctx = contextRef.current ? `\nCONTEXT:\n${contextRef.current}\n` : ''
+    const msg = `DECISION: ${decisionRef.current}${ctx}\n\nADVISOR RESPONSES:\n\n${personaBlock}\n\nNow produce the Decision Brief.`
+
+    try {
+      const res = await fetch('/api/persona', {
+        method: 'POST', signal: ctrl.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionIdRef.current, personaKey: 'decision_brief', messages: [{ role: 'user', content: msg }], decisionText: decisionRef.current, contextText: contextRef.current, rawMessages: true }),
+      })
+      if (!res.ok || !res.body) { setBriefState('error'); return }
+      const reader = res.body.getReader()
+      const dec    = new TextDecoder()
+      let acc = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (ctrl.signal.aborted) return
+        acc += dec.decode(value, { stream: true })
+        setBriefText(acc)
+      }
+      setBriefState('done')
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === 'AbortError') return
+      setBriefState('error')
+    }
+  }
 
   const isRecalibrating = state === 'streaming' && version > 0
 
@@ -117,27 +129,11 @@ export default function SynthesisCard({
     <div style={{
       gridColumn: '1 / -1',
       background: 'var(--bg-card)',
-      border: `1px solid ${
-        state === 'done'
-          ? '#2a4a2e'
-          : state === 'streaming'
-          ? 'var(--gold-dim)'
-          : 'var(--border-dim)'
-      }`,
-      borderRadius: 14,
-      marginBottom: 4,
-      overflow: 'hidden',
-      transition: 'border-color 0.3s',
+      border: `1px solid ${state === 'done' ? '#2a4a2e' : state === 'streaming' ? 'var(--gold-dim)' : 'var(--border-dim)'}`,
+      borderRadius: 14, marginBottom: 4, overflow: 'hidden', transition: 'border-color 0.3s',
     }}>
       {/* Header */}
-      <div style={{
-        padding: '14px 20px 12px',
-        borderBottom: '1px solid var(--border-dim)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: state === 'done' ? 'rgba(26,58,34,0.5)' : 'rgba(201,168,76,0.06)',
-      }}>
+      <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border-dim)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: state === 'done' ? 'rgba(26,58,34,0.5)' : 'rgba(201,168,76,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -145,39 +141,62 @@ export default function SynthesisCard({
             </svg>
           </div>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em' }}>
-              Council Synthesis
-            </p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em' }}>Council Synthesis</p>
             <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
-              {state === 'waiting'
-                ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
-                : state === 'streaming' && isRecalibrating
-                ? 'Recalibrating after pushback…'
-                : state === 'streaming'
-                ? 'Synthesising across all perspectives…'
+              {state === 'waiting' ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
+                : state === 'streaming' && isRecalibrating ? 'Recalibrating after pushback…'
+                : state === 'streaming' ? 'Synthesising across all perspectives…'
                 : 'What the council collectively surfaced'}
             </p>
           </div>
         </div>
 
-        {state === 'waiting' && (
-          <div style={{ display: 'flex', gap: 4 }}>
-            {Array.from({ length: totalPersonas }).map((_, i) => (
-              <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: i < completedCount ? 'var(--gold)' : 'var(--border-mid)', transition: 'background 0.3s' }} />
-            ))}
-          </div>
-        )}
-        {state === 'streaming' && (
-          <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
-            {isRecalibrating ? 'Recalibrating' : 'Synthesising'}
-          </span>
-        )}
-        {state === 'done'  && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Complete</span>}
-        {state === 'error' && <span style={{ fontSize: 11, color: '#e05050' }}>✗ Error</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Decision Brief button — only when synthesis is done */}
+          {state === 'done' && briefState === 'idle' && (
+            <button
+              onClick={handleGenerateBrief}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--gold-dim)', background: 'rgba(201,168,76,0.1)', color: 'var(--gold)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.03em', transition: 'all 0.2s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.2)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.1)' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+              </svg>
+              Generate Decision Brief
+            </button>
+          )}
+          {briefState === 'streaming' && (
+            <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+              Writing Brief…
+            </span>
+          )}
+          {briefState === 'done' && (
+            <button onClick={() => setShowBrief(b => !b)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid var(--border-dim)', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              {showBrief ? 'Hide Brief' : 'Show Brief'}
+            </button>
+          )}
+
+          {state === 'waiting' && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              {Array.from({ length: totalPersonas }).map((_, i) => (
+                <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: i < completedCount ? 'var(--gold)' : 'var(--border-mid)', transition: 'background 0.3s' }} />
+              ))}
+            </div>
+          )}
+          {state === 'streaming' && (
+            <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+              {isRecalibrating ? 'Recalibrating' : 'Synthesising'}
+            </span>
+          )}
+          {state === 'done'  && !briefState.match(/streaming|done/) && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Complete</span>}
+          {state === 'error' && <span style={{ fontSize: 11, color: '#e05050' }}>✗ Error</span>}
+        </div>
       </div>
 
-      {/* Body */}
+      {/* Synthesis body */}
       <div style={{ padding: '18px 20px' }}>
         {state === 'waiting' && (
           <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
@@ -185,22 +204,78 @@ export default function SynthesisCard({
           </p>
         )}
         {(state === 'streaming' || state === 'done') && synthesis && (
-          <p
-            style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--text-1)', whiteSpace: 'pre-wrap', letterSpacing: '0.01em' }}
-            className={state === 'streaming' ? 'cursor' : ''}
-          >
+          <p style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--text-1)', whiteSpace: 'pre-wrap', letterSpacing: '0.01em' }}
+            className={state === 'streaming' ? 'cursor' : ''}>
             {synthesis}
           </p>
         )}
         {state === 'streaming' && !synthesis && (
-          <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
-            Reading all perspectives…
-          </p>
+          <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>Reading all perspectives…</p>
         )}
         {state === 'error' && (
           <p style={{ fontSize: 13, color: '#e05050' }}>Synthesis failed. Advisor responses are still available below.</p>
         )}
       </div>
+
+      {/* Decision Brief section */}
+      {showBrief && (briefState === 'streaming' || briefState === 'done' || briefState === 'error') && (
+        <div style={{ borderTop: '1px solid var(--gold-dim)', margin: '0 20px', paddingTop: 0 }}>
+          {/* Brief header */}
+          <div style={{ padding: '14px 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)', margin: 0, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Decision Brief
+              </p>
+              <span style={{ fontSize: 10, color: 'var(--text-4)', padding: '2px 8px', borderRadius: 10, border: '1px solid var(--border-dim)', background: 'var(--bg-inset)' }}>
+                Printable · Shareable
+              </span>
+            </div>
+            {briefState === 'done' && (
+              <span style={{ fontSize: 11, color: '#4ade80' }}>✓</span>
+            )}
+          </div>
+
+          {/* Brief content — styled like a document */}
+          <div style={{
+            background: 'rgba(201,168,76,0.04)',
+            border: '1px solid rgba(201,168,76,0.15)',
+            borderRadius: 10,
+            padding: '20px 22px',
+            marginBottom: 20,
+          }}>
+            {briefText && (
+              <div style={{ fontSize: 13, lineHeight: 1.9, color: 'var(--text-1)', whiteSpace: 'pre-wrap', fontFamily: 'Georgia, var(--font-serif), serif' }}
+                className={briefState === 'streaming' ? 'cursor' : ''}>
+                {briefText.split('\n').map((line, i) => {
+                  const isLabel = /^[A-Z][A-Z\s]+$/.test(line.trim()) && line.trim().length > 2 && line.trim().length < 40
+                  return (
+                    <p key={i} style={{
+                      margin: isLabel ? '16px 0 4px' : '0 0 2px',
+                      fontSize: isLabel ? 10.5 : 13,
+                      fontWeight: isLabel ? 700 : 400,
+                      color: isLabel ? 'var(--gold)' : 'var(--text-1)',
+                      fontFamily: isLabel ? 'var(--font-sans)' : 'Georgia, serif',
+                      letterSpacing: isLabel ? '0.12em' : '0.01em',
+                      textTransform: isLabel ? 'uppercase' : 'none',
+                    }}>
+                      {line || '\u00A0'}
+                    </p>
+                  )
+                })}
+              </div>
+            )}
+            {!briefText && briefState === 'streaming' && (
+              <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>Drafting brief…</p>
+            )}
+            {briefState === 'error' && (
+              <p style={{ fontSize: 13, color: '#e05050' }}>Brief generation failed. Please try again.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

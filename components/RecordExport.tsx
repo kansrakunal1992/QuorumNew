@@ -276,6 +276,7 @@ export default function RecordExport({ record }: Props) {
 
       // ── Persona pages ─────────────────────────────────────────
       const personaOrder = [
+        'decision_brief',
         'synthesis',
         'contrarian', 'risk_architect', 'pattern_analyst',
         'stakeholder_mirror', 'elder', 'competitor',
@@ -301,24 +302,40 @@ export default function RecordExport({ record }: Props) {
 
         // Synthesis gets special full-width header treatment
         const isSynthesis = key === 'synthesis'
+        const isBrief = key === 'decision_brief'
 
-        // Persona header band
-        doc.setFillColor(isSynthesis ? 15 : 11, isSynthesis ? 22 : 16, isSynthesis ? 15 : 32)
-        doc.rect(0, y - 2, pageW, 18, 'F')
-        doc.setDrawColor(201, 168, 76)
-        doc.setLineWidth(isSynthesis ? 1.5 : 0.5)
-        doc.line(0, y - 2, pageW, y - 2)  // top rule for synthesis
-
-        doc.setFont('helvetica', 'bold')
-        doc.setFontSize(isSynthesis ? 14 : 12)
-        doc.setTextColor(201, 168, 76)
-        doc.text(persona.label.toUpperCase(), ML, y + 7)
-
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(8)
-        doc.setTextColor(74, 85, 104)
-        doc.text(persona.tagline, ML, y + 13)
-        y += 22
+        // Persona header band — decision_brief gets fullest premium treatment
+        if (isBrief) {
+          doc.setFillColor(8, 18, 8)
+          doc.rect(0, y - 4, pageW, 26, 'F')
+          doc.setDrawColor(201, 168, 76)
+          doc.setLineWidth(1.0)
+          doc.line(ML, y - 4, pageW - MR, y - 4)
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(16)
+          doc.setTextColor(201, 168, 76)
+          doc.text('DECISION BRIEF', ML, y + 8)
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(8)
+          doc.setTextColor(74, 85, 104)
+          doc.text('Prepared by Quorum Council · Confidential', ML, y + 15)
+          y += 28
+        } else {
+          doc.setFillColor(isSynthesis ? 15 : 11, isSynthesis ? 22 : 16, isSynthesis ? 15 : 32)
+          doc.rect(0, y - 2, pageW, 18, 'F')
+          doc.setDrawColor(201, 168, 76)
+          doc.setLineWidth(isSynthesis ? 1.5 : 0.5)
+          doc.line(0, y - 2, pageW, y - 2)
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(isSynthesis ? 14 : 12)
+          doc.setTextColor(201, 168, 76)
+          doc.text(persona.label.toUpperCase(), ML, y + 7)
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(8)
+          doc.setTextColor(74, 85, 104)
+          doc.text(persona.tagline, ML, y + 13)
+          y += 22
+        }
 
         // Thin gold divider
         doc.setDrawColor(42, 38, 18)
