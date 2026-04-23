@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 
 // ── Brief access gate helpers ─────────────────────────────────
-const BRIEF_KEY = 'quorum_brief_access'
+const BRIEF_KEY = 'brief_token'
 
 function getStoredBriefCode(): string | null {
   if (typeof window === 'undefined') return null
