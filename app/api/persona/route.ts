@@ -11,7 +11,7 @@ export async function POST(req: Request) {
       messages,
       decisionText,
       contextText,
-      rawMessages,  // if true, messages[0].content is already the full user turn
+      rawMessages,
     }: {
       sessionId: string
       personaKey: PersonaKey
@@ -24,14 +24,11 @@ export async function POST(req: Request) {
     const persona = PERSONAS[personaKey]
     if (!persona) return new Response('Unknown persona', { status: 400 })
 
-    // Build chat messages for the AI provider
     let chatMessages: { role: 'user' | 'assistant'; content: string }[]
 
     if (rawMessages && messages.length > 0) {
-      // Synthesis path: messages[0] is already the complete user turn
       chatMessages = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
     } else {
-      // Normal persona path
       const contextBlock = contextText ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n` : ''
 
       if (messages.length === 0) {
@@ -40,6 +37,8 @@ export async function POST(req: Request) {
           content: `DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
         }]
       } else {
+        // messages contains alternating user pushbacks and prior assistant replies
+        // First message in array is always user (the pushback text)
         chatMessages = [
           {
             role: 'user',
@@ -62,20 +61,36 @@ export async function POST(req: Request) {
             if (done) break
             controller.enqueue(value)
           }
-          const content = getContent()?.trim()
-          if (sessionId && content) {
-            const supabase = createServiceClient()
-            const { error } = await supabase.from('messages').insert({
+
+          const assistantContent = getContent()?.trim()
+          const supabase = createServiceClient()
+
+          // ── Save user pushback messages to DB ──────────────────
+          // When messages array has content and the last message is from user,
+          // it's a pushback that hasn't been saved yet — save it now
+          if (sessionId && messages.length > 0 && !rawMessages) {
+            const lastMsg = messages[messages.length - 1]
+            if (lastMsg.role === 'user') {
+              await supabase.from('messages').insert({
                 session_id: sessionId,
                 persona: personaKey,
-                role: 'assistant',
-                content,
+                role: 'user',
+                content: lastMsg.content,
               })
-
-              if (error) {
-                console.error('Supabase insert error:', error)
-              }
+            }
           }
+
+          // ── Save assistant response ────────────────────────────
+          if (sessionId && assistantContent) {
+            const { error } = await supabase.from('messages').insert({
+              session_id: sessionId,
+              persona: personaKey,
+              role: 'assistant',
+              content: assistantContent,
+            })
+            if (error) console.error('Supabase insert error:', error)
+          }
+
           controller.close()
         } catch (err) {
           controller.error(err)
