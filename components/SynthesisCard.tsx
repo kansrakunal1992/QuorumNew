@@ -88,7 +88,7 @@ export default function SynthesisCard({
         const res = await fetch('/api/persona', {
           method: 'POST', signal: ctrl.signal,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: sessionIdRef.current, personaKey: 'synthesis', messages: [{ role: 'user', content: msg }], decisionText: decisionRef.current, contextText: contextRef.current, rawMessages: true }),
+          body: JSON.stringify({ sessionId: sessionIdRef.current, personaKey: 'synthesis', messages: [{ role: 'user', content: msg }], decisionText: decisionRef.current, contextText: contextRef.current, rawMessages: true, token: getStoredBriefCode() || accessCode || tokenInput }),
         })
         if (!res.ok || !res.body) { setState('error'); return }
         const reader = res.body.getReader()
@@ -118,7 +118,7 @@ export default function SynthesisCard({
       const res = await fetch('/api/brief-access', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: accessCode.trim() }),
+        body: JSON.stringify({ token: accessCode.trim() }),
       })
       const { valid } = await res.json()
       if (valid) {
