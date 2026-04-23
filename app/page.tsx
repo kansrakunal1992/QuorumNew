@@ -51,11 +51,6 @@ export default function Home() {
   const [loading,      setLoading]       = useState(false)
   const [showContext,  setShowContext]   = useState(false)
   const [error,        setError]         = useState('')
-  
-  // ── Brief access ─────────────────────────────
-  const [token, setToken] = useState('')
-  const [hasAccess, setHasAccess] = useState(false)
-  const [checkingAccess, setCheckingAccess] = useState(false)
 
   // Past sessions state
   const [sessions,     setSessions]     = useState<SessionSummary[]>([])
@@ -78,52 +73,6 @@ export default function Home() {
       .catch(() => {})
       .finally(() => setLoadingHist(false))
   }, [])
-
-
-  // ── Load token from URL or localStorage ──────
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlToken = params.get('token')
-
-    if (urlToken) {
-      setToken(urlToken)
-      localStorage.setItem('brief_token', urlToken)
-      setHasAccess(true)
-      return
-    }
-
-    const saved = localStorage.getItem('brief_token')
-    if (saved) {
-      setToken(saved)
-      setHasAccess(true)
-    }
-  }, [])
-
-  const checkAccess = async () => {
-    if (!token.trim()) return
-
-    setCheckingAccess(true)
-    try {
-      const res = await fetch('/api/brief-access', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      })
-
-      const data = await res.json()
-
-      if (data.valid) {
-        localStorage.setItem('brief_token', token)
-        setHasAccess(true)
-      } else {
-        setHasAccess(false)
-        alert('Invalid access token')
-      }
-    } catch {
-      alert('Error validating token')
-    }
-    setCheckingAccess(false)
-  }
 
   const handleSubmit = async () => {
     if (!decision.trim() || decision.trim().length < 20) {
@@ -186,38 +135,6 @@ export default function Home() {
 
         {/* ── Input card ───────────────────────────────── */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderRadius: 18, padding: '28px 32px', marginBottom: 28 }}>
-          
-          {/* ── Access Gate ───────────────────────────── */}
-          {!hasAccess && (
-            <div style={{ marginBottom: 20 }}>
-              <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8 }}>
-                Enter access token to enable Decision Brief
-              </p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={token}
-                  onChange={e => setToken(e.target.value)}
-                  placeholder="Access token"
-                  style={{
-                    flex: 1,
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    border: '1px solid var(--border-mid)',
-                    background: 'var(--bg-inset)',
-                    color: 'var(--text-1)',
-                    fontSize: 13,
-                  }}
-                />
-                <button
-                  onClick={checkAccess}
-                  disabled={checkingAccess}
-                  className="btn-ghost"
-                >
-                  {checkingAccess ? 'Checking…' : 'Unlock'}
-                </button>
-              </div>
-            </div>
-          )}
           <h1 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-1)', marginBottom: 6 }}>
             Describe your decision
           </h1>
