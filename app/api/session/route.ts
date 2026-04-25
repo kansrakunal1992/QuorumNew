@@ -26,11 +26,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
     }
 
-    return NextResponse.json({ id: data.id })
+    const sessionId = data.id
+
+    // ── Fire ontology tagger async ─────────────────────────────
+    // Never awaited — user is not blocked.
+    // Runs in the background. If it fails, sessions_ontology.tagger_status = 'failed'.
+    // The app functions fully without the ontology tag.
+    fireOntologyTagger(sessionId, decision_text.trim(), context_text?.trim() ?? null)
+
+    return NextResponse.json({ id: sessionId })
   } catch (err) {
     console.error('Session route error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+// Fire-and-forget tagger call using internal API route
+// Using fetch to own API rather than direct import keeps the async boundary clean
+// and prevents any tagger error from ever reaching the session creation response.
+function fireOntologyTagger(
+  sessionId: string,
+  decisionText: string,
+  contextText: string | null
+) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+  fetch(`${baseUrl}/api/ontology`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, decisionText, contextText }),
+  }).catch(err => {
+    // Silent fail — tagger is background infrastructure, not critical path
+    console.error('[Session] Ontology tagger fire failed:', err)
+  })
 }
 
 export async function GET(req: Request) {
