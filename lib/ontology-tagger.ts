@@ -89,17 +89,80 @@ Your job is to analyse a decision description and extract a precise structural c
 
 CRITICAL: Return ONLY valid JSON. No explanation. No preamble. No markdown. Just the JSON object.
 
-Be precise and literal. Do not infer beyond what the text contains. When uncertain, choose the most conservative option (e.g. 'unknown' over 'misaligned').
+DIMENSION 1 — DECISION TYPE
+Choose the primary type that best describes what is fundamentally happening.
 
-For the Decision Register (instrumental vs constitutive):
-- INSTRUMENTAL: decisions optimising for a measurable outcome (return, salary, efficiency)
-- CONSTITUTIVE: decisions about who the person wants to be, what they value, what kind of life/family/legacy they are building
-- Most decisions are mixed. Assign weights that sum to 1.0.
-- A PE deal with family legacy concerns: instrumental 0.65, constitutive 0.35
-- A career move driven by meaning over money: instrumental 0.30, constitutive 0.70
-- A relocation for aging parents: instrumental 0.20, constitutive 0.80
+commitment: entering a binding agreement WITH another party (investor deal, employment contract, partnership with covenants)
+allocation: distributing a resource (capital, time) between competing uses with no binding external party
+transition: changing a stable personal state — role, city, life stage. The person moves from one identity context to another
+acquisition: obtaining something new — asset, property, company
+renunciation: giving up or exiting something already owned — selling equity, leaving a role, divesting
+governance: deciding who has authority over what in a system the person controls or co-controls
+delegation: handing an ongoing responsibility to another party to manage on your behalf
 
-For examiner_gap_1/2/3: identify the 3 most critical pieces of information NOT present in the decision description that would most change the analysis if known. State each as a specific gap, not a question. Example: "PE firm's parallel portfolio obligations and leverage position" not "What is the PE firm's financial health?"`
+COMMON TYPE ERRORS:
+- Selling founder equity = renunciation primary, commitment secondary. NEVER transition.
+- Accepting a new job = transition primary, commitment secondary.
+- Formalising family business governance = governance. NOT transition.
+- Deploying savings into investments = allocation. NOT acquisition.
+- Handing portfolio to wealth manager = delegation. NOT allocation.
+
+DIMENSION 3 — DEADLINE CREDIBILITY
+Measures whether time pressure is REAL or MANUFACTURED.
+
+HIGH: Medical or biological trajectory (diagnosis, aging parent, progressive condition). Regulatory deadline. Irrevocable external event. Employment start date.
+LOW: Investor or PE firm offer expiry — ALWAYS low. Strategic acquirer deadline — ALWAYS low. Any counterparty-imposed deadline in investment or M&A context. Vendor limited-time offers.
+MEDIUM: Self-framing of narrowing window ("last realistic shot"). Market timing concerns with no contractual basis.
+NONE: No deadline mentioned.
+
+DEADLINE SOURCE:
+- counterparty: set by the other party to the deal
+- external: nature, regulation, biology, irrevocable events
+- self: the decision-maker has framed it as urgent themselves
+- none: no deadline
+
+DIMENSION 8 — DECISION REGISTER (use the full range — do not default to 0.65/0.35)
+instrumental_weight + constitutive_weight must sum exactly to 1.0.
+
+INSTRUMENTAL: optimising for a measurable outcome. The right answer could in principle be calculated with enough data.
+CONSTITUTIVE: choosing who the person wants to be, what kind of life or legacy they are building. Cannot be calculated — requires knowing your values.
+
+CALIBRATION ANCHORS:
+
+0.95 instrumental / 0.05 constitutive
+Pure financial optimisation, no values conflict.
+Example: deploying savings across mutual funds, stocks, and NPS. The wife's nervousness is a stakeholder concern, not a values question for this dimension.
+
+0.80 instrumental / 0.20 constitutive
+Financial decision with one values undercurrent.
+Example: handing portfolio to a wealth manager when the person enjoys managing it themselves — primarily financial, control dimension is minor.
+
+0.65 instrumental / 0.35 constitutive
+Genuinely mixed — financial and personal identity both present.
+Example: CBO role at startup with "last shot" framing — career economics matter AND identity timing narrative matters.
+
+0.50 instrumental / 0.50 constitutive
+Neither dimension clearly dominates.
+Example: formalising family business governance — financial and legal structure AND family trust and values are equally at stake.
+
+0.35 instrumental / 0.65 constitutive
+Primarily constitutive with financial secondary.
+Example: selling a 6-year founder stake where emotional attachment to what was built dominates the framing.
+
+0.20 instrumental / 0.80 constitutive
+Primarily constitutive — values question with financial consequences.
+Example: relocating to care for an aging parent with a progressive illness. The core question is duty, guilt, family obligation. Not optimisable.
+
+0.05 instrumental / 0.95 constitutive
+Pure identity or duty decision with negligible financial component.
+
+EXAMINER GAPS
+Identify the 3 most critical pieces of information NOT in the description that would most change the analysis.
+Be specific — name the exact gap.
+Good: "PE firm's parallel portfolio obligations and current leverage position"
+Bad: "More information about the PE firm"
+Good: "Co-founder's personal financial situation and whether they need liquidity now"
+Bad: "Co-founder's motivations"`
 
 // ── Main tagger function ───────────────────────────────────────
 
@@ -110,8 +173,6 @@ export async function tagDecision(
   const contextBlock = contextText
     ? `\nADDITIONAL CONTEXT:\n${contextText}`
     : ''
-
-  const userMessage = `DECISION TO CLASSIFY:\n${decisionText}${contextBlock}\n\nReturn the ontology JSON now.`
 
   const schema = `{
   "decision_type_primary": "commitment|allocation|transition|acquisition|renunciation|governance|delegation",
@@ -140,28 +201,101 @@ export async function tagDecision(
   "examiner_gap_3": "specific gap description"
 }`
 
-  const fullUserMessage = `${userMessage}\n\nYour output must match this schema exactly:\n${schema}`
+  const userMessage = `DECISION TO CLASSIFY:
+${decisionText}${contextBlock}
 
+Your output must match this schema exactly:
+${schema}
+
+Return ONLY the JSON object.`
+
+  try {
+    const rawTag = await callModel(userMessage)
+    if (!rawTag) return null
+
+    // ── Rule-based post-processing ─────────────────────────────
+    // Catches systematic model failures regardless of which model is used.
+    // These rules encode domain knowledge that models under-apply.
+    const corrected = applyDomainRules(rawTag, decisionText)
+
+    // ── Self-correction pass if register looks anchored ────────
+    // If weights are exactly 0.65/0.35 AND we detect strong constitutive
+    // or strong instrumental signals, force a re-assessment pass.
+    const needsRegisterCorrection =
+      corrected.instrumental_weight === 0.65 &&
+      corrected.constitutive_weight === 0.35 &&
+      hasStrongRegisterSignal(decisionText)
+
+    if (needsRegisterCorrection) {
+      console.log('[OntologyTagger] Register anchor detected — running correction pass')
+      const correctionMsg = `${userMessage}
+
+IMPORTANT CORRECTION REQUIRED:
+Your previous response returned exactly 0.65/0.35 for the decision register.
+This is almost certainly wrong — you have defaulted to a safe middle value.
+
+Re-examine the text for these specific signals:
+
+STRONG CONSTITUTIVE signals (push constitutive_weight toward 0.70–0.90):
+- Mentions of duty, guilt, obligation to family
+- Emotional attachment to what was built ("started 6 years ago", "my father built this")
+- Aging parent, illness, care responsibility
+- Legacy, generational, passing something on
+- Identity language ("who I want to be", "what kind of person")
+
+STRONG INSTRUMENTAL signals (push instrumental_weight toward 0.85–0.95):
+- Pure financial optimisation with no personal identity conflict
+- Multiple options compared by return rate, tax efficiency, XIRR
+- No family, duty, or emotional attachment language
+
+Re-assign the weights honestly. Return the complete JSON again with corrected weights.`
+
+      const recorrected = await callModel(correctionMsg)
+      if (recorrected) {
+        corrected.instrumental_weight = recorrected.instrumental_weight
+        corrected.constitutive_weight = recorrected.constitutive_weight
+        // Keep all other fields from first pass — only register changes
+      }
+    }
+
+    // Normalise weights to sum to 1.0
+    const sum = corrected.instrumental_weight + corrected.constitutive_weight
+    if (Math.abs(sum - 1.0) > 0.02) {
+      const total = sum || 1
+      corrected.instrumental_weight = +((corrected.instrumental_weight / total).toFixed(2))
+      corrected.constitutive_weight = +((corrected.constitutive_weight / total).toFixed(2))
+    }
+
+    return corrected
+  } catch (err) {
+    console.error('[OntologyTagger] tagDecision failed:', err)
+    return null
+  }
+}
+
+// ── Model call (provider-agnostic) ────────────────────────────
+
+async function callModel(userMessage: string): Promise<OntologyTag | null> {
   try {
     let rawText: string
 
     if (PROVIDER === 'deepseek') {
       const response = await deepseek.chat.completions.create({
         model: DEEPSEEK_MODEL,
-        max_tokens: 800,
-        temperature: 0,  // deterministic for structured extraction
+        max_tokens: 900,
+        temperature: 0, // deterministic for structured extraction
         messages: [
           { role: 'system', content: TAGGER_SYSTEM },
-          { role: 'user',   content: fullUserMessage },
+          { role: 'user',   content: userMessage },
         ],
       })
       rawText = response.choices[0]?.message?.content ?? ''
     } else {
       const response = await anthropic.messages.create({
         model: ANTHROPIC_MODEL,
-        max_tokens: 800,
+        max_tokens: 900,
         system: TAGGER_SYSTEM,
-        messages: [{ role: 'user', content: fullUserMessage }],
+        messages: [{ role: 'user', content: userMessage }],
       })
       rawText = response.content
         .filter(b => b.type === 'text')
@@ -169,28 +303,132 @@ export async function tagDecision(
         .join('')
     }
 
-    // Strip markdown fences if model added them
     const clean = rawText
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/g,      '')
+      .replace(/\`\`\`json\s*/gi, '')
+      .replace(/\`\`\`\s*/g, '')
       .trim()
 
-    const parsed = JSON.parse(clean) as OntologyTag
-
-    // Validate register weights sum to ~1.0
-    const sum = (parsed.instrumental_weight ?? 0) + (parsed.constitutive_weight ?? 0)
-    if (Math.abs(sum - 1.0) > 0.05) {
-      // Normalise if off
-      const total = sum || 1
-      parsed.instrumental_weight = +(parsed.instrumental_weight / total).toFixed(2)
-      parsed.constitutive_weight = +(parsed.constitutive_weight / total).toFixed(2)
-    }
-
-    return parsed
+    return JSON.parse(clean) as OntologyTag
   } catch (err) {
-    console.error('[OntologyTagger] Failed to parse response:', err)
+    console.error('[OntologyTagger] callModel failed:', err)
     return null
   }
+}
+
+// ── Rule-based domain corrections ────────────────────────────
+// These rules encode domain knowledge that all current LLMs under-apply.
+// Applied AFTER model output. Model-agnostic safety net.
+
+function applyDomainRules(tag: OntologyTag, text: string): OntologyTag {
+  const t = text.toLowerCase()
+  const result = { ...tag }
+
+  // RULE 1: Investor/PE/strategic acquirer deadlines are ALWAYS low credibility
+  // All current models systematically get this wrong
+  const investorDeadlineKeywords = [
+    'offer expires', 'offer expir', 'expires in', 'valid for',
+    'pe firm', 'private equity', 'strategic investor', 'acquirer',
+    'term sheet', 'loi expires', 'letter of intent'
+  ]
+  const hasInvestorDeadline = investorDeadlineKeywords.some(k => t.includes(k))
+  if (hasInvestorDeadline && tag.deadline_source === 'counterparty') {
+    result.deadline_credibility = 'low'
+  }
+
+  // RULE 2: Medical/biological urgency is ALWAYS high credibility
+  const medicalKeywords = [
+    "parkinson", "alzheimer", "cancer", "diagnosis", "diagnosed",
+    "surgery", "terminal", "dementia", "stroke", "heart", "aging parent",
+    "father is", "mother is", "parent is"
+  ]
+  const hasMedicalUrgency = medicalKeywords.some(k => t.includes(k))
+  if (hasMedicalUrgency) {
+    result.deadline_credibility = 'high'
+    result.deadline_source = 'external'
+    result.has_stated_deadline = true
+  }
+
+  // RULE 3: Selling founder equity is renunciation, not transition
+  const founderSaleKeywords = [
+    'selling my stake', 'sell my stake', 'selling my equity',
+    'sell my equity', 'sell my shares', 'selling my shares',
+    'divest', 'exit my position', 'sell my %', 'sell my position'
+  ]
+  const isFounderSale = founderSaleKeywords.some(k => t.includes(k))
+  if (isFounderSale && tag.decision_type_primary === 'transition') {
+    result.decision_type_primary = 'renunciation'
+    if (!result.decision_type_secondary.includes('commitment')) {
+      // Lock-ins and control rights make it a commitment too
+      const hasLockIn = t.includes('lock-in') || t.includes('lock in') || t.includes('control rights')
+      if (hasLockIn) {
+        result.decision_type_secondary = ['commitment', ...result.decision_type_secondary.filter(s => s !== 'renunciation')]
+      }
+    }
+  }
+
+  // RULE 4: Pure financial optimisation (multiple options with return rates, no identity conflict)
+  // should never have constitutive_weight above 0.20 unless emotional language is present
+  const isPureFinancial = (
+    (t.includes('xirr') || t.includes('returns') || t.includes('mutual fund')) &&
+    !t.includes('father') && !t.includes('mother') && !t.includes('guilt') &&
+    !t.includes('attached') && !t.includes('legacy') && !t.includes('built') &&
+    !t.includes('relocat')
+  )
+  if (isPureFinancial && tag.constitutive_weight > 0.20) {
+    result.constitutive_weight = 0.10
+    result.instrumental_weight = 0.90
+  }
+
+  // RULE 5: Care/duty for aging/ill parent pushes constitutive high
+  const isCareDecision = (
+    medicalKeywords.some(k => t.includes(k)) &&
+    (t.includes('relocat') || t.includes('move back') || t.includes('return') || t.includes('care'))
+  )
+  if (isCareDecision && tag.constitutive_weight < 0.65) {
+    result.constitutive_weight = 0.75
+    result.instrumental_weight = 0.25
+    result.dominant_emotion = 'obligation'
+  }
+
+  // RULE 6: Stakes bearer — if family members are named and materially affected,
+  // stakes_bearer should not be 'self'
+  const namedFamilyAffected = (
+    (t.includes('wife') || t.includes('spouse') || t.includes('husband') ||
+     t.includes('children') || t.includes('son') || t.includes('daughter') ||
+     t.includes('father') || t.includes('mother') || t.includes('co-founder')) &&
+    tag.stakes_bearer === 'self'
+  )
+  if (namedFamilyAffected) {
+    result.stakes_bearer = 'family'
+  }
+
+  return result
+}
+
+// ── Detect strong register signal (breaks the 0.65/0.35 anchor) ──
+
+function hasStrongRegisterSignal(text: string): boolean {
+  const t = text.toLowerCase()
+
+  const strongConstitutive = [
+    'guilt', 'duty', 'obligation', 'legacy', 'emotionally attached',
+    'feel attached', 'father built', 'mother built', 'built this',
+    'parkinson', 'alzheimer', 'diagnosed', 'aging parent', 'care for',
+    'relocat', 'move back', 'last realistic shot', 'who i am',
+    'what i stand for'
+  ]
+
+  const strongInstrumental = [
+    'xirr', 'return on', 'tax efficiency', 'expense ratio',
+    'portfolio allocation', 'asset allocation', 'diversif'
+  ]
+
+  const hasConstitutive = strongConstitutive.some(k => t.includes(k))
+  const hasInstrumental = strongInstrumental.some(k => t.includes(k))
+
+  // Signal is strong if EITHER a clear constitutive OR clear instrumental
+  // marker is present — meaning the 0.65/0.35 middle is likely wrong
+  return hasConstitutive || hasInstrumental
 }
 
 // ── Validate a tag (basic sanity check) ───────────────────────
