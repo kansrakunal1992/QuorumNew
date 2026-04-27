@@ -13,6 +13,47 @@ interface Props {
   session: Session
 }
 
+// ── Gap → Persona mapping ────────────────────────────────────────────────
+// Maps examiner gap text to the 1 persona best positioned to update on it
+function mapGapToPersona(gap: string): string | null {
+  const g = gap.toLowerCase()
+  // Stakeholder/relational gaps → Stakeholder Mirror
+  if (
+    g.includes('stakeholder') || g.includes('spouse') || g.includes('co-founder') ||
+    g.includes('sister') || g.includes('brother') || g.includes('wife') ||
+    g.includes('children') || g.includes('father') || g.includes('mother') ||
+    g.includes('son') || g.includes('daughter') || g.includes('family') ||
+    g.includes('succession') || g.includes('motivation') || g.includes('personal') ||
+    g.includes('relationship') || g.includes('partner')
+  ) return 'stakeholder_mirror'
+  // Financial/execution/counterparty gaps → Risk Architect
+  if (
+    g.includes('financial') || g.includes('health') || g.includes('track record') ||
+    g.includes('cash') || g.includes('legal') || g.includes('contract') ||
+    g.includes('exit') || g.includes('runway') || g.includes('execution') ||
+    g.includes('counterparty') || g.includes('investor') || g.includes('vendor') ||
+    g.includes('terms') || g.includes('fee') || g.includes('penalty') ||
+    g.includes('valuation') || g.includes('tax')
+  ) return 'risk_architect'
+  // Market/pattern/competitive gaps → Pattern Analyst
+  if (
+    g.includes('market') || g.includes('competitive') || g.includes('landscape') ||
+    g.includes('demand') || g.includes('industry') || g.includes('precedent')
+  ) return 'pattern_analyst'
+  return null
+}
+
+// Build examiner context string for a persona, from the responses that map to it
+function buildExaminerContextForPersona(
+  personaKey: string,
+  responses: Array<{ question_text: string; response_text: string | null; gap: string }>
+): string | undefined {
+  const relevant = responses.filter(r => mapGapToPersona(r.gap) === personaKey && r.response_text?.trim())
+  if (relevant.length === 0) return undefined
+  const lines = relevant.map(r => `Q: ${r.question_text}\nA: ${r.response_text}`).join('\n\n')
+  return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
+}
+
 export default function SessionView({ session: initialSession }: Props) {
   const router = useRouter()
   const [saving,  setSaving]  = useState(false)
@@ -42,9 +83,10 @@ export default function SessionView({ session: initialSession }: Props) {
   const [sessionKey, setSessionKey] = useState(0)
   const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
 
-  // Sprint 3: synthesis is gated on examiner completion
-  const [examinerReady, setExaminerReady] = useState(false)
-  const [synthesisVersion, setSynthesisVersion] = useState(0)
+  // Sprint 3: synthesis gated on examiner + examiner re-run context per persona
+  const [examinerReady,           setExaminerReady]           = useState(false)
+  const [synthesisVersion,        setSynthesisVersion]        = useState(0)
+  const [examinerContextByPersona, setExaminerContextByPersona] = useState<Record<string, string>>({})
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
     setCompletedResponses(prev => {
@@ -56,9 +98,30 @@ export default function SessionView({ session: initialSession }: Props) {
 
   const allPersonasDone = Object.keys(completedResponses).length >= PERSONA_ORDER.length
 
-  const handleExaminerComplete = useCallback(() => {
-    setExaminerReady(true)
-  }, [])
+  // Receives examiner answers, maps them to personas, triggers selective re-runs
+  const handleExaminerComplete = useCallback(
+    (responses: Array<{ question_text: string; response_text: string | null; gap: string }>) => {
+      setExaminerReady(true)
+      if (!responses.length) return
+
+      // Build context for up to 2 unique personas
+      const seen = new Set<string>()
+      const contextMap: Record<string, string> = {}
+      for (const r of responses) {
+        if (!r.response_text?.trim()) continue
+        const pk = mapGapToPersona(r.gap)
+        if (pk && !seen.has(pk) && seen.size < 2) seen.add(pk)
+      }
+      for (const pk of seen) {
+        const ctx = buildExaminerContextForPersona(pk, responses)
+        if (ctx) contextMap[pk] = ctx
+      }
+      if (Object.keys(contextMap).length > 0) {
+        setExaminerContextByPersona(contextMap)
+      }
+    },
+    []
+  )
 
   const [drawerOpen,     setDrawerOpen]     = useState(false)
   const [reDecision,     setReDecision]     = useState(initialSession.decision_text)
@@ -115,6 +178,7 @@ export default function SessionView({ session: initialSession }: Props) {
       setSessionKey(k => k + 1)
       setCompletedResponses({})
       setExaminerReady(false)
+      setExaminerContextByPersona({})
       setRegisterMode(reRegisterMode)
       setSynthesisVersion(0)
       setSaved(false)
@@ -180,23 +244,24 @@ export default function SessionView({ session: initialSession }: Props) {
         </p>
       </div>
 
-      {/* ── Grid: 6 persona panels → Examiner → Synthesis ───── */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="max-w-7xl mx-auto">
 
-        {/* 6 persona panels */}
-        {PERSONA_ORDER.map((key) => (
-          <PersonaPanel
-            key={`${key}-${sessionKey}`}
-            persona={PERSONAS[key]}
+        {/* ── 1. Council Synthesis — pinned at top, always visible ── */}
+        <div style={{ marginBottom: 16 }}>
+          <SynthesisCard
+            key={`synthesis-${sessionKey}`}
             sessionId={session.id}
             decisionText={session.decision_text}
             contextText={session.context_text ?? undefined}
+            personaResponses={completedResponses}
+            totalPersonas={PERSONA_ORDER.length}
+            version={synthesisVersion}
             registerMode={registerMode}
-            onComplete={handlePersonaComplete}
+            examinerReady={examinerReady}
           />
-        ))}
+        </div>
 
-        {/* Examiner Phase 1 — appears once all 6 personas are done, gates synthesis */}
+        {/* ── 2. Examiner Phase 1 — appears once all 6 personas done, gates synthesis ── */}
         <ExaminerPanel
           key={`examiner-${sessionKey}`}
           sessionId={session.id}
@@ -204,18 +269,21 @@ export default function SessionView({ session: initialSession }: Props) {
           onComplete={handleExaminerComplete}
         />
 
-        {/* Synthesis — spans all 3 columns, fires only after Examiner completes */}
-        <SynthesisCard
-          key={`synthesis-${sessionKey}`}
-          sessionId={session.id}
-          decisionText={session.decision_text}
-          contextText={session.context_text ?? undefined}
-          personaResponses={completedResponses}
-          totalPersonas={PERSONA_ORDER.length}
-          version={synthesisVersion}
-          registerMode={registerMode}
-          examinerReady={examinerReady}
-        />
+        {/* ── 3. Six persona panels in grid ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" style={{ marginTop: 16 }}>
+          {PERSONA_ORDER.map((key) => (
+            <PersonaPanel
+              key={`${key}-${sessionKey}`}
+              persona={PERSONAS[key]}
+              sessionId={session.id}
+              decisionText={session.decision_text}
+              contextText={session.context_text ?? undefined}
+              registerMode={registerMode}
+              onComplete={handlePersonaComplete}
+              examinerContext={examinerContextByPersona[key]}
+            />
+          ))}
+        </div>
 
       </div>
 

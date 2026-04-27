@@ -56,11 +56,13 @@ interface Props {
   contextText?: string
   registerMode?: 'analytical' | 'clarification'
   onComplete?: (personaKey: string, content: string) => void
+  /** When set, triggers a supplemental stream showing updated analysis with examiner answers */
+  examinerContext?: string
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext }: Props) {
   const [response, setResponse]           = useState('')
   const [panelState, setPanelState]       = useState<PanelState>('idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -69,10 +71,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
 
-  // Refs for values needed inside callbacks — avoids stale closure bugs
-  // and prevents streamResponse from changing identity when these update
-  const responseRef   = useRef('')           // initial response text
-  const exchangesRef  = useRef(exchanges)    // latest exchanges
+  // Examiner update — supplemental stream, does not overwrite original
+  const [examinerUpdate,    setExaminerUpdate]    = useState('')
+  const [examinerUpdateState, setExaminerUpdateState] = useState<'idle' | 'streaming' | 'done'>('idle')
+
+  const responseRef   = useRef('')
+  const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
 
   useEffect(() => { exchangesRef.current  = exchanges  }, [exchanges])
@@ -81,8 +85,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
   const icon = ICONS[persona.key]
 
-  // Stable callback — no array deps that change frequently
-  // Reads exchanges/onComplete via refs to avoid re-creating the function
   const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
     setPanelState('streaming')
     if (isFirst) setResponse('')
@@ -99,7 +101,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         return
       }
 
-      const reader  = res.body.getReader()
+      const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let acc = ''
 
@@ -107,45 +109,95 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         const { done, value } = await reader.read()
         if (done) break
         acc += decoder.decode(value, { stream: true })
-        // Only update visible response for the initial load — pushback adds via exchanges
-        if (isFirst) setResponse(acc)
+
+        if (isFirst) {
+          setResponse(acc)
+          responseRef.current = acc
+        }
       }
 
+      setPanelState('done')
+
       if (isFirst) {
-        // Store initial response and notify parent
-        responseRef.current = acc
         onCompleteRef.current?.(persona.key, acc)
       } else {
-        // Pushback completed — append exchange, keep original response untouched
-        const userText = msgs[msgs.length - 1].content
+        const userText = msgs[msgs.length - 1]?.content ?? ''
         const newExchanges = [...exchangesRef.current, { user: userText, reply: acc }]
         setExchanges(newExchanges)
         setIsPushingBack(false)
-
-        // Build full content (original + all exchanges) for synthesis recalibration
-        const fullContent = [
-          responseRef.current,
-          ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
-        ].join('\n\n')
+        const fullContent = [responseRef.current, ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)].join('\n\n')
         onCompleteRef.current?.(persona.key, fullContent)
       }
-      setPanelState('done')
     } catch {
       setPanelState('error')
       setResponse('Connection error.')
     }
-  }, [sessionId, persona.key, decisionText, contextText])
-  // exchanges & onComplete intentionally omitted — accessed via refs above
+  }, [sessionId, persona.key, decisionText, contextText, registerMode])
 
-  // Run initial analysis exactly once on mount
-  // useEffect only re-fires if streamResponse identity changes (which now only happens
-  // if session/persona/decision/context changes — i.e. a full remount scenario)
   useEffect(() => { streamResponse([], true) }, [streamResponse])
+
+  // ── Examiner supplemental update ────────────────────────────────────────
+  // Fires when examinerContext is set (non-empty) after the initial analysis is done
+  const examinerContextRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!examinerContext || examinerContext === examinerContextRef.current) return
+    examinerContextRef.current = examinerContext
+    // Only fire if we have the original response to build on
+    if (!responseRef.current) return
+
+    const runExaminerUpdate = async () => {
+      setExaminerUpdateState('streaming')
+      setExaminerUpdate('')
+      try {
+        const examinerMessages = [
+          { role: 'assistant' as const, content: responseRef.current },
+          { role: 'user' as const, content: examinerContext },
+        ]
+        const res = await fetch('/api/persona', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            personaKey: persona.key,
+            messages: examinerMessages,
+            decisionText,
+            contextText,
+            registerMode: registerMode ?? 'analytical',
+          }),
+        })
+        if (!res.ok || !res.body) { setExaminerUpdateState('done'); return }
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let acc = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          acc += decoder.decode(value, { stream: true })
+          setExaminerUpdate(acc)
+        }
+        setExaminerUpdateState('done')
+        // Notify synthesis of the updated content
+        if (acc) {
+          const fullContent = [responseRef.current, `[Updated after Examiner answers]\n${acc}`,
+            ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
+          ].join('\n\n')
+          onCompleteRef.current?.(persona.key, fullContent)
+        }
+      } catch {
+        setExaminerUpdateState('done')
+      }
+    }
+
+    runExaminerUpdate()
+  }, [examinerContext, sessionId, persona.key, decisionText, contextText, registerMode])
 
   const handlePushback = async () => {
     if (!pushback.trim()) return
-    const userMsg: Message = { persona: persona.key, role: 'user', content: pushback.trim() }
-    const updated = [...messages, userMsg]
+    const updated: Message[] = [
+      ...messages,
+      { id: Date.now().toString(), session_id: sessionId, persona: persona.key, role: 'user', content: pushback, created_at: new Date().toISOString() },
+    ]
     setMessages(updated)
     setPushback('')
     setShowPushback(false)
@@ -158,6 +210,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
         Reading
+      </span>
+    )
+    if (examinerUpdateState === 'streaming') return (
+      <span style={{ fontSize: 11, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+        Updating
       </span>
     )
     if (panelState === 'done') return <span style={{ fontSize: 11, color: '#4ade80' }}>✓</span>
@@ -182,15 +240,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 340 }}>
-        {/* Original response — never mutated after initial load */}
+      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
+        {/* Original response — never mutated */}
         {response && (
           <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>
             {response}
           </p>
         )}
 
-        {/* Pushback exchanges appended below */}
+        {/* Pushback exchanges */}
         {exchanges.map((ex, i) => (
           <div key={i} style={{ marginTop: 18 }}>
             <div style={{ borderRadius: 8, padding: '8px 12px', background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', marginBottom: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -211,6 +269,21 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </p>
         )}
 
+        {/* Examiner update — shown below original, never overwrites */}
+        {(examinerUpdate || examinerUpdateState === 'streaming') && (
+          <div style={{ marginTop: 16, borderRadius: 8, border: '1px solid rgba(96,165,250,0.25)', background: 'rgba(96,165,250,0.06)', padding: '10px 14px' }}>
+            <p style={{ fontSize: 10.5, color: '#60a5fa', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <polyline points="1 4 1 10 7 10"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/>
+              </svg>
+              Updated with your answers
+            </p>
+            <p className={`persona-response ${examinerUpdateState === 'streaming' ? 'cursor' : ''}`} style={{ fontSize: 13 }}>
+              {examinerUpdate}
+            </p>
+          </div>
+        )}
+
         {panelState === 'idle' && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 50 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--border-mid)', animation: 'blink 1.2s ease-in-out infinite' }} />
@@ -218,30 +291,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
       </div>
 
-      {/* Pushback footer — always visible, gold-filled background to ensure discoverability */}
-      {panelState === 'done' && !isPushingBack && (
+      {/* Pushback footer */}
+      {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && (
         <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border-dim)' }}>
           {!showPushback ? (
             <button
               title="Disagree with this analysis, add new information, or ask a follow-up"
               onClick={() => setShowPushback(true)}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                width: '100%',
-                background: 'rgba(201,168,76,0.1)',
-                border: '1px solid var(--gold-dim)',
-                borderRadius: 8,
-                padding: '9px 14px',
-                fontSize: 12.5,
-                fontWeight: 600,
-                color: 'var(--gold)',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                fontFamily: 'inherit',
-                letterSpacing: '0.02em',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                width: '100%', background: 'rgba(201,168,76,0.1)', border: '1px solid var(--gold-dim)',
+                borderRadius: 8, padding: '9px 14px', fontSize: 12.5, fontWeight: 600,
+                color: 'var(--gold)', cursor: 'pointer', transition: 'all 0.2s',
+                fontFamily: 'inherit', letterSpacing: '0.02em',
               }}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.18)'

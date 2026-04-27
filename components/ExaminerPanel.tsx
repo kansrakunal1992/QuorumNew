@@ -11,7 +11,7 @@ interface ExaminerQuestion {
 interface Props {
   sessionId: string
   visible: boolean                           // true once all 6 personas are done
-  onComplete: () => void                    // tells SessionView synthesis can fire
+  onComplete: (responses: Array<{question_text: string; response_text: string | null; gap: string}>) => void                    // tells SessionView synthesis can fire
 }
 
 type FetchStatus = 'idle' | 'loading' | 'ready' | 'no_gaps' | 'retry' | 'error'
@@ -87,8 +87,8 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         body:    JSON.stringify({ sessionId, skipped: true }),
       })
     } catch { /* non-blocking */ }
-    if (!silent) onComplete()
-    else onComplete()  // always unblock synthesis
+    if (!silent) onComplete([])
+    else onComplete([])  // always unblock synthesis
   }
 
   const handleSubmit = async () => {
@@ -107,7 +107,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
       })
     } catch { /* non-blocking */ }
     setSubmitStatus('done')
-    onComplete()
+    onComplete(responses.map(r => ({ question_text: r.question_text, response_text: r.response_text, gap: r.unknown_unknown_gap })))
   }
 
   // Don't render while hidden or already resolved without UI
