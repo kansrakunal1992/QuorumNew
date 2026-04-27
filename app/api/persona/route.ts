@@ -12,6 +12,7 @@ export async function POST(req: Request) {
       decisionText,
       contextText,
       rawMessages,
+      registerMode,
     }: {
       sessionId: string
       personaKey: PersonaKey
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
       decisionText: string
       contextText?: string
       rawMessages?: boolean
+      registerMode?: 'analytical' | 'clarification'
     } = await req.json()
 
     const persona = PERSONAS[personaKey]
