@@ -51,6 +51,7 @@ export default function Home() {
   const [loading,      setLoading]       = useState(false)
   const [showContext,  setShowContext]   = useState(false)
   const [error,        setError]         = useState('')
+  const [registerMode, setRegisterMode]  = useState<'analytical'|'clarification'>('analytical')
 
   // Past sessions state
   const [sessions,     setSessions]     = useState<SessionSummary[]>([])
@@ -85,7 +86,7 @@ export default function Home() {
       const res = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision_text: decision.trim(), context_text: context.trim() || null }),
+        body: JSON.stringify({ decision_text: decision.trim(), context_text: context.trim() || null, register_mode: registerMode }),
       })
       if (!res.ok) throw new Error()
       const { id } = await res.json()
@@ -166,7 +167,58 @@ export default function Home() {
             )}
           </div>
 
-          {error && <p style={{ marginTop: 12, fontSize: 13, color: '#e05050' }}>{error}</p>}
+          {/* ── Examiner Phase 0 — Register selector ──────────── */}
+        <div style={{ marginTop: 18 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 10, letterSpacing: '0.04em' }}>
+            What are you looking for from the Council?
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setRegisterMode('analytical')}
+              style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: `1px solid ${registerMode === 'analytical' ? 'var(--gold)' : 'var(--border-dim)'}`,
+                background: registerMode === 'analytical' ? 'rgba(201,168,76,0.1)' : 'transparent',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'all 0.15s',
+              }}
+            >
+              <p style={{ fontSize: 13, fontWeight: 600, color: registerMode === 'analytical' ? 'var(--gold)' : 'var(--text-2)', marginBottom: 3 }}>
+                ⚔ Challenge my thinking
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
+                Stress-test the decision. Find what I am missing.
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegisterMode('clarification')}
+              style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: `1px solid ${registerMode === 'clarification' ? '#4ade80' : 'var(--border-dim)'}`,
+                background: registerMode === 'clarification' ? 'rgba(74,222,128,0.08)' : 'transparent',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'all 0.15s',
+              }}
+            >
+              <p style={{ fontSize: 13, fontWeight: 600, color: registerMode === 'clarification' ? '#4ade80' : 'var(--text-2)', marginBottom: 3 }}>
+                🪞 Help me understand what I want
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
+                Values, identity, what matters most here.
+              </p>
+            </button>
+          </div>
+        </div>
+
+        {error && <p style={{ marginTop: 12, fontSize: 13, color: '#e05050' }}>{error}</p>}
 
           <button
             className="btn-primary"

@@ -24,6 +24,8 @@ export interface Message {
   content: string
 }
 
+export type RegisterMode = 'analytical' | 'clarification'
+
 export interface Session {
   id: string
   user_id?: string
@@ -31,6 +33,7 @@ export interface Session {
   decision_text: string
   context_text?: string
   status: 'active' | 'completed'
+  register_mode?: RegisterMode
 }
 
 export interface DecisionRecord {

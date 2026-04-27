@@ -83,85 +83,120 @@ export interface OntologyTag {
 
 // ── System prompt for the tagger ──────────────────────────────
 
-const TAGGER_SYSTEM = `You are a decision ontology classifier for Quorum, a private decision intelligence system.
+const TAGGER_SYSTEM = `You are an expert decision ontology classifier for Quorum, a private decision intelligence system.
 
-Your job is to analyse a decision description and extract a precise structural classification across 9 dimensions. This classification is used to retrieve structurally similar past decisions and weight advisory personas appropriately.
+Classify the decision across 9 dimensions. Return ONLY valid JSON — no explanation, no markdown, no preamble.
 
-CRITICAL: Return ONLY valid JSON. No explanation. No preamble. No markdown. Just the JSON object.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIMENSION 1 — DECISION TYPE (reason about the core action, not the surface description)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ask: what is the person fundamentally doing?
 
-DIMENSION 1 — DECISION TYPE
-Choose the primary type that best describes what is fundamentally happening.
+commitment   → binding themselves to an ongoing relationship or agreement with another party
+               (investor deal, employment contract, partnership with terms)
+allocation   → choosing how to distribute a resource between uses where no binding external party exists
+               (which fund to invest in, how to split a budget)
+transition   → moving from one stable personal state to another
+               (changing city, role, life phase — the self is what changes)
+acquisition  → obtaining a specific new asset, property, or company
+               (buying a flat, acquiring a business unit)
+renunciation → giving up or permanently exiting something currently held
+               (selling equity stake, leaving a position, divesting)
+governance   → deciding who has authority over what in a shared system
+               (board structure, succession of control, shareholder agreements)
+delegation   → handing an ongoing process to another party to manage
+               (outsourcing portfolio management, hiring a CEO to run operations)
 
-commitment: entering a binding agreement WITH another party (investor deal, employment contract, partnership with covenants)
-allocation: distributing a resource (capital, time) between competing uses with no binding external party
-transition: changing a stable personal state — role, city, life stage. The person moves from one identity context to another
-acquisition: obtaining something new — asset, property, company
-renunciation: giving up or exiting something already owned — selling equity, leaving a role, divesting
-governance: deciding who has authority over what in a system the person controls or co-controls
-delegation: handing an ongoing responsibility to another party to manage on your behalf
+REASONING CHAIN FOR TYPE:
+Before choosing, ask three questions:
+1. Is there a binding agreement with an external party? → likely commitment or renunciation
+2. Is the person's own identity/role/location the thing that changes? → likely transition
+3. Is the person choosing between uses of a resource they already hold? → likely allocation
+4. Is the person giving up something they currently own? → likely renunciation
+5. Is a specific asset being obtained? → likely acquisition
 
-COMMON TYPE ERRORS:
-- Selling founder equity = renunciation primary, commitment secondary. NEVER transition.
-- Accepting a new job = transition primary, commitment secondary.
-- Formalising family business governance = governance. NOT transition.
-- Deploying savings into investments = allocation. NOT acquisition.
-- Handing portfolio to wealth manager = delegation. NOT allocation.
+Secondary types: most decisions have 1–2. A job acceptance is transition (primary) + commitment (secondary). A founder equity sale is renunciation (primary) + commitment (secondary, if lock-in exists).
 
-DIMENSION 3 — DEADLINE CREDIBILITY
-Measures whether time pressure is REAL or MANUFACTURED.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIMENSION 3 — DEADLINE CREDIBILITY (reason about who controls the deadline and whether it is real)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ask: if the deadline passes, does the opportunity actually disappear — or does the other party still need the deal?
 
-HIGH: Medical or biological trajectory (diagnosis, aging parent, progressive condition). Regulatory deadline. Irrevocable external event. Employment start date.
-LOW: Investor or PE firm offer expiry — ALWAYS low. Strategic acquirer deadline — ALWAYS low. Any counterparty-imposed deadline in investment or M&A context. Vendor limited-time offers.
-MEDIUM: Self-framing of narrowing window ("last realistic shot"). Market timing concerns with no contractual basis.
-NONE: No deadline mentioned.
+HIGH: The deadline is controlled by nature, biology, or irrevocable external events.
+      Medical progression (Parkinson's, cancer, cognitive decline), regulatory filing dates,
+      auction dates, school/university registration deadlines set by institutions.
+      These cannot be negotiated. They pass and the window closes.
 
-DEADLINE SOURCE:
-- counterparty: set by the other party to the deal
-- external: nature, regulation, biology, irrevocable events
-- self: the decision-maker has framed it as urgent themselves
-- none: no deadline
+MEDIUM: The deadline is self-created or partially real.
+        "This may be my last realistic shot" — the window is genuinely narrowing but
+        the timing is driven by the person's own narrative, not an external constraint.
+        Market timing concerns without a contractual basis.
 
-DIMENSION 8 — DECISION REGISTER (use the full range — do not default to 0.65/0.35)
-instrumental_weight + constitutive_weight must sum exactly to 1.0.
+LOW: The deadline is counterparty-created as a tactical pressure mechanism.
+     Investment offers, PE term sheets, strategic acquirer LOIs, vendor promotions,
+     wealth manager pitches — these parties WANT the deal. If you call their bluff,
+     90% of the time the deadline extends. Treat all counterparty-imposed investment
+     and M&A deadlines as low credibility unless there is a specific contractual penalty
+     for missing the date.
 
-INSTRUMENTAL: optimising for a measurable outcome. The right answer could in principle be calculated with enough data.
-CONSTITUTIVE: choosing who the person wants to be, what kind of life or legacy they are building. Cannot be calculated — requires knowing your values.
+NONE: No deadline exists in the description.
 
-CALIBRATION ANCHORS:
+IMPORTANT: A healthy parent expressing a wish to step back or transfer while they can
+still guide the process is NOT a deadline. It is a preference. Set credibility: none.
 
-0.95 instrumental / 0.05 constitutive
-Pure financial optimisation, no values conflict.
-Example: deploying savings across mutual funds, stocks, and NPS. The wife's nervousness is a stakeholder concern, not a values question for this dimension.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIMENSION 8 — DECISION REGISTER (the most important dimension — reason carefully)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The weights must sum to 1.0. Use the full range 0.05–0.95. Do not default to 0.65/0.35.
 
-0.80 instrumental / 0.20 constitutive
-Financial decision with one values undercurrent.
-Example: handing portfolio to a wealth manager when the person enjoys managing it themselves — primarily financial, control dimension is minor.
+INSTRUMENTAL: The "right answer" could in principle be calculated if you had enough data.
+              The core question is about outcomes — return, salary, efficiency, market share.
 
-0.65 instrumental / 0.35 constitutive
-Genuinely mixed — financial and personal identity both present.
-Example: CBO role at startup with "last shot" framing — career economics matter AND identity timing narrative matters.
+CONSTITUTIVE: The "right answer" cannot be calculated. The core question is about identity —
+              who the person wants to be, what kind of family or legacy they are building,
+              what they stand for. Values questions, duty questions, identity questions.
 
-0.50 instrumental / 0.50 constitutive
-Neither dimension clearly dominates.
-Example: formalising family business governance — financial and legal structure AND family trust and values are equally at stake.
+THE CRITICAL DISTINCTION:
+The presence of large money does NOT make a decision instrumental.
+The presence of emotion does NOT make a decision constitutive.
+Ask: is the core question "what will produce the best outcome?" (instrumental)
+  or "what kind of person / family / builder do I want to be?" (constitutive)
 
-0.35 instrumental / 0.65 constitutive
-Primarily constitutive with financial secondary.
-Example: selling a 6-year founder stake where emotional attachment to what was built dominates the framing.
+REASONING CHAIN FOR REGISTER:
+Step 1: What is the person actually asking? Underline the real question in the text.
+Step 2: Could a spreadsheet answer it? → more instrumental
+Step 3: Does the answer require knowing the person's values? → more constitutive
+Step 4: Is identity, legacy, duty, or guilt the emotional core — not just texture? → push constitutive
 
-0.20 instrumental / 0.80 constitutive
-Primarily constitutive — values question with financial consequences.
-Example: relocating to care for an aging parent with a progressive illness. The core question is duty, guilt, family obligation. Not optimisable.
+REFERENCE SCALE:
+0.95i / 0.05c — Pure financial optimisation. Multiple options compared by return rates, tax, XIRR.
+                No family tension, no identity language. "Where should I put ₹50L?"
+0.80i / 0.20c — Financial decision with a control or enjoyment undercurrent.
+                Wealth manager delegation where the person enjoys managing it.
+0.65i / 0.35c — Genuinely mixed. Financial logic AND personal identity both matter.
+                Startup CBO role: economics matter AND "last realistic shot" identity narrative.
+0.50i / 0.50c — Neither dominates. Family business governance: legal structure AND family trust values.
+0.35i / 0.65c — Primarily constitutive. Financial consequences real but identity is the core.
+                Founder selling a 6-year-old company they built — the attachment is the real question.
+0.20i / 0.80c — Primarily constitutive. Relocating to care for a parent with a progressive illness.
+                Income impact exists but guilt, duty, and family obligation are the core.
+0.05i / 0.95c — Pure identity/values decision. Negligible financial component.
 
-0.05 instrumental / 0.95 constitutive
-Pure identity or duty decision with negligible financial component.
+WATCH FOR INFLATION: Guilt language, health mentions, and emotional attachment push constitutive
+up in models. Ask whether these are the CORE of the decision or just texture around a financial one.
+A founder buyout at ₹4 crore where the person needs the capital to fund their next 3 years is
+primarily instrumental even if guilt is present.
 
-EXAMINER GAPS
-Identify the 3 most critical pieces of information NOT in the description that would most change the analysis.
-Be specific — name the exact gap.
-Good: "PE firm's parallel portfolio obligations and current leverage position"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXAMINER GAPS — be specific, not generic
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Identify the 3 most critical pieces of information NOT in the description.
+Name the exact gap — not a category.
+
+Good: "PE firm's parallel portfolio obligations and whether they have a fund deadline forcing this deal"
 Bad: "More information about the PE firm"
-Good: "Co-founder's personal financial situation and whether they need liquidity now"
+
+Good: "Co-founder's personal financial situation and whether they need liquidity now for personal reasons"
 Bad: "Co-founder's motivations"`
 
 // ── Main tagger function ───────────────────────────────────────
@@ -218,54 +253,6 @@ Return ONLY the JSON object.`
     // These rules encode domain knowledge that models under-apply.
     const corrected = applyDomainRules(rawTag, decisionText)
 
-    // ── Self-correction pass if register looks anchored ────────
-    // If weights are exactly 0.65/0.35 AND we detect strong constitutive
-    // or strong instrumental signals, force a re-assessment pass.
-    const needsRegisterCorrection =
-      corrected.instrumental_weight === 0.65 &&
-      corrected.constitutive_weight === 0.35 &&
-      hasStrongRegisterSignal(decisionText)
-
-    if (needsRegisterCorrection) {
-      console.log('[OntologyTagger] Register anchor detected — running correction pass')
-      const correctionMsg = `${userMessage}
-
-IMPORTANT CORRECTION REQUIRED:
-Your previous response returned exactly 0.65/0.35 for the decision register.
-This is almost certainly wrong — you have defaulted to a safe middle value.
-
-Re-examine the text for these specific signals:
-
-STRONG CONSTITUTIVE signals (push constitutive_weight toward 0.70–0.90):
-- Mentions of duty, guilt, obligation to family
-- Emotional attachment to what was built ("started 6 years ago", "my father built this")
-- Aging parent, illness, care responsibility
-- Legacy, generational, passing something on
-- Identity language ("who I want to be", "what kind of person")
-
-STRONG INSTRUMENTAL signals (push instrumental_weight toward 0.85–0.95):
-- Pure financial optimisation with no personal identity conflict
-- Multiple options compared by return rate, tax efficiency, XIRR
-- No family, duty, or emotional attachment language
-
-Re-assign the weights honestly. Return the complete JSON again with corrected weights.`
-
-      const recorrected = await callModel(correctionMsg)
-      if (recorrected) {
-        corrected.instrumental_weight = recorrected.instrumental_weight
-        corrected.constitutive_weight = recorrected.constitutive_weight
-        // Keep all other fields from first pass — only register changes
-      }
-    }
-
-    // Normalise weights to sum to 1.0
-    const sum = corrected.instrumental_weight + corrected.constitutive_weight
-    if (Math.abs(sum - 1.0) > 0.02) {
-      const total = sum || 1
-      corrected.instrumental_weight = +((corrected.instrumental_weight / total).toFixed(2))
-      corrected.constitutive_weight = +((corrected.constitutive_weight / total).toFixed(2))
-    }
-
     return corrected
   } catch (err) {
     console.error('[OntologyTagger] tagDecision failed:', err)
@@ -315,123 +302,45 @@ async function callModel(userMessage: string): Promise<OntologyTag | null> {
   }
 }
 
-// ── Rule-based domain corrections ────────────────────────────
-// These rules encode domain knowledge that all current LLMs under-apply.
-// Applied AFTER model output. Model-agnostic safety net.
+// ── Factual domain corrections ────────────────────────────────
+// These are the ONLY two rules retained. Both encode facts,
+// not inferences — they are always true regardless of context.
+// All other classification is handled by the improved prompt.
 
 function applyDomainRules(tag: OntologyTag, text: string): OntologyTag {
   const t = text.toLowerCase()
   const result = { ...tag }
 
-  // RULE 1: Investor/PE/strategic acquirer deadlines are ALWAYS low credibility
-  // All current models systematically get this wrong
-  const investorDeadlineKeywords = [
-    'offer expires', 'offer expir', 'expires in', 'valid for',
+  // FACT 1: Counterparty-imposed investment/M&A deadlines are always low credibility.
+  // PE firms, strategic investors, and acquirers use expiring offers as pressure.
+  // They want the deal — the deadline is a tactic, not a constraint.
+  const counterpartyInvestmentKeywords = [
     'pe firm', 'private equity', 'strategic investor', 'acquirer',
-    'term sheet', 'loi expires', 'letter of intent'
+    'term sheet', 'loi expires', 'offer expires', 'offer expir',
+    'investor offer', 'the offer', 'valid for', 'expires in'
   ]
-  const hasInvestorDeadline = investorDeadlineKeywords.some(k => t.includes(k))
+  const hasInvestorDeadline = counterpartyInvestmentKeywords.some(k => t.includes(k))
   if (hasInvestorDeadline && tag.deadline_source === 'counterparty') {
     result.deadline_credibility = 'low'
   }
 
-  // RULE 2: Medical/biological urgency is ALWAYS high credibility
+  // FACT 2: Medical/biological progression is always high credibility urgency.
+  // These timelines are set by biology, not tactics.
   const medicalKeywords = [
     "parkinson", "alzheimer", "cancer", "diagnosis", "diagnosed",
-    "surgery", "terminal", "dementia", "stroke", "heart", "aging parent",
-    "father is", "mother is", "parent is"
+    "surgery", "terminal", "dementia", "stroke", "progressive",
+    "prognosis", "unwell", "ill and", "heart condition"
   ]
   const hasMedicalUrgency = medicalKeywords.some(k => t.includes(k))
-  if (hasMedicalUrgency) {
+  if (hasMedicalUrgency && tag.deadline_source !== 'none') {
     result.deadline_credibility = 'high'
     result.deadline_source = 'external'
     result.has_stated_deadline = true
   }
 
-  // RULE 3: Selling founder equity is renunciation, not transition
-  const founderSaleKeywords = [
-    'selling my stake', 'sell my stake', 'selling my equity',
-    'sell my equity', 'sell my shares', 'selling my shares',
-    'divest', 'exit my position', 'sell my %', 'sell my position'
-  ]
-  const isFounderSale = founderSaleKeywords.some(k => t.includes(k))
-  if (isFounderSale && tag.decision_type_primary === 'transition') {
-    result.decision_type_primary = 'renunciation'
-    if (!result.decision_type_secondary.includes('commitment')) {
-      // Lock-ins and control rights make it a commitment too
-      const hasLockIn = t.includes('lock-in') || t.includes('lock in') || t.includes('control rights')
-      if (hasLockIn) {
-        result.decision_type_secondary = ['commitment', ...result.decision_type_secondary.filter(s => s !== 'renunciation')]
-      }
-    }
-  }
-
-  // RULE 4: Pure financial optimisation (multiple options with return rates, no identity conflict)
-  // should never have constitutive_weight above 0.20 unless emotional language is present
-  const isPureFinancial = (
-    (t.includes('xirr') || t.includes('returns') || t.includes('mutual fund')) &&
-    !t.includes('father') && !t.includes('mother') && !t.includes('guilt') &&
-    !t.includes('attached') && !t.includes('legacy') && !t.includes('built') &&
-    !t.includes('relocat')
-  )
-  if (isPureFinancial && tag.constitutive_weight > 0.20) {
-    result.constitutive_weight = 0.10
-    result.instrumental_weight = 0.90
-  }
-
-  // RULE 5: Care/duty for aging/ill parent pushes constitutive high
-  const isCareDecision = (
-    medicalKeywords.some(k => t.includes(k)) &&
-    (t.includes('relocat') || t.includes('move back') || t.includes('return') || t.includes('care'))
-  )
-  if (isCareDecision && tag.constitutive_weight < 0.65) {
-    result.constitutive_weight = 0.75
-    result.instrumental_weight = 0.25
-    result.dominant_emotion = 'obligation'
-  }
-
-  // RULE 6: Stakes bearer — if family members are named and materially affected,
-  // stakes_bearer should not be 'self'
-  const namedFamilyAffected = (
-    (t.includes('wife') || t.includes('spouse') || t.includes('husband') ||
-     t.includes('children') || t.includes('son') || t.includes('daughter') ||
-     t.includes('father') || t.includes('mother') || t.includes('co-founder')) &&
-    tag.stakes_bearer === 'self'
-  )
-  if (namedFamilyAffected) {
-    result.stakes_bearer = 'family'
-  }
-
   return result
 }
 
-// ── Detect strong register signal (breaks the 0.65/0.35 anchor) ──
-
-function hasStrongRegisterSignal(text: string): boolean {
-  const t = text.toLowerCase()
-
-  const strongConstitutive = [
-    'guilt', 'duty', 'obligation', 'legacy', 'emotionally attached',
-    'feel attached', 'father built', 'mother built', 'built this',
-    'parkinson', 'alzheimer', 'diagnosed', 'aging parent', 'care for',
-    'relocat', 'move back', 'last realistic shot', 'who i am',
-    'what i stand for'
-  ]
-
-  const strongInstrumental = [
-    'xirr', 'return on', 'tax efficiency', 'expense ratio',
-    'portfolio allocation', 'asset allocation', 'diversif'
-  ]
-
-  const hasConstitutive = strongConstitutive.some(k => t.includes(k))
-  const hasInstrumental = strongInstrumental.some(k => t.includes(k))
-
-  // Signal is strong if EITHER a clear constitutive OR clear instrumental
-  // marker is present — meaning the 0.65/0.35 middle is likely wrong
-  return hasConstitutive || hasInstrumental
-}
-
-// ── Validate a tag (basic sanity check) ───────────────────────
 
 export function validateTag(tag: OntologyTag): boolean {
   const validTypes = ['commitment','allocation','transition','acquisition','renunciation','governance','delegation']

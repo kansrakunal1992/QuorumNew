@@ -29,12 +29,18 @@ export async function POST(req: Request) {
     if (rawMessages && messages.length > 0) {
       chatMessages = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
     } else {
-      const contextBlock = contextText ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n` : ''
+      // Register context: injected at the TOP of the user message so it
+    // shapes the persona's framing before anything else is read.
+    const registerBlock = registerMode === 'clarification'
+      ? `\nSESSION MODE — CLARIFICATION:\nThe decision-maker has indicated they are looking for help understanding what they want, not just analysis of outcomes. They are facing a values or identity question as much as a practical one. Weight your response accordingly: The Elder and Stakeholder Mirror perspectives are most relevant. Surface the values tension before the risk analysis. Do not optimise for a calculable outcome.\n`
+      : `\nSESSION MODE — ANALYTICAL:\nThe decision-maker wants rigorous challenge of their thinking. Run your full framework without softening.\n`
+
+    const contextBlock = contextText ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n` : ''
 
       if (messages.length === 0) {
         chatMessages = [{
           role: 'user',
-          content: `DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+          content: `${registerBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
         }]
       } else {
         // messages contains alternating user pushbacks and prior assistant replies
@@ -42,7 +48,7 @@ export async function POST(req: Request) {
         chatMessages = [
           {
             role: 'user',
-            content: `DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+            content: `${registerBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
           },
           ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
         ]

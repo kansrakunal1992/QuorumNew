@@ -30,6 +30,15 @@ export default function SessionView({ session: initialSession }: Props) {
   }, [initialSession.id])
   const [saved,   setSaved]   = useState(false)
 
+  // Examiner Phase 0 — register mode (analytical or clarification)
+  // Initialised from session data; user can change in Reanalyze drawer
+  const [registerMode,    setRegisterMode]    = useState<RegisterMode>(
+    (initialSession.register_mode ?? 'analytical') as RegisterMode
+  )
+  const [reRegisterMode,  setReRegisterMode]  = useState<RegisterMode>(
+    (initialSession.register_mode ?? 'analytical') as RegisterMode
+  )
+
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
 
@@ -91,7 +100,7 @@ export default function SessionView({ session: initialSession }: Props) {
       const res = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision_text: reDecision.trim(), context_text: reContext.trim() || null }),
+        body: JSON.stringify({ decision_text: reDecision.trim(), context_text: reContext.trim() || null, register_mode: reRegisterMode }),
       })
       if (!res.ok) throw new Error()
       const { id } = await res.json()
@@ -101,6 +110,7 @@ export default function SessionView({ session: initialSession }: Props) {
       setSession(newSession)
       setSessionKey(k => k + 1)
       setCompletedResponses({})  // reset synthesis tracking
+      setRegisterMode(reRegisterMode)
       setSynthesisVersion(0)
       setSaved(false)
       setDrawerOpen(false)
@@ -177,6 +187,7 @@ export default function SessionView({ session: initialSession }: Props) {
           personaResponses={completedResponses}
           totalPersonas={PERSONA_ORDER.length}
           version={synthesisVersion}
+          registerMode={registerMode}
         />
 
         {/* 6 persona panels */}
@@ -187,6 +198,7 @@ export default function SessionView({ session: initialSession }: Props) {
             sessionId={session.id}
             decisionText={session.decision_text}
             contextText={session.context_text ?? undefined}
+            registerMode={registerMode}
             onComplete={handlePersonaComplete}
           />
         ))}
@@ -231,6 +243,33 @@ export default function SessionView({ session: initialSession }: Props) {
               Additional context <span style={{ color: 'var(--text-4)', fontWeight: 400 }}>(optional)</span>
             </label>
             <textarea rows={3} value={reContext} onChange={(e) => setReContext(e.target.value)} style={{ fontSize: 13, marginBottom: 18 }} placeholder="Add new information that has emerged…" />
+            {/* Phase 0 selector in reanalyze drawer */}
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 8, fontWeight: 500 }}>
+              What are you looking for this time?
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+              {([
+                { value: 'analytical', icon: '⚔', label: 'Challenge my thinking', sub: 'Stress-test the decision' },
+                { value: 'clarification', icon: '🪞', label: 'Help me understand what I want', sub: 'Values and identity' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setReRegisterMode(opt.value)}
+                  style={{
+                    padding: '10px 12px', borderRadius: 9, textAlign: 'left',
+                    cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                    border: `1px solid ${reRegisterMode === opt.value ? (opt.value === 'analytical' ? 'var(--gold)' : '#4ade80') : 'var(--border-dim)'}`,
+                    background: reRegisterMode === opt.value ? (opt.value === 'analytical' ? 'rgba(201,168,76,0.1)' : 'rgba(74,222,128,0.08)') : 'transparent',
+                  }}
+                >
+                  <p style={{ fontSize: 12, fontWeight: 600, color: reRegisterMode === opt.value ? (opt.value === 'analytical' ? 'var(--gold)' : '#4ade80') : 'var(--text-2)', marginBottom: 2 }}>
+                    {opt.icon} {opt.label}
+                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--text-4)' }}>{opt.sub}</p>
+                </button>
+              ))}
+            </div>
             {reanalyzeError && <p style={{ fontSize: 12, color: '#e05050', marginBottom: 12 }}>{reanalyzeError}</p>}
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="btn-primary" style={{ flex: 1, fontSize: 14, padding: '13px' }} onClick={handleReanalyze} disabled={reanalyzing || !reDecision.trim()}>

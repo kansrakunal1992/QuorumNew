@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   try {
-    const { decision_text, context_text } = await req.json()
+    const { decision_text, context_text, register_mode } = await req.json()
 
     if (!decision_text?.trim()) {
       return NextResponse.json({ error: 'decision_text is required' }, { status: 400 })
@@ -16,6 +16,7 @@ export async function POST(req: Request) {
       .insert({
         decision_text: decision_text.trim(),
         context_text: context_text?.trim() || null,
+        register_mode: register_mode ?? 'analytical',
         status: 'active',
       })
       .select('id')

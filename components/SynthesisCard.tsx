@@ -20,6 +20,7 @@ interface Props {
   personaResponses: Record<string, string>
   totalPersonas: number
   version: number
+  registerMode?: 'analytical' | 'clarification'
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -27,6 +28,7 @@ type State = 'waiting' | 'streaming' | 'done' | 'error'
 export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
+  registerMode,
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -51,7 +53,8 @@ export default function SynthesisCard({
   const responsesRef   = useRef(personaResponses)
   const decisionRef    = useRef(decisionText)
   const contextRef     = useRef(contextText)
-  const sessionIdRef   = useRef(sessionId)
+  const sessionIdRef    = useRef(sessionId)
+  const registerRef     = useRef(registerMode)
 
   useEffect(() => { responsesRef.current  = personaResponses }, [personaResponses])
 
@@ -63,6 +66,7 @@ export default function SynthesisCard({
   useEffect(() => { decisionRef.current   = decisionText     }, [decisionText])
   useEffect(() => { contextRef.current    = contextText      }, [contextText])
   useEffect(() => { sessionIdRef.current  = sessionId        }, [sessionId])
+  useEffect(() => { registerRef.current   = registerMode     }, [registerMode])
 
   // Fire synthesis
   useEffect(() => {

@@ -54,12 +54,13 @@ interface Props {
   sessionId: string
   decisionText: string
   contextText?: string
+  registerMode?: 'analytical' | 'clarification'
   onComplete?: (personaKey: string, content: string) => void
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, onComplete }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete }: Props) {
   const [response, setResponse]           = useState('')
   const [panelState, setPanelState]       = useState<PanelState>('idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -90,7 +91,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       const res = await fetch('/api/persona', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText }),
+        body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText, registerMode: registerMode ?? 'analytical' }),
       })
       if (!res.ok || !res.body) {
         setPanelState('error')
