@@ -115,7 +115,8 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
   if (fetchStatus === 'idle' || fetchStatus === 'no_gaps' || fetchStatus === 'error') return null
   if (submitStatus === 'done') return null
 
-  const isLoading = fetchStatus === 'loading' || fetchStatus === 'retry'
+  const isLoading    = fetchStatus === 'loading' || fetchStatus === 'retry'
+  const isSubmitting = submitStatus === 'submitting'
 
   return (
     <div style={{
@@ -234,7 +235,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
             <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 onClick={handleSubmit}
-                disabled={submitStatus === 'submitting'}
+                disabled={isSubmitting}
                 style={{
                   padding: '11px 28px',
                   borderRadius: 9,
@@ -251,7 +252,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.22)' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.12)' }}
               >
-                {submitStatus === 'submitting' ? 'Sending to council…' : 'Submit to Council →'}
+                {isSubmitting ? 'Sending to council…' : 'Submit to Council →'}
               </button>
               <p style={{ fontSize: 11, color: 'var(--text-4)' }}>
                 Answers are optional — blank fields are skipped
