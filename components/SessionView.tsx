@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { pushSessionId } from '@/lib/storage'
 import { useState, useCallback, useEffect } from 'react'
 import PersonaPanel from './PersonaPanel'
+import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
 import { PERSONAS, PERSONA_ORDER } from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
@@ -16,7 +17,6 @@ export default function SessionView({ session: initialSession }: Props) {
   const router = useRouter()
   const [saving,  setSaving]  = useState(false)
 
-  // Register this session in localStorage history on first load
   useEffect(() => {
     try {
       const key = 'quorum_session_ids'
@@ -28,10 +28,9 @@ export default function SessionView({ session: initialSession }: Props) {
       }
     } catch {}
   }, [initialSession.id])
-  const [saved,   setSaved]   = useState(false)
 
-  // Examiner Phase 0 — register mode (analytical or clarification)
-  // Initialised from session data; user can change in Reanalyze drawer
+  const [saved, setSaved] = useState(false)
+
   const [registerMode,    setRegisterMode]    = useState<RegisterMode>(
     (initialSession.register_mode ?? 'analytical') as RegisterMode
   )
@@ -41,21 +40,26 @@ export default function SessionView({ session: initialSession }: Props) {
 
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
-
-  // Track which personas have completed + their response text
   const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
 
+  // Sprint 3: synthesis is gated on examiner completion
+  const [examinerReady, setExaminerReady] = useState(false)
   const [synthesisVersion, setSynthesisVersion] = useState(0)
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
     setCompletedResponses(prev => {
-      const isUpdate = personaKey in prev  // true = pushback update
+      const isUpdate = personaKey in prev
       if (isUpdate) setSynthesisVersion(v => v + 1)
       return { ...prev, [personaKey]: content }
     })
   }, [])
 
-  // Reanalyze drawer
+  const allPersonasDone = Object.keys(completedResponses).length >= PERSONA_ORDER.length
+
+  const handleExaminerComplete = useCallback(() => {
+    setExaminerReady(true)
+  }, [])
+
   const [drawerOpen,     setDrawerOpen]     = useState(false)
   const [reDecision,     setReDecision]     = useState(initialSession.decision_text)
   const [reContext,      setReContext]       = useState(initialSession.context_text ?? '')
@@ -109,7 +113,8 @@ export default function SessionView({ session: initialSession }: Props) {
       const newSession: Session = await sessionRes.json()
       setSession(newSession)
       setSessionKey(k => k + 1)
-      setCompletedResponses({})  // reset synthesis tracking
+      setCompletedResponses({})
+      setExaminerReady(false)
       setRegisterMode(reRegisterMode)
       setSynthesisVersion(0)
       setSaved(false)
@@ -120,7 +125,7 @@ export default function SessionView({ session: initialSession }: Props) {
       setReanalyzeError('Something went wrong. Please try again.')
       setReanalyzing(false)
     }
-  }, [reDecision, reContext])
+  }, [reDecision, reContext, reRegisterMode])
 
   return (
     <div className="min-h-screen px-4 py-8" style={{ background: 'var(--bg-void)' }}>
@@ -175,20 +180,8 @@ export default function SessionView({ session: initialSession }: Props) {
         </p>
       </div>
 
-      {/* ── Grid: Synthesis card first (full width), then 6 panels ── */}
+      {/* ── Grid: 6 persona panels → Examiner → Synthesis ───── */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-
-        {/* Synthesis spans all 3 columns */}
-        <SynthesisCard
-          key={`synthesis-${sessionKey}`}
-          sessionId={session.id}
-          decisionText={session.decision_text}
-          contextText={session.context_text ?? undefined}
-          personaResponses={completedResponses}
-          totalPersonas={PERSONA_ORDER.length}
-          version={synthesisVersion}
-          registerMode={registerMode}
-        />
 
         {/* 6 persona panels */}
         {PERSONA_ORDER.map((key) => (
@@ -202,6 +195,28 @@ export default function SessionView({ session: initialSession }: Props) {
             onComplete={handlePersonaComplete}
           />
         ))}
+
+        {/* Examiner Phase 1 — appears once all 6 personas are done, gates synthesis */}
+        <ExaminerPanel
+          key={`examiner-${sessionKey}`}
+          sessionId={session.id}
+          visible={allPersonasDone}
+          onComplete={handleExaminerComplete}
+        />
+
+        {/* Synthesis — spans all 3 columns, fires only after Examiner completes */}
+        <SynthesisCard
+          key={`synthesis-${sessionKey}`}
+          sessionId={session.id}
+          decisionText={session.decision_text}
+          contextText={session.context_text ?? undefined}
+          personaResponses={completedResponses}
+          totalPersonas={PERSONA_ORDER.length}
+          version={synthesisVersion}
+          registerMode={registerMode}
+          examinerReady={examinerReady}
+        />
+
       </div>
 
       {/* ── Bottom bar ────────────────────────────────────────── */}
@@ -243,7 +258,6 @@ export default function SessionView({ session: initialSession }: Props) {
               Additional context <span style={{ color: 'var(--text-4)', fontWeight: 400 }}>(optional)</span>
             </label>
             <textarea rows={3} value={reContext} onChange={(e) => setReContext(e.target.value)} style={{ fontSize: 13, marginBottom: 18 }} placeholder="Add new information that has emerged…" />
-            {/* Phase 0 selector in reanalyze drawer */}
             <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 8, fontWeight: 500 }}>
               What are you looking for this time?
             </label>

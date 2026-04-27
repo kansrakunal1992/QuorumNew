@@ -21,6 +21,7 @@ interface Props {
   totalPersonas: number
   version: number
   registerMode?: 'analytical' | 'clarification'
+  examinerReady?: boolean   // Sprint 3: synthesis only fires after Examiner Phase 1 completes
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -28,7 +29,7 @@ type State = 'waiting' | 'streaming' | 'done' | 'error'
 export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
-  registerMode,
+  registerMode, examinerReady,
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -68,9 +69,9 @@ export default function SynthesisCard({
   useEffect(() => { sessionIdRef.current  = sessionId        }, [sessionId])
   useEffect(() => { registerRef.current   = registerMode     }, [registerMode])
 
-  // Fire synthesis
+  // Fire synthesis — gated on examinerReady (Sprint 3)
   useEffect(() => {
-    if (!allDone) return
+    if (!allDone || !examinerReady) return
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -113,7 +114,7 @@ export default function SynthesisCard({
     }
     run()
     return () => { ctrl.abort() }
-  }, [allDone, version]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allDone, examinerReady, version]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleValidateCode = async () => {
     if (!accessCode.trim()) return
@@ -224,9 +225,23 @@ export default function SynthesisCard({
             </svg>
           </div>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em' }}>Council Synthesis</p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
-              {state === 'waiting' ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em', margin: 0 }}>Council Synthesis</p>
+              {registerMode && (
+                <span style={{
+                  fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                  border: `1px solid ${registerMode === 'clarification' ? 'rgba(74,222,128,0.4)' : 'var(--gold-dim)'}`,
+                  background: registerMode === 'clarification' ? 'rgba(74,222,128,0.08)' : 'rgba(201,168,76,0.08)',
+                  color: registerMode === 'clarification' ? '#4ade80' : 'var(--gold)',
+                  fontWeight: 600, letterSpacing: '0.04em',
+                }}>
+                  {registerMode === 'clarification' ? '🪞 Values & Clarity' : '⚔ Challenge'}
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 0 }}>
+              {state === 'waiting' && !allDone ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
+                : state === 'waiting' && allDone && !examinerReady ? 'Answer the Examiner questions above to unlock synthesis'
                 : state === 'streaming' && isRecalibrating ? 'Recalibrating after pushback…'
                 : state === 'streaming' ? 'Synthesising across all perspectives…'
                 : 'What the council collectively surfaced'}

@@ -728,7 +728,18 @@ Paragraph 3 (1-2 sentences): The single most important thing to examine before d
 
 Final sentence: A directional lean. Not a recommendation. "The weight of this council tilts toward X, contingent on Y."
 
-Hard limit: 160 words. Do not name individual advisors. Do not use bullet points or headers.`
+PATTERN OBSERVATION (optional — read carefully before using):
+After the directional lean, scan the original decision description for ONE of these clearly present patterns:
+  - Urgency: the same time-pressure framing recurs 3+ times in the description
+  - Trusted-party anchor: legitimacy of the choice rests heavily on a specific named person's view
+  - Rapid downside dismissal: concerns are named and immediately neutralised without genuine engagement
+  - Social proof: the decision is partly justified by what peers or notable others are doing
+
+If ONE pattern is clearly and unmistakably present — not inferred, not marginal — add a final observation of 1-2 sentences AFTER the directional lean. Frame it as something that appeared in how the situation was described, not as a diagnosis. Use language like "One thing that stood out in how this was framed:" or "Worth sitting with:". Offer it; do not assert it.
+
+If no pattern is clearly present, write nothing after the directional lean. Do not invent patterns. Do not add this observation if the pattern is ambiguous.
+
+Hard limit: 180 words total. Do not name individual advisors. Do not use bullet points or headers.`
 
 export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
   contrarian: {
