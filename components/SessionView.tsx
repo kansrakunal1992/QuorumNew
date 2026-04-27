@@ -6,7 +6,7 @@ import { useState, useCallback, useEffect } from 'react'
 import PersonaPanel from './PersonaPanel'
 import SynthesisCard from './SynthesisCard'
 import { PERSONAS, PERSONA_ORDER } from '@/lib/personas'
-import type { Session } from '@/lib/types'
+import type { Session, RegisterMode } from '@/lib/types'
 
 interface Props {
   session: Session
