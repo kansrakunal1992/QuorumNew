@@ -52,20 +52,27 @@ export default function Home() {
 
   const [decision,     setDecision]     = useState('')
   const [context,      setContext]       = useState('')
+  const [formKey,      setFormKey]       = useState(0)  // incremented on mount to reset form
   const [loading,      setLoading]       = useState(false)
   const [showContext,  setShowContext]   = useState(false)
   const [error,        setError]         = useState('')
   const [registerMode, setRegisterMode]  = useState<'analytical'|'clarification'>('analytical')
-  const [userEmail,    setUserEmail]     = useState<string | null>(null)
+  const [userEmail,    setUserEmail]     = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    try { return localStorage.getItem('quorum_user_email') } catch { return null }
+  })
 
   // Past sessions state
   const [sessions,     setSessions]     = useState<SessionSummary[]>([])
   const [loadingHist,  setLoadingHist]  = useState(false)
   const [activeTab,    setActiveTab]    = useState<'all'|'pending'|'decided'>('all')
 
-  // Read stored email on mount
+  // Reset form on mount — clears any browser-restored textarea content
   useEffect(() => {
-    setUserEmail(getStoredUserEmail())
+    setDecision('')
+    setContext('')
+    setShowContext(false)
+    setFormKey(k => k + 1)
   }, [])
 
   // Load history on mount
@@ -154,9 +161,11 @@ export default function Home() {
           </p>
 
           <textarea
+            key={formKey}
             className="decision-input"
             rows={5}
             style={{ fontSize: 14 }}
+            autoComplete="off"
             placeholder="e.g. I am considering whether to sell my 40% stake in the family business to a PE firm at 8× EBITDA. The offer expires in 3 weeks…"
             value={decision}
             onChange={e => setDecision(e.target.value)}
