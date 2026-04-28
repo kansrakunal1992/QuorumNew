@@ -338,10 +338,27 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Device note */}
-            <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 16, lineHeight: 1.5 }}>
-              History saved on this device. Bookmark session URLs to access from other devices.
-            </p>
+            {/* Sprint 6: Auth nudge — shown when not authenticated, before history list */}
+            {!userEmail && (
+              <div style={{ marginBottom: 16 }}>
+                <AuthPanel onAuthenticated={email => setUserEmail(email)} userEmail={userEmail} />
+              </div>
+            )}
+            {userEmail && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 14px', marginBottom: 14,
+                background: 'rgba(74,222,128,0.06)',
+                border: '1px solid rgba(74,222,128,0.15)',
+                borderRadius: 10,
+              }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                  Sessions linked to <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{userEmail}</span>
+                  {' · '}cross-device history active
+                </span>
+              </div>
+            )}
 
             {loadingHist && (
               <div style={{ textAlign: 'center', padding: 24 }}>
@@ -428,11 +445,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* Sprint 6: Auth panel — shown at bottom of history section */}
-            <AuthPanel
-              userEmail={userEmail}
-              onAuthenticated={email => setUserEmail(email)}
-            />
           </div>
         )}
 

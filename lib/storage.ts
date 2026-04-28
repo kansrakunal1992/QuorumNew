@@ -18,7 +18,7 @@ export function pushSessionId(id: string): void {
   try {
     const ids = getStoredSessionIds()
     if (!ids.includes(id)) {
-      const updated = [id, ...ids].slice(0, 20)
+      const updated = [id, ...ids].slice(0, 100)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
     }
   } catch {}
