@@ -3,6 +3,7 @@
 // Used to show decision history on the home page without requiring auth
 
 const STORAGE_KEY = 'quorum_session_ids'
+const EMAIL_KEY   = 'quorum_user_email'   // Sprint 6: persisted user email post-auth
 
 export function getStoredSessionIds(): string[] {
   if (typeof window === 'undefined') return []
@@ -21,4 +22,20 @@ export function pushSessionId(id: string): void {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
     }
   } catch {}
+}
+
+// Sprint 6: user email stored after magic link auth
+export function getStoredUserEmail(): string | null {
+  if (typeof window === 'undefined') return null
+  try { return localStorage.getItem(EMAIL_KEY) } catch { return null }
+}
+
+export function storeUserEmail(email: string): void {
+  if (typeof window === 'undefined') return
+  try { localStorage.setItem(EMAIL_KEY, email) } catch {}
+}
+
+export function clearUserEmail(): void {
+  if (typeof window === 'undefined') return
+  try { localStorage.removeItem(EMAIL_KEY) } catch {}
 }

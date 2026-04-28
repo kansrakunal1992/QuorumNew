@@ -1,6 +1,7 @@
 import { PERSONAS } from '@/lib/personas'
 import { createServiceClient } from '@/lib/supabase'
 import { createStream } from '@/lib/ai-client'
+import { PERSONAS_WITH_STRUCTURAL_CONTEXT } from '@/lib/structural-retrieval'
 import type { PersonaKey, Message } from '@/lib/types'
 
 export async function POST(req: Request) {
@@ -13,6 +14,7 @@ export async function POST(req: Request) {
       contextText,
       rawMessages,
       registerMode,
+      structuralContext,  // Sprint 5: injected for Pattern Analyst, Risk Architect, Elder
     }: {
       sessionId: string
       personaKey: PersonaKey
@@ -21,6 +23,7 @@ export async function POST(req: Request) {
       contextText?: string
       rawMessages?: boolean
       registerMode?: 'analytical' | 'clarification'
+      structuralContext?: string
     } = await req.json()
 
     const persona = PERSONAS[personaKey]
@@ -39,10 +42,18 @@ export async function POST(req: Request) {
 
     const contextBlock = contextText ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n` : ''
 
+    // Sprint 5: inject structural memory only for eligible personas, only on first message
+    const structuralBlock = (
+      structuralContext &&
+      PERSONAS_WITH_STRUCTURAL_CONTEXT.has(personaKey) &&
+      messages.length === 0  // only on initial analysis, not pushbacks
+    )
+      ? `\n${structuralContext}\n`
+      : ''
+
       if (messages.length === 0) {
-        chatMessages = [{
-          role: 'user',
-          content: `${registerBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+        chatMessages = [{\n          role: 'user',
+          content: `${registerBlock}${structuralBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
         }]
       } else {
         // messages contains alternating user pushbacks and prior assistant replies
@@ -50,7 +61,7 @@ export async function POST(req: Request) {
         chatMessages = [
           {
             role: 'user',
-            content: `${registerBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+            content: `${registerBlock}${structuralBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
           },
           ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
         ]

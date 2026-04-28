@@ -58,11 +58,13 @@ interface Props {
   onComplete?: (personaKey: string, content: string) => void
   /** When set, triggers a supplemental stream showing updated analysis with examiner answers */
   examinerContext?: string
+  /** Sprint 5: structural context from past sessions — injected for Pattern Analyst, Risk Architect, Elder */
+  structuralContext?: string
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext }: Props) {
   const [response, setResponse]           = useState('')
   const [panelState, setPanelState]       = useState<PanelState>('idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -93,7 +95,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       const res = await fetch('/api/persona', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText, registerMode: registerMode ?? 'analytical' }),
+        body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText, registerMode: registerMode ?? 'analytical', structuralContext }),
       })
       if (!res.ok || !res.body) {
         setPanelState('error')

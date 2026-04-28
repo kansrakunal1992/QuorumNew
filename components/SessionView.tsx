@@ -90,6 +90,37 @@ export default function SessionView({ session: initialSession, userEmail: userEm
   const [synthesisVersion,        setSynthesisVersion]        = useState(0)
   const [examinerContextByPersona, setExaminerContextByPersona] = useState<Record<string, string>>({})
 
+  // Sprint 5: structural context fetched async, injected into eligible personas
+  const [structuralContext, setStructuralContext] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Fire structural match fetch immediately on load — runs in parallel with personas
+    // Only attempt if we have user identity
+    const storedEmail = userEmail ?? getStoredUserEmail()
+    if (!storedEmail) return
+
+    fetch('/api/structural-match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId:  initialSession.id,
+        userEmail:  storedEmail,
+      }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.threshold_met && data.context_block) {
+          setStructuralContext(data.context_block)
+          console.log(`[SessionView] Structural context loaded — ${data.matches?.length ?? 0} match(es), ${data.session_count_used} sessions scored`)
+        }
+      })
+      .catch(err => {
+        // Silent fail — structural retrieval is background enhancement
+        console.error('[SessionView] Structural match fetch failed:', err)
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSession.id]))
+
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
     setCompletedResponses(prev => {
       const isUpdate = personaKey in prev
@@ -284,6 +315,7 @@ export default function SessionView({ session: initialSession, userEmail: userEm
               registerMode={registerMode}
               onComplete={handlePersonaComplete}
               examinerContext={examinerContextByPersona[key]}
+              structuralContext={structuralContext ?? undefined}
             />
           ))}
         </div>
