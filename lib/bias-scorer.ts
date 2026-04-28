@@ -13,7 +13,7 @@
 // Requires: ANTHROPIC_API_KEY env var
 // ─────────────────────────────────────────────────────────────────────────────
 
-import Anthropic from '@anthropic-ai/sdk'
+import { createCompletion, getProviderInfo } from '@/lib/ai-client'
 
 // ── 15 Bias Parameters ───────────────────────────────────────────────────────
 export const BIAS_PARAMETERS = [
@@ -195,8 +195,6 @@ export async function scoreBiasesForSession(params: {
   personaResponses: Record<string, string>
   ontologyJson: Record<string, unknown> | null
 }): Promise<BiasScoreResult> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
   const prompt = buildScoringPrompt(
     params.decisionText,
     params.contextText,
@@ -204,21 +202,15 @@ export async function scoreBiasesForSession(params: {
     params.ontologyJson,
   )
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4000,
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-  // Strip any accidental markdown fences
+  const raw   = await createCompletion(prompt, 4000)
   const clean = raw.replace(/```json|```/g, '').trim()
   const parsed = JSON.parse(clean) as { scores: BiasScore[] }
+  const { provider, model } = getProviderInfo()
 
   return {
-    session_id: params.sessionId,
-    scores: parsed.scores,
-    scored_at: new Date().toISOString(),
-    model_used: 'claude-sonnet-4-20250514',
+    session_id:  params.sessionId,
+    scores:      parsed.scores,
+    scored_at:   new Date().toISOString(),
+    model_used:  `${provider}/${model}`,
   }
 }

@@ -89,3 +89,26 @@ export function getProviderInfo() {
     model: PROVIDER === 'deepseek' ? DEEPSEEK_MODEL : ANTHROPIC_MODEL,
   }
 }
+
+// ── Non-streaming completion (for background jobs: bias scorer, structural annotation) ──
+export async function createCompletion(
+  prompt: string,
+  maxTokens = 4000,
+): Promise<string> {
+  if (PROVIDER === 'deepseek') {
+    const res = await deepseek.chat.completions.create({
+      model: DEEPSEEK_MODEL,
+      max_tokens: maxTokens,
+      stream: false,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    return res.choices[0]?.message?.content ?? ''
+  } else {
+    const res = await anthropic.messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    return res.content[0].type === 'text' ? res.content[0].text : ''
+  }
+}

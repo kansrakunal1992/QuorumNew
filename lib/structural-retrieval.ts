@@ -22,7 +22,7 @@
 // Minimum sessions: 5 past complete-tagged sessions required to activate
 // ─────────────────────────────────────────────────────────────────────────────
 
-import Anthropic from '@anthropic-ai/sdk'
+import { createCompletion } from '@/lib/ai-client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -162,8 +162,6 @@ async function annotateMatch(
   breakdown: ScoreBreakdown,
   pastCreatedAt: string,
 ): Promise<string> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
   const dateLabel = new Date(pastCreatedAt).toLocaleDateString('en-IN', {
     day: 'numeric', month: 'long', year: 'numeric',
   })
@@ -187,12 +185,7 @@ STRUCTURAL MATCH SCORES (out of max):
 Write 2-3 sentences that explain what is structurally similar about these two decisions. Focus on the underlying mechanism — not the surface topic. Use precise language. Do not begin with "Both decisions" or "These decisions". Start with what the structure reveals about the decision-maker's situation. Keep it under 80 words.`
 
   try {
-    const res = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',  // Fast + cheap for annotation
-      max_tokens: 200,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    const text = res.content[0].type === 'text' ? res.content[0].text : ''
+    const text = await createCompletion(prompt, 200)
     return text.trim()
   } catch (err) {
     console.error('[StructuralRetrieval] Annotation failed:', err)
