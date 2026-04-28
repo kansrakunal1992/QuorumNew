@@ -93,9 +93,7 @@ export default function SessionView({ session: initialSession }: Props) {
 
   useEffect(() => {
     // Fire structural match fetch immediately on load — runs in parallel with personas
-    // Only attempt if we have user identity
-    if (!storedEmail) return
-
+    // Route handles identity check internally (pre-auth: device-local sessions only)
     fetch('/api/structural-match', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
