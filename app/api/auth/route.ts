@@ -26,10 +26,17 @@ export async function POST(req: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     )
 
+    // Derive redirect URL from the request origin — works on Railway without needing
+    // NEXT_PUBLIC_APP_URL to be set. Falls back to env var if origin unavailable.
+    const origin = req.headers.get('origin')
+      ?? req.headers.get('referer')?.replace(/\/[^/]*$/, '')
+      ?? process.env.NEXT_PUBLIC_APP_URL
+      ?? 'http://localhost:3000'
+
     const { error } = await supabase.auth.signInWithOtp({
       email: email.toLowerCase().trim(),
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/auth/callback`,
+        emailRedirectTo: `${origin}/auth/callback`,
         shouldCreateUser: true,
       },
     })

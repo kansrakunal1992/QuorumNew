@@ -87,8 +87,8 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         body:    JSON.stringify({ sessionId, skipped: true }),
       })
     } catch { /* non-blocking */ }
-    if (!silent) onComplete([])
-    else onComplete([])  // always unblock synthesis
+    setSubmitStatus('done')   // hides the panel immediately
+    onComplete([])            // unblocks synthesis
   }
 
   const handleSubmit = async () => {
