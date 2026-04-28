@@ -123,6 +123,7 @@ function buildScoringPrompt(
   decisionText: string,
   contextText: string | null,
   personaResponses: Record<string, string>,
+  examinerQA: Array<{ question: string; answer: string }>,
   ontologyJson: Record<string, unknown> | null,
 ): string {
   const personaBlock = Object.entries(personaResponses)
@@ -131,6 +132,12 @@ function buildScoringPrompt(
 
   const ontologyBlock = ontologyJson
     ? `DECISION ONTOLOGY:\n${JSON.stringify(ontologyJson, null, 2)}`
+    : ''
+
+  const examinerBlock = examinerQA.length > 0
+    ? `EXAMINER Q&A (user answered these diagnostic questions — treat as primary evidence):\n${
+        examinerQA.map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`).join('\n\n')
+      }\n`
     : ''
 
   const biasBlock = BIAS_PARAMETERS.map(b =>
@@ -144,7 +151,7 @@ ${decisionText}
 
 ${contextText ? `CONTEXT:\n${contextText}\n` : ''}
 ${ontologyBlock}
-
+${examinerBlock}
 ADVISOR RESPONSES (condensed):
 ${personaBlock}
 
@@ -193,12 +200,14 @@ export async function scoreBiasesForSession(params: {
   decisionText: string
   contextText: string | null
   personaResponses: Record<string, string>
+  examinerQA?: Array<{ question: string; answer: string }>
   ontologyJson: Record<string, unknown> | null
 }): Promise<BiasScoreResult> {
   const prompt = buildScoringPrompt(
     params.decisionText,
     params.contextText,
     params.personaResponses,
+    params.examinerQA ?? [],
     params.ontologyJson,
   )
 

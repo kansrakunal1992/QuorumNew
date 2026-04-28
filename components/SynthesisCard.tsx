@@ -22,24 +22,6 @@ interface Props {
   version: number
   registerMode?: 'analytical' | 'clarification'
   examinerReady?: boolean   // Sprint 3: synthesis only fires after Examiner Phase 1 completes
-  userEmail?: string        // Sprint 4: passed to bias scorer for per-user accumulation
-}
-
-// Sprint 4: fire bias scoring fire-and-forget once synthesis completes
-function fireBiasScoring(
-  sessionId: string,
-  personaResponses: Record<string, string>,
-  userEmail?: string,
-) {
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-  fetch(`${baseUrl}/api/bias-score`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, personaResponses, userEmail: userEmail ?? null }),
-  }).catch(err => {
-    // Silent fail — bias scoring is background infrastructure
-    console.error('[SynthesisCard] Bias scoring fire failed:', err)
-  })
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -47,7 +29,7 @@ type State = 'waiting' | 'streaming' | 'done' | 'error'
 export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
-  registerMode, examinerReady, userEmail,
+  registerMode, examinerReady,
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -125,10 +107,7 @@ export default function SynthesisCard({
           setSynthesis(acc)
         }
         setState('done')
-        // Sprint 4: fire bias scoring fire-and-forget (only on first synthesis, not recalibrations)
-        if (version === 0) {
-          fireBiasScoring(sessionIdRef.current, responsesRef.current, userEmail)
-        }
+        // Sprint 4: bias scoring triggered server-side from /api/examiner POST
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return
         setState('error')

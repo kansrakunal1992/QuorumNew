@@ -168,9 +168,30 @@ export async function POST(req: Request) {
       }
     }
 
+    // Sprint 4: Fire bias scoring server-side — no client dependency
+    // All persona responses are already in messages table by now.
+    // Kick off as true background job; do not await — return to client immediately.
+    triggerBiasScoring(sessionId).catch(err =>
+      console.error('[Examiner] Bias scoring trigger failed (non-blocking):', err)
+    )
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[Examiner] Route error:', err)
     return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
   }
+}
+
+// ── Background: trigger bias scoring after examiner saves ────────
+// Reads everything it needs from Supabase — no client payload required.
+async function triggerBiasScoring(sessionId: string): Promise<void> {
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : 'http://localhost:3000'
+
+  await fetch(`${baseUrl}/api/bias-score`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  })
 }
