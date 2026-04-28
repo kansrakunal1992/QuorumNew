@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { getStoredSessionIds, pushSessionId } from '@/lib/storage'
+import { useState, useEffect, useRef } from 'react'
+import { getStoredSessionIds, pushSessionId, getStoredUserEmail } from '@/lib/storage'
 import { useRouter } from 'next/navigation'
+import MemoryEngineStatus from '@/components/MemoryEngineStatus'
+import AuthPanel from '@/components/AuthPanel'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -46,17 +48,25 @@ interface SessionSummary {
 
 export default function Home() {
   const router  = useRouter()
+  const historyRef = useRef<HTMLDivElement>(null)
+
   const [decision,     setDecision]     = useState('')
   const [context,      setContext]       = useState('')
   const [loading,      setLoading]       = useState(false)
   const [showContext,  setShowContext]   = useState(false)
   const [error,        setError]         = useState('')
   const [registerMode, setRegisterMode]  = useState<'analytical'|'clarification'>('analytical')
+  const [userEmail,    setUserEmail]     = useState<string | null>(null)
 
   // Past sessions state
   const [sessions,     setSessions]     = useState<SessionSummary[]>([])
   const [loadingHist,  setLoadingHist]  = useState(false)
   const [activeTab,    setActiveTab]    = useState<'all'|'pending'|'decided'>('all')
+
+  // Read stored email on mount
+  useEffect(() => {
+    setUserEmail(getStoredUserEmail())
+  }, [])
 
   // Load history on mount
   useEffect(() => {
@@ -282,9 +292,22 @@ export default function Home() {
           </div>
         </div>
 
+        {/* ── Memory Engine Status ──────────────────────── */}
+        {sessions.length > 0 && (
+          <MemoryEngineStatus
+            sessionCount={sessions.length}
+            pendingOutcomes={pending.length}
+            decidedCount={decided.length}
+            onScrollToHistory={() => {
+              historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              setActiveTab('pending')
+            }}
+          />
+        )}
+
         {/* ── Decision history ─────────────────────────── */}
         {(sessions.length > 0 || loadingHist) && (
-          <div>
+          <div ref={historyRef}>
             {/* Section header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
@@ -404,11 +427,20 @@ export default function Home() {
                 </p>
               )}
             </div>
+
+            {/* Sprint 6: Auth panel — shown at bottom of history section */}
+            <AuthPanel
+              userEmail={userEmail}
+              onAuthenticated={email => setUserEmail(email)}
+            />
           </div>
         )}
 
         <p style={{ marginTop: 32, fontSize: 11, color: 'var(--text-4)', letterSpacing: '0.04em', textAlign: 'center' }}>
-          Sessions are private by URL. No account linked.
+          {userEmail
+            ? `Sessions linked to ${userEmail} · private by URL`
+            : 'Sessions are private by URL. No account linked.'
+          }
         </p>
       </div>
     </main>
