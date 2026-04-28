@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { pushSessionId } from '@/lib/storage'
+import { pushSessionId, getStoredUserEmail } from '@/lib/storage'
 import { useState, useCallback, useEffect } from 'react'
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
@@ -11,6 +11,7 @@ import type { Session, RegisterMode } from '@/lib/types'
 
 interface Props {
   session: Session
+  userEmail?: string   // Sprint 6: passed from page or read from storage
 }
 
 // ── Gap → Persona mapping ────────────────────────────────────────────────
@@ -54,9 +55,10 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession }: Props) {
+export default function SessionView({ session: initialSession, userEmail: userEmailProp }: Props) {
   const router = useRouter()
   const [saving,  setSaving]  = useState(false)
+  const [userEmail] = useState<string | undefined>(() => userEmailProp ?? getStoredUserEmail() ?? undefined)
 
   useEffect(() => {
     try {
@@ -258,6 +260,7 @@ export default function SessionView({ session: initialSession }: Props) {
             version={synthesisVersion}
             registerMode={registerMode}
             examinerReady={examinerReady}
+            userEmail={userEmail}
           />
         </div>
 
