@@ -119,7 +119,7 @@ export default function SessionView({ session: initialSession, userEmail: userEm
         console.error('[SessionView] Structural match fetch failed:', err)
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSession.id]))
+  }, [initialSession.id])
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
     setCompletedResponses(prev => {

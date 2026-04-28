@@ -52,7 +52,8 @@ export async function POST(req: Request) {
       : ''
 
       if (messages.length === 0) {
-        chatMessages = [{\n          role: 'user',
+        chatMessages = [{
+          role: 'user',
           content: `${registerBlock}${structuralBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
         }]
       } else {
