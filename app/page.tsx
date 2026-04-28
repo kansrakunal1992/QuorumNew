@@ -75,21 +75,39 @@ export default function Home() {
     setFormKey(k => k + 1)
   }, [])
 
-  // Load history on mount
+  // Load history on mount — merges localStorage IDs + user_id (cross-device)
   useEffect(() => {
     const ids = getStoredSessionIds()
-    if (ids.length === 0) return
+    // Proceed even if ids is empty — authenticated users may have history
+    // on this device that needs loading via user_id
     setLoadingHist(true)
 
-    fetch('/api/history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    })
-      .then(r => r.json())
-      .then(data => { setSessions(data.sessions ?? []) })
-      .catch(() => {})
-      .finally(() => setLoadingHist(false))
+    const loadHistory = async () => {
+      try {
+        // Get Supabase auth token if user is logged in
+        const { createClient } = await import('@/lib/supabase')
+        const supabase = createClient()
+        const { data: { session: authSession } } = await supabase.auth.getSession()
+        const token = authSession?.access_token ?? null
+
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+
+        const res  = await fetch('/api/history', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ids }),
+        })
+        const data = await res.json()
+        setSessions(data.sessions ?? [])
+      } catch {
+        // silent fail
+      } finally {
+        setLoadingHist(false)
+      }
+    }
+
+    loadHistory()
   }, [])
 
   const handleSubmit = async () => {
