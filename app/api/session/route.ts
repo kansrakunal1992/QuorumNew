@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   try {
-    const { decision_text, context_text, register_mode } = await req.json()
+    const { decision_text, context_text, register_mode, user_email, device_id } = await req.json()
 
     if (!decision_text?.trim()) {
       return NextResponse.json({ error: 'decision_text is required' }, { status: 400 })
@@ -18,6 +18,15 @@ export async function POST(req: Request) {
         context_text: context_text?.trim() || null,
         register_mode: register_mode ?? 'analytical',
         status: 'active',
+        // ── Sprint 4b: user identity chain ─────────────────────────────────
+        // user_email: entered optionally on home page (pre-auth).
+        //   Allows bias accumulation before magic-link auth completes.
+        //   After auth, link_sessions_to_user RPC also populates user_id.
+        // device_id: generated silently on first visit, stored in localStorage.
+        //   Third-tier fallback — accumulation scoped to this device only.
+        //   If user later adds email, their email-keyed bias rows take over.
+        user_email: user_email?.trim().toLowerCase() || null,
+        device_id:  device_id || null,
       })
       .select('id')
       .single()
@@ -29,10 +38,7 @@ export async function POST(req: Request) {
 
     const sessionId = data.id
 
-    // ── Fire ontology tagger async ─────────────────────────────
-    // Never awaited — user is not blocked.
-    // Runs in the background. If it fails, sessions_ontology.tagger_status = 'failed'.
-    // The app functions fully without the ontology tag.
+    // ── Fire ontology tagger async ─────────────────────────────────────────
     fireOntologyTagger(sessionId, decision_text.trim(), context_text?.trim() ?? null)
 
     return NextResponse.json({ id: sessionId })
@@ -42,9 +48,6 @@ export async function POST(req: Request) {
   }
 }
 
-// Fire-and-forget tagger call using internal API route
-// Using fetch to own API rather than direct import keeps the async boundary clean
-// and prevents any tagger error from ever reaching the session creation response.
 function fireOntologyTagger(
   sessionId: string,
   decisionText: string,
@@ -57,7 +60,6 @@ function fireOntologyTagger(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, decisionText, contextText }),
   }).catch(err => {
-    // Silent fail — tagger is background infrastructure, not critical path
     console.error('[Session] Ontology tagger fire failed:', err)
   })
 }

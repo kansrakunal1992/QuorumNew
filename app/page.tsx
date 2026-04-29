@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { getStoredSessionIds, pushSessionId, getStoredUserEmail } from '@/lib/storage'
+import { getStoredSessionIds, pushSessionId, getStoredUserEmail, getOrCreateDeviceId } from '@/lib/storage'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
@@ -121,7 +121,7 @@ export default function Home() {
       const res = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision_text: decision.trim(), context_text: context.trim() || null, register_mode: registerMode }),
+        body: JSON.stringify({ decision_text: decision.trim(), context_text: context.trim() || null, register_mode: registerMode, user_email: userEmail ?? null, device_id: getOrCreateDeviceId() }),
       })
       if (!res.ok) throw new Error()
       const { id } = await res.json()
@@ -325,6 +325,7 @@ export default function Home() {
             sessionCount={sessions.length}
             pendingOutcomes={pending.length}
             decidedCount={decided.length}
+            hasIdentity={!!userEmail}
             onScrollToHistory={() => {
               historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               setActiveTab('pending')

@@ -1,16 +1,15 @@
 // app/api/bias-score/route.ts
-// ── Sprint 4: Bias Library — Background Scoring Endpoint ─────────────────────
+// ── Sprint 4 / 4b: Bias Library — Background Scoring Endpoint ────────────────
 //
 // Called server-side from /api/examiner POST after examiner submit/skip.
-// Never called from the client — no client timeout risk.
 //
-// Reads everything it needs from Supabase:
-//   - sessions table       → decision_text, context_text
-//   - messages table       → persona responses (already saved by /api/persona)
-//   - examiner_responses   → user's answers to diagnostic questions
-//   - sessions_ontology    → ontology tag for enrichment
+// Identity resolution for accumulation (priority order):
+//   1. user_id    — post magic-link auth (stable, cross-device)
+//   2. user_email — entered on home page pre-auth (device-portable)
+//   3. device_id  — silent UUID generated on first visit (device-local only)
+//   4. null       — fully anonymous: INSERT only, no accumulation
 //
-// Body: { sessionId: string }  ← that's all that's needed
+// Body: { sessionId: string }
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
@@ -29,13 +28,6 @@ export async function POST(req: Request) {
     const supabase = createServiceClient()
 
     // ── 1. Idempotency check ───────────────────────────────────────────────
-    const { data: existing } = await supabase
-      .from('bias_library')
-      .select('id, detection_count')
-      .eq('session_ids', [sessionId])
-      .maybeSingle()
-
-    // Check by session_id match in the session_ids array
     const { data: existingRows } = await supabase
       .from('bias_library')
       .select('id')
@@ -47,10 +39,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: 'ok', skipped: true })
     }
 
-    // ── 2. Fetch session ───────────────────────────────────────────────────
+    // ── 2. Fetch session + full identity chain ─────────────────────────────
     const { data: session, error: sessionErr } = await supabase
       .from('sessions')
-      .select('id, decision_text, context_text')
+      .select('id, decision_text, context_text, user_id, user_email, device_id')
       .eq('id', sessionId)
       .single()
 
@@ -59,15 +51,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // ── 3. Read persona responses from messages table ──────────────────────
-    // These are saved by /api/persona as each persona streams.
-    // By the time /api/examiner POST fires, all 6 should be present.
+    // Resolved identity — first non-null value wins
+    const resolvedUserId    = session.user_id    ?? null
+    const resolvedUserEmail = session.user_email ?? null
+    const resolvedDeviceId  = session.device_id  ?? null
+
+    const identityTier =
+      resolvedUserId    ? 'user_id'    :
+      resolvedUserEmail ? 'user_email' :
+      resolvedDeviceId  ? 'device_id'  : 'anonymous'
+
+    console.log(`[BiasScore] Scoring session ${sessionId} (identity: ${identityTier})`)
+
+    // ── 3. Read persona responses ──────────────────────────────────────────
     const { data: messages } = await supabase
       .from('messages')
       .select('persona, content, role')
       .eq('session_id', sessionId)
       .eq('role', 'assistant')
-      .not('persona', 'in', '(synthesis,decision_brief)')  // exclude meta-personas
+      .not('persona', 'in', '(synthesis,decision_brief)')
       .order('created_at', { ascending: true })
 
     if (!messages || messages.length === 0) {
@@ -75,7 +77,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: 'ok', skipped: true, reason: 'no_messages' })
     }
 
-    // Collapse multiple messages per persona into one string (handles pushback rounds)
     const personaResponses: Record<string, string> = {}
     for (const msg of messages) {
       if (!personaResponses[msg.persona]) {
@@ -85,11 +86,7 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log(`[BiasScore] Loaded ${Object.keys(personaResponses).length} personas from DB for ${sessionId}`)
-
     // ── 4. Fetch examiner Q&A ─────────────────────────────────────────────
-    // User answers to diagnostic questions — high-signal for bias detection
-    // (e.g. "my advisor said it's a good deal" → authority deference confirmed)
     const { data: examinerRows } = await supabase
       .from('examiner_responses')
       .select('question_text, response_text, question_order, unknown_unknown_gap')
@@ -102,7 +99,11 @@ export async function POST(req: Request) {
         .filter(r => r.response_text?.trim())
         .map(r => ({ question: r.question_text, answer: r.response_text! }))
 
-    console.log(`[BiasScore] Loaded ${examinerQA.length} examiner answers for ${sessionId}`)
+    if (examinerQA.length > 0) {
+      console.log(`[BiasScore] Loaded examiner answers`)
+    } else {
+      console.log(`[BiasScore] Loaded personas`)
+    }
 
     // ── 5. Fetch ontology tag ─────────────────────────────────────────────
     const { data: ontology } = await supabase
@@ -114,8 +115,6 @@ export async function POST(req: Request) {
     const ontologyJson = ontology?.raw_ontology_json as Record<string, unknown> | null ?? null
 
     // ── 6. Score biases ───────────────────────────────────────────────────
-    console.log(`[BiasScore] Scoring session ${sessionId}`)
-
     const result = await scoreBiasesForSession({
       sessionId,
       decisionText:     session.decision_text,
@@ -128,39 +127,86 @@ export async function POST(req: Request) {
     const detected = result.scores.filter(s => s.detected)
     console.log(`[BiasScore] Scored ${result.scores.length} parameters. Detected: ${detected.map(s => s.bias_key).join(', ') || 'none'}`)
 
-    // ── 7. Upsert into bias_library ───────────────────────────────────────
     if (detected.length === 0) {
-      console.log(`[BiasScore] No biases detected above threshold for session ${sessionId}`)
       return NextResponse.json({ status: 'ok', detected: 0 })
     }
+
+    // ── 7. Upsert into bias_library ───────────────────────────────────────
+    //
+    // Accumulation key priority (matches identity tier above):
+    //   user_id    → scoped to auth'd user, cross-device, permanent
+    //   user_email → scoped to email, cross-device once auth'd
+    //   device_id  → scoped to this device only (localStorage-fragile)
+    //   anonymous  → INSERT only, no accumulation
+    //
+    // For device_id: accumulation is device-local. When the user later adds
+    // their email, new sessions use email as the key. The device_id rows are
+    // not retroactively migrated (acceptable — email-keyed rows start fresh
+    // but the Council continues to work uninterrupted).
+
+    let upsertedCount = 0
 
     for (const score of detected) {
       const biasParam = BIAS_PARAMETERS.find(b => b.key === score.bias_key)
       if (!biasParam) continue
 
-      // Check if this bias already has a row (cross-session accumulation keyed by bias_parameter only for now — pre-auth)
-      // Post-auth (Sprint 6) this will key on user_id
-      const { data: existingBias } = await supabase
-        .from('bias_library')
-        .select('id, detection_count, confidence_weight, asymmetry_score_avg, session_ids, activation_contexts')
-        .eq('bias_parameter', score.bias_key)
-        .is('user_email', null)  // pre-auth: null user bucket
-        .maybeSingle()
+      const newActivationContext = {
+        ...score.activation_context,
+        reasoning:        score.reasoning,
+        prosecutor_score: score.prosecutor_score,
+        defense_score:    score.defense_score,
+        decision_type:    ontology?.decision_type_primary ?? null,
+      }
+
+      // Look up existing bias row scoped to this specific user identity
+      let existingBias: {
+        id: string
+        detection_count: number
+        confidence_weight: number
+        asymmetry_score_avg: number
+        session_ids: string[]
+        activation_contexts: Record<string, unknown>
+      } | null = null
+
+      if (resolvedUserId) {
+        const { data } = await supabase
+          .from('bias_library')
+          .select('id, detection_count, confidence_weight, asymmetry_score_avg, session_ids, activation_contexts')
+          .eq('bias_parameter', score.bias_key)
+          .eq('user_id', resolvedUserId)
+          .limit(1)
+          .maybeSingle()
+        existingBias = data
+      } else if (resolvedUserEmail) {
+        const { data } = await supabase
+          .from('bias_library')
+          .select('id, detection_count, confidence_weight, asymmetry_score_avg, session_ids, activation_contexts')
+          .eq('bias_parameter', score.bias_key)
+          .eq('user_email', resolvedUserEmail)
+          .limit(1)
+          .maybeSingle()
+        existingBias = data
+      } else if (resolvedDeviceId) {
+        const { data } = await supabase
+          .from('bias_library')
+          .select('id, detection_count, confidence_weight, asymmetry_score_avg, session_ids, activation_contexts')
+          .eq('bias_parameter', score.bias_key)
+          .eq('device_id', resolvedDeviceId)
+          .limit(1)
+          .maybeSingle()
+        existingBias = data
+      }
+      // anonymous → existingBias stays null → INSERT below
 
       if (existingBias) {
+        // ── UPDATE: accumulate into existing row ─────────────────────────
         const newCount  = existingBias.detection_count + 1
         const newWeight = Math.min(existingBias.confidence_weight + 0.30, 1.0)
         const newAvg    = ((existingBias.asymmetry_score_avg ?? 0) * existingBias.detection_count + (score.asymmetry ?? 0)) / newCount
         const mergedIds = Array.from(new Set([...(existingBias.session_ids ?? []), sessionId]))
         const mergedCtx = {
           ...(existingBias.activation_contexts as Record<string, unknown> ?? {}),
-          [sessionId]: {
-            ...score.activation_context,
-            reasoning:         score.reasoning,
-            prosecutor_score:  score.prosecutor_score,
-            defense_score:     score.defense_score,
-            decision_type:     ontology?.decision_type_primary ?? null,
-          },
+          [sessionId]: newActivationContext,
         }
 
         await supabase
@@ -175,27 +221,26 @@ export async function POST(req: Request) {
           })
           .eq('id', existingBias.id)
       } else {
+        // ── INSERT: first occurrence of this bias for this user ──────────
         await supabase.from('bias_library').insert({
-          user_email:          null,
+          user_id:             resolvedUserId,
+          user_email:          resolvedUserEmail,
+          device_id:           resolvedDeviceId,
           session_ids:         [sessionId],
           bias_parameter:      score.bias_key,
           detection_count:     1,
           confidence_weight:   0.30,
           asymmetry_score_avg: score.asymmetry,
           activation_contexts: {
-            [sessionId]: {
-              ...score.activation_context,
-              reasoning:         score.reasoning,
-              prosecutor_score:  score.prosecutor_score,
-              defense_score:     score.defense_score,
-              decision_type:     ontology?.decision_type_primary ?? null,
-            },
+            [sessionId]: newActivationContext,
           },
         })
       }
+
+      upsertedCount++
     }
 
-    console.log(`[BiasScore] Upserted ${detected.length} bias rows for session ${sessionId}`)
+    console.log(`[BiasScore] Upserted ${upsertedCount} bias rows`)
 
     return NextResponse.json({
       status:          'ok',

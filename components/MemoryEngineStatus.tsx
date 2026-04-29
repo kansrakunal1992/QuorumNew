@@ -5,6 +5,11 @@
 // Tells users how close they are to activating Structural Retrieval (5 sessions)
 // and Mirror (10 sessions), and nudges them to log pending outcomes.
 //
+// Sprint 4b: hasIdentity prop added.
+// When false (anonymous / no email), shows a minimal email CTA instead of the
+// progress bar. Prevents anonymous users from seeing misleading pattern-memory
+// progress that would vanish if they clear localStorage.
+//
 // Placement: between the input card and persona/tips grid.
 // Only rendered when sessions.length > 0.
 
@@ -12,6 +17,7 @@ interface Props {
   sessionCount: number
   pendingOutcomes: number
   decidedCount: number
+  hasIdentity: boolean          // true if user_email or user_id is present
   onScrollToHistory: () => void
 }
 
@@ -23,7 +29,7 @@ function SegmentBar({ filled, total }: { filled: number; total: number }) {
     <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
       {Array.from({ length: total }).map((_, i) => {
         const isFilled = i < filled
-        const isPulse  = i === filled && filled < total // next segment pulses
+        const isPulse  = i === filled && filled < total
         return (
           <div
             key={i}
@@ -51,16 +57,69 @@ export default function MemoryEngineStatus({
   sessionCount,
   pendingOutcomes,
   decidedCount,
+  hasIdentity,
   onScrollToHistory,
 }: Props) {
   if (sessionCount === 0) return null
 
+  // ── Anonymous view (no email, no user_id) ─────────────────────────────────
+  // Show a minimal card with a CTA to add email. Do NOT show progress bar —
+  // device-local sessions would be "forgotten" if localStorage is cleared,
+  // so surfacing pattern-memory progress would be misleading.
+  if (!hasIdentity) {
+    return (
+      <>
+        <style>{`
+          @keyframes dot-blink {
+            0%, 100% { opacity: 0.4; }
+            50%       { opacity: 1; }
+          }
+        `}</style>
+        <div
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-mid)',
+            borderRadius: 14,
+            padding: '14px 20px',
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+          }}
+        >
+          <div
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              background: 'var(--gold)',
+              animation: 'dot-blink 2s ease-in-out infinite',
+              flexShrink: 0,
+            }}
+          />
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 2px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              Memory Engine
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5 }}>
+              Add your email below to build pattern memory across sessions.{' '}
+              <span style={{ color: 'var(--text-3)' }}>
+                {sessionCount} session{sessionCount !== 1 ? 's' : ''} on this device
+              </span>
+              {' '}— not yet linked to your profile.
+            </p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── Identified view (email or user_id present) ─────────────────────────────
   const sessionsTowardPattern = Math.min(sessionCount, PATTERN_MEMORY_THRESHOLD)
   const sessionsTowardMirror  = Math.min(sessionCount, MIRROR_THRESHOLD)
   const patternActive         = sessionCount >= PATTERN_MEMORY_THRESHOLD
   const mirrorReady           = sessionCount >= MIRROR_THRESHOLD
 
-  // Status label
   let statusLabel: string
   let statusColor: string
   if (mirrorReady) {
@@ -99,7 +158,6 @@ export default function MemoryEngineStatus({
         {/* Header row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Status dot */}
             <div
               style={{
                 width: 7,
@@ -138,7 +196,6 @@ export default function MemoryEngineStatus({
 
         {/* Main metrics row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 16, alignItems: 'center' }}>
-          {/* Left: Session progress */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <SegmentBar
@@ -158,7 +215,6 @@ export default function MemoryEngineStatus({
             </p>
           </div>
 
-          {/* Right: Outcome stats */}
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             {pendingOutcomes > 0 ? (
               <button
@@ -193,7 +249,6 @@ export default function MemoryEngineStatus({
           </div>
         </div>
 
-        {/* Footer: What this unlocks */}
         {!patternActive && (
           <div
             style={{
