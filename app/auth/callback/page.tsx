@@ -4,18 +4,28 @@
 //
 // Supabase redirects here after the user clicks the magic link.
 // We:
-//   1. Exchange the token for a session
+//   1. Exchange the PKCE code from ?code= query param for a session
 //   2. Link any localStorage session IDs to the authenticated user
 //   3. Redirect back to home
+//
+// FIX (Sprint 6 bug): Supabase v2 uses PKCE by default. The magic link
+// redirects to /auth/callback?code=PKCE_CODE. getSession() alone returns null
+// because the code hasn't been exchanged yet. Must call
+// exchangeCodeForSession(code) first, then getSession().
+//
+// Also: useSearchParams() requires a Suspense boundary in Next.js 15 — the
+// inner component reads params; the default export wraps it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getStoredSessionIds, storeUserEmail } from '@/lib/storage'
 
-export default function AuthCallback() {
-  const router  = useRouter()
+// ── Inner component — reads URL params (requires Suspense parent) ─────────────
+function CallbackHandler() {
+  const router       = useRouter()
+  const searchParams = useSearchParams()
   const [status, setStatus] = useState<'processing' | 'linking' | 'done' | 'error'>('processing')
 
   useEffect(() => {
@@ -23,9 +33,33 @@ export default function AuthCallback() {
       try {
         const supabase = createClient()
 
-        // Exchange the auth code/token in the URL hash
-        const { data: { session }, error } = await supabase.auth.getSession()
-        if (error || !session?.user) {
+        // ── Step 1: Exchange PKCE code for a session ──────────────────────────
+        // Supabase PKCE flow delivers ?code=... (not a hash token).
+        // exchangeCodeForSession() must be called before getSession() has anything.
+        const code  = searchParams.get('code')
+        const error = searchParams.get('error')
+
+        if (error) {
+          console.error('[AuthCallback] URL error param:', error, searchParams.get('error_description'))
+          setStatus('error')
+          setTimeout(() => router.replace('/'), 3000)
+          return
+        }
+
+        if (code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          if (exchangeError) {
+            console.error('[AuthCallback] Code exchange failed:', exchangeError)
+            setStatus('error')
+            setTimeout(() => router.replace('/'), 3000)
+            return
+          }
+        }
+
+        // ── Step 2: Read the now-valid session ────────────────────────────────
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError || !session?.user) {
+          console.error('[AuthCallback] No session after exchange:', sessionError)
           setStatus('error')
           setTimeout(() => router.replace('/'), 3000)
           return
@@ -37,11 +71,11 @@ export default function AuthCallback() {
         // Persist email for bias library pre-auth context
         storeUserEmail(user.email ?? '')
 
-        // Link any pre-auth session IDs from localStorage
+        // ── Step 3: Link any pre-auth session IDs from localStorage ──────────
         const storedIds = getStoredSessionIds()
         if (storedIds.length > 0) {
           await fetch('/api/auth/link-sessions', {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               sessionIds: storedIds,
@@ -62,7 +96,7 @@ export default function AuthCallback() {
     }
 
     run()
-  }, [router])
+  }, [router, searchParams])
 
   return (
     <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-void)', padding: 20 }}>
@@ -83,5 +117,28 @@ export default function AuthCallback() {
         )}
       </div>
     </main>
+  )
+}
+
+// ── Loading shell shown while CallbackHandler hydrates ───────────────────────
+function CallbackLoading() {
+  return (
+    <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-void)', padding: 20 }}>
+      <div style={{ textAlign: 'center', maxWidth: 360 }}>
+        <div style={{ fontSize: 28, marginBottom: 16 }}>⟳</div>
+        <p style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 8 }}>
+          Verifying your link…
+        </p>
+      </div>
+    </main>
+  )
+}
+
+// ── Default export — wraps in Suspense (required by Next.js 15) ───────────────
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<CallbackLoading />}>
+      <CallbackHandler />
+    </Suspense>
   )
 }
