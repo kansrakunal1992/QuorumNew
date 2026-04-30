@@ -92,26 +92,42 @@ export default function SessionView({ session: initialSession }: Props) {
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
 
   useEffect(() => {
-    // Fire structural match fetch immediately on load — runs in parallel with personas
-    // Route handles identity check internally (pre-auth: device-local sessions only)
-    fetch('/api/structural-match', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId:  initialSession.id,
-      }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.threshold_met && data.context_block) {
-          setStructuralContext(data.context_block)
-          console.log(`[SessionView] Structural context loaded — ${data.matches?.length ?? 0} match(es), ${data.session_count_used} sessions scored`)
-        }
+    // Sprint 5: Fetch structural context with retry logic.
+    // The ontology tagger runs async after session creation, so the first
+    // attempt often finds ontology_ready: false. Retry up to 3 times with
+    // 6-second gaps — ontology usually completes within 5-8 seconds.
+    // Identity is read server-side from the sessions table, so no need to
+    // pass userEmail/userId from the client.
+    let attempt = 0
+    const MAX_ATTEMPTS = 4
+    const RETRY_MS = 6000
+
+    const fetchStructuralContext = () => {
+      fetch('/api/structural-match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: initialSession.id }),
       })
-      .catch(err => {
-        // Silent fail — structural retrieval is background enhancement
-        console.error('[SessionView] Structural match fetch failed:', err)
-      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.threshold_met && data.context_block) {
+            setStructuralContext(data.context_block)
+            console.log(`[SessionView] Structural context loaded — ${data.matches?.length ?? 0} match(es), ${data.session_count_used} sessions scored`)
+            return
+          }
+          // If ontology not ready and we have retries left, schedule another attempt
+          if (!data.ontology_ready && attempt < MAX_ATTEMPTS) {
+            attempt++
+            console.log(`[SessionView] Ontology not ready — retry ${attempt}/${MAX_ATTEMPTS} in ${RETRY_MS / 1000}s`)
+            setTimeout(fetchStructuralContext, RETRY_MS)
+          }
+        })
+        .catch(err => {
+          console.error('[SessionView] Structural match fetch failed:', err)
+        })
+    }
+
+    fetchStructuralContext()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSession.id])
 

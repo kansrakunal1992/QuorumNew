@@ -1,35 +1,33 @@
 // app/api/structural-match/route.ts
-// ── Sprint 5: Structural Match Endpoint ──────────────────────────────────────
+// Sprint 5: Structural Match Endpoint
 //
-// Called client-side on session page load, immediately after all 6 personas
-// begin streaming. Runs in parallel — never blocks the persona streams.
-//
-// Flow:
-//   1. Receive current sessionId + userEmail/userId
-//   2. Fetch current session's ontology tag
-//   3. Fetch all past sessions' ontology tags for this user (excluding current)
-//   4. Run structural scoring + annotation
-//   5. Cache result in structural_matches table
-//   6. Return context_block to client
-//
-// The client injects context_block into Pattern Analyst, Risk Architect,
-// and Elder persona prompts before their first message fires.
-// ─────────────────────────────────────────────────────────────────────────────
+// FIXES (April 29):
+//   1. Reads user_email / user_id from sessions table — no longer requires
+//      client to pass identity. Client-side call was sending no identity,
+//      causing the past-sessions guard to fire and return empty every time.
+//   2. Returns { ontology_ready: false } when current session ontology is not
+//      yet complete, so the client can retry intelligently.
+//   3. Writes individual pairwise scores into structural_scores table for
+//      traceability (was previously empty).
+//   4. Server-side trigger added to examiner POST so DB gets populated even
+//      when client-side fetch aborts due to timing.
 
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import {
   retrieveStructuralMatches,
+  scoreStructuralSimilarity,
   type OntologySnapshot,
 } from '@/lib/structural-retrieval'
 
 export async function POST(req: Request) {
   try {
-    const { sessionId, userEmail, userId } = await req.json() as {
+    const body = await req.json() as {
       sessionId: string
       userEmail?: string
       userId?: string
     }
+    const { sessionId } = body
 
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
@@ -47,16 +45,33 @@ export async function POST(req: Request) {
     if (cached) {
       console.log(`[StructuralMatch] Cache hit for session ${sessionId}`)
       return NextResponse.json({
-        context_block:       cached.context_block,
-        matches:             cached.matches_json,
-        session_count_used:  cached.session_count_used,
-        threshold_met:       cached.threshold_met,
-        from_cache:          true,
+        context_block:      cached.context_block,
+        matches:            cached.matches_json,
+        session_count_used: cached.session_count_used,
+        threshold_met:      cached.threshold_met,
+        from_cache:         true,
+        ontology_ready:     true,
       })
     }
 
-    // ── 2. Fetch current session's ontology tag ─────────────────
-    const { data: currentOntology, error: ontologyErr } = await supabase
+    // ── 2. Fetch current session + identity from DB ─────────────
+    // Read identity from the sessions table — do not trust client-passed values
+    // because the client-side call in SessionView never passed them anyway.
+    const { data: currentSession } = await supabase
+      .from('sessions')
+      .select('decision_text, created_at, user_email, user_id')
+      .eq('id', sessionId)
+      .single()
+
+    if (!currentSession) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+
+    const userEmail = currentSession.user_email ?? null
+    const userId    = currentSession.user_id    ?? null
+
+    // ── 3. Fetch current session's ontology tag ─────────────────
+    const { data: currentOntology } = await supabase
       .from('sessions_ontology')
       .select(`
         session_id,
@@ -80,32 +95,28 @@ export async function POST(req: Request) {
       .eq('tagger_status', 'complete')
       .single()
 
-    if (ontologyErr || !currentOntology) {
-      console.log(`[StructuralMatch] No complete ontology for session ${sessionId} — tagger may still be running`)
-      return NextResponse.json({ context_block: '', matches: [], threshold_met: false, session_count_used: 0 })
+    if (!currentOntology) {
+      // Ontology not ready yet — tell client to retry
+      console.log(`[StructuralMatch] Ontology not complete for session ${sessionId} — client should retry`)
+      return NextResponse.json({
+        context_block:      '',
+        matches:            [],
+        threshold_met:      false,
+        session_count_used: 0,
+        ontology_ready:     false,
+      })
     }
 
-    // ── 3. Fetch current session text ───────────────────────────
-    const { data: currentSession } = await supabase
-      .from('sessions')
-      .select('decision_text, created_at')
-      .eq('id', sessionId)
-      .single()
-
-    if (!currentSession) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-    }
-
-    // ── 4. Build user filter — email OR userId ──────────────────
-    // Pre-auth: match by user_email
-    // Post-auth: match by user_id (more reliable)
-    // No identity at all: no historical context available
+    // ── 4. Guard: need user identity to retrieve past sessions ──
     if (!userEmail && !userId) {
-      console.log(`[StructuralMatch] No user identity — cannot retrieve past sessions`)
-      return NextResponse.json({ context_block: '', matches: [], threshold_met: false, session_count_used: 0 })
+      console.log(`[StructuralMatch] No user identity on session ${sessionId} — skipping past session retrieval`)
+      return NextResponse.json({
+        context_block: '', matches: [], threshold_met: false,
+        session_count_used: 0, ontology_ready: true,
+      })
     }
 
-    // ── 5. Fetch past sessions (same user, complete ontology, excluding current) ─
+    // ── 5. Fetch past sessions (same user, complete ontology) ───
     let pastQuery = supabase
       .from('sessions_ontology')
       .select(`
@@ -136,7 +147,6 @@ export async function POST(req: Request) {
       .eq('tagger_status', 'complete')
       .neq('session_id', sessionId)
 
-    // Build OR filter for user identity
     if (userId && userEmail) {
       pastQuery = pastQuery.or(`user_id.eq.${userId},user_email.eq.${userEmail}`, { foreignTable: 'sessions' })
     } else if (userId) {
@@ -147,20 +157,23 @@ export async function POST(req: Request) {
 
     const { data: pastOntologies, error: pastErr } = await pastQuery
       .order('created_at', { ascending: false })
-      .limit(50) // cap at 50 past sessions — enough signal without overloading
+      .limit(50)
 
     if (pastErr) {
       console.error('[StructuralMatch] Past sessions query failed:', pastErr)
-      return NextResponse.json({ context_block: '', matches: [], threshold_met: false, session_count_used: 0 })
+      return NextResponse.json({ context_block: '', matches: [], threshold_met: false, session_count_used: 0, ontology_ready: true })
     }
 
+    const pastCount = (pastOntologies ?? []).length
+    console.log(`[StructuralMatch] Scoring session ${sessionId} against ${pastCount} past sessions`)
+
     // ── 6. Fetch outcomes for past sessions ─────────────────────
-    const pastSessionIds = (pastOntologies ?? []).map(o => o.session_id)
+    const pastSessionIds = (pastOntologies ?? []).map((o: { session_id: string }) => o.session_id)
     let outcomesMap: Record<string, { what_decided: string; council_helped: string } | null> = {}
 
     if (pastSessionIds.length > 0) {
       const { data: outcomes } = await supabase
-        .from('session_outcomes')
+        .from('outcomes')
         .select('session_id, what_decided, council_helped')
         .in('session_id', pastSessionIds)
 
@@ -169,7 +182,7 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── 7. Build OntologySnapshot objects ───────────────────────
+    // ── 7. Build snapshots ──────────────────────────────────────
     const currentSnapshot: OntologySnapshot = {
       session_id:              sessionId,
       decision_text:           currentSession.decision_text,
@@ -212,18 +225,43 @@ export async function POST(req: Request) {
       outcome:                 outcomesMap[o.session_id] ?? null,
     }))
 
-    console.log(`[StructuralMatch] Scoring session ${sessionId} against ${pastSnapshots.length} past sessions`)
+    // ── 8. Write pairwise scores into structural_scores ─────────
+    // This populates the structural_scores table (previously always empty).
+    if (pastSnapshots.length > 0) {
+      const scoreRows = pastSnapshots.map(past => {
+        const breakdown = scoreStructuralSimilarity(currentSnapshot, past)
+        return {
+          session_id_a:    sessionId,
+          session_id_b:    past.session_id,
+          score_total:     breakdown.total,
+          score_type:      breakdown.decision_type,
+          score_register:  breakdown.register,
+          score_stakes:    breakdown.stakes,
+          score_counterparty: breakdown.counterparty,
+          score_time:      breakdown.time_pressure,
+          threshold_met:   breakdown.total >= 45,
+          computed_at:     new Date().toISOString(),
+        }
+      })
 
-    // ── 8. Run retrieval ─────────────────────────────────────────
+      // Insert in batches of 20 to avoid payload limits
+      for (let i = 0; i < scoreRows.length; i += 20) {
+        await supabase
+          .from('structural_scores')
+          .upsert(scoreRows.slice(i, i + 20), { onConflict: 'session_id_a,session_id_b' })
+      }
+    }
+
+    // ── 9. Run retrieval (annotation + context block) ───────────
     const result = await retrieveStructuralMatches(currentSnapshot, pastSnapshots)
 
-    // ── 9. Cache result ──────────────────────────────────────────
+    // ── 10. Cache result in structural_matches ──────────────────
     await supabase
       .from('structural_matches')
       .upsert({
         session_id:          sessionId,
         user_email:          userEmail ?? null,
-        user_id:             userId ?? null,
+        user_id:             userId    ?? null,
         context_block:       result.context_block,
         matches_json:        result.matches,
         session_count_used:  result.session_count_used,
@@ -231,7 +269,7 @@ export async function POST(req: Request) {
         computed_at:         new Date().toISOString(),
       }, { onConflict: 'session_id' })
 
-    console.log(`[StructuralMatch] Done — ${result.matches.length} matches, threshold_met: ${result.threshold_met}`)
+    console.log(`[StructuralMatch] Done — ${result.matches.length} matches, threshold_met: ${result.threshold_met}, sessions_scored: ${pastCount}`)
 
     return NextResponse.json({
       context_block:      result.context_block,
@@ -239,6 +277,7 @@ export async function POST(req: Request) {
       session_count_used: result.session_count_used,
       threshold_met:      result.threshold_met,
       from_cache:         false,
+      ontology_ready:     true,
     })
 
   } catch (err) {

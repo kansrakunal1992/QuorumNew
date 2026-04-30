@@ -1,6 +1,6 @@
 /**
  * QUORUM LEDGER — Examiner Phase 1 API Route
- * Sprint 3
+ * Sprint 3 + Sprint 5 fix
  *
  * GET  /api/examiner?sessionId=xxx
  *   Reads examiner_gap_1/2/3 from sessions_ontology.
@@ -9,7 +9,10 @@
  *
  * POST /api/examiner
  *   Saves user answers to examiner_responses table.
- *   Body: { sessionId, responses: [{ question_text, response_text, question_order, unknown_unknown_gap }] }
+ *   Triggers bias scoring (Sprint 4) server-side.
+ *   Triggers structural matching (Sprint 5) server-side — FIX: added here
+ *   so structural_matches table gets populated after ontology is guaranteed
+ *   complete. Previously only fired client-side before ontology was ready.
  */
 
 import { NextResponse } from 'next/server'
@@ -17,13 +20,13 @@ import { createServiceClient } from '@/lib/supabase'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 
-const PROVIDER      = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase()
+const PROVIDER        = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase()
 const ANTHROPIC_MODEL = process.env.AI_MODEL ?? 'claude-sonnet-4-20250514'
 const DEEPSEEK_MODEL  = process.env.AI_MODEL ?? 'deepseek-chat'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 const deepseek  = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY ?? '',
+  apiKey:  process.env.DEEPSEEK_API_KEY ?? '',
   baseURL: 'https://api.deepseek.com',
 })
 
@@ -53,8 +56,8 @@ async function generateQuestions(gaps: string[]): Promise<string[]> {
     let raw: string
     if (PROVIDER === 'deepseek') {
       const res = await deepseek.chat.completions.create({
-        model: DEEPSEEK_MODEL,
-        max_tokens: 400,
+        model:       DEEPSEEK_MODEL,
+        max_tokens:  400,
         temperature: 0.3,
         messages: [
           { role: 'system', content: QUESTION_SYSTEM },
@@ -64,15 +67,15 @@ async function generateQuestions(gaps: string[]): Promise<string[]> {
       raw = res.choices[0]?.message?.content ?? '[]'
     } else {
       const res = await anthropic.messages.create({
-        model: ANTHROPIC_MODEL,
+        model:      ANTHROPIC_MODEL,
         max_tokens: 400,
-        system: QUESTION_SYSTEM,
-        messages: [{ role: 'user', content: userMsg }],
+        system:     QUESTION_SYSTEM,
+        messages:   [{ role: 'user', content: userMsg }],
       })
       raw = res.content.filter(b => b.type === 'text').map(b => (b as { type:'text'; text:string }).text).join('')
     }
 
-    const clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+    const clean  = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
     const parsed = JSON.parse(clean)
     return Array.isArray(parsed) ? parsed.slice(0, 3).map(String) : []
   } catch (err) {
@@ -100,7 +103,6 @@ export async function GET(req: Request) {
     .single()
 
   if (error || !data || data.tagger_status !== 'complete') {
-    // Ontology not ready yet — client should retry or skip gracefully
     return NextResponse.json({ questions: null, status: data?.tagger_status ?? 'not_found' })
   }
 
@@ -128,9 +130,9 @@ export async function POST(req: Request) {
     const { sessionId, responses, skipped } = await req.json() as {
       sessionId: string
       responses?: Array<{
-        question_text: string
-        response_text: string | null
-        question_order: number
+        question_text:       string
+        response_text:       string | null
+        question_order:      number
         unknown_unknown_gap: string
       }>
       skipped?: boolean
@@ -142,7 +144,6 @@ export async function POST(req: Request) {
 
     const supabase = createServiceClient()
 
-    // Update examiner_status on ontology row
     await supabase
       .from('sessions_ontology')
       .update({ examiner_status: skipped ? 'skipped' : 'submitted' })
@@ -168,11 +169,18 @@ export async function POST(req: Request) {
       }
     }
 
-    // Sprint 4: Fire bias scoring server-side — no client dependency
-    // All persona responses are already in messages table by now.
-    // Kick off as true background job; do not await — return to client immediately.
+    // Sprint 4: Fire bias scoring server-side — fire-and-forget
     triggerBiasScoring(sessionId).catch(err =>
       console.error('[Examiner] Bias scoring trigger failed (non-blocking):', err)
+    )
+
+    // Sprint 5: Fire structural matching server-side — fire-and-forget
+    // This is the critical fix: by the time the examiner POST fires,
+    // the ontology tagger is always complete. The client-side call in
+    // SessionView fires too early (before ontology finishes). This
+    // server-side trigger guarantees structural_matches gets populated.
+    triggerStructuralMatch(sessionId).catch(err =>
+      console.error('[Examiner] Structural match trigger failed (non-blocking):', err)
     )
 
     return NextResponse.json({ ok: true })
@@ -182,14 +190,27 @@ export async function POST(req: Request) {
   }
 }
 
-// ── Background: trigger bias scoring after examiner saves ────────
-// Reads everything it needs from Supabase — no client payload required.
-async function triggerBiasScoring(sessionId: string): Promise<void> {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.RAILWAY_PUBLIC_DOMAIN
-    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-    : 'http://localhost:3000'
+// ── Background helpers ────────────────────────────────────────────
 
-  await fetch(`${baseUrl}/api/bias-score`, {
+function getBaseUrl(): string {
+  // Prefer the explicit app URL env var (set in Railway)
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
+  // Fallback for local dev
+  return 'http://localhost:3000'
+}
+
+async function triggerBiasScoring(sessionId: string): Promise<void> {
+  await fetch(`${getBaseUrl()}/api/bias-score`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  })
+}
+
+async function triggerStructuralMatch(sessionId: string): Promise<void> {
+  // Session identity is read from the sessions table server-side —
+  // no need to pass userEmail/userId from here.
+  await fetch(`${getBaseUrl()}/api/structural-match`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ sessionId }),
