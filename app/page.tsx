@@ -118,10 +118,29 @@ export default function Home() {
     setError('')
     setLoading(true)
     try {
+      // ── Sprint 6 fix: resolve user_id from auth session at submit time ─────
+      // This stamps user_id on the session row directly, so bias scoring and
+      // structural retrieval get the highest-priority identity immediately.
+      // Falls back gracefully if user is not authenticated.
+      let resolvedUserId: string | null = null
+      try {
+        const { createClient: getClient } = await import('@/lib/supabase')
+        const sb = getClient()
+        const { data: { session: authSession } } = await sb.auth.getSession()
+        resolvedUserId = authSession?.user?.id ?? null
+      } catch { /* non-blocking — anonymous sessions continue without user_id */ }
+
       const res = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision_text: decision.trim(), context_text: context.trim() || null, register_mode: registerMode, user_email: userEmail ?? null, device_id: getOrCreateDeviceId() }),
+        body: JSON.stringify({
+          decision_text: decision.trim(),
+          context_text:  context.trim() || null,
+          register_mode: registerMode,
+          user_email:    userEmail ?? null,
+          device_id:     getOrCreateDeviceId(),
+          user_id:       resolvedUserId,   // ← new: stamps user_id at session creation
+        }),
       })
       if (!res.ok) throw new Error()
       const { id } = await res.json()

@@ -15,10 +15,11 @@ import { createServiceClient, createClient } from '@/lib/supabase'
 
 export async function POST(req: Request) {
   try {
-    const { sessionIds, userId, userEmail } = await req.json() as {
+    const { sessionIds, userId, userEmail, deviceId } = await req.json() as {
       sessionIds?: string[]
       userId?: string
       userEmail?: string
+      deviceId?: string   // ← new: used to retro-link device_id-keyed bias rows
     }
 
     if (!sessionIds?.length || !userId) {
@@ -41,11 +42,37 @@ export async function POST(req: Request) {
 
     // Also update bias_library rows if they exist for this email
     if (userEmail) {
-      await supabase
+      const { error: emailBiasErr } = await supabase
         .from('bias_library')
-        .update({ user_id: userId })
+        .update({ user_id: userId, user_email: userEmail })
         .eq('user_email', userEmail)
         .is('user_id', null)
+
+      if (emailBiasErr) {
+        console.warn('[LinkSessions] Email bias retro-link failed (non-critical):', emailBiasErr)
+      }
+    }
+
+    // ── NEW: Retro-link device_id-keyed bias rows after auth ────────────
+    // These are rows from fully anonymous sessions (no email, no user_id).
+    // After auth we can promote them to the user_id lane so they contribute
+    // to longitudinal accumulation going forward.
+    if (deviceId && userId) {
+      const { error: deviceBiasErr } = await supabase
+        .from('bias_library')
+        .update({
+          user_id:    userId,
+          user_email: userEmail ?? null,
+        })
+        .eq('device_id', deviceId)
+        .is('user_email', null)
+        .is('user_id', null)
+
+      if (deviceBiasErr) {
+        console.warn('[LinkSessions] Device bias retro-link failed (non-critical):', deviceBiasErr)
+      } else {
+        console.log(`[LinkSessions] Retro-linked device_id=${deviceId} bias rows to user ${userId}`)
+      }
     }
 
     // Ensure user_preferences row exists

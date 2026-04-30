@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   try {
-    const { decision_text, context_text, register_mode, user_email, device_id } = await req.json()
+    const { decision_text, context_text, register_mode, user_email, device_id, user_id } = await req.json()
 
     if (!decision_text?.trim()) {
       return NextResponse.json({ error: 'decision_text is required' }, { status: 400 })
@@ -27,6 +27,10 @@ export async function POST(req: Request) {
         //   If user later adds email, their email-keyed bias rows take over.
         user_email: user_email?.trim().toLowerCase() || null,
         device_id:  device_id || null,
+        // ── Sprint 6 fix: stamp user_id at session creation when user is authenticated
+        // Client reads this from supabase.auth.getSession() and passes it here.
+        // Avoids relying solely on the post-auth link-sessions RPC to backfill.
+        user_id: user_id || null,
       })
       .select('id')
       .single()

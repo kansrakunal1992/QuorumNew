@@ -20,7 +20,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { getStoredSessionIds, storeUserEmail } from '@/lib/storage'
+import { getStoredSessionIds, storeUserEmail, getStoredDeviceId } from '@/lib/storage'
 
 // ── Inner component — reads URL params (requires Suspense parent) ─────────────
 function CallbackHandler() {
@@ -73,17 +73,21 @@ function CallbackHandler() {
 
         // ── Step 3: Link any pre-auth session IDs from localStorage ──────────
         const storedIds = getStoredSessionIds()
-        if (storedIds.length > 0) {
-          await fetch('/api/auth/link-sessions', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionIds: storedIds,
-              userId:     user.id,
-              userEmail:  user.email,
-            }),
-          })
-        }
+        const deviceId  = getStoredDeviceId()   // ← needed to retro-link device_id bias rows
+
+        // Always call link-sessions after auth — even if storedIds is empty.
+        // The deviceId retro-link in link-sessions upgrades anonymous bias rows
+        // (device_id-keyed, no email) to the authenticated user_id lane.
+        await fetch('/api/auth/link-sessions', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionIds: storedIds,
+            userId:     user.id,
+            userEmail:  user.email,
+            deviceId:   deviceId,   // ← new: triggers device_id bias retro-link
+          }),
+        })
 
         setStatus('done')
         router.replace('/')

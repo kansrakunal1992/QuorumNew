@@ -246,9 +246,18 @@ export async function POST(req: Request) {
 
       // Insert in batches of 20 to avoid payload limits
       for (let i = 0; i < scoreRows.length; i += 20) {
-        await supabase
+        const batch = scoreRows.slice(i, i + 20)
+        const { error: scoresErr } = await supabase
           .from('structural_scores')
-          .upsert(scoreRows.slice(i, i + 20), { onConflict: 'session_id_a,session_id_b' })
+          .upsert(batch, { onConflict: 'session_id_a,session_id_b' })
+
+        if (scoresErr) {
+          // Most common cause: table missing or unique constraint not created.
+          // Fix: run supabase/sprint5b_structural_scores_fix.sql in Supabase SQL Editor.
+          console.error('[StructuralMatch] structural_scores upsert FAILED:', scoresErr.message, '| code:', scoresErr.code)
+        } else {
+          console.log(`[StructuralMatch] Wrote ${batch.length} rows to structural_scores`)
+        }
       }
     }
 
