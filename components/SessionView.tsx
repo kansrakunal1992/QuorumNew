@@ -82,6 +82,7 @@ export default function SessionView({ session: initialSession }: Props) {
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
   const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
+  const [decisionExpanded, setDecisionExpanded] = useState(false)   // ← "See More" toggle for decision text
 
   // Sprint 3: synthesis gated on examiner + examiner re-run context per persona
   const [examinerReady,           setExaminerReady]           = useState(false)
@@ -252,9 +253,18 @@ export default function SessionView({ session: initialSession }: Props) {
             <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               The Decision
             </p>
-            <p style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--text-2)', maxWidth: 640, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            <p style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--text-2)', maxWidth: 640, ...(decisionExpanded ? {} : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
               {session.decision_text}
             </p>
+            {/* Show "See More / See Less" only when text is long enough to be clamped */}
+            {session.decision_text.length > 220 && (
+              <button
+                onClick={() => setDecisionExpanded(v => !v)}
+                style={{ marginTop: 4, fontSize: 11.5, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, letterSpacing: '0.02em' }}
+              >
+                {decisionExpanded ? '↑ See less' : '↓ See more'}
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexShrink: 0, flexWrap: 'wrap' }}>
@@ -283,7 +293,10 @@ export default function SessionView({ session: initialSession }: Props) {
           </div>
         )}
         <p style={{ marginTop: 8, fontSize: 11, color: 'var(--text-4)' }}>
-          Sessions are private by URL. No account or identity is linked to this decision.
+          {session.user_id
+            ? 'This session is linked to your account and included in your decision memory.'
+            : 'Sessions are private by URL. No account or identity is linked to this decision.'
+          }
         </p>
       </div>
 
