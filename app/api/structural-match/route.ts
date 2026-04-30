@@ -227,20 +227,23 @@ export async function POST(req: Request) {
 
     // ── 8. Write pairwise scores into structural_scores ─────────
     // This populates the structural_scores table (previously always empty).
+    // SCHEMA NOTE: structural_scores has no threshold_met column — dropped.
+    //   threshold_met is derivable as (total_score >= 45) from stored data.
+    //   user_email is stored for per-user traceability queries.
     if (pastSnapshots.length > 0) {
       const scoreRows = pastSnapshots.map(past => {
         const breakdown = scoreStructuralSimilarity(currentSnapshot, past)
         return {
-          session_id_a:    sessionId,
-          session_id_b:    past.session_id,
+          session_id_a:         sessionId,
+          session_id_b:         past.session_id,
+          user_email:           userEmail ?? null,  // for traceability queries
           total_score:          breakdown.total,
           decision_type_score:  breakdown.decision_type,
           register_score:       breakdown.register,
           stakes_score:         breakdown.stakes,
           counterparty_score:   breakdown.counterparty,
           time_pressure_score:  breakdown.time_pressure,
-          threshold_met:   breakdown.total >= 45,
-          computed_at:     new Date().toISOString(),
+          computed_at:          new Date().toISOString(),
         }
       })
 
