@@ -233,12 +233,12 @@ export async function POST(req: Request) {
         return {
           session_id_a:    sessionId,
           session_id_b:    past.session_id,
-          score_total:     breakdown.total,
-          score_type:      breakdown.decision_type,
-          score_register:  breakdown.register,
-          score_stakes:    breakdown.stakes,
-          score_counterparty: breakdown.counterparty,
-          score_time:      breakdown.time_pressure,
+          total_score:          breakdown.total,
+          decision_type_score:  breakdown.decision_type,
+          register_score:       breakdown.register,
+          stakes_score:         breakdown.stakes,
+          counterparty_score:   breakdown.counterparty,
+          time_pressure_score:  breakdown.time_pressure,
           threshold_met:   breakdown.total >= 45,
           computed_at:     new Date().toISOString(),
         }
