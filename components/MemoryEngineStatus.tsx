@@ -22,7 +22,7 @@ interface Props {
 }
 
 const PATTERN_MEMORY_THRESHOLD = 5
-const MIRROR_THRESHOLD = 10
+const MIRROR_THRESHOLD = 5   // Sprint 7a: Mirror unlocks at 5 sessions (same as Pattern Memory)
 
 function SegmentBar({ filled, total }: { filled: number; total: number }) {
   return (
@@ -115,7 +115,6 @@ export default function MemoryEngineStatus({
   }
 
   // ── Identified view (email or user_id present) ─────────────────────────────
-  const sessionsTowardPattern = Math.min(sessionCount, PATTERN_MEMORY_THRESHOLD)
   const sessionsTowardMirror  = Math.min(sessionCount, MIRROR_THRESHOLD)
   const patternActive         = sessionCount >= PATTERN_MEMORY_THRESHOLD
   const mirrorReady           = sessionCount >= MIRROR_THRESHOLD
@@ -123,13 +122,15 @@ export default function MemoryEngineStatus({
   let statusLabel: string
   let statusColor: string
   if (mirrorReady) {
-    statusLabel = 'Mirror Module ready'
+    statusLabel = 'Pattern Memory active · Mirror unlocked'
     statusColor = '#4ade80'
   } else if (patternActive) {
-    statusLabel = `Pattern Memory active · ${MIRROR_THRESHOLD - sessionCount} more to unlock Mirror`
+    // patternActive and mirrorReady are same threshold now — this branch shouldn't fire
+    statusLabel = 'Pattern Memory active'
     statusColor = '#4ade80'
   } else {
-    statusLabel = `Pattern Memory inactive · ${PATTERN_MEMORY_THRESHOLD - sessionCount} more session${PATTERN_MEMORY_THRESHOLD - sessionCount !== 1 ? 's' : ''} to activate`
+    const remaining = PATTERN_MEMORY_THRESHOLD - sessionCount
+    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} to activate Pattern Memory + Mirror`
     statusColor = 'var(--gold)'
   }
 
@@ -199,19 +200,36 @@ export default function MemoryEngineStatus({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <SegmentBar
-                filled={mirrorReady ? MIRROR_THRESHOLD : patternActive ? sessionsTowardMirror : sessionsTowardPattern}
-                total={mirrorReady ? MIRROR_THRESHOLD : patternActive ? MIRROR_THRESHOLD : PATTERN_MEMORY_THRESHOLD}
+                filled={Math.min(sessionCount, MIRROR_THRESHOLD)}
+                total={MIRROR_THRESHOLD}
               />
               <span style={{ fontSize: 11, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                 {mirrorReady
                   ? `${sessionCount} sessions`
-                  : patternActive
-                    ? `${sessionCount} of ${MIRROR_THRESHOLD}`
-                    : `${sessionCount} of ${PATTERN_MEMORY_THRESHOLD}`}
+                  : `${sessionCount} of ${MIRROR_THRESHOLD}`}
               </span>
             </div>
             <p style={{ fontSize: 11, color: statusColor, margin: 0, lineHeight: 1.4 }}>
               {statusLabel}
+              {mirrorReady && (
+                <a
+                  href="/mirror"
+                  style={{
+                    display:        'inline-flex',
+                    alignItems:     'center',
+                    gap:            4,
+                    marginLeft:     10,
+                    color:          '#4ade80',
+                    fontSize:       10.5,
+                    fontWeight:     600,
+                    textDecoration: 'none',
+                    letterSpacing:  '0.06em',
+                    opacity:        0.85,
+                  }}
+                >
+                  View Mirror →
+                </a>
+              )}
             </p>
           </div>
 
@@ -273,25 +291,7 @@ export default function MemoryEngineStatus({
           </div>
         )}
 
-        {patternActive && !mirrorReady && pendingOutcomes > 0 && (
-          <div
-            style={{
-              marginTop: 10,
-              paddingTop: 10,
-              borderTop: '1px solid var(--border-dim)',
-            }}
-          >
-            <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5 }}>
-              <span style={{ color: 'var(--gold)' }}>↑</span> Logging outcomes improves bias detection accuracy.&nbsp;
-              <button
-                onClick={onScrollToHistory}
-                style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', padding: 0, fontSize: 11, fontFamily: 'inherit', textDecoration: 'underline' }}
-              >
-                Log {pendingOutcomes} pending {pendingOutcomes === 1 ? 'outcome' : 'outcomes'} →
-              </button>
-            </p>
-          </div>
-        )}
+
       </div>
     </>
   )
