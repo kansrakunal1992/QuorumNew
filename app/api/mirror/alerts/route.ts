@@ -17,9 +17,11 @@
 // AlertBias:
 //   { biasKey, biasLabel, detectionCount, activationKeywords: string[] }
 //
+
 // activationKeywords is derived from activation_contexts JSONB by
-// flattening all values into a single array of lowercase strings.
+// reading the real session-level activation evidence stored by bias-score.
 // The client checks if any of these appear in the decision text.
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }         from 'next/server'
@@ -35,17 +37,123 @@ function getBiasLabel(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-// ── Flatten activation_contexts JSONB → keyword array ────────────────────────
+
+// ── Extract activation_contexts JSONB → keyword array ────────────────────────
 //
-// activation_contexts shape (from bias-scorer):
+// Actual activation_contexts shape stored by /api/bias-score:
 // {
-//   decision_type:  ["financial", "career"],
-//   pressure_type:  ["time_pressure"],
-//   stakeholder:    ["trusted_contact"],
-//   emotional_tone: ["anxiety"],
+//   [sessionId]: {
+//     reasoning: string,
+//     decision_type?: string | null,
+//     emotional_signature?: string,
+//     urgency_present?: boolean,
+//     counterparty_present?: boolean,
+//     prosecutor_score?: number,
+//     defense_score?: number
+//   }
 // }
 //
-// We flatten all values to a unique lowercase keyword list for client matching.
+// We extract grounded trigger terms only from the user's real historical
+// activation evidence. No generic bias-level fallback map.
+
+function normaliseKeyword(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .trim()
+}
+
+function addKeyword(keywords: Set<string>, value: unknown) {
+  if (typeof value !== 'string') return
+
+  const cleaned = normaliseKeyword(value)
+  if (!cleaned) return
+
+  keywords.add(cleaned)
+
+  // Preserve raw underscore form too, in case future input contains it.
+  const raw = value.toLowerCase().trim()
+  if (raw && raw !== cleaned) keywords.add(raw)
+}
+
+function extractReasoningKeywords(reasoning: string): string[] {
+  const text = reasoning.toLowerCase()
+  const found = new Set<string>()
+
+  const phraseCandidates = [
+    'exit plan',
+    'exit terms',
+    'reversal plan',
+    'return path',
+    'fallback',
+    'backup plan',
+    're-entry',
+    'walkaway',
+    'walk away',
+    'buyback',
+    'buyout',
+    'vesting',
+    'lock-in',
+    'lock in',
+
+    'hidden dependency',
+    'hidden dependencies',
+    'unknowns',
+    'unknown unknowns',
+    'unmodelled',
+    'unmodeled',
+    'not fully modeled',
+    'not fully modelled',
+    'risk cascade',
+    'complexity',
+
+    'control',
+    'active management',
+    'outside control',
+    'prevent',
+    'manage',
+    'discipline',
+
+    'stated support',
+    'support',
+    'buy-in',
+    'commitment',
+    'alignment',
+    'unspoken assumptions',
+    'spouse',
+    'co-founder',
+    'partner',
+    'family',
+
+    'deadline',
+    'urgency',
+    'urgent',
+    'delay',
+    'price appreciation',
+    'missing gains',
+    'opportunity',
+    'upside',
+
+    'recent appreciation',
+    'trailing data',
+    'last 12 months',
+    'recent',
+    'latest',
+
+    'stable job',
+    'stability',
+    'downside',
+    'loss',
+  ]
+
+  for (const phrase of phraseCandidates) {
+    if (text.includes(phrase)) {
+      found.add(phrase)
+    }
+  }
+
+  return Array.from(found)
+}
 
 function extractKeywords(activation_contexts: unknown): string[] {
   if (!activation_contexts || typeof activation_contexts !== 'object') return []
@@ -53,20 +161,47 @@ function extractKeywords(activation_contexts: unknown): string[] {
   const keywords = new Set<string>()
 
   for (const val of Object.values(contexts)) {
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (typeof item === 'string') {
-          // Normalise: replace underscores with space, lowercase
-          // "time_pressure" → "time pressure", "financial" → "financial"
-          keywords.add(item.toLowerCase().replace(/_/g, ' '))
-          // Also add the raw form so "time_pressure" matches "time_pressure" in text
-          keywords.add(item.toLowerCase())
-        }
+    
+  if (!val || typeof val !== 'object') continue
+  
+      const ctx = val as {
+        reasoning?: unknown
+        decision_type?: unknown
+        emotional_signature?: unknown
+        urgency_present?: unknown
+        counterparty_present?: unknown
       }
+  
+      addKeyword(keywords, ctx.decision_type)
+      addKeyword(keywords, ctx.emotional_signature)
+  
+      if (ctx.urgency_present === true) {
+        keywords.add('urgent')
+        keywords.add('urgency')
+        keywords.add('deadline')
+        keywords.add('delay')
+        keywords.add('time pressure')
+      }
+  
+      if (ctx.counterparty_present === true) {
+        keywords.add('counterparty')
+        keywords.add('partner')
+        keywords.add('co-founder')
+        keywords.add('spouse')
+        keywords.add('family')
+        keywords.add('stakeholder')
+      }
+  
+      if (typeof ctx.reasoning === 'string') {
+        for (const kw of extractReasoningKeywords(ctx.reasoning)) {
+          keywords.add(kw)
+        }
     }
   }
 
-  return Array.from(keywords)
+  return Array.from(keywords) 
+  .filter(kw => kw.length >= 3)
+  .slice(0, 30)
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────

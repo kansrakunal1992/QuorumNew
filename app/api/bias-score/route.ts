@@ -155,7 +155,7 @@ export async function POST(req: Request) {
         reasoning:        score.reasoning,
         prosecutor_score: score.prosecutor_score,
         defense_score:    score.defense_score,
-        decision_type:    ontology?.decision_type_primary ?? null,
+        decision_type:    ontology?.decision_type_primary ?? score.activation_context?.decision_type ?? null,
       }
 
       // Look up existing bias row scoped to this specific user identity
