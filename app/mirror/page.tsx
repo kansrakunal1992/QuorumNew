@@ -28,6 +28,7 @@ import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
 import MirrorTimeline    from '@/components/MirrorTimeline'
 import BiasFingerprint   from '@/components/BiasFingerprint'
+import IndependenceScore from '@/components/IndependenceScore'
 import type { MirrorStatus, TimelineSession } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -686,23 +687,12 @@ function UnlockedView({
       {/* Divider */}
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Decision Independence Score — placeholder (Sprint 7c) */}
+      {/* Decision Independence Score — Sprint 7c */}
       <div>
         <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 14px' }}>
           Decision Independence
         </h3>
-        <div style={{
-          background:   'var(--bg-card)',
-          border:       '1px solid var(--border-dim)',
-          borderRadius: 12,
-          padding:      '20px 20px',
-        }}>
-          <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
-            Tracks whether you're incorporating Quorum's frameworks in your own reasoning,
-            unprompted — the measure of whether your judgment is truly compounding.
-            Score calculation coming in the next update.
-          </p>
-        </div>
+        <IndependenceScore authToken={authToken} />
       </div>
     </div>
   )

@@ -183,6 +183,12 @@ export async function POST(req: Request) {
       console.error('[Examiner] Structural match trigger failed (non-blocking):', err)
     )
 
+    // Sprint 7c: Fire independence scoring server-side — fire-and-forget
+    // Requires user_id (auth) — sessions without user_id return early in the route.
+    triggerIndependenceScoring(sessionId).catch(err =>
+      console.error('[Examiner] Independence scoring trigger failed (non-blocking):', err)
+    )
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[Examiner] Route error:', err)
@@ -211,6 +217,14 @@ async function triggerStructuralMatch(sessionId: string): Promise<void> {
   // Session identity is read from the sessions table server-side —
   // no need to pass userEmail/userId from here.
   await fetch(`${getBaseUrl()}/api/structural-match`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  })
+}
+
+async function triggerIndependenceScoring(sessionId: string): Promise<void> {
+  await fetch(`${getBaseUrl()}/api/mirror/independence`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ sessionId }),
