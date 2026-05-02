@@ -27,6 +27,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
 import MirrorTimeline    from '@/components/MirrorTimeline'
+import BiasFingerprint   from '@/components/BiasFingerprint'
 import type { MirrorStatus, TimelineSession } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -408,13 +409,139 @@ function TeaserTile({ biasKey }: { biasKey: string }) {
   )
 }
 
+// ── Unlock code input ─────────────────────────────────────────────────────────
+function UnlockCodeInput({ authToken, onSuccess }: { authToken: string; onSuccess: () => void }) {
+  const [code,     setCode]     = useState('')
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState('')
+  const [expanded, setExpanded] = useState(false)
+
+  const handleUnlock = async () => {
+    if (!code.trim()) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/mirror/unlock', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ code: code.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        onSuccess()
+      } else {
+        setError(data.error === 'Invalid unlock code'
+          ? 'That code isn't right. Check the message we sent you.'
+          : 'Something went wrong. Try again.')
+      }
+    } catch {
+      setError('Connection error. Check your network and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        style={{
+          background:   'transparent',
+          border:       '1px solid var(--border-mid)',
+          borderRadius: 8,
+          padding:      '9px 18px',
+          color:        'var(--text-3)',
+          fontSize:     12.5,
+          fontFamily:   'inherit',
+          cursor:       'pointer',
+          width:        '100%',
+          textAlign:    'center',
+          transition:   'all 0.2s',
+          marginTop:    12,
+        }}
+        onMouseEnter={e => {
+          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
+          ;(e.currentTarget as HTMLButtonElement).style.color       = 'var(--gold)'
+        }}
+        onMouseLeave={e => {
+          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-mid)'
+          ;(e.currentTarget as HTMLButtonElement).style.color       = 'var(--text-3)'
+        }}
+      >
+        Have an unlock code? Enter it here →
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 8px' }}>
+        Enter the code shared with you:
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          type="text"
+          placeholder="Unlock code"
+          value={code}
+          onChange={e => setCode(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleUnlock()}
+          autoFocus
+          style={{
+            flex:         1,
+            background:   'var(--bg-inset)',
+            border:       `1px solid ${error ? '#e05050' : 'var(--border-mid)'}`,
+            borderRadius: 8,
+            padding:      '9px 13px',
+            fontSize:     13,
+            color:        'var(--text-1)',
+            fontFamily:   'monospace',
+            outline:      'none',
+            letterSpacing:'0.04em',
+          }}
+          disabled={loading}
+        />
+        <button
+          onClick={handleUnlock}
+          disabled={loading || !code.trim()}
+          style={{
+            padding:      '9px 18px',
+            background:   loading || !code.trim() ? 'transparent' : 'rgba(201,168,76,0.12)',
+            border:       '1px solid var(--gold-dim)',
+            borderRadius: 8,
+            color:        'var(--gold)',
+            fontSize:     13,
+            fontWeight:   600,
+            fontFamily:   'inherit',
+            cursor:       loading || !code.trim() ? 'not-allowed' : 'pointer',
+            opacity:      loading || !code.trim() ? 0.45 : 1,
+            whiteSpace:   'nowrap',
+            transition:   'all 0.15s',
+          }}
+        >
+          {loading ? 'Checking…' : 'Unlock →'}
+        </button>
+      </div>
+      {error && (
+        <p style={{ fontSize: 11, color: '#e05050', margin: '6px 0 0' }}>{error}</p>
+      )}
+    </div>
+  )
+}
+
 // ── Gate: Paywall ─────────────────────────────────────────────────────────────
 function PaywallGate({
   status,
   sessions,
+  authToken,
+  onUnlocked,
 }: {
   status: MirrorStatus
   sessions: TimelineSession[]
+  authToken: string
+  onUnlocked: () => void
 }) {
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
@@ -511,13 +638,9 @@ function PaywallGate({
           ))}
         </div>
         <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 6px', lineHeight: 1.5 }}>
-          To unlock, send a message to{' '}
-          <span style={{ color: 'var(--text-3)' }}>the Quorum team</span>{' '}
-          — payment details provided on confirmation.
-        </p>
-        <p style={{ fontSize: 10.5, color: 'var(--text-4)', margin: 0, fontStyle: 'italic' }}>
           Mirror unlock is also included in the ₹25,000 live advisory session + Brief.
         </p>
+        <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
       </div>
     </div>
   )
@@ -527,9 +650,11 @@ function PaywallGate({
 function UnlockedView({
   status,
   sessions,
+  authToken,
 }: {
   status: MirrorStatus
   sessions: TimelineSession[]
+  authToken: string
 }) {
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
@@ -550,34 +675,16 @@ function UnlockedView({
       {/* Divider */}
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Bias Fingerprint — placeholder (populated Sprint 7b) */}
+      {/* Bias Fingerprint — live (Sprint 7b) */}
       <div style={{ marginBottom: 28 }}>
         <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 14px' }}>
           Bias Fingerprint
         </h3>
-        <div style={{
-          background:   'var(--bg-card)',
-          border:       '1px solid var(--border-dim)',
-          borderRadius: 12,
-          padding:      '20px 20px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <div style={{
-              width:  8, height: 8, borderRadius: '50%',
-              background: 'var(--gold)',
-              animation:  'blink 2s ease-in-out infinite',
-            }} />
-            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>
-              Analyzing your patterns…
-            </span>
-          </div>
-          <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
-            Your bias fingerprint is being compiled from {status.sessionCount} sessions.
-            Pattern tiles and your personal decision narrative will appear here once the
-            analysis cycle completes.
-          </p>
-        </div>
+        <BiasFingerprint authToken={authToken} />
       </div>
+
+      {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Decision Independence Score — placeholder (Sprint 7c) */}
       <div>
@@ -605,10 +712,10 @@ function UnlockedView({
 export default function MirrorPage() {
   const router = useRouter()
 
-  const [loading,   setLoading]   = useState(true)
-  const [status,    setStatus]    = useState<MirrorStatus | null>(null)
-  const [sessions,  setSessions]  = useState<TimelineSession[]>([])
-  const [authToken, setAuthToken] = useState<string | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [status,     setStatus]     = useState<MirrorStatus | null>(null)
+  const [sessions,   setSessions]   = useState<TimelineSession[]>([])
+  const [authToken,  setAuthToken]  = useState<string | null>(null)
   const [fetchError, setFetchError] = useState(false)
 
   // ── 1. Get auth token ──────────────────────────────────────────────────────
@@ -653,6 +760,13 @@ export default function MirrorPage() {
     if (authToken !== undefined) {
       fetchStatus(authToken)
     }
+  }, [authToken, fetchStatus])
+
+  // ── Called when unlock code succeeds ──────────────────────────────────────
+  // Re-fetches status so gateState transitions paywall → unlocked in-place.
+  const handleUnlocked = useCallback(() => {
+    setLoading(true)
+    fetchStatus(authToken)
   }, [authToken, fetchStatus])
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -795,10 +909,19 @@ export default function MirrorPage() {
                 <ThresholdGate sessionCount={status.sessionCount} threshold={status.threshold} />
               )}
               {status.gateState === 'paywall'   && (
-                <PaywallGate status={status} sessions={sessions} />
+                <PaywallGate
+                  status={status}
+                  sessions={sessions}
+                  authToken={authToken ?? ''}
+                  onUnlocked={handleUnlocked}
+                />
               )}
               {status.gateState === 'unlocked'  && (
-                <UnlockedView status={status} sessions={sessions} />
+                <UnlockedView
+                  status={status}
+                  sessions={sessions}
+                  authToken={authToken ?? ''}
+                />
               )}
             </>
           )}

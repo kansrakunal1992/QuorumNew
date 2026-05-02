@@ -75,3 +75,25 @@ export interface IndependenceScoreEntry {
   calculated_at: string
   signals: Record<string, number> | null
 }
+
+// ── Mirror Fingerprint (Sprint 7b) ────────────────────────────────────────────
+
+export interface FingerprintTile {
+  biasKey: string
+  biasLabel: string
+  detectionCount: number
+  confidenceWeight: number        // 0–1 accumulated
+  confidenceDots: 1 | 2 | 3      // 1=forming, 2=confirmed, 3=conditional
+  asymmetryAvg: number
+  activationSummary: string | null // "Activates when: X + Y" — derived from contexts
+  interpretation: string           // AI-generated, 25–35 words
+  isTeaser: boolean                // detection_count === 1 (blurred in paid view)
+}
+
+export interface FingerprintData {
+  narrative: string | null         // null if < 2 confirmed patterns
+  confirmedTiles: FingerprintTile[] // detection_count >= 2
+  formingTiles: FingerprintTile[]   // detection_count === 1 (teasers in unlocked view)
+  sessionCount: number
+  generatedAt: string
+}
