@@ -29,6 +29,7 @@ import { createClient }  from '@/lib/supabase'
 import MirrorTimeline    from '@/components/MirrorTimeline'
 import BiasFingerprint   from '@/components/BiasFingerprint'
 import IndependenceScore from '@/components/IndependenceScore'
+import DecisionRules     from '@/components/DecisionRules'
 import type { MirrorStatus, TimelineSession } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -688,11 +689,32 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Decision Independence Score — Sprint 7c */}
-      <div>
+      <div style={{ marginBottom: 28 }}>
         <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 14px' }}>
           Decision Independence
         </h3>
         <IndependenceScore authToken={authToken} />
+      </div>
+
+      {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* Decision Rules — Sprint 7d */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Decision Rules
+          </h3>
+          {status.sessionCount >= 8 && (
+            <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
+              From {status.sessionCount} decisions
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          The operating principles you implicitly follow — extracted from how you reason, not what you say about yourself.
+        </p>
+        <DecisionRules authToken={authToken} sessionCount={status.sessionCount} />
       </div>
     </div>
   )

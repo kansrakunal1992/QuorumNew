@@ -5,6 +5,7 @@ import { getStoredSessionIds, pushSessionId, getStoredUserEmail, getOrCreateDevi
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
+import BehaviorAlerts from '@/components/BehaviorAlerts'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -66,6 +67,7 @@ export default function Home() {
   const [sessions,     setSessions]     = useState<SessionSummary[]>([])
   const [loadingHist,  setLoadingHist]  = useState(false)
   const [activeTab,    setActiveTab]    = useState<'all'|'pending'|'decided'>('all')
+  const [authToken,    setAuthToken]    = useState<string | null>(null)
 
   // Reset form on mount — clears any browser-restored textarea content
   useEffect(() => {
@@ -78,8 +80,6 @@ export default function Home() {
   // Load history on mount — merges localStorage IDs + user_id (cross-device)
   useEffect(() => {
     const ids = getStoredSessionIds()
-    // Proceed even if ids is empty — authenticated users may have history
-    // on this device that needs loading via user_id
     setLoadingHist(true)
 
     const loadHistory = async () => {
@@ -89,6 +89,9 @@ export default function Home() {
         const supabase = createClient()
         const { data: { session: authSession } } = await supabase.auth.getSession()
         const token = authSession?.access_token ?? null
+
+        // Store token for BehaviorAlerts
+        setAuthToken(token)
 
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
@@ -222,6 +225,9 @@ export default function Home() {
               </>
             )}
           </div>
+
+          {/* ── Behavioral Alert (Sprint 7d) — fires when bias pattern detected ── */}
+          <BehaviorAlerts decision={decision} authToken={authToken} />
 
           {/* ── Examiner Phase 0 — Register selector ──────────── */}
         <div style={{ marginTop: 18 }}>
