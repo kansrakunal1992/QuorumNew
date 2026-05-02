@@ -60,7 +60,7 @@ const DECISION_TYPE_LABELS: Record<string, string> = {
   commitment:   'when committing to something hard to reverse',
   allocation:   'when deciding how to allocate money or resources',
   transition:   'when considering a major life or career change',
-  relationship: 'when the decision involves people you're close to',
+  relationship: "when the decision involves people you're close to",
   hiring:       'when making a people or team decision',
   investment:   'when evaluating a financial investment',
   negotiation:  'when negotiating terms with another party',
