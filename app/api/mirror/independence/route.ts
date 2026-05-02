@@ -88,7 +88,9 @@ export async function GET(req: Request) {
   const band = getScoreBand(latestEntry.score)
 
   // Session count from signals jsonb (stored there for display)
-  const sessionCount = (latestEntry.signals as Record<string, unknown> | null)?.sessionCount as number ?? 0
+  const sessionCount = (latestEntry.signals as Record<string, unknown> | null)?.scoredCount as number
+    ?? (latestEntry.signals as Record<string, unknown> | null)?.sessionCount as number
+    ?? 0
 
   return NextResponse.json({
     score:          latestEntry.score,
@@ -156,6 +158,7 @@ export async function POST(req: Request) {
         calculated_at: result.calculatedAt,
         signals: {
           sessionCount:  result.sessionCount,
+          scoredCount:   result.scoredCount,
           sessionScores: result.sessionScores,
           band:          result.band.label,
         },
