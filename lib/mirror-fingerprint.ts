@@ -258,7 +258,12 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       confidenceDots:    getConfidenceDots(detections),
       asymmetryAvg:      b.asymmetry_score_avg as number,
       activationSummary,
-      interpretation:    aiTile?.interpretation ?? `Detected in ${detections} of your sessions.`,
+      // Fallback if AI didn't generate interpretation for this tile:
+      // Use activation context to produce a minimal but meaningful string
+      interpretation:    aiTile?.interpretation
+        ?? (activationSummary
+          ? `This pattern has appeared consistently across ${detections} of your sessions. ${activationSummary}.`
+          : `A recurring pattern detected across ${detections} of your sessions — the data shows consistent activation under similar decision conditions.`),
       isTeaser:          false,
     }
   })

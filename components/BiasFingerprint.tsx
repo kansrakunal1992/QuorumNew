@@ -112,13 +112,29 @@ function NarrativeBlock({ narrative, sessionCount }: { narrative: string | null;
             Profile forming
           </span>
         </div>
-        <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.65 }}>
+        <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 12px', lineHeight: 1.65 }}>
           Your personal decision narrative compiles once two or more patterns are confirmed
           across your sessions. Keep running decisions — each one sharpens the picture.
           {sessionCount > 0 && (
             <> You have {sessionCount} session{sessionCount !== 1 ? 's' : ''} logged so far.</>
           )}
         </p>
+        <a
+          href="/"
+          style={{
+            display:       'inline-flex',
+            alignItems:    'center',
+            gap:           5,
+            fontSize:      12.5,
+            color:         'var(--gold)',
+            fontWeight:    600,
+            textDecoration:'none',
+          }}
+          onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.75')}
+          onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+        >
+          Run your next decision →
+        </a>
       </div>
     )
   }
@@ -224,10 +240,26 @@ export default function BiasFingerprint({ authToken }: Props) {
         borderRadius: 12,
         padding:      '20px 22px',
       }}>
-        <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.65 }}>
+        <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 12px', lineHeight: 1.65 }}>
           No patterns detected yet. Complete the Examiner phase in your next session —
           those answers are what Mirror uses to build your fingerprint.
         </p>
+        <a
+          href="/"
+          style={{
+            display:       'inline-flex',
+            alignItems:    'center',
+            gap:           5,
+            fontSize:      12.5,
+            color:         'var(--gold)',
+            fontWeight:    600,
+            textDecoration:'none',
+          }}
+          onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.75')}
+          onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+        >
+          Run a decision →
+        </a>
       </div>
     )
   }
@@ -255,15 +287,41 @@ export default function BiasFingerprint({ authToken }: Props) {
       {/* Forming tiles (teasers even in paid view — more sessions needed) */}
       {data.formingTiles.length > 0 && (
         <>
-          <p style={{
-            fontSize:   11,
-            color:      'var(--text-4)',
-            margin:     '0 0 8px',
-            fontStyle:  'italic',
+          <div style={{
+            display:        'flex',
+            alignItems:     'center',
+            justifyContent: 'space-between',
+            margin:         '0 0 8px',
+            flexWrap:       'wrap',
+            gap:            8,
           }}>
-            {data.formingTiles.length} pattern{data.formingTiles.length !== 1 ? 's' : ''} forming —
-            one more session to confirm
-          </p>
+            <p style={{
+              fontSize:  11,
+              color:     'var(--text-4)',
+              margin:    0,
+              fontStyle: 'italic',
+            }}>
+              {data.formingTiles.length} pattern{data.formingTiles.length !== 1 ? 's' : ''} forming
+              — one more session to confirm
+            </p>
+            <a
+              href="/"
+              style={{
+                fontSize:      11.5,
+                color:         'var(--gold)',
+                textDecoration:'none',
+                fontWeight:    600,
+                display:       'flex',
+                alignItems:    'center',
+                gap:           4,
+                flexShrink:    0,
+              }}
+              onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.75')}
+              onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+            >
+              Run a decision →
+            </a>
+          </div>
           <div style={{
             display:             'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',

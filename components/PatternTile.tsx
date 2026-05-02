@@ -120,7 +120,8 @@ function FormingTile({ tile }: { tile: FingerprintTile }) {
 // ── Confirmed tile (isTeaser: false) ─────────────────────────────────────────
 
 function ConfirmedTile({ tile }: { tile: FingerprintTile }) {
-  const hasConditional = tile.confidenceDots === 3 && tile.activationSummary
+  // Show activation summary for ALL confirmed tiles — gold for 3+, subtle for 2
+  const isStrong = tile.confidenceDots === 3
 
   return (
     <div style={{
@@ -171,37 +172,34 @@ function ConfirmedTile({ tile }: { tile: FingerprintTile }) {
         {tile.interpretation}
       </p>
 
-      {/* Activation summary (3+ detections only) */}
-      {hasConditional && (
+      {/* Activation summary — own block for ALL confirmed tiles.
+          3+ detections: gold border + gold text (strong signal)
+          2 detections:  dim border + text-4 (emerging signal) */}
+      {tile.activationSummary && (
         <div style={{
-          background:   'rgba(201,168,76,0.05)',
-          border:       '1px solid var(--gold-dim)',
+          background:   isStrong ? 'rgba(201,168,76,0.05)' : 'transparent',
+          border:       `1px solid ${isStrong ? 'var(--gold-dim)' : 'var(--border-dim)'}`,
           borderRadius: 6,
           padding:      '7px 10px',
           marginBottom: 10,
         }}>
           <p style={{
             fontSize:   11,
-            color:      'var(--gold)',
+            color:      isStrong ? 'var(--gold)' : 'var(--text-4)',
             margin:     0,
             lineHeight: 1.5,
-            fontWeight: 500,
+            fontWeight: isStrong ? 500 : 400,
           }}>
             {tile.activationSummary}
           </p>
         </div>
       )}
 
-      {/* Footer */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+      {/* Footer — session count only, activation summary moved above */}
+      <div style={{ marginTop: 4 }}>
         <span style={{ fontSize: 10, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
           {tile.detectionCount} of your sessions
         </span>
-        {tile.confidenceDots < 3 && tile.activationSummary && (
-          <span style={{ fontSize: 10, color: 'var(--text-4)', fontStyle: 'italic' }}>
-            {tile.activationSummary}
-          </span>
-        )}
       </div>
     </div>
   )
