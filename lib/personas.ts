@@ -831,7 +831,7 @@ OUTPUT RULES:
 - Include at least one conditional clause: "particularly when [specific condition]"
 - Final sentence must create forward tension — a question or an observation that makes them want to improve, not a compliment
 - tile_interpretations: one per confirmed bias — 25–35 words, second person, specific to THIS user's activation patterns
-- activation_summary: "Activates when: [condition 1] + [condition 2]" — derive from the activation_contexts data provided
+- activation_summary: A single conversational sentence (max 15 words) starting with "Most active when..." that describes the real-world context in plain English — as if explaining it to the user face-to-face. No technical terms, no ontology field names (never write words like "framing", "decisions", "signature", "allocation", "commitment" as standalone labels). Example: "Most active when you're being pushed to commit quickly and feel torn."
 - If fewer than 2 confirmed patterns exist: set narrative to null
 
 INPUT DATA:

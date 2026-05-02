@@ -52,10 +52,35 @@ function getConfidenceDots(detectionCount: number): 1 | 2 | 3 {
 //   }
 // }
 //
-// We find the most frequent decision_type and emotional_signature across
-// all sessions where this bias was detected, then compose a short condition string.
+// ── Plain-English label maps ──────────────────────────────────────────────────
+// Maps raw ontology values (decision_type, emotional_signature) to
+// conversational phrases a non-technical user would recognize.
 
-function deriveActivationSummary(
+const DECISION_TYPE_LABELS: Record<string, string> = {
+  commitment:   'when committing to something hard to reverse',
+  allocation:   'when deciding how to allocate money or resources',
+  transition:   'when considering a major life or career change',
+  relationship: 'when the decision involves people you're close to',
+  hiring:       'when making a people or team decision',
+  investment:   'when evaluating a financial investment',
+  negotiation:  'when negotiating terms with another party',
+  exit:         'when considering leaving or unwinding something',
+  partnership:  'when entering or exiting a partnership',
+}
+
+const EMOTION_LABELS: Record<string, string> = {
+  ambivalence:  'you feel torn or uncertain about the direction',
+  urgency:      'you feel pressure to decide quickly',
+  obligation:   'you feel a duty to someone else',
+  fear:         'there is a fear of getting it wrong',
+  excitement:   'the upside is emotionally compelling',
+  regret:       'past decisions are weighing on the current one',
+  anxiety:      'the stakes feel personally threatening',
+  confidence:   'you feel unusually certain about the outcome',
+  resignation:  'you feel like the decision has already been made for you',
+}
+
+function humanizeActivationSummary(
   activationContexts: Record<string, unknown>,
   detectionCount: number,
 ): string | null {
@@ -65,8 +90,8 @@ function deriveActivationSummary(
   if (entries.length === 0) return null
 
   // Count frequencies
-  const typeCounts:     Record<string, number> = {}
-  const emotionCounts:  Record<string, number> = {}
+  const typeCounts:    Record<string, number> = {}
+  const emotionCounts: Record<string, number> = {}
   let urgencyCount      = 0
   let counterpartyCount = 0
 
@@ -79,20 +104,38 @@ function deriveActivationSummary(
     if (ctx.counterparty_present) counterpartyCount++
   }
 
-  const topType   = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
+  const topType    = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
   const topEmotion = Object.entries(emotionCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
 
   const conditions: string[] = []
 
-  if (topType)    conditions.push(topType.replace(/_/g, ' ') + ' decisions')
-  if (topEmotion) conditions.push(topEmotion + ' framing')
-  if (urgencyCount > entries.length / 2)      conditions.push('time pressure present')
-  if (counterpartyCount > entries.length / 2) conditions.push('counterparty involved')
+  // Prefer mapped labels; fall back to a generic but still readable phrase
+  if (topType) {
+    conditions.push(
+      DECISION_TYPE_LABELS[topType]
+        ?? `when facing a ${topType.replace(/_/g, ' ')} decision`,
+    )
+  }
+  if (topEmotion) {
+    conditions.push(
+      EMOTION_LABELS[topEmotion]
+        ?? `when ${topEmotion.replace(/_/g, ' ')} is present`,
+    )
+  }
+  if (!topEmotion && urgencyCount > entries.length / 2) {
+    conditions.push('you feel pressure to decide quickly')
+  }
+  if (!topType && counterpartyCount > entries.length / 2) {
+    conditions.push('another party is setting the terms')
+  }
 
-  // Only show activation summary when we have >= 2 sessions confirming the pattern
   if (detectionCount < 2 || conditions.length === 0) return null
 
-  return `Activates when: ${conditions.slice(0, 2).join(' + ')}`
+  // Compose as a readable sentence, not a tag list
+  if (conditions.length === 1) {
+    return `Most active ${conditions[0]}`
+  }
+  return `Most active ${conditions[0]} and ${conditions[1]}`
 }
 
 // ── AI narrative + interpretation generation ──────────────────────────────────
@@ -214,7 +257,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
   let aiContent: AIFingerprintResponse = { narrative: null, tile_interpretations: [] }
 
   if (confirmedRows.length >= 1) {
-    const top3Confirmed = confirmedRows.slice(0, 3).map(b => ({
+    const allConfirmed = confirmedRows.slice(0, 6).map(b => ({
       biasKey:            b.bias_parameter as string,
       biasLabel:          getBiasLabel(b.bias_parameter as string),
       detectionCount:     b.detection_count as number,
@@ -223,7 +266,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     }))
 
     aiContent = await generateFingerprintContent(
-      top3Confirmed,
+      allConfirmed,
       decisionTypeDistribution,
       sessionCount ?? 0,
       emotionPatterns,
@@ -248,7 +291,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
 
     // Activation summary: prefer AI-derived, fallback to rule-based
     const activationSummary =
-      aiTile?.activation_summary || deriveActivationSummary(activCtx, detections)
+      aiTile?.activation_summary || humanizeActivationSummary(activCtx, detections)
 
     return {
       biasKey,
