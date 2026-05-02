@@ -164,8 +164,33 @@ export async function POST(req: Request) {
     )
 
   if (error) {
-    console.error('[independence] Supabase upsert error:', error)
-    return NextResponse.json({ ok: false, error: 'DB error' }, { status: 500 })
+    // 42P10 = missing unique constraint — fall back to plain insert
+    // (idempotency lost but data still written; fix by running sprint7c_independence_constraint.sql)
+    if (error.code === '42P10') {
+      console.warn('[independence] Missing unique constraint on session_id — falling back to insert. Run sprint7c_independence_constraint.sql to fix.')
+      const { error: insertError } = await supabase
+        .from('independence_score_log')
+        .insert({
+          user_id:       userId,
+          user_email:    userEmail,
+          session_id:    sessionId,
+          score:         result.score,
+          delta:         result.delta,
+          calculated_at: result.calculatedAt,
+          signals: {
+            sessionCount:  result.sessionCount,
+            sessionScores: result.sessionScores,
+            band:          result.band.label,
+          },
+        })
+      if (insertError) {
+        console.error('[independence] Insert fallback also failed:', insertError)
+        return NextResponse.json({ ok: false, error: 'DB error' }, { status: 500 })
+      }
+    } else {
+      console.error('[independence] Supabase upsert error:', error)
+      return NextResponse.json({ ok: false, error: 'DB error' }, { status: 500 })
+    }
   }
 
   return NextResponse.json({
