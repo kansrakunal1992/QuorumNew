@@ -434,7 +434,7 @@ function UnlockCodeInput({ authToken, onSuccess }: { authToken: string; onSucces
         onSuccess()
       } else {
         setError(data.error === 'Invalid unlock code'
-          ? 'That code isn't right. Check the message we sent you.'
+          ? "That code isn't right. Check the message we sent you."
           : 'Something went wrong. Try again.')
       }
     } catch {
