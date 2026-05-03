@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase'
 import RecordExport from '@/components/RecordExport'
 import OutcomeTracker from '@/components/OutcomeTracker'
+import BriefCTA from '@/components/BriefCTA'
 import Link from 'next/link'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
@@ -85,8 +86,13 @@ export default async function RecordPage({ params }: Props) {
         </div>
 
         {/* Outcome tracker — prominent, right after the decision */}
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 16 }}>
           <OutcomeTracker sessionId={session.id} existingOutcome={outcome} />
+        </div>
+
+        {/* Decision Brief CTA — Sprint 8 */}
+        <div style={{ marginBottom: 24 }}>
+          <BriefCTA sessionId={session.id} />
         </div>
 
         {/* Persona sections */}

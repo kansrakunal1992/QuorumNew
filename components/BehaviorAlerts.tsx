@@ -1,33 +1,35 @@
 'use client'
 
-// components/BehaviorAlerts.tsx
-// ── Mirror Module: Behavioral Alerts (Sprint 7d — v3) ────────────────────────
+// components/BehaviorAlerts.tsx  (Sprint 8 — phrase library v4)
+// ─────────────────────────────────────────────────────────────────────────────
+// Changes vs v3:
+//   Phrase library expanded after systematic analysis of 90 test cases (9 biases
+//   × 10 decisions). Gap categories filled:
+//     • Exit optionality  — reversal-assurance phrases ("restart it", "buy it back",
+//       "rebuild it", "re-engage", "anytime if needed", "catch up later")
+//     • Complexity opacity — dismissal phrases ("looks straightforward",
+//       "nothing critical", "simple enough", "already factored", "visible risks")
+//     • Control illusion  — "time the market", "offset unpredictable",
+//       "manage all variables", "regardless of external factors"
+//     • Relationship alignment — "on the same page", "won't back out",
+//       "expressed interest", "intent seems clear", "seems supportive"
+//     • Loss aversion     — "feel like failure", "confirm i made a mistake",
+//       "avoid admitting", "taking a loss", "avoid feeling"
+//     • Overconfidence    — "without needing validation", "don't need to model",
+//       "clearly better than", "others may fail", "risks are minimal",
+//       "judgment here is sufficient"
+//     • FOMO/urgency      — "time is running out", "regret missing",
+//       "delaying could mean", "shouldn't wait too long"
+//     • Recency bias      — outcome-based phrases ("recent trends suggest",
+//       "outweigh older", "basing this decision on recent")
+//     • Attribution       — "failures weren't my fault", "losses were external",
+//       "bad ones were unlucky", "losses reflect"
 //
-// Architecture: two-layer matching against the new decision text.
-//
-// Layer 1 — History keywords (from API)
-//   Phrases extracted from past session reasoning for THIS user's confirmed
-//   biases. Grounded in actual evidence but vocabulary is narrow — only covers
-//   the specific language the AI used when describing past activations.
-//
-// Layer 2 — Static bias trigger phrases (BIAS_TRIGGER_PHRASES below)
-//   Curated vocabulary of how each bias pattern manifests in decision *framing*
-//   language. Covers the natural-language surface of new decisions, independent
-//   of how past sessions were described. This is the layer that catches the gap:
-//   "can always return to a similar role" → exit_optionality_mispricing
-//   "last 2 months of market performance" → recency_bias
-//
-// Match quality tiers (used for ranking when multiple biases fire):
-//   TIER_1: history keyword match (most grounded — from actual user sessions)
-//   TIER_2: static phrase match (vocabulary-based)
-//   Within each tier, longer phrase wins (more specific = higher confidence)
-//
-// Dismiss fix: Set<string> (was string|null — caused cycling after 2nd dismiss)
+// Architecture unchanged: two-layer matching (history keywords → static phrases),
+// specificity-ranked (longer phrase wins), dismiss via Set<string>.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AlertBias {
   biasKey:            string
@@ -49,126 +51,162 @@ interface Props {
 
 // ── Layer 2: Static bias trigger phrase library ───────────────────────────────
 //
-// Design principles:
-//   - Phrases ≥7 chars to reduce false positives (short words match everywhere)
+// Rules:
+//   - All lowercase; compared against lowercased input
+//   - Min 7 chars per phrase — prevents single-word false positives
 //   - Each phrase should be exclusive to one bias bucket where possible
-//   - Cover 3 surface areas per bias: framing language, constraint language,
-//     and what the person is avoiding examining
-//   - All lowercase — compared against lowercased input
-//   - No generic decision verbs ("should I", "thinking about", "considering")
-//
-// Coverage: 20–30 phrases per bias across natural language variation.
-// Validated against all 9 canonical test decisions.
+//   - Two surface areas per bias: (a) explicit naming language,
+//     (b) dismissal / assurance language (the harder-to-catch cases)
 
 const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
 
+  // ── Exit Optionality Mispricing ───────────────────────────────────────────
+  // Catches both explicit reversibility talk AND the casual assurance that
+  // return/restart/rebuild is trivially easy.
   exit_optionality_mispricing: [
+    // Explicit reversibility
     'can always return',
     'always go back',
     'always come back',
-    'go back to',
+    'always get a similar',
     'return to a similar',
     'return later',
     're-entry',
     'reentry',
-    'reverse this later',
-    'easily reverse',
+    'reversibility',
+    'reversible decision',
+    'it is reversible',
     'not permanent',
     'can undo',
-    'walk away later',
-    'exit later',
     'path back',
-    'returning to',
-    'hiring bias',
-    'employment gap',
-    'salary loss',
-    'salary on return',
-    'network decay',
-    'resume gap',
-    'reversibility',
     'exit strategy',
     'exit plan',
     'exit terms',
     'cost to exit',
     'cost of leaving',
-    'it is reversible',
-    'reversible decision',
-    'walk away from',
-    'always able to go back',
+    // Reversal-assurance phrases (v4 additions — the key gap)
+    'restart it anytime',
+    'restart it if',
+    'can restart it',
+    'anytime if needed',
+    'buy it back',
+    'buy back later',
+    'rebuild it later',
+    'rebuild my network',
+    'rebuild it easily',
+    're-engage them',
+    're-engage later',
+    'regain a similar',
+    'regain that',
+    'catch up later',
+    'returning won',
+    'returning should',
+    're-entry should',
+    'minimal cost to return',
+    'straightforward to return',
+    'easy to return',
+    // Career/professional exit signals
+    'hiring bias',
+    'employment gap',
+    'salary loss',
+    'network decay',
+    'resume gap',
   ],
 
+  // ── Complexity Opacity ────────────────────────────────────────────────────
+  // The current library had only explicit problem-naming phrases. Added
+  // dismissal phrases — how people signal they *aren't* worried about unknowns.
   complexity_opacity: [
+    // Explicit unknowns
     'hidden dependencies',
     'hidden dependency',
     'second-order',
     'second order',
-    'unforeseen',
     'unknown unknowns',
-    "don't know what i don't know",
-    'dont know what i dont know',
     'operational burden',
     'operational complexity',
     'regulatory delay',
     'retention decay',
     'downstream consequences',
     'knock-on effects',
-    'knock on effects',
     'cascading risk',
     'hidden costs',
-    'hidden cost',
     'unmodelled',
     'unmodeled',
-    'edge cases',
-    'systemic risk',
     'failure modes',
     'ripple effects',
     'scaling complexity',
     'technical debt',
-    'integration risk',
-    'compliance risk',
-    'dependencies i haven',
     "haven't mapped",
     'have not mapped',
-    'second-order operational',
+    // Dismissal phrases (v4 additions — biggest gap)
+    'looks straightforward',
+    'seems straightforward',
+    'simple enough to',
+    'straightforward enough',
+    'accounted for all',
+    'already accounted',
+    'already factored',
+    'nothing critical is missing',
+    'nothing critical',
+    'plan seems complete',
+    'seems complete',
+    'visible risks',
+    'visible risk seems',
+    'what i can see',
+    'based on what i see',
+    'unseen dependencies',
+    'major issues are unlikely',
+    'hidden complications are unlikely',
+    'unlikely to be complications',
+    'no major hidden',
+    'everything important',
+    'covered the key',
+    "don't see major",
   ],
 
+  // ── Control Illusion ──────────────────────────────────────────────────────
   control_illusion: [
     'through my effort',
     'through better effort',
     'purely through',
     'if i work harder',
-    'effort and responsiveness',
     'personal effort',
-    'market volatility',
-    'client-side unpredictability',
-    'client side unpredictability',
-    'external unpredictability',
-    'beyond my control',
-    'cannot control',
-    'outside my control',
-    'rely on my belief',
-    'depends on others',
-    'rely on this belief',
-    'believe i can ensure',
     'can ensure success',
     'ensure the outcome',
     'control the outcome',
     'guarantee success',
+    'guarantee the outcome',
     'make it work regardless',
     'effort alone',
     'execution will solve',
     'hard work will',
-    'better than others at',
+    // v4 additions
+    'time the market',
+    'offset unpredictable',
+    'manage all variables',
+    'avoid most risks',
+    'regardless of external',
+    'regardless of the market',
+    'despite external',
+    'despite market',
+    'depends mostly on how much',
+    'depends on my effort',
+    'prevent customer',
+    'can control outcomes',
+    'success depends on me',
+    'success is in my hands',
+    'can manage the variables',
   ],
 
+  // ── Relationship Alignment Assumption ─────────────────────────────────────
+  // The biggest gap: "on the same page" wasn't in the library at all.
   relationship_alignment_assumption: [
     'verbally agrees',
     'verbal commitment',
     'verbal agreement',
     'says they will',
     'has agreed to',
-    'says she will',
-    'says he will',
     'promised to',
     'stated support',
     'without testing',
@@ -179,28 +217,41 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'assumed commitment',
     'trust that they',
     'co-founder agreed',
-    'partner agreed',
     'everyone agrees',
-    'team is aligned',
     'long-term commitment',
     'equal workload',
-    'expects them to',
     'rely on their commitment',
-    'rely on their support',
     'trusting their word',
-    'trusting the verbal',
     'without confirmation',
-    'not confirmed',
-    'assumed they will',
+    // v4 additions — the key gap
+    'on the same page',
+    'won\'t back out',
+    'will not back out',
+    'expressed interest',
+    'interest means',
+    'intent seems clear',
+    'their intent is clear',
+    'seems supportive',
+    'appear aligned',
+    'appears aligned',
+    'seems aligned',
+    'said they\'re committed',
+    'said they are committed',
+    'agrees verbally',
+    'contribute equally',
+    'follow through',
+    'no need to validate',
+    'no need to test',
+    'proceed without validation',
   ],
 
+  // ── Loss Aversion Reversal ────────────────────────────────────────────────
   loss_aversion_reversal: [
     'accepting a loss',
     'accept the loss',
     'realising a loss',
     'realizing a loss',
     'sunk cost',
-    'sunken cost',
     'already invested',
     'already spent',
     'underperforming investment',
@@ -208,35 +259,48 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'in the red',
     'negative returns',
     'holding it because',
-    'holding because',
     'cannot sell',
     "can't sell",
-    'will not sell',
     'selling would mean',
     'selling feels like',
-    'average down',
-    'below cost',
     'below what i paid',
     'recover my losses',
     'recover the loss',
     'wait for it to recover',
-    'it will come back',
     'wait until it recovers',
     'lock in a loss',
     'hate to lock in',
     'feels wrong to sell',
-    'better opportunities exist',
+    // v4 additions
+    'feel like failure',
+    'feels like failure',
+    'would feel like',
+    'avoid admitting',
+    'avoid feeling the loss',
+    'avoid feeling',
+    'confirm i made a mistake',
+    'admitting it was a mistake',
+    'admitting a mistake',
+    'taking a loss',
+    'take a loss',
+    'wait for recovery',
+    'waiting for recovery',
+    'already put in',
+    'what i\'ve put in',
+    'realize a negative',
+    'do not want to realize',
   ],
 
+  // ── Overconfidence ────────────────────────────────────────────────────────
+  // Was missing dismissal-of-validation phrases ("without needing validation",
+  // "don't need to model") — the overconfident person doesn't say "I'll succeed";
+  // they say they don't *need* to check.
   overconfidence: [
     'will succeed',
     'bound to succeed',
-    'confident it will work',
     'confident it will succeed',
     'believe it will succeed',
-    'cannot fail',
     'detailed plan',
-    'thoroughly planned',
     'without modeling failure',
     'without explicitly modeling',
     'failure rates',
@@ -244,23 +308,41 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'base rate',
     'without accounting for',
     'downside scenarios',
-    'plan for success',
     'going to succeed',
-    'expecting success',
-    'assuming it works',
-    'failure is unlikely',
-    'very unlikely to fail',
-    'strong conviction',
-    'high confidence',
-    'done this before',
-    'worked before so',
+    'done this before so',
     'will be different this time',
     'no reason it would fail',
+    // v4 additions — the key gap
+    'without needing validation',
+    'without validation',
+    'don\'t need to model',
+    'no need to model',
+    'no need to validate',
+    'no need to test assumptions',
+    'don\'t see a need to test',
+    'clearly better than',
+    'is clearly better',
+    'obviously better',
+    'confident this will',
+    'others may fail',
+    'others might fail',
+    'risks are minimal',
+    'the risk is minimal',
+    'don\'t need external input',
+    'no need for external',
+    'no external input needed',
+    'judgment here is sufficient',
+    'my judgment is sufficient',
+    'my judgment is enough',
+    'succeed as designed',
+    'likely to succeed as',
   ],
 
+  // ── FOMO / Manufactured Urgency ───────────────────────────────────────────
   fomo_urgency: [
     'limited-time offer',
     'limited time offer',
+    'limited-time chance',
     'time-limited',
     'within 24 hours',
     'within 48 hours',
@@ -275,24 +357,42 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'decide quickly',
     'act quickly',
     'act fast',
-    'time sensitive',
     'time-sensitive',
     'feel pressure to decide',
     'pressure to act',
     'window closes',
-    "won't be available",
     'going to miss out',
     'miss the window',
     'miss the opportunity',
     "haven't fully evaluated",
-    "haven't fully analysed",
     'without full evaluation',
     'other buyers',
     'competitive offer',
     'someone else will take',
-    'pressure to decide',
+    // v4 additions
+    'time is running out',
+    'running out of time',
+    'regret missing this',
+    'regret not acting',
+    'might regret missing',
+    'delaying could mean',
+    'delay means losing',
+    'shouldn\'t wait too long',
+    'should not wait too long',
+    'cannot wait too long',
+    'decide today or',
+    'decide now or',
+    'act now before',
+    'won\'t be available later',
+    'will not be available',
+    'opportunity will disappear',
+    'before the opportunity disappears',
+    'everyone else is moving',
+    'pressure to decide immediately',
   ],
 
+  // ── Recency Bias ─────────────────────────────────────────────────────────
+  // Was time-period-based only; added outcome-based and trend-based patterns.
   recency_bias: [
     'last 2 months',
     'last 3 months',
@@ -303,7 +403,6 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'recent performance',
     'recent data',
     'recent results',
-    'recent market',
     'based on recent',
     'recent trend',
     'recent appreciation',
@@ -312,21 +411,36 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'lately it has',
     'recently it has',
     'current momentum',
-    'current trend',
     'short-term trend',
-    'short term trend',
     'trailing data',
     'last quarter performance',
-    'recent success',
-    'recent failure',
-    'been doing well recently',
-    'has been growing recently',
-    'main basis',
-    'primary basis',
-    'using recent data',
-    'based primarily on the last',
+    // v4 additions — outcome-based recency language
+    'recent trends suggest',
+    'recent trends indicate',
+    'last few outcomes',
+    'last few results',
+    'basing this decision on recent',
+    'basing my decision on recent',
+    'happened lately is most relevant',
+    'what happened recently',
+    'recent data is the best guide',
+    'recent experience is the best guide',
+    'latest results outweigh',
+    'outweigh older',
+    'outweigh historical',
+    'more than historical data',
+    'recent experience more than',
+    'current trends define',
+    'current trends show',
+    'prioritizing what\'s happened recently',
+    'recent events are the main basis',
+    'recent events are the basis',
+    'main basis for this decision',
   ],
 
+  // ── Attribution Asymmetry ─────────────────────────────────────────────────
+  // Added the clearest gap: "failures weren't my fault", "losses reflect
+  // circumstances", split self/external attribution patterns.
   attribution_asymmetry: [
     'attribute to my skill',
     'attribute to skill',
@@ -334,25 +448,40 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'my own skill',
     'due to my ability',
     'because of my skills',
-    'bad luck',
     'external factors caused',
     'blame the market',
-    'market was unfavorable',
     'circumstances were against',
-    'skill when succeeded',
     'succeeded because i',
     'failed because of',
-    'lucky when it worked',
     'evaluating my performance',
-    'performance evaluation',
     'self-assessment',
-    'judging my own performance',
     'take credit for',
     'not my fault',
-    'attribute my success',
-    'attribute my failure',
+    // v4 additions
+    'due to my skill',
+    'is due to my skill',
+    'losses were external',
+    'failures were external',
+    'losses reflect circumstances',
+    'failures reflect circumstances',
+    'failures weren\'t my fault',
+    'failure wasn\'t my fault',
+    'wasn\'t my fault',
+    'control success but not failure',
+    'control success, but not',
+    'bad ones were unlucky',
+    'bad results were unlucky',
+    'unlucky when it failed',
+    'losses due to luck',
+    'credit for success not blame',
+    'credit for success, not blame',
+    'luck when bad',
+    'luck when things went wrong',
+    'positive outcomes are due to me',
+    'negatives aren\'t due to me',
   ],
 
+  // ── Social Proof ──────────────────────────────────────────────────────────
   social_proof: [
     'everyone is doing',
     'everyone else is',
@@ -361,20 +490,17 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'industry is moving',
     'market is moving toward',
     'peers are doing',
-    'everyone else seems to',
     'trend is moving',
     'others have done',
-    'all the others',
     'most companies are',
-    'most founders are',
     'because others are',
     'following the trend',
     'following the market',
     'if others are',
     'others are succeeding',
-    'everyone i know is',
   ],
 
+  // ── Deference Distortion ──────────────────────────────────────────────────
   deference_distortion: [
     'my mentor says',
     'mentor told me',
@@ -386,7 +512,6 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'board told me',
     'everyone i asked agrees',
     'expert told me',
-    'expert opinion',
     'they know better',
     'defer to them',
     'deferring to',
@@ -394,9 +519,9 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'on the advice of',
     'based on their advice',
     'before forming my own view',
-    'before i thought it through',
   ],
 
+  // ── Success Compression ───────────────────────────────────────────────────
   success_compression: [
     'best case scenario',
     'if everything goes well',
@@ -404,19 +529,18 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'assuming success',
     'if it works out',
     'when it succeeds',
-    'upside case',
     'planning around success',
     'building around growth',
     'success case',
     'things go as planned',
     'if all goes well',
     'once it scales',
-    'when it scales',
     'assuming product market fit',
     'assuming the best',
     'best outcome',
   ],
 
+  // ── Speed Bias ────────────────────────────────────────────────────────────
   speed_bias: [
     'move fast',
     'move quickly',
@@ -427,19 +551,17 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'ahead of the competition',
     'before others do',
     'speed advantage',
-    'rapid deployment',
     'rapid execution',
-    'execute quickly',
     'launch quickly',
     'launch fast',
     'speed is critical',
     'speed is everything',
-    'being fast matters',
     'cannot wait',
     'no time to wait',
     'if we wait we lose',
   ],
 
+  // ── Uniqueness Fallacy ────────────────────────────────────────────────────
   uniqueness_fallacy: [
     'never been done',
     'first of its kind',
@@ -449,18 +571,16 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'no precedent',
     'unprecedented',
     'unlike anything else',
-    'no analogy',
     'cannot compare to',
     'nothing like this before',
-    'completely new category',
     'fundamentally different',
     'no one has done this',
-    'category creator',
     'creating a new category',
     'entirely new market',
     'no existing playbook',
   ],
 
+  // ── Network Circularity ───────────────────────────────────────────────────
   network_circularity: [
     'people i trust agree',
     'everyone i know agrees',
@@ -469,7 +589,6 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
     'people close to me think',
     'my team agrees',
     'my investors agree',
-    'my advisors agree',
     'everyone around me',
     'consulted my network',
     'asked my team',
@@ -486,7 +605,7 @@ const BIAS_TRIGGER_PHRASES: Record<string, string[]> = {
 const BIAS_COPY: Record<string, { consider: string; action: string }> = {
   exit_optionality_mispricing: {
     consider: "You may not have fully priced what reversing this decision actually requires.",
-    action:   "Before submitting: write one sentence on what walking away looks like in practice — including the cost of re-entry.",
+    action:   "Before submitting: write one sentence on what walking away looks like in practice — including the hidden cost of re-entry.",
   },
   relationship_alignment_assumption: {
     consider: "You may be assuming alignment with a key person rather than having confirmed it.",
@@ -577,7 +696,7 @@ function findBestMatch(
   for (const bias of biases) {
     if (dismissed.has(bias.biasKey)) continue
 
-    // Layer 1: history keywords (grounded in this user's past sessions)
+    // Layer 1: history keywords — grounded in user's past sessions
     let tier1Matched = false
     for (const kw of bias.activationKeywords) {
       if (kw.length < 5) continue
@@ -588,7 +707,7 @@ function findBestMatch(
       }
     }
 
-    // Layer 2: static phrase vocabulary (only if Layer 1 didn't already match)
+    // Layer 2: static phrase vocabulary — only if Layer 1 didn't match
     if (!tier1Matched) {
       const staticPhrases = BIAS_TRIGGER_PHRASES[bias.biasKey] ?? []
       for (const phrase of staticPhrases) {
@@ -602,7 +721,7 @@ function findBestMatch(
 
   if (candidates.length === 0) return null
 
-  // Tier 1 beats Tier 2; within same tier, longer phrase (more specific) wins
+  // Tier 1 beats Tier 2; within same tier, longer phrase wins
   candidates.sort((a, b) => {
     if (a.tier !== b.tier) return a.tier - b.tier
     return b.specificity - a.specificity
@@ -614,13 +733,7 @@ function findBestMatch(
 
 // ── Alert card ────────────────────────────────────────────────────────────────
 
-function AlertCard({
-  alert,
-  onDismiss,
-}: {
-  alert:     ActiveAlert
-  onDismiss: () => void
-}) {
+function AlertCard({ alert, onDismiss }: { alert: ActiveAlert; onDismiss: () => void }) {
   const copy = getBiasCopy(alert.bias.biasKey)
 
   return (
@@ -643,78 +756,35 @@ function AlertCard({
         }
       `}</style>
 
-      <div style={{
-        display:        'flex',
-        alignItems:     'flex-start',
-        justifyContent: 'space-between',
-        gap:            10,
-        marginBottom:   7,
-      }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <span style={{ fontSize: 11, color: 'var(--gold)', opacity: 0.7 }}>⚠</span>
-          <span style={{
-            fontSize:      10.5,
-            fontWeight:    700,
-            color:         'var(--gold)',
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-          }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Pattern recognised
           </span>
         </div>
         <button
           onClick={onDismiss}
           aria-label="Dismiss alert"
-          style={{
-            background: 'none',
-            border:     'none',
-            color:      'var(--text-4)',
-            cursor:     'pointer',
-            fontSize:   16,
-            lineHeight: 1,
-            padding:    '0 2px',
-            flexShrink: 0,
-            opacity:    0.5,
-            transition: 'opacity 0.15s',
-          }}
+          style={{ background: 'none', border: 'none', color: 'var(--text-4)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0, opacity: 0.5, transition: 'opacity 0.15s' }}
           onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '1')}
           onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '0.5')}
-        >
-          ×
-        </button>
+        >×</button>
       </div>
 
       <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 6px' }}>
-        <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>
-          {alert.bias.biasLabel}
-        </span>
+        <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{alert.bias.biasLabel}</span>
         {' '}has shown up in {alert.bias.detectionCount} of your past decisions.{' '}
         {copy.consider}
       </p>
 
-      <p style={{
-        fontSize:    12,
-        color:       'var(--text-3)',
-        lineHeight:  1.55,
-        margin:      '0 0 10px',
-        fontStyle:   'italic',
-        paddingLeft: 10,
-        borderLeft:  '2px solid rgba(201,168,76,0.3)',
-      }}>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 10px', fontStyle: 'italic', paddingLeft: 10, borderLeft: '2px solid rgba(201,168,76,0.3)' }}>
         {copy.action}
       </p>
 
       <a
         href="/mirror"
-        style={{
-          fontSize:       11,
-          color:          'var(--gold)',
-          textDecoration: 'none',
-          fontWeight:     600,
-          opacity:        0.75,
-          transition:     'opacity 0.15s',
-          display:        'inline-block',
-        }}
+        style={{ fontSize: 11, color: 'var(--gold)', textDecoration: 'none', fontWeight: 600, opacity: 0.75, transition: 'opacity 0.15s', display: 'inline-block' }}
         onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
         onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.75')}
       >
@@ -736,9 +806,7 @@ export default function BehaviorAlerts({ decision, authToken }: Props) {
     if (!authToken) return
     const load = async () => {
       try {
-        const res  = await fetch('/api/mirror/alerts', {
-          headers: { Authorization: `Bearer ${authToken}` },
-        })
+        const res  = await fetch('/api/mirror/alerts', { headers: { Authorization: `Bearer ${authToken}` } })
         if (!res.ok) return
         const data = await res.json() as { alerts: AlertBias[] }
         setBiases(data.alerts ?? [])
@@ -750,14 +818,10 @@ export default function BehaviorAlerts({ decision, authToken }: Props) {
   useEffect(() => {
     if (biases.length === 0) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
-
     debounceRef.current = setTimeout(() => {
       setActiveAlert(findBestMatch(decision, biases, dismissed))
     }, 800)
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [decision, biases, dismissed])
 
   if (!authToken || !activeAlert) return null
