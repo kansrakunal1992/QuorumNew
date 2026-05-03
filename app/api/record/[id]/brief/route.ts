@@ -341,7 +341,8 @@ export async function GET(req: Request, { params }: Params) {
 
   const filename = `quorum-brief-${id.slice(0, 8)}.pdf`
 
-  return new Response(pdfBuffer, {
+  // Uint8Array required — Buffer not assignable to BodyInit in Next.js 15 strict mode
+  return new Response(new Uint8Array(pdfBuffer), {
     status: 200,
     headers: {
       'Content-Type':        'application/pdf',
