@@ -108,21 +108,33 @@ ${s.responses.join('\n')}
 const PASS2_PROMPT = (principles: ExtractedPrinciple[]) => `
 You are detecting genuine contradictions in a person's decision-making across time.
 
-A contradiction is when something they stated or implied as a principle in one decision
-is structurally violated by how they framed or decided another decision.
+A contradiction requires the SAME person to have violated their own stated principle —
+not two different principles applied to two different contexts.
 
-This is NOT about opinions changing — it is about logical inconsistency between
-a stated principle and a demonstrated action.
+STRICT DEFINITION — a valid contradiction must satisfy ONE of:
+  (a) DIRECT VIOLATION: They stated "I always/never do X" and then demonstrably did the opposite in another decision
+  (b) BROKEN PREREQUISITE: They stated "I require Y before deciding" and then decided without Y
+  (c) LOGICAL INCOMPATIBILITY: Principle A and Principle B are logically irreconcilable — not just different in tone or emphasis
+
+AUTOMATIC DISQUALIFIERS — do NOT flag these:
+  - Two cautious approaches applied to two different decision types (both being cautious ≠ contradiction)
+  - Different frameworks for different stakes (more rigorous for bigger decisions is rational, not contradictory)
+  - Context shift (career decision vs financial decision can legitimately use different criteria)
+  - One principle being more specific than another (specificity ≠ contradiction)
+  - Two process requirements that could both be true simultaneously
+
+SEVERITY — apply the same strict bar to all severity levels:
+  "sharp":   The violation is direct and explicit. "I stated X" + "I then did not-X"
+  "notable": The tension is real and specific — not just two cautious instincts phrased differently
+  "forming": Only 2 data points but the directional conflict is structurally clear, not interpretive
+
+Before flagging anything as "notable" or "forming", ask: could both principles be true at the same time?
+If yes — it is NOT a contradiction. Do not flag it.
 
 Rules:
-- Only flag contradictions that are structurally clear — not speculative
-- "sharp": direct logical conflict ("I never decide without X" + decided without X)
-- "notable": meaningful tension, not absolute contradiction
-- "forming": only directional, weak signal — flag only if genuinely notable
-- Max 3 contradictions total — quality over quantity
+- Max 3 contradictions total — quality over quantity — return [] if none meet the bar
 - Category must be one of: risk_tolerance, urgency, stakeholder, reversibility, process, evidence, autonomy
 - Return ONLY valid JSON. No markdown, no preamble.
-- If no genuine contradictions exist, return []
 
 Output format:
 [
