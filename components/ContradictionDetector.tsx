@@ -277,6 +277,31 @@ function TeaserView({ sessionCount }: { sessionCount: number }) {
         )}
 
         <ProgressBar count={sessionCount} />
+
+        {/* Run a decision CTA */}
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border-dim)' }}>
+          <a
+            href="/"
+            style={{
+              display:        'inline-flex',
+              alignItems:     'center',
+              gap:            6,
+              fontSize:       11.5,
+              fontWeight:     600,
+              color:          'var(--gold)',
+              textDecoration: 'none',
+              opacity:        0.8,
+              transition:     'opacity 0.15s',
+            }}
+            onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+            onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.8')}
+          >
+            Run a decision →
+          </a>
+          <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.4 }}>
+            Each decision with Examiner responses builds the signal needed to detect contradictions.
+          </p>
+        </div>
       </div>
 
       {/* Blurred tiles — count varies by milestone */}
