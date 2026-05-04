@@ -153,12 +153,13 @@ async function buildPdf(
     } = opts
     const text  = sanitise(raw)
     const lh    = size * leading
-    doc.setFont('Helvetica', style)
-    doc.setFontSize(size)
-    doc.setTextColor(...color)
     const lines = doc.splitTextToSize(text, maxWidth - indent) as string[]
     for (const line of lines) {
       ensure(lh)
+      // Re-apply after ensure() — page breaks reset jsPDF graphics state
+      doc.setFont('Helvetica', style)
+      doc.setFontSize(size)
+      doc.setTextColor(...color)
       doc.text(line, x + indent, Y)
       Y += lh
     }
@@ -360,12 +361,15 @@ async function buildPdf(
         doc.setLineWidth(0.4)
         doc.roundedRect(ML + 14, Y, TW - 14, pbBoxH, 2, 2, 'FD')
 
-        doc.setFont('Helvetica', 'italic')
-        doc.setFontSize(9.5)
-        doc.setTextColor(...C.midGrey)
-        pbLines.forEach((line, i) => {
-          doc.text(line, ML + 24, Y + 12 + i * pbLH)
-        })
+        let pbTextY = Y + 12
+        for (const pbLine of pbLines) {
+          // Re-apply after ensure() — page breaks reset jsPDF graphics state
+          doc.setFont('Helvetica', 'italic')
+          doc.setFontSize(9.5)
+          doc.setTextColor(...C.midGrey)
+          doc.text(pbLine, ML + 24, pbTextY)
+          pbTextY += pbLH
+        }
         Y += pbBoxH + 10
 
       } else {
@@ -375,12 +379,12 @@ async function buildPdf(
         const bodyLines = doc.splitTextToSize(bodyText, TW - 8) as string[]
         const bodyLH    = 10.5 * 1.62
 
-        doc.setFont('Helvetica', 'normal')
-        doc.setFontSize(10.5)
-        doc.setTextColor(...C.bodyText)
-
         for (const line of bodyLines) {
           ensure(bodyLH)
+          // Re-apply after ensure() — page breaks reset jsPDF graphics state
+          doc.setFont('Helvetica', 'normal')
+          doc.setFontSize(10.5)
+          doc.setTextColor(...C.bodyText)
           doc.text(line, ML + 4, Y)
           Y += bodyLH
         }
