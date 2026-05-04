@@ -189,6 +189,13 @@ export async function POST(req: Request) {
       console.error('[Examiner] Independence scoring trigger failed (non-blocking):', err)
     )
 
+    // Sprint 9: Fire contradiction detection — fire-and-forget
+    // Rate-limited internally (skips if run within last 7 days).
+    // Reads user_id from session row server-side — no need to pass here.
+    triggerContradictionDetection(sessionId).catch(err =>
+      console.error('[Examiner] Contradiction detection trigger failed (non-blocking):', err)
+    )
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[Examiner] Route error:', err)
@@ -225,6 +232,16 @@ async function triggerStructuralMatch(sessionId: string): Promise<void> {
 
 async function triggerIndependenceScoring(sessionId: string): Promise<void> {
   await fetch(`${getBaseUrl()}/api/mirror/independence`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  })
+}
+
+async function triggerContradictionDetection(sessionId: string): Promise<void> {
+  // Resolves user_id from sessionId server-side in the contradictions route.
+  // The route itself enforces the 7-day rerun throttle.
+  await fetch(`${getBaseUrl()}/api/mirror/contradictions`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ sessionId }),

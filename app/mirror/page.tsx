@@ -28,8 +28,9 @@ import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
 import MirrorTimeline    from '@/components/MirrorTimeline'
 import BiasFingerprint   from '@/components/BiasFingerprint'
-import IndependenceScore from '@/components/IndependenceScore'
-import DecisionRules     from '@/components/DecisionRules'
+import IndependenceScore      from '@/components/IndependenceScore'
+import DecisionRules          from '@/components/DecisionRules'
+import ContradictionDetector  from '@/components/ContradictionDetector'
 import type { MirrorStatus, TimelineSession } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -700,7 +701,7 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Decision Rules — Sprint 7d */}
-      <div>
+      <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Decision Rules
@@ -715,6 +716,27 @@ function UnlockedView({
           The operating principles you implicitly follow — extracted from how you reason, not what you say about yourself.
         </p>
         <DecisionRules authToken={authToken} sessionCount={status.sessionCount} />
+      </div>
+
+      {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* Contradiction Detector — Sprint 9 */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Contradiction Detector
+          </h3>
+          {status.sessionCount >= 40 && (
+            <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
+              {status.sessionCount} decisions
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          Where what you said you believe and what you actually did come apart — surfaced from your own words, across decisions.
+        </p>
+        <ContradictionDetector authToken={authToken} sessionCount={status.sessionCount} />
       </div>
     </div>
   )
