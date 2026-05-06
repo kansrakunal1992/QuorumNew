@@ -259,8 +259,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
                 ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
               }}
             >
-              <svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" strokeWidth=\"2.5\" strokeLinecap=\"round\" strokeLinejoin=\"round\">
-                <polyline points=\"9 14 4 9 9 4\"/><path d=\"M20 20v-7a4 4 0 0 0-4-4H4\"/>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
               </svg>
               Challenge · add context
             </button>
