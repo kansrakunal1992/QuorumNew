@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase'
-import RecordExport from '@/components/RecordExport'
 import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
 import Link from 'next/link'
@@ -66,7 +65,7 @@ export default async function RecordPage({ params }: Props) {
               Decision Record · {dateStr}
             </p>
           </div>
-          <RecordExport record={{ session, messages }} />
+
         </div>
 
         {/* Decision */}
@@ -150,7 +149,7 @@ export default async function RecordPage({ params }: Props) {
 
         {/* Bottom */}
         <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <RecordExport record={{ session, messages }} />
+
           <Link href="/">
             <button className="btn-ghost" style={{ padding: '10px 20px', fontSize: 13 }}>
               New decision

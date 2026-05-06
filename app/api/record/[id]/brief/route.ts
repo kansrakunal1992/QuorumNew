@@ -13,10 +13,11 @@
 
 import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import { PERSONAS }            from '@/lib/personas'
+import { PERSONAS, DECISION_BRIEF } from '@/lib/personas'
+import { createCompletion }   from '@/lib/ai-client'
 import type { PersonaKey }     from '@/lib/types'
 
-const PERSONA_ORDER: PersonaKey[] = [
+const APPENDIX_ORDER: PersonaKey[] = [
   'synthesis',
   'contrarian',
   'risk_architect',
@@ -281,65 +282,34 @@ async function buildPdf(
     byPersona[msg.persona].push({ role: msg.role, content: msg.content })
   }
 
-  for (const key of PERSONA_ORDER) {
-    const msgs = byPersona[key]
-    if (!msgs || msgs.length === 0) continue
+  // ── SECTION 1: Decision Brief (main body) ──────────────────────────────────
+  const briefMsgs = byPersona['decision_brief']
+  if (briefMsgs && briefMsgs.length > 0) {
+    // Prominent "DECISION BRIEF" header band
+    ensure(60)
+    const bandH = 42
+    doc.setFillColor(24, 40, 24)
+    doc.rect(ML - 8, Y, TW + 16, bandH, 'F')
+    doc.setFillColor(...C.gold)
+    doc.rect(ML - 8, Y, 4, bandH, 'F')
 
-    const persona     = PERSONAS[key as PersonaKey]
-    const isSynthesis = key === 'synthesis'
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(...C.gold)
+    doc.setCharSpace(2)
+    doc.text('DECISION BRIEF', ML + 8, Y + 17)
+    doc.setCharSpace(0)
 
-    ensure(70)
+    doc.setFont('Helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(...C.mutedGrey)
+    doc.text('Prepared by Quorum Council  \xB7  Confidential', ML + 8, Y + 31)
 
-    // ── Section header ──────────────────────────────────────────────────────────
+    Y += bandH + 18
 
-    if (isSynthesis) {
-      // Synthesis: tinted green bar with left gold accent
-      const barH = 36
-      doc.setFillColor(...C.bgSynthesis)
-      doc.setDrawColor(...C.ruleGrey)
-      doc.setLineWidth(0.4)
-      doc.roundedRect(ML, Y, TW, barH, 3, 3, 'FD')
-      doc.setFillColor(...C.gold)
-      doc.rect(ML, Y, 3, barH, 'F')
-
-      doc.setFont('Helvetica', 'bold')
-      doc.setFontSize(10.5)
-      doc.setTextColor(...C.charcoal)
-      doc.text(sanitise(persona.label), ML + 14, Y + 14)
-
-      doc.setFont('Helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(...C.midGrey)
-      doc.text(sanitise(persona.tagline ?? ''), ML + 14, Y + 27)
-
-      Y += barH + 14
-    } else {
-      // All other personas: label in charcoal, tagline in grey, thin rule below
-      doc.setFont('Helvetica', 'bold')
-      doc.setFontSize(10)
-      doc.setTextColor(...C.charcoal)
-      doc.text(sanitise(persona.label), ML, Y)
-      Y += 13
-
-      doc.setFont('Helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(...C.mutedGrey)
-      doc.text(sanitise(persona.tagline ?? ''), ML, Y)
-      Y += 11
-
-      doc.setDrawColor(...C.goldLight)
-      doc.setLineWidth(0.6)
-      doc.line(ML, Y, ML + 140, Y)
-      Y += 12
-    }
-
-    // ── Messages ────────────────────────────────────────────────────────────────
-
-    for (const msg of msgs) {
+    for (const msg of briefMsgs) {
       if (msg.role === 'user') {
-        // Pushback box
         ensure(32)
-
         doc.setFont('Helvetica', 'bold')
         doc.setFontSize(7.5)
         doc.setTextColor(...C.mutedGrey)
@@ -347,23 +317,18 @@ async function buildPdf(
         doc.text('YOUR PUSHBACK', ML + 14, Y)
         doc.setCharSpace(0)
         Y += 11
-
-        // Measure height first so we can draw the box
         const pbText  = sanitise(msg.content)
         doc.setFontSize(9.5)
         const pbLines = doc.splitTextToSize(pbText, TW - 36) as string[]
         const pbLH    = 9.5 * 1.55
         const pbBoxH  = pbLines.length * pbLH + 18
-
         ensure(pbBoxH)
         doc.setFillColor(...C.bgPushback)
         doc.setDrawColor(...C.ruleGrey)
         doc.setLineWidth(0.4)
         doc.roundedRect(ML + 14, Y, TW - 14, pbBoxH, 2, 2, 'FD')
-
         let pbTextY = Y + 12
         for (const pbLine of pbLines) {
-          // Re-apply after ensure() — page breaks reset jsPDF graphics state
           doc.setFont('Helvetica', 'italic')
           doc.setFontSize(9.5)
           doc.setTextColor(...C.midGrey)
@@ -371,17 +336,13 @@ async function buildPdf(
           pbTextY += pbLH
         }
         Y += pbBoxH + 10
-
       } else {
-        // Main advisor text — line by line
-        const bodyText = sanitise(msg.content)
+        const bodyText  = sanitise(msg.content)
         doc.setFontSize(10.5)
         const bodyLines = doc.splitTextToSize(bodyText, TW - 8) as string[]
         const bodyLH    = 10.5 * 1.62
-
         for (const line of bodyLines) {
           ensure(bodyLH)
-          // Re-apply after ensure() — page breaks reset jsPDF graphics state
           doc.setFont('Helvetica', 'normal')
           doc.setFontSize(10.5)
           doc.setTextColor(...C.bodyText)
@@ -392,9 +353,142 @@ async function buildPdf(
       }
     }
 
-    // Section divider
-    Y += 12
-    rule()
+    Y += 14
+    rule(C.gold, 0.6)
+  }
+
+  // ── SECTION 2: Appendix divider ────────────────────────────────────────────
+  const hasAppendix = APPENDIX_ORDER.some(k => byPersona[k]?.length > 0)
+  if (hasAppendix) {
+    // Appendix starts on a new page
+    doc.addPage()
+    fillPageWhite()
+    page++
+    Y = 52
+    drawFooter()
+
+    // Centred "APPENDIX" label
+    ensure(80)
+    Y = PH / 2 - 30
+    doc.setDrawColor(...C.ruleGrey)
+    doc.setLineWidth(0.4)
+    doc.line(ML, Y - 10, PW - MR, Y - 10)
+
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...C.midGrey)
+    doc.setCharSpace(3)
+    doc.text('APPENDIX', ML, Y + 4)
+    doc.setCharSpace(0)
+
+    doc.setFont('Helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(...C.mutedGrey)
+    doc.text('Full Council Analysis  \xB7  Synthesis  \xB7  Advisor Responses', ML, Y + 18)
+
+    doc.setDrawColor(...C.ruleGrey)
+    doc.setLineWidth(0.4)
+    doc.line(ML, Y + 28, PW - MR, Y + 28)
+
+    // ── Appendix persona pages ──────────────────────────────────────────────
+    for (const key of APPENDIX_ORDER) {
+      const msgs = byPersona[key]
+      if (!msgs || msgs.length === 0) continue
+
+      const persona     = PERSONAS[key as PersonaKey]
+      const isSynthesis = key === 'synthesis'
+
+      doc.addPage()
+      fillPageWhite()
+      page++
+      Y = 52
+      drawFooter()
+
+      ensure(70)
+
+      if (isSynthesis) {
+        const barH = 36
+        doc.setFillColor(...C.bgSynthesis)
+        doc.setDrawColor(...C.ruleGrey)
+        doc.setLineWidth(0.4)
+        doc.roundedRect(ML, Y, TW, barH, 3, 3, 'FD')
+        doc.setFillColor(...C.gold)
+        doc.rect(ML, Y, 3, barH, 'F')
+        doc.setFont('Helvetica', 'bold')
+        doc.setFontSize(10.5)
+        doc.setTextColor(...C.charcoal)
+        doc.text(sanitise(persona.label), ML + 14, Y + 14)
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(...C.midGrey)
+        doc.text(sanitise(persona.tagline ?? ''), ML + 14, Y + 27)
+        Y += barH + 14
+      } else {
+        doc.setFont('Helvetica', 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(...C.charcoal)
+        doc.text(sanitise(persona.label), ML, Y)
+        Y += 13
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(...C.mutedGrey)
+        doc.text(sanitise(persona.tagline ?? ''), ML, Y)
+        Y += 11
+        doc.setDrawColor(...C.goldLight)
+        doc.setLineWidth(0.6)
+        doc.line(ML, Y, ML + 140, Y)
+        Y += 12
+      }
+
+      for (const msg of msgs) {
+        if (msg.role === 'user') {
+          ensure(32)
+          doc.setFont('Helvetica', 'bold')
+          doc.setFontSize(7.5)
+          doc.setTextColor(...C.mutedGrey)
+          doc.setCharSpace(0.8)
+          doc.text('YOUR PUSHBACK', ML + 14, Y)
+          doc.setCharSpace(0)
+          Y += 11
+          const pbText  = sanitise(msg.content)
+          doc.setFontSize(9.5)
+          const pbLines = doc.splitTextToSize(pbText, TW - 36) as string[]
+          const pbLH    = 9.5 * 1.55
+          const pbBoxH  = pbLines.length * pbLH + 18
+          ensure(pbBoxH)
+          doc.setFillColor(...C.bgPushback)
+          doc.setDrawColor(...C.ruleGrey)
+          doc.setLineWidth(0.4)
+          doc.roundedRect(ML + 14, Y, TW - 14, pbBoxH, 2, 2, 'FD')
+          let pbTextY = Y + 12
+          for (const pbLine of pbLines) {
+            doc.setFont('Helvetica', 'italic')
+            doc.setFontSize(9.5)
+            doc.setTextColor(...C.midGrey)
+            doc.text(pbLine, ML + 24, pbTextY)
+            pbTextY += pbLH
+          }
+          Y += pbBoxH + 10
+        } else {
+          const bodyText  = sanitise(msg.content)
+          doc.setFontSize(10.5)
+          const bodyLines = doc.splitTextToSize(bodyText, TW - 8) as string[]
+          const bodyLH    = 10.5 * 1.62
+          for (const line of bodyLines) {
+            ensure(bodyLH)
+            doc.setFont('Helvetica', 'normal')
+            doc.setFontSize(10.5)
+            doc.setTextColor(...C.bodyText)
+            doc.text(line, ML + 4, Y)
+            Y += bodyLH
+          }
+          Y += 4
+        }
+      }
+
+      Y += 12
+      rule()
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -441,7 +535,56 @@ export async function GET(req: Request, { params }: Params) {
   }
 
   const session  = sessionResult.data
-  const messages = messagesResult.data ?? []
+  let messages = messagesResult.data ?? []
+
+  // ── Auto-generate Decision Brief if not yet created ─────────────────────────
+  const hasBrief = messages.some(m => m.persona === 'decision_brief' && m.role === 'assistant')
+  if (!hasBrief) {
+    // Build context string from all existing persona assistant messages
+    const personaContext = APPENDIX_ORDER
+      .map(key => {
+        const persona = PERSONAS[key as PersonaKey]
+        const msgs = messages.filter(m => m.persona === key && m.role === 'assistant')
+        if (!msgs.length) return null
+        return `=== ${persona.label.toUpperCase()} ===\n${msgs.map(m => m.content).join('\n')}`
+      })
+      .filter(Boolean)
+      .join('\n\n')
+
+    if (personaContext) {
+      const briefPrompt = `${DECISION_BRIEF}
+
+THE DECISION:
+${session.decision_text}
+
+COUNCIL ANALYSIS:
+${personaContext}
+
+Generate the Decision Brief now.`
+
+      try {
+        const briefContent = await createCompletion(briefPrompt, 1200)
+        if (briefContent) {
+          // Save to DB so it appears on the record page too
+          await supabase.from('messages').insert({
+            session_id: id,
+            persona: 'decision_brief',
+            role: 'assistant',
+            content: briefContent,
+          })
+          messages = [...messages, {
+            persona: 'decision_brief',
+            role: 'assistant',
+            content: briefContent,
+            created_at: new Date().toISOString(),
+          }]
+        }
+      } catch (err) {
+        console.error('[brief/route] Auto-generation error:', err)
+        // Continue — PDF will still render without brief section
+      }
+    }
+  }
 
   let pdfBuffer: Buffer
   try {
