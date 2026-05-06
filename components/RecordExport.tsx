@@ -274,53 +274,104 @@ export default function RecordExport({ record }: Props) {
         y += 5
       }
 
-      // ── Persona pages ─────────────────────────────────────────
-      const personaOrder = [
-        'decision_brief',
-        'synthesis',
-        'contrarian', 'risk_architect', 'pattern_analyst',
-        'stakeholder_mirror', 'elder', 'competitor',
-      ]
-
-      // Group messages by persona in order
+      // ── Group messages by persona ──────────────────────────────
       const byPersona: Record<string, { assistant: string[]; user: string[] }> = {}
       for (const msg of record.messages) {
         if (!byPersona[msg.persona]) byPersona[msg.persona] = { assistant: [], user: [] }
         byPersona[msg.persona][msg.role as 'assistant' | 'user'].push(msg.content)
       }
 
-      for (const key of personaOrder) {
-        const msgs = byPersona[key]
-        if (!msgs || msgs.assistant.length === 0) continue
-        const persona = PERSONAS[key as keyof typeof PERSONAS]
-
-        // New page per persona
+      // ── SECTION 1: Decision Brief (main document body) ─────────
+      const briefMsgs = byPersona['decision_brief']
+      if (briefMsgs && briefMsgs.assistant.length > 0) {
         doc.addPage()
         doc.setFillColor(4, 6, 15)
         doc.rect(0, 0, pageW, pageH, 'F')
         y = ML
 
-        // Synthesis gets special full-width header treatment
-        const isSynthesis = key === 'synthesis'
-        const isBrief = key === 'decision_brief'
+        // Premium brief header
+        doc.setFillColor(8, 18, 8)
+        doc.rect(0, y - 4, pageW, 30, 'F')
+        doc.setDrawColor(201, 168, 76)
+        doc.setLineWidth(1.0)
+        doc.line(ML, y - 4, pageW - MR, y - 4)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(18)
+        doc.setTextColor(201, 168, 76)
+        doc.text('DECISION BRIEF', ML, y + 9)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(74, 85, 104)
+        doc.text('Prepared by Quorum Council  ·  Confidential', ML, y + 18)
+        y += 34
 
-        // Persona header band — decision_brief gets fullest premium treatment
-        if (isBrief) {
-          doc.setFillColor(8, 18, 8)
-          doc.rect(0, y - 4, pageW, 26, 'F')
-          doc.setDrawColor(201, 168, 76)
-          doc.setLineWidth(1.0)
-          doc.line(ML, y - 4, pageW - MR, y - 4)
-          doc.setFont('helvetica', 'bold')
-          doc.setFontSize(16)
-          doc.setTextColor(201, 168, 76)
-          doc.text('DECISION BRIEF', ML, y + 8)
-          doc.setFont('helvetica', 'normal')
-          doc.setFontSize(8)
-          doc.setTextColor(74, 85, 104)
-          doc.text('Prepared by Quorum Council · Confidential', ML, y + 15)
-          y += 28
-        } else {
+        doc.setDrawColor(42, 38, 18)
+        doc.setLineWidth(0.3)
+        doc.line(ML, y, ML + CW, y)
+        y += 6
+
+        for (let i = 0; i < briefMsgs.assistant.length; i++) {
+          if (i > 0 && briefMsgs.user[i - 1]) {
+            checkBreak(12)
+            y += 3
+            doc.setFillColor(7, 12, 24)
+            doc.rect(ML - 1, y - 2, CW + 2, 10, 'F')
+            doc.setFont('helvetica', 'italic')
+            doc.setFontSize(8)
+            doc.setTextColor(74, 85, 104)
+            const pbLines: string[] = doc.splitTextToSize(`Your pushback: ${briefMsgs.user[i - 1]}`, CW - 2) as string[]
+            doc.text(pbLines.slice(0, 2), ML + 1, y + 2)
+            y += 12
+          }
+          renderContent(briefMsgs.assistant[i], 9.5)
+          y += 3
+        }
+      }
+
+      // ── SECTION 2: Appendix divider page ──────────────────────
+      const appendixPersonaOrder = [
+        'synthesis',
+        'contrarian', 'risk_architect', 'pattern_analyst',
+        'stakeholder_mirror', 'elder', 'competitor',
+      ]
+      const hasAppendix = appendixPersonaOrder.some(k => byPersona[k]?.assistant.length > 0)
+
+      if (hasAppendix) {
+        doc.addPage()
+        doc.setFillColor(4, 6, 15)
+        doc.rect(0, 0, pageW, pageH, 'F')
+        y = pageH / 2 - 20
+
+        doc.setDrawColor(28, 43, 74)
+        doc.setLineWidth(0.4)
+        doc.line(ML, y - 6, pageW - MR, y - 6)
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(11)
+        doc.setTextColor(74, 85, 104)
+        doc.text('APPENDIX', ML, y + 2)
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(42, 58, 92)
+        doc.text('Full Council Analysis  ·  Council Synthesis  ·  Advisor Responses', ML, y + 10)
+
+        doc.setLineWidth(0.4)
+        doc.line(ML, y + 16, pageW - MR, y + 16)
+
+        // ── Appendix persona pages ─────────────────────────────
+        for (const key of appendixPersonaOrder) {
+          const msgs = byPersona[key]
+          if (!msgs || msgs.assistant.length === 0) continue
+          const persona = PERSONAS[key as keyof typeof PERSONAS]
+
+          doc.addPage()
+          doc.setFillColor(4, 6, 15)
+          doc.rect(0, 0, pageW, pageH, 'F')
+          y = ML
+
+          const isSynthesis = key === 'synthesis'
+
           doc.setFillColor(isSynthesis ? 15 : 11, isSynthesis ? 22 : 16, isSynthesis ? 15 : 32)
           doc.rect(0, y - 2, pageW, 18, 'F')
           doc.setDrawColor(201, 168, 76)
@@ -335,33 +386,29 @@ export default function RecordExport({ record }: Props) {
           doc.setTextColor(74, 85, 104)
           doc.text(persona.tagline, ML, y + 13)
           y += 22
-        }
 
-        // Thin gold divider
-        doc.setDrawColor(42, 38, 18)
-        doc.setLineWidth(0.3)
-        doc.line(ML, y, ML + CW, y)
-        y += 5
+          doc.setDrawColor(42, 38, 18)
+          doc.setLineWidth(0.3)
+          doc.line(ML, y, ML + CW, y)
+          y += 5
 
-        // Render each assistant turn (with pushback labels before turns 2+)
-        for (let i = 0; i < msgs.assistant.length; i++) {
-          // Pushback header for turns after the first
-          if (i > 0 && msgs.user[i - 1]) {
-            checkBreak(12)
+          for (let i = 0; i < msgs.assistant.length; i++) {
+            if (i > 0 && msgs.user[i - 1]) {
+              checkBreak(12)
+              y += 3
+              doc.setFillColor(7, 12, 24)
+              doc.rect(ML - 1, y - 2, CW + 2, 10, 'F')
+              doc.setFont('helvetica', 'italic')
+              doc.setFontSize(8)
+              doc.setTextColor(74, 85, 104)
+              const pbText = `Your pushback: ${msgs.user[i - 1]}`
+              const pbLines: string[] = doc.splitTextToSize(pbText, CW - 2) as string[]
+              doc.text(pbLines.slice(0, 2), ML + 1, y + 2)
+              y += 12
+            }
+            renderContent(msgs.assistant[i], 9.5)
             y += 3
-            doc.setFillColor(7, 12, 24)
-            doc.rect(ML - 1, y - 2, CW + 2, 10, 'F')
-            doc.setFont('helvetica', 'italic')
-            doc.setFontSize(8)
-            doc.setTextColor(74, 85, 104)
-            const pbText = `Your pushback: ${msgs.user[i - 1]}`
-            const pbLines: string[] = doc.splitTextToSize(pbText, CW - 2) as string[]
-            doc.text(pbLines.slice(0, 2), ML + 1, y + 2)
-            y += 12
           }
-
-          renderContent(msgs.assistant[i], 9.5)
-          y += 3
         }
       }
 

@@ -238,7 +238,35 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
           </div>
         </div>
-        <StatusBadge />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && !showPushback && (
+            <button
+              title="Disagree with this analysis, add new information, or ask a follow-up"
+              onClick={() => setShowPushback(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: 'rgba(201,168,76,0.1)', border: '1px solid var(--gold-dim)',
+                borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                color: 'var(--gold)', cursor: 'pointer', transition: 'all 0.2s',
+                fontFamily: 'inherit', letterSpacing: '0.02em', whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.18)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.1)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
+              }}
+            >
+              <svg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" strokeWidth=\"2.5\" strokeLinecap=\"round\" strokeLinejoin=\"round\">
+                <polyline points=\"9 14 4 9 9 4\"/><path d=\"M20 20v-7a4 4 0 0 0-4-4H4\"/>
+              </svg>
+              Challenge · add context
+            </button>
+          )}
+          <StatusBadge />
+        </div>
       </div>
 
       {/* Body */}
@@ -293,56 +321,29 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
       </div>
 
-      {/* Pushback footer */}
-      {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && (
+      {/* Pushback input — shown below content when triggered from header button */}
+      {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && showPushback && (
         <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border-dim)' }}>
-          {!showPushback ? (
-            <button
-              title="Disagree with this analysis, add new information, or ask a follow-up"
-              onClick={() => setShowPushback(true)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                width: '100%', background: 'rgba(201,168,76,0.1)', border: '1px solid var(--gold-dim)',
-                borderRadius: 8, padding: '9px 14px', fontSize: 12.5, fontWeight: 600,
-                color: 'var(--gold)', cursor: 'pointer', transition: 'all 0.2s',
-                fontFamily: 'inherit', letterSpacing: '0.02em',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.18)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.1)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
-              }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
-              </svg>
-              Challenge this · add context
-            </button>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
-                Disagree, add new information, or ask a follow-up
-              </p>
-              <textarea
-                rows={2}
-                style={{ fontSize: 13, padding: '8px 12px' }}
-                placeholder="e.g. But I already have diversified exposure… / What if the timeline is shorter?"
-                value={pushback}
-                onChange={(e) => setPushback(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePushback() }}
-                autoFocus
-              />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-primary" style={{ padding: '7px 18px', fontSize: 12 }} onClick={handlePushback}>
-                  Send ↵
-                </button>
-                <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback('') }}>Cancel</button>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
+              Disagree, add new information, or ask a follow-up
+            </p>
+            <textarea
+              rows={2}
+              style={{ fontSize: 13, padding: '8px 12px' }}
+              placeholder="e.g. But I already have diversified exposure… / What if the timeline is shorter?"
+              value={pushback}
+              onChange={(e) => setPushback(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePushback() }}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-primary" style={{ padding: '7px 18px', fontSize: 12 }} onClick={handlePushback}>
+                Send ↵
+              </button>
+              <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback('') }}>Cancel</button>
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>

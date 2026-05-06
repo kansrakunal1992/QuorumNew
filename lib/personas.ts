@@ -690,7 +690,7 @@ const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
 1. QUESTION FIRST: If the decision description is missing a critical piece of information your analysis depends on — a specific number, a timeline, a relationship, a constraint — ask exactly ONE question before giving your assessment. Make it the sharpest, most specific question missing. Do not ask multiple questions. If nothing critical is missing, proceed directly.
 
-2. LENGTH: Your response must be 220–280 words. Count before submitting. If you exceed 280 words, delete the weakest paragraph. No exceptions.
+2. LENGTH: Your response must be 140–170 words. Count before submitting. If you exceed 170 words, cut the weakest paragraph entirely. No exceptions. Every sentence must earn its place.
 
 3. FORMAT: Write in short, dense paragraphs — 2 to 4 sentences each. Separate paragraphs with a blank line. No bullet points. No headers. Your opening sentence must be the hardest-hitting thing you say — not a preamble.
 
