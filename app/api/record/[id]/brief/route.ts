@@ -6,8 +6,8 @@
 //      passing to jsPDF (Latin-1 encoding; anything outside it renders as garbage)
 //   2. Line-by-line rendering throughout — no pre-calculated box heights that
 //      go wrong when text wraps more than estimated
-//   3. Premium light layout — white background, charcoal ink, gold accents only
-//      at structural points (header rule, synthesis bar accent)
+//   3. Dark premium layout — deep navy/black pages, gold accents, per-persona
+//      colour bands matching the Quorum UI dark theme
 //   4. Dynamic import — avoids "window is not defined" in Next.js server context
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,21 +65,34 @@ function sanitise(text: string): string {
     .replace(/[^\x00-\xFF]/g, '?')
 }
 
-// ── Colour palette (light theme) ──────────────────────────────────────────────
+// ── Colour palette (dark premium theme) ───────────────────────────────────────
 const C = {
-  gold:        [160, 125, 45]  as [number, number, number],
-  goldLight:   [210, 180, 100] as [number, number, number],
-  black:       [18,  18,  20]  as [number, number, number],
-  charcoal:    [36,  36,  42]  as [number, number, number],
-  bodyText:    [45,  45,  52]  as [number, number, number],
-  midGrey:     [90,  90,  100] as [number, number, number],
-  mutedGrey:   [140, 140, 150] as [number, number, number],
-  ruleGrey:    [210, 210, 215] as [number, number, number],
-  bgDecision:  [248, 247, 244] as [number, number, number],
-  bgPushback:  [243, 243, 246] as [number, number, number],
-  bgSynthesis: [245, 248, 245] as [number, number, number],
-  bgHeader:    [24,  24,  28]  as [number, number, number],
-  white:       [255, 255, 255] as [number, number, number],
+  gold:        [201, 168, 76]  as [number, number, number],
+  goldDim:     [100, 82,  30]  as [number, number, number],
+  goldText:    [201, 168, 76]  as [number, number, number],
+  pageBg:      [4,   6,   15]  as [number, number, number],
+  headerBg:    [4,   6,   15]  as [number, number, number],
+  briefBg:     [8,   18,  8]   as [number, number, number],
+  synthBg:     [15,  22,  15]  as [number, number, number],
+  decisionBg:  [7,   10,  22]  as [number, number, number],
+  pushbackBg:  [7,   12,  24]  as [number, number, number],
+  bodyText:    [188, 200, 220] as [number, number, number],
+  mutedText:   [74,  85,  104] as [number, number, number],
+  dimText:     [42,  58,  92]  as [number, number, number],
+  ruleGold:    [42,  38,  18]  as [number, number, number],
+  ruleMid:     [28,  43,  74]  as [number, number, number],
+  white:       [232, 234, 240] as [number, number, number],
+}
+
+// Persona accent colours (rgb)
+const PERSONA_ACCENT: Record<string, [number, number, number]> = {
+  synthesis:         [15,  22,  15],
+  contrarian:        [60,  18,  18],
+  risk_architect:    [11,  22,  56],
+  pattern_analyst:   [11,  32,  22],
+  stakeholder_mirror:[28,  12,  46],
+  elder:             [38,  24,  8],
+  competitor:        [22,  16,  6],
 }
 
 // ── PDF builder ───────────────────────────────────────────────────────────────
@@ -91,189 +104,159 @@ async function buildPdf(
   const { jsPDF } = await import('jspdf')
 
   const doc  = new jsPDF({ unit: 'pt', format: 'a4', putOnlyUsedFonts: true })
-  const PW   = doc.internal.pageSize.getWidth()    // 595.28 pt
-  const PH   = doc.internal.pageSize.getHeight()   // 841.89 pt
-  const ML   = 56   // left margin
-  const MR   = 56   // right margin
-  const TW   = PW - ML - MR                        // 483.28 pt
-  const BOTTOM_MARGIN = 66
+  const PW   = doc.internal.pageSize.getWidth()
+  const PH   = doc.internal.pageSize.getHeight()
+  const ML   = 56
+  const MR   = 56
+  const TW   = PW - ML - MR
+  const BOTTOM_MARGIN = 60
   let   Y    = 0
   let   page = 1
 
-  // ── White page background (default) ──────────────────────────────────────────
-  const fillPageWhite = () => {
-    doc.setFillColor(...C.white)
+  // ── Dark page fill ────────────────────────────────────────────────────────────
+  const fillPageDark = () => {
+    doc.setFillColor(...C.pageBg)
     doc.rect(0, 0, PW, PH, 'F')
   }
-  fillPageWhite()
+  fillPageDark()
 
   // ── Footer ────────────────────────────────────────────────────────────────────
   const drawFooter = () => {
-    doc.setDrawColor(...C.ruleGrey)
-    doc.setLineWidth(0.4)
-    doc.line(ML, PH - 44, PW - MR, PH - 44)
+    doc.setDrawColor(...C.ruleMid)
+    doc.setLineWidth(0.3)
+    doc.line(ML, PH - 40, PW - MR, PH - 40)
     doc.setFont('Helvetica', 'normal')
     doc.setFontSize(7.5)
-    doc.setTextColor(...C.mutedGrey)
-    doc.text('Private · Quorum', ML, PH - 30)
-    doc.text(String(page), PW - MR, PH - 30, { align: 'right' })
+    doc.setTextColor(...C.mutedText)
+    doc.text(`Private \xB7 Quorum`, ML, PH - 26)
+    doc.text(String(page), PW - MR, PH - 26, { align: 'right' })
   }
 
-  // ── Page break guard ──────────────────────────────────────────────────────────
+  // ── Page break ────────────────────────────────────────────────────────────────
   const ensure = (needed: number) => {
     if (Y + needed > PH - BOTTOM_MARGIN) {
       doc.addPage()
-      fillPageWhite()
+      fillPageDark()
       page++
       Y = 52
       drawFooter()
     }
   }
 
-  // ── Paragraph renderer — splits and renders line by line ──────────────────────
-  // Returns total height consumed (for callers that need to advance Y themselves).
-  const para = (
-    raw: string,
-    x: number,
-    opts: {
-      size?:      number
-      style?:     'normal' | 'bold' | 'italic' | 'bolditalic'
-      color?:     [number, number, number]
-      maxWidth?:  number
-      leading?:   number   // multiplier on font size
-      indent?:    number   // additional left offset inside x
-    } = {},
-  ): number => {
-    const {
-      size     = 10.5,
-      style    = 'normal',
-      color    = C.bodyText,
-      maxWidth = TW,
-      leading  = 1.58,
-      indent   = 0,
-    } = opts
+  // ── Body text renderer ────────────────────────────────────────────────────────
+  const bodyBlock = (raw: string, indent = 0, size = 10.5, color = C.bodyText) => {
     const text  = sanitise(raw)
-    const lh    = size * leading
-    const lines = doc.splitTextToSize(text, maxWidth - indent) as string[]
+    const lh    = size * 1.62
+    const lines = doc.splitTextToSize(text, TW - indent) as string[]
     for (const line of lines) {
       ensure(lh)
-      // Re-apply after ensure() — page breaks reset jsPDF graphics state
-      doc.setFont('Helvetica', style)
+      doc.setFont('Helvetica', 'normal')
       doc.setFontSize(size)
       doc.setTextColor(...color)
-      doc.text(line, x + indent, Y)
+      doc.text(line, ML + indent, Y)
       Y += lh
     }
-    return lines.length * lh
+    Y += 4
   }
 
-  // ── Small label (caps) ────────────────────────────────────────────────────────
-  const label = (text: string, x: number) => {
-    doc.setFont('Helvetica', 'bold')
-    doc.setFontSize(7.5)
-    doc.setTextColor(...C.mutedGrey)
-    doc.setCharSpace(1.2)
-    doc.text(text.toUpperCase(), x, Y)
-    doc.setCharSpace(0)
-    Y += 14
-  }
-
-  // ── Horizontal rule ───────────────────────────────────────────────────────────
-  const rule = (color: [number, number, number] = C.ruleGrey, weight = 0.4) => {
+  // ── Thin rule ─────────────────────────────────────────────────────────────────
+  const rule = (color = C.ruleGold, weight = 0.3) => {
     ensure(8)
     doc.setDrawColor(...color)
     doc.setLineWidth(weight)
     doc.line(ML, Y, PW - MR, Y)
-    Y += 16
+    Y += 14
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // HEADER (dark bar, first page only)
+  // COVER — full dark page with gold wordmark
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  doc.setFillColor(...C.bgHeader)
-  doc.rect(0, 0, PW, 80, 'F')
+  // Gold top rule
+  doc.setDrawColor(...C.gold)
+  doc.setLineWidth(0.8)
+  doc.line(ML, 28, PW - MR, 28)
+  Y = 38
 
   // Wordmark
   doc.setFont('Helvetica', 'bold')
-  doc.setFontSize(15)
+  doc.setFontSize(18)
   doc.setTextColor(...C.gold)
-  doc.setCharSpace(5)
-  doc.text('QUORUM', ML, 34)
+  doc.setCharSpace(6)
+  doc.text('QUORUM', ML, Y)
   doc.setCharSpace(0)
+  Y += 15
 
-  // Sub-tagline
+  // Subtitle
   doc.setFont('Helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.setTextColor(...C.mutedGrey)
-  doc.text('Decision Intelligence', ML, 50)
+  doc.setFontSize(7.5)
+  doc.setTextColor(...C.mutedText)
+  doc.setCharSpace(1.5)
+  doc.text('PRIVATE DECISION INTELLIGENCE', ML, Y)
+  doc.setCharSpace(0)
+  Y += 6
 
-  // Date + session ref — right side
+  // Thin mid rule
+  doc.setDrawColor(...C.ruleMid)
+  doc.setLineWidth(0.3)
+  doc.line(ML, Y, PW - MR, Y)
+  Y += 10
+
+  // Date + session ID
   const dateStr = new Date(session.created_at).toLocaleDateString('en-IN', {
     day: 'numeric', month: 'long', year: 'numeric',
   })
+  doc.setFont('Helvetica', 'normal')
   doc.setFontSize(8)
-  doc.setTextColor(...C.mutedGrey)
-  doc.text(sanitise(dateStr), PW - MR, 34, { align: 'right' })
-  doc.text(`Session ${session.id.slice(0, 8).toUpperCase()}`, PW - MR, 50, { align: 'right' })
+  doc.setTextColor(...C.mutedText)
+  doc.text(`${sanitise(dateStr)}  \xB7  Session ${session.id.slice(0, 8).toUpperCase()}`, ML, Y)
+  Y += 14
 
-  // Gold rule below header
-  doc.setDrawColor(...C.gold)
-  doc.setLineWidth(1)
-  doc.line(0, 80, PW, 80)
-
-  Y = 100
   drawFooter()
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // DECISION BLOCK
-  // ═══════════════════════════════════════════════════════════════════════════════
+  // ── Decision block ────────────────────────────────────────────────────────────
+  doc.setFont('Helvetica', 'bold')
+  doc.setFontSize(7.5)
+  doc.setTextColor(...C.mutedText)
+  doc.setCharSpace(1)
+  doc.text('THE DECISION', ML, Y)
+  doc.setCharSpace(0)
+  Y += 11
 
-  label('The Decision', ML)
-
-  // Light tinted box — render line by line so height is always correct
-  // We need the box to wrap the text. Measure first, draw box, then text.
-  const decText   = sanitise(session.decision_text)
-  doc.setFontSize(11)
-  const decLines  = doc.splitTextToSize(decText, TW - 28) as string[]
-  const decLH     = 11 * 1.6
-  const decBoxH   = decLines.length * decLH + 24
+  const decText  = sanitise(session.decision_text)
+  doc.setFontSize(10.5)
+  const decLines = doc.splitTextToSize(decText, TW - 20) as string[]
+  const decLH    = 10.5 * 1.62
+  const decBoxH  = decLines.length * decLH + 22
 
   ensure(decBoxH + 8)
-  doc.setFillColor(...C.bgDecision)
-  doc.setDrawColor(...C.ruleGrey)
-  doc.setLineWidth(0.4)
-  doc.roundedRect(ML, Y, TW, decBoxH, 4, 4, 'FD')
-
-  // Left gold accent bar
+  doc.setFillColor(...C.decisionBg)
+  doc.rect(ML, Y, TW, decBoxH, 'F')
   doc.setFillColor(...C.gold)
   doc.rect(ML, Y, 3, decBoxH, 'F')
 
   doc.setFont('Helvetica', 'normal')
-  doc.setFontSize(11)
-  doc.setTextColor(...C.charcoal)
-  decLines.forEach((line, i) => {
-    doc.text(line, ML + 16, Y + 16 + i * decLH)
-  })
-  Y += decBoxH + 8
+  doc.setFontSize(10.5)
+  doc.setTextColor(...C.bodyText)
+  decLines.forEach((line, i) => { doc.text(line, ML + 14, Y + 14 + i * decLH) })
+  Y += decBoxH + 10
 
-  // Context (optional)
   if (session.context_text?.trim()) {
     ensure(20)
     doc.setFont('Helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(...C.mutedGrey)
+    doc.setFontSize(7.5)
+    doc.setTextColor(...C.mutedText)
     doc.setCharSpace(0.8)
     doc.text('CONTEXT', ML, Y)
     doc.setCharSpace(0)
-    Y += 12
-    para(session.context_text, ML, { size: 9.5, color: C.midGrey, style: 'italic', maxWidth: TW - 20 })
+    Y += 10
+    bodyBlock(session.context_text, 0, 9.5, C.mutedText)
   }
 
-  Y += 22
+  Y += 14
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // PERSONA SECTIONS
+  // SECTION 1 — Decision Brief
   // ═══════════════════════════════════════════════════════════════════════════════
 
   const byPersona: Record<string, Array<{ role: string; content: string }>> = {}
@@ -282,229 +265,161 @@ async function buildPdf(
     byPersona[msg.persona].push({ role: msg.role, content: msg.content })
   }
 
-  // ── SECTION 1: Decision Brief (main body) ──────────────────────────────────
   const briefMsgs = byPersona['decision_brief']
   if (briefMsgs && briefMsgs.length > 0) {
-    // Prominent "DECISION BRIEF" header band
-    ensure(60)
-    const bandH = 42
-    doc.setFillColor(24, 40, 24)
-    doc.rect(ML - 8, Y, TW + 16, bandH, 'F')
+    // Full-width dark green header band
+    ensure(52)
+    const bandH = 44
+    doc.setFillColor(...C.briefBg)
+    doc.rect(0, Y, PW, bandH, 'F')
+    doc.setDrawColor(...C.gold)
+    doc.setLineWidth(1)
+    doc.line(0, Y, PW, Y)
     doc.setFillColor(...C.gold)
-    doc.rect(ML - 8, Y, 4, bandH, 'F')
+    doc.rect(0, Y, 4, bandH, 'F')
 
     doc.setFont('Helvetica', 'bold')
-    doc.setFontSize(13)
+    doc.setFontSize(14)
     doc.setTextColor(...C.gold)
     doc.setCharSpace(2)
-    doc.text('DECISION BRIEF', ML + 8, Y + 17)
+    doc.text('DECISION BRIEF', ML, Y + 18)
     doc.setCharSpace(0)
 
     doc.setFont('Helvetica', 'normal')
     doc.setFontSize(8)
-    doc.setTextColor(...C.mutedGrey)
-    doc.text('Prepared by Quorum Council  \xB7  Confidential', ML + 8, Y + 31)
+    doc.setTextColor(...C.mutedText)
+    doc.text('Prepared by Quorum Council  \xB7  Confidential', ML, Y + 33)
 
-    Y += bandH + 18
+    Y += bandH + 16
 
     for (const msg of briefMsgs) {
       if (msg.role === 'user') {
         ensure(32)
+        doc.setFillColor(...C.pushbackBg)
         doc.setFont('Helvetica', 'bold')
         doc.setFontSize(7.5)
-        doc.setTextColor(...C.mutedGrey)
+        doc.setTextColor(...C.mutedText)
         doc.setCharSpace(0.8)
-        doc.text('YOUR PUSHBACK', ML + 14, Y)
+        doc.text('YOUR PUSHBACK', ML, Y)
         doc.setCharSpace(0)
-        Y += 11
-        const pbText  = sanitise(msg.content)
-        doc.setFontSize(9.5)
-        const pbLines = doc.splitTextToSize(pbText, TW - 36) as string[]
-        const pbLH    = 9.5 * 1.55
-        const pbBoxH  = pbLines.length * pbLH + 18
-        ensure(pbBoxH)
-        doc.setFillColor(...C.bgPushback)
-        doc.setDrawColor(...C.ruleGrey)
-        doc.setLineWidth(0.4)
-        doc.roundedRect(ML + 14, Y, TW - 14, pbBoxH, 2, 2, 'FD')
-        let pbTextY = Y + 12
-        for (const pbLine of pbLines) {
-          doc.setFont('Helvetica', 'italic')
-          doc.setFontSize(9.5)
-          doc.setTextColor(...C.midGrey)
-          doc.text(pbLine, ML + 24, pbTextY)
-          pbTextY += pbLH
-        }
-        Y += pbBoxH + 10
+        Y += 10
+        bodyBlock(msg.content, 4, 9.5, C.mutedText)
       } else {
-        const bodyText  = sanitise(msg.content)
-        doc.setFontSize(10.5)
-        const bodyLines = doc.splitTextToSize(bodyText, TW - 8) as string[]
-        const bodyLH    = 10.5 * 1.62
-        for (const line of bodyLines) {
-          ensure(bodyLH)
-          doc.setFont('Helvetica', 'normal')
-          doc.setFontSize(10.5)
-          doc.setTextColor(...C.bodyText)
-          doc.text(line, ML + 4, Y)
-          Y += bodyLH
-        }
-        Y += 4
+        bodyBlock(msg.content)
       }
     }
 
-    Y += 14
-    rule(C.gold, 0.6)
+    Y += 10
+    rule(C.goldDim, 0.5)
   }
 
-  // ── SECTION 2: Appendix divider ────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SECTION 2 — Appendix
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   const hasAppendix = APPENDIX_ORDER.some(k => byPersona[k]?.length > 0)
   if (hasAppendix) {
-    // Appendix starts on a new page
+    // Appendix divider — new dark page, centred
     doc.addPage()
-    fillPageWhite()
+    fillPageDark()
     page++
-    Y = 52
     drawFooter()
 
-    // Centred "APPENDIX" label
-    ensure(80)
-    Y = PH / 2 - 30
-    doc.setDrawColor(...C.ruleGrey)
+    const midY = PH / 2 - 20
+    doc.setDrawColor(...C.ruleMid)
     doc.setLineWidth(0.4)
-    doc.line(ML, Y - 10, PW - MR, Y - 10)
+    doc.line(ML, midY, PW - MR, midY)
 
     doc.setFont('Helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.setTextColor(...C.midGrey)
+    doc.setFontSize(11)
+    doc.setTextColor(...C.mutedText)
     doc.setCharSpace(3)
-    doc.text('APPENDIX', ML, Y + 4)
+    doc.text('APPENDIX', ML, midY + 18)
     doc.setCharSpace(0)
 
     doc.setFont('Helvetica', 'normal')
     doc.setFontSize(8)
-    doc.setTextColor(...C.mutedGrey)
-    doc.text('Full Council Analysis  \xB7  Synthesis  \xB7  Advisor Responses', ML, Y + 18)
+    doc.setTextColor(...C.dimText)
+    doc.text('Full Council Analysis  \xB7  Synthesis  \xB7  Advisor Responses', ML, midY + 32)
 
-    doc.setDrawColor(...C.ruleGrey)
+    doc.setDrawColor(...C.ruleMid)
     doc.setLineWidth(0.4)
-    doc.line(ML, Y + 28, PW - MR, Y + 28)
+    doc.line(ML, midY + 44, PW - MR, midY + 44)
 
-    // ── Appendix persona pages ──────────────────────────────────────────────
+    // ── One page per appendix persona ─────────────────────────────────────────
     for (const key of APPENDIX_ORDER) {
       const msgs = byPersona[key]
       if (!msgs || msgs.length === 0) continue
 
       const persona     = PERSONAS[key as PersonaKey]
+      const accentRgb   = PERSONA_ACCENT[key] ?? [11, 16, 32]
       const isSynthesis = key === 'synthesis'
 
       doc.addPage()
-      fillPageWhite()
+      fillPageDark()
       page++
-      Y = 52
+      Y = ML
       drawFooter()
 
-      ensure(70)
+      // Persona header band
+      const hBg = isSynthesis ? C.synthBg : accentRgb
+      doc.setFillColor(...hBg)
+      doc.rect(0, Y - 4, PW, isSynthesis ? 24 : 20, 'F')
+      doc.setDrawColor(...C.gold)
+      doc.setLineWidth(isSynthesis ? 1.5 : 0.6)
+      doc.line(0, Y - 4, PW, Y - 4)
 
-      if (isSynthesis) {
-        const barH = 36
-        doc.setFillColor(...C.bgSynthesis)
-        doc.setDrawColor(...C.ruleGrey)
-        doc.setLineWidth(0.4)
-        doc.roundedRect(ML, Y, TW, barH, 3, 3, 'FD')
-        doc.setFillColor(...C.gold)
-        doc.rect(ML, Y, 3, barH, 'F')
-        doc.setFont('Helvetica', 'bold')
-        doc.setFontSize(10.5)
-        doc.setTextColor(...C.charcoal)
-        doc.text(sanitise(persona.label), ML + 14, Y + 14)
-        doc.setFont('Helvetica', 'normal')
-        doc.setFontSize(8)
-        doc.setTextColor(...C.midGrey)
-        doc.text(sanitise(persona.tagline ?? ''), ML + 14, Y + 27)
-        Y += barH + 14
-      } else {
-        doc.setFont('Helvetica', 'bold')
-        doc.setFontSize(10)
-        doc.setTextColor(...C.charcoal)
-        doc.text(sanitise(persona.label), ML, Y)
-        Y += 13
-        doc.setFont('Helvetica', 'normal')
-        doc.setFontSize(8)
-        doc.setTextColor(...C.mutedGrey)
-        doc.text(sanitise(persona.tagline ?? ''), ML, Y)
-        Y += 11
-        doc.setDrawColor(...C.goldLight)
-        doc.setLineWidth(0.6)
-        doc.line(ML, Y, ML + 140, Y)
-        Y += 12
-      }
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(isSynthesis ? 13 : 11)
+      doc.setTextColor(...C.gold)
+      doc.text(sanitise(persona.label.toUpperCase()), ML, Y + 8)
+
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(...C.mutedText)
+      doc.text(sanitise(persona.tagline ?? ''), ML, isSynthesis ? Y + 18 : Y + 16)
+
+      Y += isSynthesis ? 30 : 26
+
+      // Thin gold divider under header
+      doc.setDrawColor(...C.ruleGold)
+      doc.setLineWidth(0.3)
+      doc.line(ML, Y, PW - MR, Y)
+      Y += 10
 
       for (const msg of msgs) {
         if (msg.role === 'user') {
-          ensure(32)
+          ensure(28)
+          Y += 4
+          doc.setFillColor(...C.pushbackBg)
           doc.setFont('Helvetica', 'bold')
           doc.setFontSize(7.5)
-          doc.setTextColor(...C.mutedGrey)
+          doc.setTextColor(...C.mutedText)
           doc.setCharSpace(0.8)
-          doc.text('YOUR PUSHBACK', ML + 14, Y)
+          doc.text('YOUR PUSHBACK', ML, Y)
           doc.setCharSpace(0)
-          Y += 11
-          const pbText  = sanitise(msg.content)
-          doc.setFontSize(9.5)
-          const pbLines = doc.splitTextToSize(pbText, TW - 36) as string[]
-          const pbLH    = 9.5 * 1.55
-          const pbBoxH  = pbLines.length * pbLH + 18
-          ensure(pbBoxH)
-          doc.setFillColor(...C.bgPushback)
-          doc.setDrawColor(...C.ruleGrey)
-          doc.setLineWidth(0.4)
-          doc.roundedRect(ML + 14, Y, TW - 14, pbBoxH, 2, 2, 'FD')
-          let pbTextY = Y + 12
-          for (const pbLine of pbLines) {
-            doc.setFont('Helvetica', 'italic')
-            doc.setFontSize(9.5)
-            doc.setTextColor(...C.midGrey)
-            doc.text(pbLine, ML + 24, pbTextY)
-            pbTextY += pbLH
-          }
-          Y += pbBoxH + 10
+          Y += 10
+          bodyBlock(msg.content, 0, 9.5, C.mutedText)
         } else {
-          const bodyText  = sanitise(msg.content)
-          doc.setFontSize(10.5)
-          const bodyLines = doc.splitTextToSize(bodyText, TW - 8) as string[]
-          const bodyLH    = 10.5 * 1.62
-          for (const line of bodyLines) {
-            ensure(bodyLH)
-            doc.setFont('Helvetica', 'normal')
-            doc.setFontSize(10.5)
-            doc.setTextColor(...C.bodyText)
-            doc.text(line, ML + 4, Y)
-            Y += bodyLH
-          }
-          Y += 4
+          bodyBlock(msg.content)
         }
       }
-
-      Y += 12
-      rule()
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // CLOSING
-  // ═══════════════════════════════════════════════════════════════════════════════
-
+  // ── Closing line ──────────────────────────────────────────────────────────────
   ensure(28)
-  Y += 2
-  para(
-    'This record is private. The views expressed represent structured analysis, not professional advice.',
-    ML,
-    { size: 8.5, color: C.mutedGrey, style: 'italic' },
-  )
+  Y += 6
+  doc.setFont('Helvetica', 'italic')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...C.dimText)
+  const closingText = sanitise('This record is private. The views expressed represent structured analysis, not professional advice.')
+  const closingLines = doc.splitTextToSize(closingText, TW) as string[]
+  for (const line of closingLines) { doc.text(line, ML, Y); Y += 13 }
 
   return Buffer.from(doc.output('arraybuffer'))
 }
+
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
