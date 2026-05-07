@@ -444,56 +444,66 @@ async function buildPdf(
   // COVER — full dark page with gold wordmark
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  // Gold top rule
+  // Gold top rule — clear of any text, sits at very top
   doc.setDrawColor(...C.gold)
-  doc.setLineWidth(0.8)
-  doc.line(ML, 28, PW - MR, 28)
-  Y = 38
+  doc.setLineWidth(1.2)
+  doc.line(ML, 22, PW - MR, 22)
 
-  // Wordmark
+  // QUORUM wordmark — baseline at 56, ascender clears 22pt rule with ~18pt of air
+  Y = 56
   doc.setFont('Helvetica', 'bold')
-  doc.setFontSize(18)
+  doc.setFontSize(22)
   doc.setTextColor(...C.gold)
-  doc.setCharSpace(6)
+  doc.setCharSpace(7)
   doc.text('QUORUM', ML, Y)
   doc.setCharSpace(0)
-  Y += 15
+
+  // Extend gold rule rightward from end of wordmark to page edge
+  const wordW = (() => {
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(22)
+    // approximate: each char ~14pt wide at 22pt with charSpace 7
+    return 0
+  })()
+  Y += 14
 
   // Subtitle
   doc.setFont('Helvetica', 'normal')
   doc.setFontSize(7.5)
   doc.setTextColor(...C.mutedText)
-  doc.setCharSpace(1.5)
+  doc.setCharSpace(2.5)
   doc.text('PRIVATE DECISION INTELLIGENCE', ML, Y)
   doc.setCharSpace(0)
-  Y += 6
+  Y += 14
 
-  // Thin mid rule
+  // Thin separator rule
   doc.setDrawColor(...C.ruleMid)
   doc.setLineWidth(0.3)
   doc.line(ML, Y, PW - MR, Y)
-  Y += 10
+  Y += 12
 
   // Date + session ID
   const dateStr = new Date(session.created_at).toLocaleDateString('en-IN', {
     day: 'numeric', month: 'long', year: 'numeric',
   })
   doc.setFont('Helvetica', 'normal')
-  doc.setFontSize(8)
+  doc.setFontSize(8.5)
   doc.setTextColor(...C.mutedText)
   doc.text(`${sanitise(dateStr)}  \xB7  Session ${session.id.slice(0, 8).toUpperCase()}`, ML, Y)
-  Y += 14
+  Y += 36  // generous breathing space before THE DECISION label
 
   drawFooter()
 
   // ── Decision block (line-by-line, no pre-calc box height) ───────────────────
+
+  // "THE DECISION" eyebrow label
   doc.setFont('Helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setTextColor(...C.mutedText)
-  doc.setCharSpace(1)
+  doc.setCharSpace(1.5)
   doc.text('THE DECISION', ML, Y)
   doc.setCharSpace(0)
-  Y += 12
+  Y += 14  // clear gap between label and box top
 
   const decText = sanitise(session.decision_text)
   const decSize = 10.5

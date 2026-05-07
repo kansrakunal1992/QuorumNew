@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quorum — Private Decision Intelligence</title>
+  <meta name="description" content="A private advisory layer for high-stakes decisions. Six advisors. One Examiner. Your judgment, compounding over time." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ══ DESIGN TOKENS ══════════════════════════════════════════ */
+    :root {
+      --radius:    18px;
+      --radius-sm: 10px;
+      --gold:        #c9a84c;
+      --gold-hi:     #e2c46e;
+      --gold-lo:     #a07828;
+      --gold-alpha:  rgba(201,168,76,0.12);
+      --gold-glow:   rgba(201,168,76,0.06);
+      --trans: background 0.38s ease, color 0.38s ease, border-color 0.38s ease;
+    }
+
+    /* DARK */
+    [data-theme="dark"] {
+      --bg:         #010204;
+      --bg2:        #04060f;
+      --card:       #080d1b;
+      --card2:      #0b1020;
+      --inset:      #050912;
+      --b0:         #0d1628;
+      --b1:         #182340;
+      --b2:         #243658;
+      --t0:         #ffffff;
+      --t1:         #edf2ff;
+      --t2:         #c8d6f0;
+      --t3:         #8fa8cc;
+      --t4:         #506484;
+      --t5:         #263d5e;
+      --overlay:    rgba(1,2,4,0.92);
+    }
+
+    /*
+      LIGHT — "Private Bank Stationery"
+      Ground: warm cream (retained). Ink: cold navy.
+      Borders: cool blue-grey steel — NOT warm beige.
+      This is the differentiator from Claude's warm-all-over aesthetic.
+      Feels like Coutts letterhead, not editorial magazine.
+    */
+    [data-theme="light"] {
+      --bg:         #f4f1eb;
+      --bg2:        #ede9e0;
+      --card:       #ffffff;
+      --card2:      #f8f6f1;
+      --inset:      #edeae2;
+      --b0:         #c8cdd8;   /* cool steel — not warm beige */
+      --b1:         #aab2c2;   /* cooler still */
+      --b2:         #8896b0;
+      --t0:         #060d1c;   /* near-black navy, not warm charcoal */
+      --t1:         #0e1a30;
+      --t2:         #1e2e48;
+      --t3:         #3a4f70;
+      --t4:         #667a9e;
+      --t5:         #a0b0c8;
+      --gold:        #9a7020;
+      --gold-hi:     #b88c2a;
+      --gold-lo:     #7a5510;
+      --gold-alpha:  rgba(154,112,32,0.1);
+      --gold-glow:   rgba(154,112,32,0.05);
+      --overlay:    rgba(244,241,235,0.94);
+    }
+
+    /* ══ RESET ══════════════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    a { text-decoration: none; }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--t2);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      transition: var(--trans);
+      overflow-x: hidden;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9000;
+    }
+
+    /* ══ TYPE ═══════════════════════════════════════════════════ */
+    .display {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: 300;
+      line-height: 1.06;
+      letter-spacing: -0.025em;
+      color: var(--t0);
+    }
+
+    .eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold);
+      display: block;
+    }
+
+    .mono { font-family: 'DM Mono', monospace; }
+
+    /* ══ LAYOUT ═════════════════════════════════════════════════ */
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 56px; }
+    .rule { border: none; border-top: 1px solid var(--b0); margin: 0 56px; }
+
+    /* ══ NAV ════════════════════════════════════════════════════ */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 500;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      padding: 0 56px;
+      justify-content: space-between;
+      border-bottom: 1px solid transparent;
+      transition: var(--trans), border-color 0.4s, backdrop-filter 0.4s;
+    }
+
+    nav.stuck {
+      border-color: var(--b0);
+      background: var(--overlay);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+    }
+
+    .logo {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 22px;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--t0);
+      transition: color 0.2s;
+    }
+
+    .logo span { color: var(--gold); }
+
+    .nav-links { display: flex; gap: 38px; list-style: none; }
+    .nav-links a { font-size: 13px; color: var(--t4); letter-spacing: 0.01em; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--t1); }
+
+    .nav-right { display: flex; align-items: center; gap: 22px; }
+
+    /* Theme pill toggle */
+    .toggle {
+      position: relative;
+      width: 52px; height: 26px;
+      border-radius: 13px;
+      background: var(--card);
+      border: 1px solid var(--b1);
+      cursor: pointer;
+      transition: var(--trans);
+      flex-shrink: 0;
+    }
+
+    .toggle-thumb {
+      position: absolute;
+      top: 4px; left: 4px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--gold);
+      transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    [data-theme="light"] .toggle-thumb { transform: translateX(26px); }
+
+    .toggle-label {
+      position: absolute;
+      top: 50%; transform: translateY(-50%);
+      font-size: 10px; line-height: 1;
+      color: var(--t4);
+      user-select: none;
+    }
+
+    .toggle-label.l { left: 6px; opacity: 0; }
+    .toggle-label.r { right: 6px; }
+    [data-theme="light"] .toggle-label.l { opacity: 1; }
+    [data-theme="light"] .toggle-label.r { opacity: 0; }
+
+    .btn-request {
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 10px 22px;
+      border: 1.5px solid var(--gold);
+      background: transparent;
+      color: var(--gold);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      letter-spacing: 0.06em;
+      transition: background 0.2s, color 0.2s;
+      white-space: nowrap;
+    }
+
+    .btn-request:hover { background: var(--gold); color: var(--bg); }
+
+    /* ══ HERO ═══════════════════════════════════════════════════ */
+    #hero {
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 140px 56px 110px;
+      max-width: 1200px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .hero-aura {
+      position: absolute;
+      top: 15%; left: -10%;
+      width: 75vw; height: 65vh;
+      background: radial-gradient(ellipse at 25% 40%, var(--gold-glow) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .h-up { opacity: 0; transform: translateY(18px); animation: up 0.9s cubic-bezier(0.22,1,0.36,1) var(--d,0s) forwards; }
+    @keyframes up { to { opacity:1; transform:none; } }
+
+    .hero-eye   { --d: 0.1s; margin-bottom: 30px; }
+    .hero-hl    { --d: 0.28s; font-size: clamp(60px, 8vw, 112px); max-width: 900px; }
+    .hero-hl em { font-style: italic; color: var(--t3); }
+    .hero-sub   { --d: 0.46s; margin-top: 48px; max-width: 510px; font-size: 17px; line-height: 1.85; color: var(--t3); }
+    .hero-cta   { --d: 0.62s; margin-top: 58px; display:flex; align-items:center; gap:28px; }
+
+    .btn-cta {
+      font-size: 14px;
+      font-weight: 500;
+      padding: 17px 38px;
+      background: var(--gold);
+      color: var(--bg);
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      display: inline-block;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .btn-cta:hover { background: var(--gold-hi); transform: translateY(-2px); }
+
+    .hero-note { font-size: 12px; color: var(--t5); letter-spacing: 0.04em; line-height: 1.7; }
+
+    /* ══ TWO-COL ════════════════════════════════════════════════ */
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 96px; align-items: start; }
+
+    /* ══ SECTION RHYTHM ═════════════════════════════════════════ */
+    .s { padding: 130px 0; }
+    .sh { margin-bottom: 62px; }
+    .sh .eyebrow { margin-bottom: 18px; }
+
+    /* ══ PROSE ══════════════════════════════════════════════════ */
+    .prose p { font-size: 16px; line-height: 1.9; color: var(--t2); margin-bottom: 22px; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose .hi { color: var(--t1); font-size: 15.5px; }
+
+    /* ══ STATS ══════════════════════════════════════════════════ */
+    .stats { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 52px; padding-top: 44px; border-top: 1px solid var(--b0); }
+    .stat { padding-right: 20px; }
+    .stat-n { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 54px; font-weight: 300; color: var(--t0); line-height: 1; letter-spacing: -0.03em; }
+    .stat-l { font-size: 12px; color: var(--t4); margin-top: 9px; line-height: 1.55; }
+
+    /* ══ COUNCIL (PRISME) ═══════════════════════════════════════ */
+    .council-top { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 52px; }
+    .prisme-mark { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 13px; font-weight: 300; letter-spacing: 0.38em; color: var(--t4); text-transform: uppercase; margin-bottom: 6px; }
+    .advisor-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+
+    .ac {
+      border: 1px solid var(--b0);
+      border-radius: var(--radius);
+      padding: 30px 22px 26px;
+      background: var(--card);
+      transition: border-color 0.3s, transform 0.3s;
+      cursor: default;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ac::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--gold-alpha), transparent); opacity: 0; transition: opacity 0.3s; }
+    .ac:hover { border-color: var(--b1); transform: translateY(-5px); }
+    .ac:hover::before { opacity: 1; }
+
+    .ac-letter { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 34px; font-weight: 300; color: var(--gold); margin-bottom: 18px; line-height: 1; }
+    .ac-name { font-size: 12px; font-weight: 500; color: var(--t0); margin-bottom: 8px; letter-spacing: 0.02em; }
+    .ac-desc { font-size: 11.5px; color: var(--t4); line-height: 1.65; }
+
+    /* ══ MOMENTS ════════════════════════════════════════════════ */
+    .moments-intro { display: grid; grid-template-columns: 1fr 1.7fr; gap: 80px; align-items: end; margin-bottom: 58px; }
+
+    .mc { border: 1px solid var(--b0); border-radius: 22px; padding: 52px 56px; background: var(--card); margin-bottom: 18px; position: relative; overflow: hidden; }
+    .mc::after { content: ''; position: absolute; inset: 0 0 auto 0; height: 1px; background: linear-gradient(90deg, transparent 8%, var(--gold-alpha) 40%, var(--gold-alpha) 60%, transparent 92%); }
+    .mc-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; }
+    .mc-num { font-family: 'DM Mono', monospace; font-size: 10.5px; color: var(--t5); letter-spacing: 0.16em; margin-bottom: 22px; }
+    .mc-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 36px; font-weight: 400; color: var(--t0); line-height: 1.12; letter-spacing: -0.01em; margin-bottom: 20px; }
+    .mc-body { font-size: 15px; color: var(--t3); line-height: 1.9; }
+
+    .demo { border: 1px solid var(--b1); border-radius: var(--radius); overflow: hidden; background: var(--card2); }
+    .demo-hd { padding: 13px 20px; border-bottom: 1px solid var(--b0); display: flex; align-items: center; justify-content: space-between; }
+    .demo-tag { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .demo-tag.tn { color: #d4914c; }
+    .demo-tag.ct { color: var(--t5); }
+    .demo-body { display: grid; grid-template-columns: 1fr 1fr; }
+    .demo-col { padding: 24px 22px 28px; }
+    .demo-col + .demo-col { border-left: 1px solid var(--b0); }
+    .demo-lbl { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--t5); margin-bottom: 12px; }
+    .demo-txt { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 17px; font-style: italic; color: var(--t1); line-height: 1.6; }
+
+    .fp { border: 1px solid var(--b0); border-radius: var(--radius-sm); padding: 22px 24px; background: var(--card2); margin-bottom: 12px; }
+    .fp.dim { opacity: 0.42; }
+    .fp-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .fp-lbl { font-size: 10.5px; font-weight: 500; color: var(--gold); letter-spacing: 0.08em; text-transform: uppercase; }
+    .fp-ct  { font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--t5); }
+    .fp-txt { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 18px; font-style: italic; color: var(--t1); line-height: 1.55; }
+
+    .ind-row { display: flex; align-items: center; gap: 14px; padding: 13px 0; border-bottom: 1px solid var(--b0); }
+    .ind-row:last-of-type { border-bottom: none; }
+    .ind-lbl { font-family: 'DM Mono', monospace; font-size: 10.5px; color: var(--t5); width: 72px; flex-shrink: 0; }
+    .ind-track { flex: 1; height: 3px; background: var(--b0); border-radius: 2px; overflow: hidden; }
+    .ind-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, rgba(201,168,76,0.3), var(--gold)); }
+    [data-theme="light"] .ind-fill { background: linear-gradient(90deg, rgba(154,112,32,0.25), var(--gold)); }
+    .ind-val { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--t0); width: 28px; text-align: right; }
+    .ind-note { margin-top: 22px; font-size: 13px; color: var(--t4); line-height: 1.65; }
+    .ind-note strong { color: var(--gold); font-weight: 400; }
+
+    /* ══ HOW ════════════════════════════════════════════════════ */
+    .steps { display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid var(--b0); border-radius: 22px; overflow: hidden; }
+    .step { padding: 48px 36px; border-right: 1px solid var(--b0); background: var(--card); }
+    .step:last-child { border-right: none; }
+    .step-n { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 58px; font-weight: 300; color: var(--b1); line-height: 1; margin-bottom: 28px; }
+    .step-tag { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+    .step-name { font-size: 14px; font-weight: 500; color: var(--t0); margin-bottom: 10px; letter-spacing: 0.02em; }
+    .step-desc { font-size: 13px; color: var(--t4); line-height: 1.78; }
+
+    /* ══ PRICING ════════════════════════════════════════════════ */
+    .pg { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+    .pc { border: 1px solid var(--b0); border-radius: 22px; padding: 42px 36px; background: var(--card); display: flex; flex-direction: column; position: relative; }
+    .pc.feat { border-color: rgba(201,168,76,0.55); background: linear-gradient(165deg, var(--gold-alpha) 0%, var(--card) 55%); }
+    [data-theme="light"] .pc.feat { border-color: rgba(154,112,32,0.5); }
+    .pc-badge { position: absolute; top: -13px; left: 32px; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bg); background: var(--gold); padding: 5px 14px; border-radius: 20px; }
+    [data-theme="light"] .pc-badge { color: #fff; }
+    .pc-tier { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 0.17em; text-transform: uppercase; color: var(--t5); margin-bottom: 22px; }
+    .pc-price { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 54px; font-weight: 300; color: var(--t0); line-height: 1; margin-bottom: 6px; letter-spacing: -0.02em; }
+    .pc-price sub { font-size: 22px; vertical-align: baseline; color: var(--t4); }
+    .pc-cadence { font-size: 12px; color: var(--t5); margin-bottom: 34px; }
+    .pc-list { list-style: none; flex: 1; margin-bottom: 38px; }
+    .pc-list li { font-size: 13.5px; color: var(--t3); padding: 10px 0; border-bottom: 1px solid var(--b0); display: flex; gap: 10px; line-height: 1.55; }
+    .pc-list li::before { content: '—'; color: var(--gold); font-family: 'DM Mono', monospace; font-size: 11px; flex-shrink: 0; margin-top: 2px; }
+    .pc-btn { font-size: 13px; font-weight: 500; padding: 15px 24px; border-radius: var(--radius-sm); cursor: pointer; letter-spacing: 0.04em; text-align: center; display: block; transition: background 0.2s, color 0.2s, border-color 0.2s; }
+    .pc-btn.g { background: var(--gold); color: var(--bg); border: 1.5px solid var(--gold); }
+    .pc-btn.g:hover { background: var(--gold-hi); border-color: var(--gold-hi); }
+    .pc-btn.o { background: transparent; color: var(--t3); border: 1.5px solid var(--b1); }
+    .pc-btn.o:hover { border-color: var(--t4); color: var(--t0); }
+
+    /* ══ FOOTER ═════════════════════════════════════════════════ */
+    footer { padding: 58px 56px; border-top: 1px solid var(--b0); display: flex; align-items: center; justify-content: space-between; }
+    .footer-logo { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 18px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; color: var(--t4); }
+    .footer-note { font-size: 12px; color: var(--t5); letter-spacing: 0.04em; }
+
+    /* ══ REVEAL ═════════════════════════════════════════════════ */
+    .r { opacity: 0; transform: translateY(26px); transition: opacity 0.85s cubic-bezier(0.22,1,0.36,1), transform 0.85s cubic-bezier(0.22,1,0.36,1); }
+    .r.in { opacity: 1; transform: none; }
+    .d1 { transition-delay: 0.08s; }
+    .d2 { transition-delay: 0.18s; }
+    .d3 { transition-delay: 0.3s; }
+
+    /* ══════════════════════════════════════════════════════════
+       SESSION REQUEST MODAL
+    ══════════════════════════════════════════════════════════ */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(1,2,8,0.78);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.32s ease;
+    }
+
+    [data-theme="light"] .modal-overlay { background: rgba(30,40,60,0.55); }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal-box {
+      background: var(--bg2);
+      border: 1px solid var(--b1);
+      border-radius: 24px;
+      width: 100%;
+      max-width: 580px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 52px 52px 48px;
+      position: relative;
+      transform: translateY(24px) scale(0.97);
+      transition: transform 0.38s cubic-bezier(0.22,1,0.36,1);
+    }
+
+    [data-theme="light"] .modal-box { background: var(--card); }
+
+    .modal-overlay.open .modal-box { transform: none; }
+
+    .modal-close {
+      position: absolute;
+      top: 22px; right: 22px;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      border: 1px solid var(--b1);
+      background: transparent;
+      color: var(--t4);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .modal-close:hover { border-color: var(--t3); color: var(--t1); }
+
+    /* Progress bar */
+    .modal-progress {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 40px;
+    }
+
+    .mp-dot {
+      height: 2px;
+      flex: 1;
+      border-radius: 2px;
+      background: var(--b1);
+      transition: background 0.4s;
+    }
+
+    .mp-dot.done { background: var(--gold); }
+    .mp-dot.active { background: var(--gold-hi); }
+
+    /* Step panels */
+    .modal-step { display: none; }
+    .modal-step.active { display: block; }
+
+    .modal-eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 9.5px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 16px;
+    }
+
+    .modal-title {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 34px;
+      font-weight: 300;
+      color: var(--t0);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+    }
+
+    .modal-sub {
+      font-size: 14px;
+      color: var(--t4);
+      line-height: 1.8;
+      margin-bottom: 36px;
+    }
+
+    /* Interest type selection */
+    .interest-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .interest-opt {
+      border: 1.5px solid var(--b1);
+      border-radius: var(--radius);
+      padding: 22px 20px;
+      cursor: pointer;
+      transition: border-color 0.22s, background 0.22s;
+      background: var(--card);
+      text-align: left;
+    }
+
+    [data-theme="light"] .interest-opt { background: var(--bg2); }
+
+    .interest-opt:hover { border-color: var(--gold); }
+    .interest-opt.sel { border-color: var(--gold); background: var(--gold-alpha); }
+
+    .io-label { font-size: 13px; font-weight: 500; color: var(--t0); margin-bottom: 6px; letter-spacing: 0.01em; }
+    .io-price { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--gold); margin-bottom: 8px; }
+    .io-desc { font-size: 12px; color: var(--t4); line-height: 1.65; }
+
+    /* Form fields */
+    .field { margin-bottom: 20px; }
+
+    .field label {
+      display: block;
+      font-family: 'DM Mono', monospace;
+      font-size: 9.5px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--t5);
+      margin-bottom: 10px;
+    }
+
+    .field input, .field textarea {
+      width: 100%;
+      background: var(--card);
+      border: 1px solid var(--b1);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      color: var(--t1);
+      transition: border-color 0.2s;
+      outline: none;
+      resize: none;
+    }
+
+    [data-theme="light"] .field input, [data-theme="light"] .field textarea {
+      background: var(--bg2);
+    }
+
+    .field input:focus, .field textarea:focus { border-color: var(--gold); }
+
+    .field input::placeholder, .field textarea::placeholder { color: var(--t5); }
+
+    .field textarea { min-height: 130px; line-height: 1.75; }
+
+    /* Qualification box — shows after decision input */
+    .qual-box {
+      border: 1px solid var(--b1);
+      border-radius: var(--radius-sm);
+      background: var(--inset);
+      padding: 20px 22px;
+      margin-top: 16px;
+      display: none;
+    }
+
+    .qual-box.show { display: block; }
+
+    .qual-tag { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+
+    .qual-text { font-size: 13px; color: var(--t3); line-height: 1.8; }
+
+    .qual-warning {
+      border-color: rgba(201,168,76,0.4);
+      background: var(--gold-alpha);
+    }
+
+    .qual-warning .qual-text { color: var(--t2); }
+
+    /* Row of two fields */
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+    /* Scarcity note */
+    .scarcity-note {
+      font-size: 12px;
+      color: var(--t5);
+      line-height: 1.7;
+      margin-top: 14px;
+      padding: 14px 18px;
+      border: 1px solid var(--b0);
+      border-radius: var(--radius-sm);
+      background: var(--card);
+    }
+
+    .scarcity-note strong { color: var(--t3); font-weight: 500; }
+
+    /* Modal actions */
+    .modal-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 32px; }
+
+    .btn-back {
+      font-size: 13px;
+      color: var(--t5);
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: color 0.2s;
+      padding: 0;
+    }
+
+    .btn-back:hover { color: var(--t3); }
+
+    .btn-next {
+      font-size: 13px;
+      font-weight: 500;
+      padding: 14px 32px;
+      background: var(--gold);
+      color: #06090e;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .btn-next:hover { background: var(--gold-hi); transform: translateY(-1px); }
+    .btn-next:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* Success state */
+    .modal-success {
+      text-align: center;
+      padding: 20px 0 10px;
+    }
+
+    .success-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      border: 1.5px solid var(--gold);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 32px;
+      font-size: 24px;
+    }
+
+    .success-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 38px; font-weight: 300; color: var(--t0); line-height: 1.1; margin-bottom: 16px; }
+
+    .success-body { font-size: 15px; color: var(--t3); line-height: 1.85; max-width: 380px; margin: 0 auto 36px; }
+
+    .success-close { font-size: 13px; color: var(--t4); background: none; border: none; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; transition: color 0.2s; }
+    .success-close:hover { color: var(--t1); }
+
+    /* Loading state */
+    .loading-dots {
+      display: inline-flex;
+      gap: 4px;
+      vertical-align: middle;
+    }
+
+    .loading-dots span {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--gold);
+      animation: blink 1.2s infinite;
+    }
+
+    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink { 0%,80%,100% { opacity:0.2 } 40% { opacity:1 } }
+
+    /* ══ RESPONSIVE ═════════════════════════════════════════════ */
+    @media (max-width: 980px) {
+      nav        { padding: 0 24px; }
+      .wrap      { padding: 0 24px; }
+      .rule      { margin: 0 24px; }
+      #hero      { padding: 130px 24px 90px; }
+      .nav-links { display: none; }
+      .two, .mc-inner, .moments-intro { grid-template-columns: 1fr; gap: 40px; }
+      .advisor-grid { grid-template-columns: repeat(3,1fr); }
+      .steps { grid-template-columns: 1fr 1fr; }
+      .step { border-bottom: 1px solid var(--b0); }
+      .pg { grid-template-columns: 1fr; }
+      footer { flex-direction: column; gap: 14px; text-align: center; }
+      .demo-body { grid-template-columns: 1fr; }
+      .demo-col + .demo-col { border-left: none; border-top: 1px solid var(--b0); }
+      .modal-box { padding: 40px 28px 36px; }
+      .interest-grid { grid-template-columns: 1fr; }
+      .field-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══ NAV ═══════════════════════════════════════════════════════ -->
+<nav id="nav">
+  <a href="#" class="logo">Quoru<span>m</span></a>
+
+  <ul class="nav-links">
+    <li><a href="#council">The Council</a></li>
+    <li><a href="#moments">What it surfaces</a></li>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#pricing">Access</a></li>
+  </ul>
+
+  <div class="nav-right">
+    <button class="toggle" id="themeBtn" aria-label="Toggle light/dark mode">
+      <div class="toggle-thumb"></div>
+      <span class="toggle-label l">☀</span>
+      <span class="toggle-label r">☾</span>
+    </button>
+    <button class="btn-request" id="openModal">Request a session</button>
+  </div>
+</nav>
+
+<!-- ══ HERO ═══════════════════════════════════════════════════════ -->
+<section id="hero">
+  <div class="hero-aura"></div>
+  <span class="eyebrow h-up hero-eye">Private decision intelligence</span>
+  <h1 class="display hero-hl h-up">
+    Your decisions<br />compound.<br /><em>Most people never<br />find out how.</em>
+  </h1>
+  <p class="hero-sub h-up">
+    Quorum is a private advisory layer for decisions that define what you build, what you own, and who you become. Six advisors. One Examiner. Your judgment, sharpened with every session.
+  </p>
+  <div class="hero-cta h-up">
+    <button class="btn-cta" id="heroModal">Request a session →</button>
+    <span class="hero-note">By referral or application only.</span>
+  </div>
+</section>
+
+<hr class="rule" />
+
+<!-- ══ THE PROBLEM ════════════════════════════════════════════════ -->
+<div class="wrap">
+  <div class="s">
+    <div class="two">
+      <div class="r">
+        <span class="eyebrow" style="margin-bottom:20px">The problem</span>
+        <h2 class="display" style="font-size: clamp(38px,3.8vw,56px);">You make decisions in isolation. Every time.</h2>
+      </div>
+      <div class="r d1">
+        <div class="prose">
+          <p>High-stakes decisions — capital allocation, partnerships, exits, career pivots — arrive without notice and leave without record. You decide from instinct, experience, and whatever advice you can assemble in time.</p>
+          <p>The cognitive biases that cost you most are the ones you apply most consistently. They don't feel like biases. They feel like judgment.</p>
+          <p class="hi">Quorum exists to change that.</p>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-n">6</div>
+            <div class="stat-l">Advisory perspectives, running in parallel</div>
+          </div>
+          <div class="stat">
+            <div class="stat-n js-counter" data-to="15">0</div>
+            <div class="stat-l">Cognitive biases tracked across sessions</div>
+          </div>
+          <div class="stat">
+            <div class="stat-n">∞</div>
+            <div class="stat-l">Compounding value with every decision you bring</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="rule" />
+
+<!-- ══ THE COUNCIL — PRISME ═══════════════════════════════════════ -->
+<div class="wrap" id="council">
+  <div class="s">
+    <div class="council-top r">
+      <div>
+        <div class="prisme-mark">P · R · I · S · M · E</div>
+        <h2 class="display" style="font-size: clamp(40px,4vw,58px);">The Council</h2>
+      </div>
+      <div style="text-align:right;">
+        <p class="mono" style="font-size:11px; color:var(--t5); letter-spacing:0.08em;">Six voices. One synthesis.</p>
+      </div>
+    </div>
+
+    <div class="advisor-grid">
+      <div class="ac r d1">
+        <div class="ac-letter">P</div>
+        <div class="ac-name">Pattern Analyst</div>
+        <div class="ac-desc">Structural similarity to prior decisions you've made</div>
+      </div>
+      <div class="ac r d1">
+        <div class="ac-letter">R</div>
+        <div class="ac-name">Risk Architect</div>
+        <div class="ac-desc">Irreversibility, downside asymmetry, worst-case sequencing</div>
+      </div>
+      <div class="ac r d2">
+        <div class="ac-letter">I</div>
+        <div class="ac-name">Investor</div>
+        <div class="ac-desc">Capital efficiency, risk-adjusted return, portfolio fit</div>
+      </div>
+      <div class="ac r d2">
+        <div class="ac-letter">S</div>
+        <div class="ac-name">Strategist</div>
+        <div class="ac-desc">Competitive dynamics, second-order consequences, positioning</div>
+      </div>
+      <div class="ac r d3">
+        <div class="ac-letter">M</div>
+        <div class="ac-name">Mirror</div>
+        <div class="ac-desc">Unstated human consequences — family, partners, trust</div>
+      </div>
+      <div class="ac r d3">
+        <div class="ac-letter">E</div>
+        <div class="ac-name">Elder</div>
+        <div class="ac-desc">Longitudinal perspective — what matters in twenty years</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="rule" />
+
+<!-- ══ WOW MOMENTS ════════════════════════════════════════════════ -->
+<div class="wrap" id="moments">
+  <div class="s">
+    <div class="moments-intro r">
+      <div>
+        <span class="eyebrow" style="margin-bottom:18px">What Quorum surfaces</span>
+        <h2 class="display" style="font-size: clamp(40px,4.5vw,62px);">The moments that change how you decide.</h2>
+      </div>
+      <p style="font-size:16px; color:var(--t3); line-height:1.9; padding-top:8px;">Not reports. Not summaries. Specific, uncomfortable, accurate observations about how you actually make decisions — derived from the decisions you actually bring.</p>
+    </div>
+
+    <!-- 01 Contradiction -->
+    <div class="mc r">
+      <div class="mc-inner">
+        <div>
+          <p class="mc-num">01 — Contradiction</p>
+          <h3 class="mc-title">"You said you'd<br />never do X.<br />Then you did."</h3>
+          <p class="mc-body">Quorum extracts the implicit principles behind every decision you bring. Over time, it detects when your actions violate your own stated rules — not to judge, but to show you the gap between the decision-maker you think you are and the one you actually are.</p>
+        </div>
+        <div class="demo">
+          <div class="demo-hd">
+            <span class="demo-tag tn">Tension · Urgency</span>
+            <span class="demo-tag ct">2 sessions apart</span>
+          </div>
+          <div class="demo-body">
+            <div class="demo-col">
+              <div class="demo-lbl">What you said</div>
+              <div class="demo-txt">"I prioritise my child being cared for by a parent over career considerations."</div>
+            </div>
+            <div class="demo-col">
+              <div class="demo-lbl">What you did</div>
+              <div class="demo-txt">"I want to retire at 45 with full FIRE — it's an urgency."</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 02 Fingerprint -->
+    <div class="mc r">
+      <div class="mc-inner">
+        <div>
+          <p class="mc-num">02 — Bias Fingerprint</p>
+          <h3 class="mc-title">The specific conditions<br />that activate<br />your biases.</h3>
+          <p class="mc-body">Generic bias labels tell you nothing. Quorum builds conditional patterns — not "you have FOMO" but "FOMO activates when a trusted contact endorses a deal under time pressure." Precise enough to catch before the next decision, not after.</p>
+        </div>
+        <div>
+          <div class="fp">
+            <div class="fp-top">
+              <span class="fp-lbl">FOMO / Social proof</span>
+              <span class="fp-ct">3 decisions · 4 months</span>
+            </div>
+            <div class="fp-txt">"Activates when a trusted contact endorses a deal before you've had time to form an independent view."</div>
+          </div>
+          <div class="fp dim">
+            <div class="fp-top">
+              <span class="fp-lbl">Anchoring</span>
+              <span class="fp-ct">2 decisions · forming</span>
+            </div>
+            <div class="fp-txt">"First number in a negotiation frame tends to anchor your counter-offer range."</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 03 Independence -->
+    <div class="mc r">
+      <div class="mc-inner">
+        <div>
+          <p class="mc-num">03 — Independence Score</p>
+          <h3 class="mc-title">Proof the product<br />is actually<br />working.</h3>
+          <p class="mc-body">Quorum tracks whether you incorporate its frameworks into your own thinking unprompted — before the Council runs. A rising score means your judgment is compounding. A flat score means something isn't landing. You can see both.</p>
+        </div>
+        <div>
+          <div class="ind-row">
+            <span class="ind-lbl">Session 1</span>
+            <div class="ind-track"><div class="ind-fill" style="width:42%"></div></div>
+            <span class="ind-val">42</span>
+          </div>
+          <div class="ind-row">
+            <span class="ind-lbl">Session 4</span>
+            <div class="ind-track"><div class="ind-fill" style="width:58%"></div></div>
+            <span class="ind-val">58</span>
+          </div>
+          <div class="ind-row">
+            <span class="ind-lbl">Session 8</span>
+            <div class="ind-track"><div class="ind-fill" style="width:74%"></div></div>
+            <span class="ind-val">74</span>
+          </div>
+          <div class="ind-row">
+            <span class="ind-lbl">Session 12</span>
+            <div class="ind-track"><div class="ind-fill" style="width:89%"></div></div>
+            <span class="ind-val">89</span>
+          </div>
+          <p class="ind-note"><strong>↗ +47 points</strong> across 12 sessions. Quorum's frameworks are showing up in your framing before the Council even runs.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="rule" />
+
+<!-- ══ HOW IT WORKS ═══════════════════════════════════════════════ -->
+<div class="wrap" id="how">
+  <div class="s">
+    <div class="sh r">
+      <span class="eyebrow">The process</span>
+      <h2 class="display" style="font-size: clamp(42px,5vw,68px); margin-top:16px; max-width:420px;">One decision.<br />Four phases.</h2>
+    </div>
+    <div class="steps r d1">
+      <div class="step">
+        <div class="step-n">01</div>
+        <div class="step-tag">Free</div>
+        <div class="step-name">The Council</div>
+        <div class="step-desc">Six advisors analyse your decision in parallel — each from a distinct cognitive frame. Pattern. Risk. Investor. Strategist. Mirror. Elder.</div>
+      </div>
+      <div class="step">
+        <div class="step-n">02</div>
+        <div class="step-tag">Free</div>
+        <div class="step-name">The Examiner</div>
+        <div class="step-desc">Three diagnostic questions derived from your specific decision's unknown-unknowns. Generic questions get ignored. These don't.</div>
+      </div>
+      <div class="step">
+        <div class="step-n">03</div>
+        <div class="step-tag">Free</div>
+        <div class="step-name">Synthesis</div>
+        <div class="step-desc">A directional recommendation integrating all six perspectives and your Examiner responses. Not a summary — a call.</div>
+      </div>
+      <div class="step">
+        <div class="step-n">04</div>
+        <div class="step-tag">Paid</div>
+        <div class="step-name">Mirror</div>
+        <div class="step-desc">The judgment layer. Fingerprint. Timeline. Independence. Contradictions. Everything Quorum has learned about how you decide.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="rule" />
+
+<!-- ══ PRICING ════════════════════════════════════════════════════ -->
+<div class="wrap" id="pricing">
+  <div class="s">
+    <div class="sh r">
+      <span class="eyebrow">Access</span>
+      <h2 class="display" style="font-size: clamp(42px,5vw,68px); margin-top:16px; max-width:440px;">Private<br />by design.</h2>
+      <p style="margin-top:20px; font-size:16px; color:var(--t3); max-width:380px; line-height:1.85;">Not a subscription product. Access is limited and intentional.</p>
+    </div>
+    <div class="pg">
+      <div class="pc r d1">
+        <div class="pc-tier">Free · always</div>
+        <div class="pc-price">₹0</div>
+        <div class="pc-cadence">Council + Examiner + Synthesis</div>
+        <ul class="pc-list">
+          <li>Full six-advisor Council analysis</li>
+          <li>Examiner diagnostic phase</li>
+          <li>Directional synthesis</li>
+          <li>Decision Timeline (≥5 sessions)</li>
+          <li>Behavioral alerts</li>
+        </ul>
+        <a href="https://invigorating-manifestation-production-ecd2.up.railway.app" target="_blank" class="pc-btn o">Open Quorum →</a>
+      </div>
+      <div class="pc feat r d2">
+        <div class="pc-badge">Most used</div>
+        <div class="pc-tier">Mirror unlock</div>
+        <div class="pc-price"><sub>₹</sub>4,999</div>
+        <div class="pc-cadence">One-time · lifetime access</div>
+        <ul class="pc-list">
+          <li>Bias Fingerprint — conditional patterns</li>
+          <li>Decision Independence Score</li>
+          <li>Decision Rules library</li>
+          <li>Contradiction Detector (≥40 sessions)</li>
+          <li>All future Mirror features</li>
+        </ul>
+        <button class="pc-btn g" onclick="openModal('mirror')">Unlock Mirror →</button>
+      </div>
+      <div class="pc r d3">
+        <div class="pc-tier">Live advisory</div>
+        <div class="pc-price"><sub>₹</sub>25,000</div>
+        <div class="pc-cadence">Per session · founder-led</div>
+        <ul class="pc-list">
+          <li>45-minute private advisory session</li>
+          <li>Founder-run with full context</li>
+          <li>Formatted Decision Brief PDF</li>
+          <li>Mirror unlock included</li>
+          <li>Follow-up synthesis within 24 hrs</li>
+        </ul>
+        <button class="pc-btn o" onclick="openModal('live')">Request session →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="rule" />
+
+<!-- ══ CONTACT ════════════════════════════════════════════════════ -->
+<div class="wrap" id="contact">
+  <div class="s" style="text-align:center;">
+    <span class="eyebrow r" style="margin-bottom:22px; display:block;">For decisions that matter</span>
+    <h2 class="display r d1" style="font-size: clamp(48px,6.5vw,96px); margin-bottom:32px; max-width:720px; margin-left:auto; margin-right:auto;">Start with<br />one decision.</h2>
+    <p class="r d2" style="font-size:17px; color:var(--t3); max-width:460px; margin:0 auto 56px; line-height:1.9;">Bring a real decision. Not a hypothetical. Something where being wrong costs you something. The Council is free. Everything else follows.</p>
+    <div class="r d3" style="display:flex; gap:18px; justify-content:center; flex-wrap:wrap; align-items:center;">
+      <a href="https://invigorating-manifestation-production-ecd2.up.railway.app" target="_blank" class="btn-cta">Open Quorum →</a>
+      <button class="btn-request" onclick="openModal()">Request a session</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ FOOTER ═════════════════════════════════════════════════════ -->
+<footer>
+  <span class="footer-logo">Quorum</span>
+  <span class="footer-note">Private · © 2026</span>
+</footer>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     SESSION REQUEST MODAL
+══════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="sessionModal" role="dialog" aria-modal="true" aria-label="Request a session">
+  <div class="modal-box" id="modalBox">
+
+    <button class="modal-close" id="closeModal" aria-label="Close">✕</button>
+
+    <!-- Progress -->
+    <div class="modal-progress">
+      <div class="mp-dot active" id="dot1"></div>
+      <div class="mp-dot" id="dot2"></div>
+      <div class="mp-dot" id="dot3"></div>
+    </div>
+
+    <!-- STEP 1: What are you looking for? -->
+    <div class="modal-step active" id="step1">
+      <p class="modal-eyebrow">Step 1 of 3</p>
+      <h2 class="modal-title">What brings<br />you here?</h2>
+      <p class="modal-sub">Select the access you're interested in. You can always change this later.</p>
+
+      <div class="interest-grid">
+        <div class="interest-opt" data-val="mirror" onclick="selectInterest(this)">
+          <div class="io-price">₹4,999 · one-time</div>
+          <div class="io-label">Mirror Unlock</div>
+          <div class="io-desc">Bias fingerprint, independence score, contradiction detector and all future features.</div>
+        </div>
+        <div class="interest-opt" data-val="live" onclick="selectInterest(this)">
+          <div class="io-price">₹25,000 · per session</div>
+          <div class="io-label">Live Advisory</div>
+          <div class="io-desc">45-min founder-led session. Includes decision brief and Mirror unlock.</div>
+        </div>
+        <div class="interest-opt" data-val="explore" onclick="selectInterest(this)">
+          <div class="io-price">Free · always</div>
+          <div class="io-label">Just Exploring</div>
+          <div class="io-desc">Open Quorum and bring a real decision. The Council runs free, no commitment.</div>
+        </div>
+        <div class="interest-opt" data-val="other" onclick="selectInterest(this)">
+          <div class="io-price">Let's talk</div>
+          <div class="io-label">Something Else</div>
+          <div class="io-desc">Partnership, enterprise, or a use case that doesn't fit the above.</div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <span></span>
+        <button class="btn-next" id="step1Next" disabled onclick="goStep(2)">Continue →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: The decision (qualification + scarcity) -->
+    <div class="modal-step" id="step2">
+      <p class="modal-eyebrow">Step 2 of 3</p>
+      <h2 class="modal-title">Tell us about<br />the decision.</h2>
+      <p class="modal-sub">We review every request. Sharing what you're facing helps us understand if a live session — or Quorum itself — is the right fit for where you are.</p>
+
+      <div class="field">
+        <label for="decisionInput">The decision you're facing</label>
+        <textarea id="decisionInput" placeholder="E.g. I'm considering exiting a business I've built for 8 years. The offer is fair but I'm not sure the timing is right. There's a potential new venture I'd want to pursue but it's pre-revenue..." oninput="onDecisionInput(this)"></textarea>
+      </div>
+
+      <!-- Qualification signal — shown after enough text -->
+      <div class="qual-box qual-warning" id="qualBox">
+        <div class="qual-tag">Signal detected</div>
+        <div class="qual-text" id="qualText">This looks like the kind of decision Quorum is built for. High-stakes, irreversible, with personal and financial dimensions in tension. A live session would likely surface things you haven't considered yet.</div>
+      </div>
+
+      <div class="scarcity-note">
+        <strong>Live sessions are capped at 4 per week.</strong> We review requests in the order they arrive and reach out within 48 hours if your decision is a fit.
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-back" onclick="goStep(1)">← Back</button>
+        <button class="btn-next" id="step2Next" disabled onclick="goStep(3)">Continue →</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Contact details -->
+    <div class="modal-step" id="step3">
+      <p class="modal-eyebrow">Step 3 of 3</p>
+      <h2 class="modal-title">How should<br />we reach you?</h2>
+      <p class="modal-sub">We'll respond directly — no automated emails, no sequences. A person will read your request and reply.</p>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="inputName">Your name</label>
+          <input type="text" id="inputName" placeholder="Full name" oninput="checkStep3()" />
+        </div>
+        <div class="field">
+          <label for="inputEmail">Email</label>
+          <input type="email" id="inputEmail" placeholder="you@domain.com" oninput="checkStep3()" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="inputWhatsapp">WhatsApp (optional)</label>
+        <input type="tel" id="inputWhatsapp" placeholder="+91 98765 43210" />
+      </div>
+
+      <div class="field">
+        <label for="inputContext">Anything else relevant? (optional)</label>
+        <textarea id="inputContext" placeholder="Your background, timeline, or anything that gives us context." style="min-height:80px;"></textarea>
+      </div>
+
+      <div id="submitError" style="font-size:13px; color:#e08060; margin-top:8px; display:none;"></div>
+
+      <div class="modal-actions">
+        <button class="btn-back" onclick="goStep(2)">← Back</button>
+        <button class="btn-next" id="step3Next" disabled onclick="submitForm()">Submit request →</button>
+      </div>
+    </div>
+
+    <!-- SUCCESS -->
+    <div class="modal-step" id="stepSuccess">
+      <div class="modal-success">
+        <div class="success-icon">◆</div>
+        <h2 class="success-title">Request<br />received.</h2>
+        <p class="success-body" id="successBody">We'll review your decision and reach out within 48 hours. In the meantime, you can open Quorum and bring the same decision — the Council runs free.</p>
+        <a href="https://invigorating-manifestation-production-ecd2.up.railway.app" target="_blank" class="btn-cta" style="display:inline-block; margin-bottom:24px;">Open Quorum →</a><br/>
+        <button class="success-close" onclick="closeModal()">Close this window</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<script>
+  /* ── SUPABASE CONFIG ─────────────────────────────────────────
+     Replace these values with your actual Supabase project URL
+     and anon public key. Both are safe to expose in the browser.
+  ─────────────────────────────────────────────────────────── */
+  const SUPABASE_URL     = 'https://jknhkaczlczltbpkxcmo.supabase.co'
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprbmhrYWN6bGN6bHRicGt4Y21vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyMjM3MzQsImV4cCI6MjA5MTc5OTczNH0._6udeOqTCGmzCkET_wPam0uuw24jz2mosdYkzP2SIlo'
+
+  async function insertSessionRequest(payload) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/session_requests`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(payload)
+    })
+    if (!res.ok) throw new Error(`Supabase error: ${res.status}`)
+  }
+
+  /* ── THEME ─────────────────────────────────────────────────── */
+  const html  = document.documentElement
+  const btn   = document.getElementById('themeBtn')
+  const saved = localStorage.getItem('q-theme')
+  if (saved) html.setAttribute('data-theme', saved)
+
+  btn.addEventListener('click', () => {
+    const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+    html.setAttribute('data-theme', next)
+    localStorage.setItem('q-theme', next)
+  })
+
+  /* ── NAV ───────────────────────────────────────────────────── */
+  const nav = document.getElementById('nav')
+  window.addEventListener('scroll', () => nav.classList.toggle('stuck', scrollY > 48), { passive: true })
+
+  /* ── REVEAL ────────────────────────────────────────────────── */
+  const ro = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); ro.unobserve(e.target) } })
+  }, { threshold: 0.1, rootMargin: '0px 0px -28px 0px' })
+  document.querySelectorAll('.r').forEach(el => ro.observe(el))
+
+  /* ── COUNTER ───────────────────────────────────────────────── */
+  const cn = document.querySelector('.js-counter')
+  if (cn) {
+    const co = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return
+      const t = +cn.dataset.to; let n = 0
+      const f = () => { cn.textContent = ++n; if (n < t) requestAnimationFrame(f) }
+      requestAnimationFrame(f); co.unobserve(cn)
+    }, { threshold: 0.5 })
+    co.observe(cn)
+  }
+
+  /* ── MODAL ─────────────────────────────────────────────────── */
+  const modal      = document.getElementById('sessionModal')
+  let   currentStep = 1
+  let   selectedInterest = null
+
+  function openModal(preset) {
+    currentStep = 1
+    showStep(1)
+    modal.classList.add('open')
+    document.body.style.overflow = 'hidden'
+    if (preset) {
+      // pre-select interest from pricing buttons
+      const opt = document.querySelector(`.interest-opt[data-val="${preset}"]`)
+      if (opt) selectInterest(opt)
+    }
+  }
+
+  function closeModal() {
+    modal.classList.remove('open')
+    document.body.style.overflow = ''
+  }
+
+  document.getElementById('openModal').addEventListener('click', () => openModal())
+  document.getElementById('heroModal').addEventListener('click', () => openModal())
+  document.getElementById('closeModal').addEventListener('click', closeModal)
+
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal() })
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal() })
+
+  function showStep(n) {
+    currentStep = n
+    document.querySelectorAll('.modal-step').forEach(s => s.classList.remove('active'))
+    const target = n === 'success' ? document.getElementById('stepSuccess') : document.getElementById(`step${n}`)
+    if (target) target.classList.add('active')
+
+    // progress dots
+    ;[1,2,3].forEach(i => {
+      const dot = document.getElementById(`dot${i}`)
+      if (!dot) return
+      dot.classList.remove('done','active')
+      if (i < n || n === 'success') dot.classList.add('done')
+      else if (i === n) dot.classList.add('active')
+    })
+
+    if (n !== 'success') document.getElementById('modalBox').scrollTop = 0
+  }
+
+  function goStep(n) {
+    showStep(n)
+  }
+
+  /* Interest selection */
+  function selectInterest(el) {
+    document.querySelectorAll('.interest-opt').forEach(o => o.classList.remove('sel'))
+    el.classList.add('sel')
+    selectedInterest = el.dataset.val
+    document.getElementById('step1Next').disabled = false
+  }
+
+  /* Decision input — qualification signal */
+  const DECISION_THRESHOLD = 80 // chars
+
+  const qualPatterns = [
+    { rx: /exit|sell|acqui/i,    msg: 'Exit decisions are among the most irreversible Quorum handles. The Council will surface what the numbers don\'t — timing, identity, and what comes after.' },
+    { rx: /invest|capital|fund/i, msg: 'Capital allocation decisions benefit most from the Investor and Risk Architect running in parallel. Pattern-matching to prior decisions is often where the insight is.' },
+    { rx: /join|leave|resign|career/i, msg: 'Career pivots carry hidden costs that rarely get priced in. The Mirror and Elder advisors tend to surface the ones that matter most.' },
+    { rx: /partner|co-found|hire/i, msg: 'Partnership decisions are where the Stakeholder Mirror advisor does its most important work — the unstated dynamics and incentive misalignments.' },
+    { rx: /start|launch|venture|startup/i, msg: 'New ventures benefit from the Risk Architect\'s irreversibility mapping. The question isn\'t just viability — it\'s what you\'re foreclosing on.' },
+  ]
+
+  const DEFAULT_QUAL = 'This looks like the kind of decision Quorum is built for. High-stakes, with personal and financial dimensions in tension. A live session would likely surface things you haven\'t considered yet.'
+
+  function onDecisionInput(el) {
+    const v = el.value.trim()
+    const enough = v.length >= DECISION_THRESHOLD
+    document.getElementById('step2Next').disabled = !enough
+
+    const qualBox = document.getElementById('qualBox')
+    const qualText = document.getElementById('qualText')
+
+    if (enough) {
+      const match = qualPatterns.find(p => p.rx.test(v))
+      qualText.textContent = match ? match.msg : DEFAULT_QUAL
+      qualBox.classList.add('show')
+    } else {
+      qualBox.classList.remove('show')
+    }
+  }
+
+  /* Step 3 validation */
+  function checkStep3() {
+    const name  = document.getElementById('inputName').value.trim()
+    const email = document.getElementById('inputEmail').value.trim()
+    const valid = name.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    document.getElementById('step3Next').disabled = !valid
+  }
+
+  /* Submit */
+  async function submitForm() {
+    const nextBtn = document.getElementById('step3Next')
+    const errDiv  = document.getElementById('submitError')
+    errDiv.style.display = 'none'
+    nextBtn.disabled = true
+    nextBtn.innerHTML = 'Sending <span class="loading-dots"><span></span><span></span><span></span></span>'
+
+    const payload = {
+      interest_type:     selectedInterest,
+      decision_summary:  document.getElementById('decisionInput').value.trim(),
+      name:              document.getElementById('inputName').value.trim(),
+      email:             document.getElementById('inputEmail').value.trim(),
+      whatsapp:          document.getElementById('inputWhatsapp').value.trim() || null,
+      additional_context: document.getElementById('inputContext').value.trim() || null,
+    }
+
+    try {
+      await insertSessionRequest(payload)
+      // Success messaging based on interest
+      const msgs = {
+        live:    'We\'ll review your decision and reach out within 48 hours. Live sessions are capped, so we\'ll confirm availability when we write.',
+        mirror:  'We\'ll send you your Mirror unlock token via email within 24 hours. You can start bringing decisions immediately.',
+        explore: 'You can open Quorum right now and bring the decision you described — the Council runs free, no token required.',
+        other:   'We\'ll read your request and respond personally within 48 hours.'
+      }
+      document.getElementById('successBody').textContent = msgs[selectedInterest] || msgs.live
+      showStep('success')
+    } catch (err) {
+      errDiv.textContent = 'Something went wrong. Email us directly at hello@quorum.so'
+      errDiv.style.display = 'block'
+      nextBtn.disabled = false
+      nextBtn.textContent = 'Submit request →'
+    }
+  }
+
+  /* Smooth scroll for anchor links */
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const el = document.getElementById(a.getAttribute('href').slice(1))
+      if (el) { e.preventDefault(); el.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+    })
+  })
+</script>
+
+</body>
+</html>
