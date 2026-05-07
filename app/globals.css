@@ -2,28 +2,64 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Design tokens ──────────────────────────────────────── */
+/* ── Theme-agnostic tokens ───────────────────────────────── */
 :root {
-  --bg-void:     #02040a;
-  --bg-deep:     #060912;
-  --bg-card:     #0b1020;
-  --bg-card-alt: #0f1528;
-  --bg-inset:    #070c18;
-  --border-dim:  #141e36;
-  --border-mid:  #1c2b4a;
-  --border-hi:   #263d6b;
-  --gold:        #c9a84c;
-  --gold-bright: #e0bc6a;
-  --gold-dim:    #5a3f1a;
-  --gold-glow:   rgba(201,168,76,0.12);
-  --text-1:      #edf0f7;   /* headings, primary labels */
-  --text-2:      #b0bcd4;   /* body prose */
-  --text-3:      #6a7a9a;   /* secondary labels */
-  --text-4:      #354260;   /* muted, hints */
-  --green-soft:  #1a3d2a;
-  --green-text:  #4ade80;
+  --radius:    18px;
+  --radius-sm: 10px;
+  --trans: background 0.32s ease, color 0.32s ease, border-color 0.32s ease, box-shadow 0.32s ease;
 }
 
+/* ── DARK theme (default) ────────────────────────────────── */
+[data-theme="dark"] {
+  --bg-void:     #010306;
+  --bg-deep:     #050810;
+  --bg-card:     #0c1226;
+  --bg-card-alt: #101628;
+  --bg-inset:    #060b18;
+  --border-dim:  #1a2640;
+  --border-mid:  #253660;
+  --border-hi:   #344d80;
+  --gold:        #c9a84c;
+  --gold-bright: #eaca78;
+  --gold-dim:    #5a3f1a;
+  --gold-glow:   rgba(201,168,76,0.14);
+  --text-1:      #f5f7fb;
+  --text-2:      #c8d6f0;
+  --text-3:      #8fa0c4;
+  --text-4:      #4e6080;
+  --green-soft:  #1a3d2a;
+  --green-text:  #4ade80;
+  --error:       #e05050;
+  --scrollbar-thumb: #253660;
+  --shadow-card: 0 2px 12px rgba(0,0,0,0.5);
+}
+
+/* ── LIGHT theme ─────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-void:     #f4f1eb;
+  --bg-deep:     #ede9e0;
+  --bg-card:     #ffffff;
+  --bg-card-alt: #f8f6f1;
+  --bg-inset:    #edeae2;
+  --border-dim:  #c0c8d6;
+  --border-mid:  #a4b0c4;
+  --border-hi:   #7a90b0;
+  --gold:        #9a7020;
+  --gold-bright: #b88c2a;
+  --gold-dim:    #d0a840;
+  --gold-glow:   rgba(154,112,32,0.1);
+  --text-1:      #060d1c;
+  --text-2:      #1a2a44;
+  --text-3:      #364e70;
+  --text-4:      #5e789e;
+  --green-soft:  #daf0e0;
+  --green-text:  #1a7a3a;
+  --error:       #c03030;
+  --scrollbar-thumb: #b0bece;
+  --shadow-card: 0 1px 8px rgba(6,13,28,0.08), 0 4px 24px rgba(6,13,28,0.06);
+}
+
+/* ── Global resets & base ────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body {
@@ -34,14 +70,15 @@ html, body {
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.32s ease, color 0.32s ease;
 }
 
-/* ── Scrollbar ──────────────────────────────────────────── */
+/* ── Scrollbar ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-void); }
-::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 
-/* ── Streaming cursor ───────────────────────────────────── */
+/* ── Streaming cursor ───────────────────────────────────────── */
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 .cursor::after {
   content: '▋';
@@ -53,12 +90,13 @@ html, body {
   vertical-align: middle;
 }
 
-/* ── Persona card ───────────────────────────────────────── */
+/* ── Persona card ───────────────────────────────────────────── */
 .persona-card {
   background: var(--bg-card);
   border: 1px solid var(--border-dim);
   border-radius: 14px;
   transition: border-color 0.3s, box-shadow 0.3s;
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -71,7 +109,7 @@ html, body {
   border-color: var(--border-mid);
 }
 
-/* ── Persona response prose ─────────────────────────────── */
+/* ── Persona response prose ─────────────────────────────────── */
 .persona-response {
   font-size: 13.5px;
   line-height: 1.82;
@@ -81,7 +119,7 @@ html, body {
   letter-spacing: 0.01em;
 }
 
-/* ── Inputs ─────────────────────────────────────────────── */
+/* ── Inputs ─────────────────────────────────────────────────── */
 .decision-input,
 textarea {
   background: var(--bg-inset);
@@ -94,18 +132,22 @@ textarea {
   resize: none;
   width: 100%;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.32s, color 0.32s;
   font-family: inherit;
 }
 .decision-input:focus,
 textarea:focus {
   border-color: var(--border-hi);
-  box-shadow: 0 0 0 3px rgba(38, 61, 107, 0.35);
+  box-shadow: 0 0 0 3px rgba(52,77,128,0.22);
+}
+[data-theme="light"] .decision-input:focus,
+[data-theme="light"] textarea:focus {
+  box-shadow: 0 0 0 3px rgba(122,144,176,0.18);
 }
 .decision-input::placeholder,
 textarea::placeholder { color: var(--text-4); }
 
-/* ── Buttons ─────────────────────────────────────────────── */
+/* ── Buttons ─────────────────────────────────────────────────── */
 .btn-primary {
   background: var(--gold);
   color: #05080f;
@@ -149,10 +191,38 @@ textarea::placeholder { color: var(--text-4); }
 }
 .btn-pushback:hover { color: var(--gold); border-color: var(--gold-dim); }
 
-/* ── Gold divider ───────────────────────────────────────── */
+/* ── Gold divider ───────────────────────────────────────────── */
 .gold-rule {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
   border: none;
   margin: 0;
+}
+
+/* ── Theme toggle ───────────────────────────────────────────── */
+.theme-toggle {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 24px;
+  border: 1px solid var(--border-mid);
+  background: var(--bg-card);
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.2s, color 0.2s, background 0.32s;
+  user-select: none;
+}
+.theme-toggle:hover {
+  border-color: var(--gold-dim);
+  color: var(--gold);
 }
