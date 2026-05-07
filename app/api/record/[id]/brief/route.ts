@@ -96,6 +96,12 @@ const PERSONA_ACCENT: Record<string, [number, number, number]> = {
 }
 
 // ── PDF builder ───────────────────────────────────────────────────────────────
+// v3 fixes:
+//   A) Always set font BEFORE splitTextToSize — bold font metrics were bleeding
+//      into normal-text wrapping, causing text to clip/overflow
+//   B) Markdown renderer for Decision Brief — **bold**, *italic*, ---, - bullets,
+//      numbered lists, ## headings all parsed and rendered correctly
+//   C) Decision block rendered line-by-line (no pre-calc box height)
 
 async function buildPdf(
   session: { decision_text: string; context_text?: string | null; created_at: string; id: string },
@@ -143,29 +149,272 @@ async function buildPdf(
     }
   }
 
-  // ── Body text renderer ────────────────────────────────────────────────────────
+  // ── Body text (prose) ─────────────────────────────────────────────────────────
+  // CRITICAL: font must be set BEFORE splitTextToSize — jsPDF uses current font
+  // metrics for wrapping. If a bold header was drawn previously, wrapping uses
+  // bold metrics but text renders in normal → lines overflow their measured width.
   const bodyBlock = (raw: string, indent = 0, size = 10.5, color = C.bodyText) => {
-    const text  = sanitise(raw)
-    const lh    = size * 1.62
-    const lines = doc.splitTextToSize(text, TW - indent) as string[]
-    for (const line of lines) {
-      ensure(lh)
+    const text = sanitise(raw).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const lh   = size * 1.58
+    // Split on actual newlines first, then wrap each paragraph
+    const paragraphs = text.split('\n')
+    for (const para of paragraphs) {
+      if (!para.trim()) { Y += lh * 0.4; continue }
+      // SET FONT BEFORE SPLIT — fixes metric mismatch bug
       doc.setFont('Helvetica', 'normal')
       doc.setFontSize(size)
+      const lines = doc.splitTextToSize(para, TW - indent) as string[]
+      for (const line of lines) {
+        ensure(lh + 2)
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(size)
+        doc.setTextColor(...color)
+        doc.text(line, ML + indent, Y)
+        Y += lh
+      }
+    }
+    Y += 5
+  }
+
+  // ── Inline segment renderer (for markdown bold/italic within a line) ──────────
+  type Seg = { text: string; bold: boolean; italic: boolean }
+  const parseInline = (raw: string): Seg[] => {
+    const segs: Seg[] = []
+    // Replace **text** and *text* with markers, then split
+    const re = /(\*\*(.+?)\*\*|\*(.+?)\*)/g
+    let last = 0; let m: RegExpExecArray | null
+    while ((m = re.exec(raw)) !== null) {
+      if (m.index > last) segs.push({ text: raw.slice(last, m.index), bold: false, italic: false })
+      if (m[0].startsWith('**')) segs.push({ text: m[2], bold: true, italic: false })
+      else segs.push({ text: m[3], bold: false, italic: true })
+      last = m.index + m[0].length
+    }
+    if (last < raw.length) segs.push({ text: raw.slice(last), bold: false, italic: false })
+    return segs.filter(s => s.text)
+  }
+
+  const renderSegments = (segs: Seg[], x: number, size: number, color: [number,number,number]) => {
+    let cx = x
+    for (const seg of segs) {
+      const style = seg.bold ? 'bold' : seg.italic ? 'italic' : 'normal'
+      doc.setFont('Helvetica', style)
+      doc.setFontSize(size)
       doc.setTextColor(...color)
-      doc.text(line, ML + indent, Y)
-      Y += lh
+      const w = doc.getTextWidth(sanitise(seg.text))
+      doc.text(sanitise(seg.text), cx, Y)
+      cx += w
+    }
+  }
+
+  // ── Markdown renderer (for Decision Brief content) ────────────────────────────
+  // Handles: **bold**, *italic*, ---, - bullets, 1. numbered, ## headings
+  const renderMarkdown = (raw: string) => {
+    const SIZE_BODY    = 10.5
+    const SIZE_SMALL   = 9.5
+    const SIZE_HEADING = 11.5
+    const LH_BODY      = SIZE_BODY * 1.58
+    const LH_SMALL     = SIZE_SMALL * 1.55
+    const LH_HEAD      = SIZE_HEADING * 1.5
+
+    const text = sanitise(raw).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const lines = text.split('\n')
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      const trimmed = line.trim()
+
+      // Blank line → small gap
+      if (!trimmed) {
+        Y += LH_BODY * 0.35
+        continue
+      }
+
+      // Horizontal rule ---
+      if (/^---+$/.test(trimmed)) {
+        ensure(16)
+        Y += 4
+        doc.setDrawColor(...C.ruleGold)
+        doc.setLineWidth(0.3)
+        doc.line(ML, Y, PW - MR, Y)
+        Y += 10
+        continue
+      }
+
+      // ## Heading / **Heading** (whole line is bold heading)
+      const headingMatch = trimmed.match(/^#{1,3}\s+(.+)$/)
+      const boldLineMatch = trimmed.match(/^\*\*([^*]+)\*\*\s*$/)
+      if (headingMatch || boldLineMatch) {
+        const headText = headingMatch ? headingMatch[1] : boldLineMatch![1]
+        ensure(LH_HEAD + 4)
+        Y += 3
+        doc.setFont('Helvetica', 'bold')
+        doc.setFontSize(SIZE_HEADING)
+        doc.setTextColor(...C.bodyText)
+        const wLines = doc.splitTextToSize(sanitise(headText), TW) as string[]
+        for (const wl of wLines) {
+          ensure(LH_HEAD)
+          doc.setFont('Helvetica', 'bold')
+          doc.setFontSize(SIZE_HEADING)
+          doc.setTextColor(...C.bodyText)
+          doc.text(wl, ML, Y)
+          Y += LH_HEAD
+        }
+        Y += 3
+        continue
+      }
+
+      // - Bullet item (may contain inline bold/italic)
+      const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/)
+      if (bulletMatch) {
+        const bulletText = bulletMatch[1]
+        const INDENT = 20
+        ensure(LH_BODY + 2)
+        // Draw bullet dot
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(SIZE_BODY)
+        doc.setFillColor(...C.gold)
+        doc.circle(ML + 5, Y - 3.5, 1.5, 'F')
+        // Parse inline bold in bullet text
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(SIZE_BODY)
+        const wrapWidth = TW - INDENT
+        const segs = parseInline(bulletText)
+        // Measure total line in normal font to see if it fits
+        const fullText = segs.map(s => sanitise(s.text)).join('')
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(SIZE_BODY)
+        const wLines = doc.splitTextToSize(fullText, wrapWidth) as string[]
+        if (wLines.length === 1) {
+          // Single line — render inline segments
+          renderSegments(segs, ML + INDENT, SIZE_BODY, C.bodyText)
+          Y += LH_BODY
+        } else {
+          // Multi-line bullet — render plain (inline bold too complex to wrap)
+          for (const wl of wLines) {
+            ensure(LH_SMALL)
+            doc.setFont('Helvetica', 'normal')
+            doc.setFontSize(SIZE_SMALL)
+            doc.setTextColor(...C.bodyText)
+            doc.text(wl, ML + INDENT, Y)
+            Y += LH_SMALL
+          }
+        }
+        continue
+      }
+
+      // 1. Numbered list item
+      const numMatch = trimmed.match(/^(\d+)\.\s+(.+)$/)
+      if (numMatch) {
+        const num = numMatch[1]
+        const itemText = numMatch[2]
+        const INDENT = 22
+        ensure(LH_BODY + 2)
+        doc.setFont('Helvetica', 'bold')
+        doc.setFontSize(SIZE_BODY)
+        doc.setTextColor(...C.gold)
+        doc.text(`${num}.`, ML, Y)
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(SIZE_BODY)
+        doc.setTextColor(...C.bodyText)
+        const wLines = doc.splitTextToSize(sanitise(itemText), TW - INDENT) as string[]
+        for (let j = 0; j < wLines.length; j++) {
+          ensure(LH_SMALL)
+          doc.setFont('Helvetica', 'normal')
+          doc.setFontSize(j === 0 ? SIZE_BODY : SIZE_SMALL)
+          doc.setTextColor(...C.bodyText)
+          doc.text(wLines[j], ML + INDENT, Y)
+          Y += j === 0 ? LH_BODY : LH_SMALL
+        }
+        continue
+      }
+
+      // Regular paragraph (may have inline bold/italic — e.g. **Label:** text)
+      const segs = parseInline(trimmed)
+      const hasInline = segs.some(s => s.bold || s.italic)
+
+      if (hasInline) {
+        // Measure as plain text first to check wrapping
+        const fullText = segs.map(s => sanitise(s.text)).join('')
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(SIZE_BODY)
+        const wLines = doc.splitTextToSize(fullText, TW) as string[]
+        if (wLines.length === 1) {
+          ensure(LH_BODY + 2)
+          renderSegments(segs, ML, SIZE_BODY, C.bodyText)
+          Y += LH_BODY
+        } else {
+          // Multi-line inline: render first line with segments, rest as normal
+          ensure(LH_BODY + 2)
+          // First line: render with inline formatting up to first wrap point
+          // Simplification: render the first segment as bold if it ends with ':',
+          // then the rest as normal wrapped text
+          if (segs[0]?.bold && segs[0].text.trim().endsWith(':')) {
+            const labelW = (() => {
+              doc.setFont('Helvetica', 'bold')
+              doc.setFontSize(SIZE_BODY)
+              return doc.getTextWidth(sanitise(segs[0].text))
+            })()
+            doc.setFont('Helvetica', 'bold')
+            doc.setFontSize(SIZE_BODY)
+            doc.setTextColor(...C.bodyText)
+            doc.text(sanitise(segs[0].text), ML, Y)
+            // Wrap the rest after the bold label
+            const rest = segs.slice(1).map(s => sanitise(s.text)).join('')
+            doc.setFont('Helvetica', 'normal')
+            doc.setFontSize(SIZE_SMALL)
+            const restLines = doc.splitTextToSize(rest.trim(), TW - labelW - 4) as string[]
+            if (restLines[0]) {
+              doc.setTextColor(...C.bodyText)
+              doc.text(restLines[0], ML + labelW + 4, Y)
+            }
+            Y += LH_BODY
+            for (let k = 1; k < restLines.length; k++) {
+              ensure(LH_SMALL)
+              doc.setFont('Helvetica', 'normal')
+              doc.setFontSize(SIZE_SMALL)
+              doc.setTextColor(...C.bodyText)
+              doc.text(restLines[k], ML, Y)
+              Y += LH_SMALL
+            }
+          } else {
+            // Render all lines as normal text (strip bold markers)
+            for (const wl of wLines) {
+              ensure(LH_SMALL)
+              doc.setFont('Helvetica', 'normal')
+              doc.setFontSize(SIZE_SMALL)
+              doc.setTextColor(...C.bodyText)
+              doc.text(wl, ML, Y)
+              Y += LH_SMALL
+            }
+          }
+        }
+      } else {
+        // Pure plain text paragraph
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(SIZE_BODY)
+        const wLines = doc.splitTextToSize(sanitise(trimmed), TW) as string[]
+        for (const wl of wLines) {
+          ensure(LH_BODY)
+          doc.setFont('Helvetica', 'normal')
+          doc.setFontSize(SIZE_BODY)
+          doc.setTextColor(...C.bodyText)
+          doc.text(wl, ML, Y)
+          Y += LH_BODY
+        }
+      }
+      Y += 3
     }
     Y += 4
   }
 
   // ── Thin rule ─────────────────────────────────────────────────────────────────
   const rule = (color = C.ruleGold, weight = 0.3) => {
-    ensure(8)
+    ensure(16)
+    Y += 2
     doc.setDrawColor(...color)
     doc.setLineWidth(weight)
     doc.line(ML, Y, PW - MR, Y)
-    Y += 14
+    Y += 12
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -214,32 +463,43 @@ async function buildPdf(
 
   drawFooter()
 
-  // ── Decision block ────────────────────────────────────────────────────────────
+  // ── Decision block (line-by-line, no pre-calc box height) ───────────────────
   doc.setFont('Helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setTextColor(...C.mutedText)
   doc.setCharSpace(1)
   doc.text('THE DECISION', ML, Y)
   doc.setCharSpace(0)
-  Y += 11
+  Y += 12
 
-  const decText  = sanitise(session.decision_text)
-  doc.setFontSize(10.5)
-  const decLines = doc.splitTextToSize(decText, TW - 20) as string[]
-  const decLH    = 10.5 * 1.62
-  const decBoxH  = decLines.length * decLH + 22
-
-  ensure(decBoxH + 8)
-  doc.setFillColor(...C.decisionBg)
-  doc.rect(ML, Y, TW, decBoxH, 'F')
-  doc.setFillColor(...C.gold)
-  doc.rect(ML, Y, 3, decBoxH, 'F')
-
+  const decText = sanitise(session.decision_text)
+  const decSize = 10.5
+  const decLH   = decSize * 1.58
+  // Set font BEFORE split
   doc.setFont('Helvetica', 'normal')
-  doc.setFontSize(10.5)
-  doc.setTextColor(...C.bodyText)
-  decLines.forEach((line, i) => { doc.text(line, ML + 14, Y + 14 + i * decLH) })
-  Y += decBoxH + 10
+  doc.setFontSize(decSize)
+  const decLines = doc.splitTextToSize(decText, TW - 18) as string[]
+  const decStartY = Y
+
+  for (const dl of decLines) {
+    ensure(decLH + 2)
+    // Draw bg rect for this line (left-to-right fill per line)
+    doc.setFillColor(...C.decisionBg)
+    doc.rect(ML, Y - decLH + 3, TW, decLH + 1, 'F')
+    doc.setFont('Helvetica', 'normal')
+    doc.setFontSize(decSize)
+    doc.setTextColor(...C.bodyText)
+    doc.text(dl, ML + 14, Y)
+    Y += decLH
+  }
+  // Close the box with a bottom pad
+  doc.setFillColor(...C.decisionBg)
+  doc.rect(ML, Y, TW, 6, 'F')
+  Y += 6
+  // Gold left accent bar (drawn after, over the bg)
+  const decEndY = Y
+  doc.setFillColor(...C.gold)
+  doc.rect(ML, decStartY - decLH + 3, 3, decEndY - decStartY + decLH - 3, 'F')
 
   if (session.context_text?.trim()) {
     ensure(20)
@@ -295,17 +555,16 @@ async function buildPdf(
     for (const msg of briefMsgs) {
       if (msg.role === 'user') {
         ensure(32)
-        doc.setFillColor(...C.pushbackBg)
         doc.setFont('Helvetica', 'bold')
         doc.setFontSize(7.5)
         doc.setTextColor(...C.mutedText)
         doc.setCharSpace(0.8)
         doc.text('YOUR PUSHBACK', ML, Y)
         doc.setCharSpace(0)
-        Y += 10
+        Y += 12
         bodyBlock(msg.content, 4, 9.5, C.mutedText)
       } else {
-        bodyBlock(msg.content)
+        renderMarkdown(msg.content)
       }
     }
 
@@ -361,10 +620,16 @@ async function buildPdf(
       Y = ML
       drawFooter()
 
+      // Guard: if less than 120pt left, start a fresh page for this persona
+      if (Y + 120 > PH - BOTTOM_MARGIN) {
+        doc.addPage(); fillPageDark(); page++; Y = ML; drawFooter()
+      }
+
       // Persona header band
-      const hBg = isSynthesis ? C.synthBg : accentRgb
+      const hBg  = isSynthesis ? C.synthBg : accentRgb
+      const hH   = isSynthesis ? 26 : 22
       doc.setFillColor(...hBg)
-      doc.rect(0, Y - 4, PW, isSynthesis ? 24 : 20, 'F')
+      doc.rect(0, Y - 4, PW, hH, 'F')
       doc.setDrawColor(...C.gold)
       doc.setLineWidth(isSynthesis ? 1.5 : 0.6)
       doc.line(0, Y - 4, PW, Y - 4)
@@ -377,15 +642,15 @@ async function buildPdf(
       doc.setFont('Helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(...C.mutedText)
-      doc.text(sanitise(persona.tagline ?? ''), ML, isSynthesis ? Y + 18 : Y + 16)
+      doc.text(sanitise(persona.tagline ?? ''), ML, Y + 18)
 
-      Y += isSynthesis ? 30 : 26
+      Y += hH + 6
 
-      // Thin gold divider under header
+      // Gold rule — drawn AFTER Y is past the header band
       doc.setDrawColor(...C.ruleGold)
       doc.setLineWidth(0.3)
       doc.line(ML, Y, PW - MR, Y)
-      Y += 10
+      Y += 12
 
       for (const msg of msgs) {
         if (msg.role === 'user') {
