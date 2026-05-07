@@ -87,6 +87,17 @@ export default async function RecordPage({ params }: Props) {
         {/* Outcome tracker — prominent, right after the decision */}
         <div style={{ marginBottom: 16 }}>
           <OutcomeTracker sessionId={session.id} existingOutcome={outcome} />
+          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+            <Link href={`/session/${session.id}`}>
+              <button className="btn-ghost" style={{ fontSize: 12, padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                  <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                </svg>
+                Reanalyze
+              </button>
+            </Link>
+          </div>
         </div>
 
         {/* Decision Brief CTA — Sprint 8 */}
@@ -149,7 +160,15 @@ export default async function RecordPage({ params }: Props) {
 
         {/* Bottom */}
         <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-
+          <Link href={`/session/${session.id}`}>
+            <button className="btn-ghost" style={{ padding: '10px 20px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 7 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+              Reanalyze
+            </button>
+          </Link>
           <Link href="/">
             <button className="btn-ghost" style={{ padding: '10px 20px', fontSize: 13 }}>
               New decision

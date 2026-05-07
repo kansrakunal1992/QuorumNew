@@ -282,7 +282,7 @@ export default function SessionView({ session: initialSession }: Props) {
               Reanalyze
             </button>
             <button className="btn-primary" style={{ fontSize: 13, padding: '10px 18px' }} onClick={handleSaveRecord} disabled={saving}>
-              {saving ? 'Saving…' : 'Save Record → PDF'}
+              {saving ? 'Saving…' : 'Save to Record'}
             </button>
           </div>
         </div>
@@ -360,7 +360,7 @@ export default function SessionView({ session: initialSession }: Props) {
           Reanalyze
         </button>
         <button className="btn-primary" style={{ fontSize: 13, padding: '11px 28px' }} onClick={handleSaveRecord} disabled={saving}>
-          {saving ? 'Saving…' : 'Save Decision Record → Export PDF'}
+          {saving ? 'Saving…' : 'Save to Record'}
         </button>
       </div>
 
