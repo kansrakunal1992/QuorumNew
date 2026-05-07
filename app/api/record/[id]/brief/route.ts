@@ -240,6 +240,29 @@ async function buildPdf(
         continue
       }
 
+      // ALL CAPS section label (e.g. KEY INSIGHTS, RISKS, RECOMMENDED DIRECTION)
+      // Detect: trimmed line is ≥2 words, all uppercase letters/spaces/punctuation, no lowercase
+      const isAllCaps = trimmed.length > 3
+        && /^[A-Z][A-Z\s\-–:&/()]{2,}$/.test(trimmed)
+        && !/^[-•*\d]/.test(trimmed)
+      if (isAllCaps) {
+        ensure(LH_HEAD + 10)
+        Y += 6
+        doc.setFont('Helvetica', 'bold')
+        doc.setFontSize(SIZE_HEADING)
+        doc.setTextColor(...C.gold)
+        doc.setCharSpace(0.8)
+        doc.text(trimmed, ML, Y)
+        doc.setCharSpace(0)
+        // Thin underline
+        const labelW = doc.getTextWidth(trimmed)
+        doc.setDrawColor(...C.ruleGold)
+        doc.setLineWidth(0.4)
+        doc.line(ML, Y + 4, ML + labelW, Y + 4)
+        Y += LH_HEAD + 2
+        continue
+      }
+
       // ## Heading / **Heading** (whole line is bold heading)
       const headingMatch = trimmed.match(/^#{1,3}\s+(.+)$/)
       const boldLineMatch = trimmed.match(/^\*\*([^*]+)\*\*\s*$/)
@@ -527,8 +550,13 @@ async function buildPdf(
 
   const briefMsgs = byPersona['decision_brief']
   if (briefMsgs && briefMsgs.length > 0) {
-    // Full-width dark green header band
-    ensure(52)
+    // Always start the Decision Brief on its own page — never inline after the cover
+    doc.addPage()
+    fillPageDark()
+    page++
+    Y = ML
+    drawFooter()
+
     const bandH = 44
     doc.setFillColor(...C.briefBg)
     doc.rect(0, Y, PW, bandH, 'F')
@@ -564,7 +592,13 @@ async function buildPdf(
         Y += 12
         bodyBlock(msg.content, 4, 9.5, C.mutedText)
       } else {
-        renderMarkdown(msg.content)
+        // Strip any redundant "DECISION BRIEF" / "THE DECISION BRIEF" first line
+        // the AI sometimes echoes it back; we already render it in the header band
+        const cleaned = msg.content
+          .replace(/^\s*\*{0,2}(THE\s+)?DECISION BRIEF\*{0,2}\s*\n?/i, '')
+          .replace(/^\s*#{1,3}\s*(THE\s+)?DECISION BRIEF\s*\n?/i, '')
+          .trimStart()
+        renderMarkdown(cleaned)
       }
     }
 
