@@ -161,9 +161,9 @@ export default function Home() {
   const filtered = activeTab === 'all' ? sessions : activeTab === 'pending' ? pending : decided
 
   const helpedColor: Record<string, string> = {
-    yes:       '#1a4a2e',
-    partially: '#3a3a10',
-    no:        '#4a1a1a',
+    yes:       'var(--outcome-yes)',
+    partially: 'var(--outcome-partial)',
+    no:        'var(--outcome-no)',
   }
   const helpedLabel: Record<string, string> = {
     yes:       'Changed thinking',
@@ -262,15 +262,15 @@ export default function Home() {
               style={{
                 padding: '12px 14px',
                 borderRadius: 10,
-                border: `1px solid ${registerMode === 'clarification' ? '#4ade80' : 'var(--border-dim)'}`,
-                background: registerMode === 'clarification' ? 'rgba(74,222,128,0.08)' : 'transparent',
+                border: `1px solid ${registerMode === 'clarification' ? 'var(--green-border)' : 'var(--border-dim)'}`,
+                background: registerMode === 'clarification' ? 'var(--green-soft)' : 'transparent',
                 textAlign: 'left',
                 cursor: 'pointer',
                 fontFamily: 'inherit',
                 transition: 'all 0.15s',
               }}
             >
-              <p style={{ fontSize: 13, fontWeight: 600, color: registerMode === 'clarification' ? '#4ade80' : 'var(--text-2)', marginBottom: 3 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: registerMode === 'clarification' ? 'var(--green-text)' : 'var(--text-2)', marginBottom: 3 }}>
                 🪞 Help me understand what I want
               </p>
               <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
@@ -280,7 +280,7 @@ export default function Home() {
           </div>
         </div>
 
-        {error && <p style={{ marginTop: 12, fontSize: 13, color: '#e05050' }}>{error}</p>}
+        {error && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--error)' }}>{error}</p>}
 
           <button
             className="btn-primary"
@@ -327,14 +327,14 @@ export default function Home() {
           </div>
 
           {/* Outcome tip */}
-          <div style={{ background: 'rgba(26,58,34,0.3)', border: '1px solid #2a4a2e', borderRadius: 12, padding: '14px 16px' }}>
+          <div style={{ background: 'var(--green-soft)', border: '1px solid var(--green-border)', borderRadius: 12, padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <div style={{ width: 24, height: 24, borderRadius: 6, background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--green-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--green-text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
               </div>
-              <p style={{ fontSize: 12, fontWeight: 700, color: '#4ade80', margin: 0 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-text)', margin: 0 }}>
                 Log what you decided
               </p>
             </div>
@@ -401,11 +401,11 @@ export default function Home() {
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '8px 14px', marginBottom: 14,
-                background: 'rgba(74,222,128,0.06)',
-                border: '1px solid rgba(74,222,128,0.15)',
+                background: 'var(--green-soft)',
+                border: '1px solid var(--green-border)',
                 borderRadius: 10,
               }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80', flexShrink: 0 }} />
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green-text)', flexShrink: 0 }} />
                 <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
                   Sessions linked to <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{userEmail}</span>
                   {' · '}cross-device history active
@@ -448,7 +448,7 @@ export default function Home() {
                     {/* Status indicator */}
                     <div style={{ flexShrink: 0, marginTop: 3 }}>
                       {s.outcome ? (
-                        <div style={{ width: 20, height: 20, borderRadius: '50%', background: helpedColor[s.outcome.council_helped] || '#1a3a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4ade80' }}>
+                        <div style={{ width: 20, height: 20, borderRadius: '50%', background: helpedColor[s.outcome.council_helped] || 'var(--outcome-yes)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--green-text)' }}>
                           <IconCheck />
                         </div>
                       ) : (
@@ -468,7 +468,7 @@ export default function Home() {
                           <IconClock /> {date}
                         </span>
                         {s.outcome ? (
-                          <span style={{ fontSize: 11, padding: '2px 10px', borderRadius: 20, background: helpedColor[s.outcome.council_helped] || '#1a3a2a', color: 'var(--text-2)' }}>
+                          <span style={{ fontSize: 11, padding: '2px 10px', borderRadius: 20, background: helpedColor[s.outcome.council_helped] || 'var(--outcome-yes)', color: 'var(--text-2)' }}>
                             {helpedLabel[s.outcome.council_helped] || 'Decided'}
                           </span>
                         ) : (

@@ -226,3 +226,17 @@ textarea::placeholder { color: var(--text-4); }
   border-color: var(--gold-dim);
   color: var(--gold);
 }
+
+/* ── Semantic outcome badge colours ─────────────────────── */
+[data-theme="dark"] {
+  --green-border:    #2a4a2e;
+  --outcome-yes:     rgba(26,58,42,0.70);
+  --outcome-partial: rgba(52,50,8,0.70);
+  --outcome-no:      rgba(74,20,20,0.70);
+}
+[data-theme="light"] {
+  --green-border:    #74b085;
+  --outcome-yes:     rgba(195,235,208,0.85);
+  --outcome-partial: rgba(253,235,160,0.85);
+  --outcome-no:      rgba(252,200,200,0.85);
+}
