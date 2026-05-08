@@ -39,7 +39,7 @@ function SegmentBar({ filled, total }: { filled: number; total: number }) {
               borderRadius: 2,
               background: isFilled
                 ? filled >= PATTERN_MEMORY_THRESHOLD
-                  ? 'rgba(74,222,128,0.85)'
+                  ? 'var(--green-text)'
                   : 'var(--gold)'
                 : 'var(--border-mid)',
               opacity: isFilled ? 1 : isPulse ? 0.4 : 0.2,
@@ -123,11 +123,11 @@ export default function MemoryEngineStatus({
   let statusColor: string
   if (mirrorReady) {
     statusLabel = 'Pattern Memory active · Mirror unlocked'
-    statusColor = '#4ade80'
+    statusColor = 'var(--green-text)'
   } else if (patternActive) {
     // patternActive and mirrorReady are same threshold now — this branch shouldn't fire
     statusLabel = 'Pattern Memory active'
-    statusColor = '#4ade80'
+    statusColor = 'var(--green-text)'
   } else {
     const remaining = PATTERN_MEMORY_THRESHOLD - sessionCount
     statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} to activate Pattern Memory + Mirror`
@@ -164,7 +164,7 @@ export default function MemoryEngineStatus({
                 width: 7,
                 height: 7,
                 borderRadius: '50%',
-                background: patternActive ? '#4ade80' : 'var(--gold)',
+                background: patternActive ? 'var(--green-text)' : 'var(--gold)',
                 animation: patternActive ? 'none' : 'dot-blink 2s ease-in-out infinite',
                 flexShrink: 0,
               }}
@@ -186,7 +186,7 @@ export default function MemoryEngineStatus({
             style={{
               fontSize: 10,
               fontWeight: 600,
-              color: patternActive ? '#4ade80' : 'var(--gold)',
+              color: patternActive ? 'var(--green-text)' : 'var(--gold)',
               letterSpacing: '0.06em',
               textTransform: 'uppercase',
             }}
@@ -219,7 +219,7 @@ export default function MemoryEngineStatus({
                     alignItems:     'center',
                     gap:            4,
                     marginLeft:     10,
-                    color:          '#4ade80',
+                    color:          'var(--green-text)',
                     fontSize:       10.5,
                     fontWeight:     600,
                     textDecoration: 'none',
@@ -256,7 +256,7 @@ export default function MemoryEngineStatus({
               </button>
             ) : decidedCount > 0 ? (
               <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#4ade80', margin: '0 0 1px' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-text)', margin: '0 0 1px' }}>
                   {decidedCount}
                 </p>
                 <p style={{ fontSize: 9.5, color: 'var(--text-4)', margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase' }}>

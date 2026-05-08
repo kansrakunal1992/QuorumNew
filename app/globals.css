@@ -44,10 +44,10 @@
   --border-dim:  #c0c8d6;
   --border-mid:  #a4b0c4;
   --border-hi:   #7a90b0;
-  --gold:        #9a7020;
-  --gold-bright: #b88c2a;
-  --gold-dim:    #d0a840;
-  --gold-glow:   rgba(154,112,32,0.1);
+  --gold:        #c08c18;
+  --gold-bright: #d4a020;
+  --gold-dim:    #c8a030;
+  --gold-glow:   rgba(192,140,24,0.10);
   --text-1:      #060d1c;
   --text-2:      #1a2a44;
   --text-3:      #364e70;

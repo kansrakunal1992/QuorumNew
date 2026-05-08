@@ -197,7 +197,28 @@ Good: "PE firm's parallel portfolio obligations and whether they have a fund dea
 Bad: "More information about the PE firm"
 
 Good: "Co-founder's personal financial situation and whether they need liquidity now for personal reasons"
-Bad: "Co-founder's motivations"`
+Bad: "Co-founder's motivations"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIMENSION 9 — DOMINANT EMOTION (read the text carefully — only flag what is actually present)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Choose the ONE emotion that most clearly colours how the person frames the decision.
+Do NOT infer emotion. Only classify what is explicitly stated or unmistakably implied.
+
+anxiety     → worry about specific bad outcomes; "what if it fails", "scared I'm making a mistake"
+              requires explicit concern language, not just high stakes
+excitement  → positive anticipation; "great opportunity", "finally a chance to", forward-looking enthusiasm
+obligation  → duty, guilt, or expectation from others; "I feel I have to", "my family expects", "I owe it to"
+urgency     → time pressure as the dominant frame; "running out of time", "window is closing", deadline-driven
+resignation → reluctant acceptance; "don't see another option", "have to accept", loss of agency language
+ambivalence → ONLY use when the person explicitly describes genuine competing pulls they are caught between.
+              NOT a default. Requires the person to describe BOTH sides pulling them simultaneously.
+
+If no strong emotion is expressed — the description is factual, analytical, or matter-of-fact —
+pick the CLOSEST match from the above rather than defaulting to ambivalence.
+A clean business decision described without emotional language is more likely "urgency" (if time-driven)
+or should use whichever option best fits any faint signal present.
+Reserve ambivalence strictly for "I want to but I also don't want to" framings.`
 
 // ── Main tagger function ───────────────────────────────────────
 

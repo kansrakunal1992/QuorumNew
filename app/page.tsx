@@ -30,12 +30,12 @@ const IconDot = () => (
 )
 
 const PERSONAS_GRID = [
-  { label: 'The Contrarian',      hint: 'Argues your instinct away',  col: '#7c2020' },
-  { label: 'Risk Architect',       hint: 'Pre-mortems all failures',   col: '#1e3a6e' },
-  { label: 'Pattern Analyst',      hint: 'Finds your past analogues',  col: '#1a4a36' },
-  { label: 'Stakeholder Mirror',   hint: 'Who else is affected',       col: '#4a2070' },
-  { label: 'The Elder',            hint: 'Decade-level wisdom',        col: '#5c3a10' },
-  { label: 'The Competitor',       hint: 'Bets against your choice',   col: '#3a2a10' },
+  { label: 'The Contrarian',      hint: 'Argues your instinct away',  col: '#c04040' },
+  { label: 'Risk Architect',       hint: 'Pre-mortems all failures',   col: '#3a78c4' },
+  { label: 'Pattern Analyst',      hint: 'Finds your past analogues',  col: '#38a468' },
+  { label: 'Stakeholder Mirror',   hint: 'Who else is affected',       col: '#8840c4' },
+  { label: 'The Elder',            hint: 'Decade-level wisdom',        col: '#c08030' },
+  { label: 'The Competitor',       hint: 'Bets against your choice',   col: '#788040' },
 ]
 
 interface SessionSummary {

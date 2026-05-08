@@ -233,7 +233,7 @@ export default function SynthesisCard({
                   fontSize: 10, padding: '2px 8px', borderRadius: 10,
                   border: `1px solid ${registerMode === 'clarification' ? 'rgba(74,222,128,0.4)' : 'var(--gold-dim)'}`,
                   background: registerMode === 'clarification' ? 'rgba(74,222,128,0.08)' : 'rgba(201,168,76,0.08)',
-                  color: registerMode === 'clarification' ? '#4ade80' : 'var(--gold)',
+                  color: registerMode === 'clarification' ? 'var(--green-text)' : 'var(--gold)',
                   fontWeight: 600, letterSpacing: '0.04em',
                 }}>
                   {registerMode === 'clarification' ? '🪞 Values & Clarity' : '⚔ Challenge'}
@@ -330,7 +330,7 @@ export default function SynthesisCard({
               {isRecalibrating ? 'Recalibrating' : 'Synthesising'}
             </span>
           )}
-          {state === 'done'  && !briefState.match(/streaming|done/) && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Complete</span>}
+          {state === 'done'  && !briefState.match(/streaming|done/) && <span style={{ fontSize: 11, color: 'var(--green-text)' }}>✓ Complete</span>}
           {state === 'error' && <span style={{ fontSize: 11, color: '#e05050' }}>✗ Error</span>}
         </div>
       </div>
@@ -404,7 +404,7 @@ export default function SynthesisCard({
               </span>
             </div>
             {briefState === 'done' && (
-              <span style={{ fontSize: 11, color: '#4ade80' }}>✓</span>
+              <span style={{ fontSize: 11, color: 'var(--green-text)' }}>✓</span>
             )}
           </div>
 
