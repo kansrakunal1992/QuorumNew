@@ -245,18 +245,20 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               onClick={() => setShowPushback(true)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.22)',
+                background: 'rgba(201,168,76,0.12)', border: '1px solid var(--gold-dim)',
                 borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
-                color: 'rgba(255,255,255,0.85)', cursor: 'pointer', transition: 'all 0.2s',
+                color: 'var(--gold)', cursor: 'pointer', transition: 'all 0.2s',
                 fontFamily: 'inherit', letterSpacing: '0.02em', whiteSpace: 'nowrap',
               }}
               onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.4)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.22)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
+                ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 8px rgba(201,168,76,0.35)'
               }}
               onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.22)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.12)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
+                ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
               }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
