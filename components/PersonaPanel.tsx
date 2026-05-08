@@ -220,7 +220,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         Updating
       </span>
     )
-    if (panelState === 'done') return <span style={{ fontSize: 11, color: '#4ade80' }}>✓</span>
+    if (panelState === 'done') return <span style={{ fontSize: 11, color: 'rgba(74,222,128,0.9)' }}>✓</span>
     if (panelState === 'error') return <span style={{ fontSize: 11, color: '#e05050' }}>✗ error</span>
     return null
   }
@@ -228,14 +228,14 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   return (
     <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280 }}>
       {/* Header */}
-      <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: `${accentColor}55`, borderRadius: '14px 14px 0 0' }}>
+      <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: accentColor, borderRadius: '14px 14px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: `${accentColor}99`, border: `1px solid ${accentColor}ff`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.9)', flexShrink: 0 }}>
             {icon}
           </div>
           <div>
-            <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.2 }}>{persona.label}</p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#f0f4ff', lineHeight: 1.2 }}>{persona.label}</p>
+            <p style={{ fontSize: 11, color: 'rgba(240,244,255,0.60)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -245,18 +245,18 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               onClick={() => setShowPushback(true)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                background: 'rgba(201,168,76,0.1)', border: '1px solid var(--gold-dim)',
+                background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.22)',
                 borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
-                color: 'var(--gold)', cursor: 'pointer', transition: 'all 0.2s',
+                color: 'rgba(255,255,255,0.85)', cursor: 'pointer', transition: 'all 0.2s',
                 fontFamily: 'inherit', letterSpacing: '0.02em', whiteSpace: 'nowrap',
               }}
               onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.18)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.4)'
               }}
               onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.1)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.22)'
               }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
