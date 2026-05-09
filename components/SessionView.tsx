@@ -13,11 +13,11 @@ interface Props {
   session: Session
 }
 
+type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
+
 // ── Gap → Persona mapping ────────────────────────────────────────────────
-// Maps examiner gap text to the 1 persona best positioned to update on it
 function mapGapToPersona(gap: string): string | null {
   const g = gap.toLowerCase()
-  // Stakeholder/relational gaps → Stakeholder Mirror
   if (
     g.includes('stakeholder') || g.includes('spouse') || g.includes('co-founder') ||
     g.includes('sister') || g.includes('brother') || g.includes('wife') ||
@@ -26,7 +26,6 @@ function mapGapToPersona(gap: string): string | null {
     g.includes('succession') || g.includes('motivation') || g.includes('personal') ||
     g.includes('relationship') || g.includes('partner')
   ) return 'stakeholder_mirror'
-  // Financial/execution/counterparty gaps → Risk Architect
   if (
     g.includes('financial') || g.includes('health') || g.includes('track record') ||
     g.includes('cash') || g.includes('legal') || g.includes('contract') ||
@@ -35,7 +34,6 @@ function mapGapToPersona(gap: string): string | null {
     g.includes('terms') || g.includes('fee') || g.includes('penalty') ||
     g.includes('valuation') || g.includes('tax')
   ) return 'risk_architect'
-  // Market/pattern/competitive gaps → Pattern Analyst
   if (
     g.includes('market') || g.includes('competitive') || g.includes('landscape') ||
     g.includes('demand') || g.includes('industry') || g.includes('precedent')
@@ -43,7 +41,6 @@ function mapGapToPersona(gap: string): string | null {
   return null
 }
 
-// Build examiner context string for a persona, from the responses that map to it
 function buildExaminerContextForPersona(
   personaKey: string,
   responses: Array<{ question_text: string; response_text: string | null; gap: string }>
@@ -56,7 +53,7 @@ function buildExaminerContextForPersona(
 
 export default function SessionView({ session: initialSession }: Props) {
   const router = useRouter()
-  const [saving,  setSaving]  = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     try {
@@ -72,60 +69,53 @@ export default function SessionView({ session: initialSession }: Props) {
 
   const [saved, setSaved] = useState(false)
 
-  const [registerMode,    setRegisterMode]    = useState<RegisterMode>(
+  const [registerMode,   setRegisterMode]   = useState<RegisterMode>(
     (initialSession.register_mode ?? 'analytical') as RegisterMode
   )
-  const [reRegisterMode,  setReRegisterMode]  = useState<RegisterMode>(
+  const [reRegisterMode, setReRegisterMode] = useState<RegisterMode>(
     (initialSession.register_mode ?? 'analytical') as RegisterMode
   )
 
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
   const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
-  const [decisionExpanded, setDecisionExpanded] = useState(false)   // ← "See More" toggle for decision text
+  const [decisionExpanded, setDecisionExpanded] = useState(false)
 
-  // Sprint 3: synthesis gated on examiner + examiner re-run context per persona
-  const [examinerReady,           setExaminerReady]           = useState(false)
-  const [synthesisVersion,        setSynthesisVersion]        = useState(0)
+  // Synthesis gate state
+  const [examinerReady,            setExaminerReady]            = useState(false)
+  const [synthesisVersion,         setSynthesisVersion]         = useState(0)
   const [examinerContextByPersona, setExaminerContextByPersona] = useState<Record<string, string>>({})
 
-  // Sprint 5: structural context fetched async, injected into eligible personas
+  // Sprint 11b: rule engine state
+  const [ruleMode,        setRuleMode]        = useState<RuleMode>(null)
+  const [redirectBlocked, setRedirectBlocked] = useState(false)
+
+  // Sprint 5: structural context
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
 
   useEffect(() => {
-    // Sprint 5: Fetch structural context with retry logic.
-    // The ontology tagger runs async after session creation, so the first
-    // attempt often finds ontology_ready: false. Retry up to 3 times with
-    // 6-second gaps — ontology usually completes within 5-8 seconds.
-    // Identity is read server-side from the sessions table, so no need to
-    // pass userEmail/userId from the client.
     let attempt = 0
     const MAX_ATTEMPTS = 4
-    const RETRY_MS = 6000
+    const RETRY_MS     = 6000
 
     const fetchStructuralContext = () => {
       fetch('/api/structural-match', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: initialSession.id }),
+        body:    JSON.stringify({ sessionId: initialSession.id }),
       })
         .then(r => r.json())
         .then(data => {
           if (data.threshold_met && data.context_block) {
             setStructuralContext(data.context_block)
-            console.log(`[SessionView] Structural context loaded — ${data.matches?.length ?? 0} match(es), ${data.session_count_used} sessions scored`)
             return
           }
-          // If ontology not ready and we have retries left, schedule another attempt
           if (!data.ontology_ready && attempt < MAX_ATTEMPTS) {
             attempt++
-            console.log(`[SessionView] Ontology not ready — retry ${attempt}/${MAX_ATTEMPTS} in ${RETRY_MS / 1000}s`)
             setTimeout(fetchStructuralContext, RETRY_MS)
           }
         })
-        .catch(err => {
-          console.error('[SessionView] Structural match fetch failed:', err)
-        })
+        .catch(err => console.error('[SessionView] Structural match fetch failed:', err))
     }
 
     fetchStructuralContext()
@@ -142,14 +132,26 @@ export default function SessionView({ session: initialSession }: Props) {
 
   const allPersonasDone = Object.keys(completedResponses).length >= PERSONA_ORDER.length
 
-  // Receives examiner answers, maps them to personas, triggers selective re-runs
+  // Sprint 11b: receives rule_mode from ExaminerPanel
   const handleExaminerComplete = useCallback(
-    (responses: Array<{ question_text: string; response_text: string | null; gap: string }>) => {
+    (
+      responses: Array<{ question_text: string; response_text: string | null; gap: string }>,
+      mode: RuleMode
+    ) => {
+      setRuleMode(mode)
+
+      // REDIRECT — synthesis must never fire; block immediately
+      if (mode === 'REDIRECT') {
+        setRedirectBlocked(true)
+        setExaminerReady(false)   // synthesis gate stays closed
+        return                    // skip persona context mapping entirely
+      }
+
+      // GATE or OPEN — normal path
       setExaminerReady(true)
       if (!responses.length) return
 
-      // Build context for up to 2 unique personas
-      const seen = new Set<string>()
+      const seen       = new Set<string>()
       const contextMap: Record<string, string> = {}
       for (const r of responses) {
         if (!r.response_text?.trim()) continue
@@ -187,9 +189,9 @@ export default function SessionView({ session: initialSession }: Props) {
     setSaving(true)
     try {
       const res = await fetch('/api/record', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: session.id }),
+        body:    JSON.stringify({ sessionId: session.id }),
       })
       if (!res.ok) throw new Error()
       setSaved(true)
@@ -209,13 +211,13 @@ export default function SessionView({ session: initialSession }: Props) {
     setReanalyzing(true)
     try {
       const res = await fetch('/api/session', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision_text: reDecision.trim(), context_text: reContext.trim() || null, register_mode: reRegisterMode }),
+        body:    JSON.stringify({ decision_text: reDecision.trim(), context_text: reContext.trim() || null, register_mode: reRegisterMode }),
       })
       if (!res.ok) throw new Error()
-      const { id } = await res.json()
-      const sessionRes = await fetch(`/api/session?id=${id}`)
+      const { id }         = await res.json()
+      const sessionRes     = await fetch(`/api/session?id=${id}`)
       if (!sessionRes.ok) throw new Error()
       const newSession: Session = await sessionRes.json()
       setSession(newSession)
@@ -228,6 +230,9 @@ export default function SessionView({ session: initialSession }: Props) {
       setSaved(false)
       setDrawerOpen(false)
       setReanalyzing(false)
+      // Sprint 11b: reset rule engine state on reanalyze
+      setRuleMode(null)
+      setRedirectBlocked(false)
       window.history.replaceState(null, '', `/session/${id}`)
     } catch {
       setReanalyzeError('Something went wrong. Please try again.')
@@ -256,7 +261,6 @@ export default function SessionView({ session: initialSession }: Props) {
             <p style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--text-2)', maxWidth: 640, ...(decisionExpanded ? {} : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
               {session.decision_text}
             </p>
-            {/* Show "See More / See Less" only when text is long enough to be clamped */}
             {session.decision_text.length > 220 && (
               <button
                 onClick={() => setDecisionExpanded(v => !v)}
@@ -302,7 +306,7 @@ export default function SessionView({ session: initialSession }: Props) {
 
       <div className="max-w-7xl mx-auto">
 
-        {/* ── 1. Council Synthesis — pinned at top, always visible ── */}
+        {/* ── 1. Council Synthesis — pinned at top ── */}
         <div style={{ marginBottom: 16 }}>
           <SynthesisCard
             key={`synthesis-${sessionKey}`}
@@ -314,10 +318,11 @@ export default function SessionView({ session: initialSession }: Props) {
             version={synthesisVersion}
             registerMode={registerMode}
             examinerReady={examinerReady}
+            redirectBlocked={redirectBlocked}
           />
         </div>
 
-        {/* ── 2. Examiner Phase 1 — appears once all 6 personas done, gates synthesis ── */}
+        {/* ── 2. Examiner — appears once all 6 personas done ── */}
         <ExaminerPanel
           key={`examiner-${sessionKey}`}
           sessionId={session.id}
@@ -325,8 +330,17 @@ export default function SessionView({ session: initialSession }: Props) {
           onComplete={handleExaminerComplete}
         />
 
-        {/* ── 3. Six persona panels in grid ── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" style={{ marginTop: 16 }}>
+        {/* ── 3. Six persona panels ── */}
+        {/* Sprint 11b: dim at 55% opacity on REDIRECT — still stream, visually provisional */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+          style={{
+            marginTop: 16,
+            opacity:       redirectBlocked ? 0.55 : 1,
+            transition:    'opacity 0.4s ease',
+            pointerEvents: redirectBlocked ? 'none' : 'auto',
+          }}
+        >
           {PERSONA_ORDER.map((key) => (
             <PersonaPanel
               key={`${key}-${sessionKey}`}
@@ -344,7 +358,7 @@ export default function SessionView({ session: initialSession }: Props) {
 
       </div>
 
-      {/* ── Bottom bar ────────────────────────────────────────── */}
+      {/* ── Bottom bar ── */}
       <div style={{ maxWidth: '80rem', margin: '28px auto 0', display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
         <button className="btn-ghost" style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={handleNewDecision}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -364,7 +378,7 @@ export default function SessionView({ session: initialSession }: Props) {
         </button>
       </div>
 
-      {/* ── Reanalyze drawer ─────────────────────────────────── */}
+      {/* ── Reanalyze drawer ── */}
       {drawerOpen && (
         <>
           <div onClick={() => setDrawerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(2,4,10,0.78)', zIndex: 40 }} />
@@ -388,7 +402,7 @@ export default function SessionView({ session: initialSession }: Props) {
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
               {([
-                { value: 'analytical', icon: '⚔', label: 'Challenge my thinking', sub: 'Stress-test the decision' },
+                { value: 'analytical',   icon: '⚔',  label: 'Challenge my thinking',        sub: 'Stress-test the decision' },
                 { value: 'clarification', icon: '🪞', label: 'Help me understand what I want', sub: 'Values and identity' },
               ] as const).map(opt => (
                 <button

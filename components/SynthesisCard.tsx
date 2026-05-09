@@ -14,14 +14,15 @@ function storeBriefCode(code: string) {
 }
 
 interface Props {
-  sessionId: string
-  decisionText: string
-  contextText?: string
+  sessionId:        string
+  decisionText:     string
+  contextText?:     string
   personaResponses: Record<string, string>
-  totalPersonas: number
-  version: number
-  registerMode?: 'analytical' | 'clarification'
-  examinerReady?: boolean   // Sprint 3: synthesis only fires after Examiner Phase 1 completes
+  totalPersonas:    number
+  version:          number
+  registerMode?:    'analytical' | 'clarification'
+  examinerReady?:   boolean   // Sprint 3: synthesis only fires after Examiner Phase 1 completes
+  redirectBlocked?: boolean   // Sprint 11b: R1 upstream block — shows redirect card, synthesis never fires
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -30,6 +31,7 @@ export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
   registerMode, examinerReady,
+  redirectBlocked,   // Sprint 11b
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -43,7 +45,6 @@ export default function SynthesisCard({
   const [tokenError,   setTokenError]  = useState('')
   const [checkingToken,setCheckingToken] = useState(false)
 
-  // ── Paid gate state ───────────────────────────────────────────
   const [briefGate,    setBriefGate]   = useState<'locked'|'prompt'|'checking'|'unlocked'|'invalid'>('locked')
   const [accessCode,   setAccessCode]  = useState('')
 
@@ -54,24 +55,23 @@ export default function SynthesisCard({
   const responsesRef   = useRef(personaResponses)
   const decisionRef    = useRef(decisionText)
   const contextRef     = useRef(contextText)
-  const sessionIdRef    = useRef(sessionId)
-  const registerRef     = useRef(registerMode)
+  const sessionIdRef   = useRef(sessionId)
+  const registerRef    = useRef(registerMode)
 
   useEffect(() => { responsesRef.current  = personaResponses }, [personaResponses])
 
-  // Check if user already has a valid stored code
   useEffect(() => {
     const stored = getStoredBriefCode()
     if (stored) setBriefGate('unlocked')
   }, [])
-  useEffect(() => { decisionRef.current   = decisionText     }, [decisionText])
-  useEffect(() => { contextRef.current    = contextText      }, [contextText])
-  useEffect(() => { sessionIdRef.current  = sessionId        }, [sessionId])
-  useEffect(() => { registerRef.current   = registerMode     }, [registerMode])
+  useEffect(() => { decisionRef.current  = decisionText  }, [decisionText])
+  useEffect(() => { contextRef.current   = contextText   }, [contextText])
+  useEffect(() => { sessionIdRef.current = sessionId     }, [sessionId])
+  useEffect(() => { registerRef.current  = registerMode  }, [registerMode])
 
-  // Fire synthesis — gated on examinerReady (Sprint 3)
+  // Fire synthesis — gated on examinerReady AND not redirectBlocked (Sprint 11b)
   useEffect(() => {
-    if (!allDone || !examinerReady) return
+    if (!allDone || !examinerReady || redirectBlocked) return   // Sprint 11b: redirectBlocked blocks synthesis permanently
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -107,7 +107,6 @@ export default function SynthesisCard({
           setSynthesis(acc)
         }
         setState('done')
-        // Sprint 4: bias scoring triggered server-side from /api/examiner POST
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return
         setState('error')
@@ -115,7 +114,7 @@ export default function SynthesisCard({
     }
     run()
     return () => { ctrl.abort() }
-  }, [allDone, examinerReady, version]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allDone, examinerReady, redirectBlocked, version]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleValidateCode = async () => {
     if (!accessCode.trim()) return
@@ -161,14 +160,6 @@ export default function SynthesisCard({
     }
   }
 
-  const handleBriefButtonClick = () => {
-    if (briefAccess === 'open') {
-      handleGenerateBrief()
-    } else {
-      setBriefAccess('gated')
-    }
-  }
-
   const handleGenerateBrief = async () => {
     briefAbortRef.current?.abort()
     const ctrl = new AbortController()
@@ -208,6 +199,63 @@ export default function SynthesisCard({
     }
   }
 
+  // ── Sprint 11b: REDIRECT blocked card — early return ─────────────────────
+  if (redirectBlocked) {
+    return (
+      <div style={{
+        gridColumn: '1 / -1',
+        background: 'var(--bg-card)',
+        border: '1px solid rgba(201,168,76,0.35)',
+        borderRadius: 14,
+        marginBottom: 4,
+        overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '14px 20px 12px',
+          borderBottom: '1px solid var(--border-dim)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          background: 'rgba(201,168,76,0.07)',
+          borderRadius: '13px 13px 0 0',
+        }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em', margin: 0 }}>
+              Council Synthesis
+            </p>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 }}>
+              Blocked — upstream decision unresolved
+            </p>
+          </div>
+        </div>
+        {/* Body */}
+        <div style={{ padding: '22px 24px 26px' }}>
+          <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-2)', lineHeight: 1.8, margin: '0 0 14px' }}>
+            Synthesis cannot run on this decision yet.
+          </p>
+          <p style={{ fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.8, margin: '0 0 16px' }}>
+            There is a prior question that must be resolved first — any synthesis produced now
+            would shift once that upstream decision becomes clear. The Council's individual
+            perspectives are visible below and remain useful as context.
+          </p>
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.7, margin: 0 }}>
+            When the upstream question is resolved, return to Quorum and use{' '}
+            <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> to run a fresh session.
+            Synthesis will run at that point.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Normal synthesis card ─────────────────────────────────────────────────
   const isRecalibrating = state === 'streaming' && version > 0
 
   return (
@@ -356,7 +404,7 @@ export default function SynthesisCard({
         )}
       </div>
 
-      {/* Token gate — shown when user clicks Generate Brief without access */}
+      {/* Token gate */}
       {briefAccess === 'gated' && briefState === 'idle' && (
         <div style={{ borderTop: '1px solid var(--gold-dim)', padding: '18px 20px' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 4 }}>
@@ -390,7 +438,6 @@ export default function SynthesisCard({
       {/* Decision Brief section */}
       {showBrief && (briefState === 'streaming' || briefState === 'done' || briefState === 'error') && (
         <div style={{ borderTop: '1px solid var(--gold-dim)', margin: '0 20px', paddingTop: 0 }}>
-          {/* Brief header */}
           <div style={{ padding: '14px 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -408,7 +455,6 @@ export default function SynthesisCard({
             )}
           </div>
 
-          {/* Brief content — styled like a document */}
           <div style={{
             background: 'rgba(201,168,76,0.04)',
             border: '1px solid rgba(201,168,76,0.15)',

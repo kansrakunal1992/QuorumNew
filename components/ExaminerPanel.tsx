@@ -3,21 +3,27 @@
 import { useEffect, useState, useRef } from 'react'
 
 interface ExaminerQuestion {
-  order: number
-  text: string
-  gap: string
+  order:   number
+  text:    string
+  gap:     string
+  rule_id: string | null   // Sprint 11a: R1–R12 for rule-engine questions, null for v1.0 gap questions
 }
+
+type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
 
 interface Props {
   sessionId: string
-  visible: boolean                           // true once all 6 personas are done
-  onComplete: (responses: Array<{question_text: string; response_text: string | null; gap: string}>) => void                    // tells SessionView synthesis can fire
+  visible:   boolean    // true once all 6 personas are done
+  onComplete: (
+    responses: Array<{ question_text: string; response_text: string | null; gap: string }>,
+    ruleMode:  RuleMode  // Sprint 11b: passed upstream so SessionView can gate synthesis
+  ) => void
 }
 
-type FetchStatus = 'idle' | 'loading' | 'ready' | 'no_gaps' | 'retry' | 'error'
+type FetchStatus  = 'idle' | 'loading' | 'ready' | 'no_gaps' | 'retry' | 'error'
 type SubmitStatus = 'idle' | 'submitting' | 'done'
 
-const MAX_RETRIES    = 6   // ontology tagger may still be running
+const MAX_RETRIES    = 6
 const RETRY_DELAY_MS = 3000
 
 export default function ExaminerPanel({ sessionId, visible, onComplete }: Props) {
@@ -25,10 +31,11 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
   const [answers,      setAnswers]      = useState<Record<number, string>>({})
   const [fetchStatus,  setFetchStatus]  = useState<FetchStatus>('idle')
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
+  const [ruleMode,     setRuleMode]     = useState<RuleMode>(null)   // Sprint 11b
+
   const retryCountRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Fetch questions once panel becomes visible
   useEffect(() => {
     if (!visible) return
     fetchQuestions()
@@ -43,17 +50,28 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
       const res  = await fetch(`/api/examiner?sessionId=${sessionId}`)
       const data = await res.json()
 
+      // Capture rule_mode from every response (may be null for v1.0 sessions)
+      const mode: RuleMode = data.rule_mode ?? null
+      setRuleMode(mode)
+
       if (data.status === 'ready' && Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestions(data.questions)
         setFetchStatus('ready')
         retryCountRef.current = 0
+
+        // REDIRECT: surface immediately — don't wait for user submit
+        // onComplete fires here so SessionView blocks synthesis right away
+        if (mode === 'REDIRECT') {
+          setFetchStatus('ready')   // still render the panel (shows REDIRECT banner)
+          // Note: we do NOT call onComplete here on REDIRECT —
+          // user must see the banner. onComplete fires on skip/submit below.
+        }
         return
       }
 
-      if (data.status === 'no_gaps' || data.questions?.length === 0) {
-        // No gaps — skip examiner automatically
+      if (data.status === 'no_gaps' || data.status === 'no_rules' || data.questions?.length === 0) {
         setFetchStatus('no_gaps')
-        handleSkip(true)
+        handleSkipInternal(mode)
         return
       }
 
@@ -63,9 +81,8 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         setFetchStatus('retry')
         retryTimerRef.current = setTimeout(fetchQuestions, RETRY_DELAY_MS)
       } else {
-        // Give up — skip gracefully
         setFetchStatus('error')
-        handleSkip(true)
+        handleSkipInternal(mode)
       }
     } catch {
       if (retryCountRef.current < MAX_RETRIES) {
@@ -74,12 +91,13 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         retryTimerRef.current = setTimeout(fetchQuestions, RETRY_DELAY_MS)
       } else {
         setFetchStatus('error')
-        handleSkip(true)
+        handleSkipInternal(null)
       }
     }
   }
 
-  const handleSkip = async (silent = false) => {
+  // Internal skip — used by fetch fallbacks (passes ruleMode from closure)
+  const handleSkipInternal = async (mode: RuleMode) => {
     try {
       await fetch('/api/examiner', {
         method:  'POST',
@@ -87,8 +105,21 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         body:    JSON.stringify({ sessionId, skipped: true }),
       })
     } catch { /* non-blocking */ }
-    setSubmitStatus('done')   // hides the panel immediately
-    onComplete([])            // unblocks synthesis
+    setSubmitStatus('done')
+    onComplete([], mode)
+  }
+
+  // User-triggered skip
+  const handleSkip = async () => {
+    try {
+      await fetch('/api/examiner', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ sessionId, skipped: true }),
+      })
+    } catch { /* non-blocking */ }
+    setSubmitStatus('done')
+    onComplete([], ruleMode)
   }
 
   const handleSubmit = async () => {
@@ -98,6 +129,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
       response_text:       answers[q.order]?.trim() || null,
       question_order:      q.order,
       unknown_unknown_gap: q.gap,
+      rule_id:             q.rule_id ?? null,   // Sprint 11a: persist rule_id
     }))
     try {
       await fetch('/api/examiner', {
@@ -107,7 +139,10 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
       })
     } catch { /* non-blocking */ }
     setSubmitStatus('done')
-    onComplete(responses.map(r => ({ question_text: r.question_text, response_text: r.response_text, gap: r.unknown_unknown_gap })))
+    onComplete(
+      responses.map(r => ({ question_text: r.question_text, response_text: r.response_text, gap: r.unknown_unknown_gap })),
+      ruleMode   // Sprint 11b: pass rule_mode to SessionView
+    )
   }
 
   // Don't render while hidden or already resolved without UI
@@ -117,12 +152,13 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
 
   const isLoading    = fetchStatus === 'loading' || fetchStatus === 'retry'
   const isSubmitting = submitStatus === 'submitting'
+  const isRedirect   = ruleMode === 'REDIRECT'
 
   return (
     <div style={{
       gridColumn: '1 / -1',
       background: 'var(--bg-card)',
-      border: '1px solid rgba(201,168,76,0.3)',
+      border: `1px solid ${isRedirect ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.3)'}`,
       borderRadius: 14,
       overflow: 'hidden',
       marginBottom: 4,
@@ -134,7 +170,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: 'rgba(201,168,76,0.06)',
+        background: isRedirect ? 'rgba(201,168,76,0.09)' : 'rgba(201,168,76,0.06)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
@@ -144,7 +180,6 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: 'var(--gold)', flexShrink: 0,
           }}>
-            {/* Magnifying glass / examiner icon */}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
@@ -156,14 +191,17 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
             <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
               {isLoading
                 ? 'Identifying the gaps the council didn\'t have data on…'
+                : isRedirect
+                ? 'Upstream decision unresolved — synthesis blocked'
                 : 'Three questions the council couldn\'t answer without you'}
             </p>
           </div>
         </div>
 
-        {fetchStatus === 'ready' && submitStatus === 'idle' && (
+        {/* Skip — hide on REDIRECT (must acknowledge) */}
+        {fetchStatus === 'ready' && submitStatus === 'idle' && !isRedirect && (
           <button
-            onClick={() => handleSkip()}
+            onClick={handleSkip}
             style={{
               fontSize: 11, color: 'var(--text-4)', background: 'none',
               border: 'none', cursor: 'pointer', padding: '4px 8px',
@@ -177,6 +215,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
 
       {/* Body */}
       <div style={{ padding: '20px 20px 24px' }}>
+
         {isLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{
@@ -191,7 +230,53 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
           </div>
         )}
 
-        {fetchStatus === 'ready' && submitStatus === 'idle' && (
+        {/* ── REDIRECT banner ──────────────────────────────────────────────── */}
+        {fetchStatus === 'ready' && isRedirect && (
+          <div style={{ marginBottom: questions.length > 0 ? 24 : 0 }}>
+            <div style={{
+              padding: '18px 20px',
+              borderRadius: 10,
+              border: '1px solid rgba(201,168,76,0.3)',
+              background: 'rgba(201,168,76,0.05)',
+              marginBottom: 16,
+            }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 10, lineHeight: 1.3 }}>
+                This decision has an unresolved upstream dependency
+              </p>
+              {questions[0] && (
+                <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.8, margin: '0 0 14px' }}>
+                  {questions[0].text}
+                </p>
+              )}
+              <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.7, margin: 0 }}>
+                The Council has run — their perspectives are visible below. But synthesis is
+                blocked until the upstream question is resolved. Return to Quorum and reanalyze
+                once it is.
+              </p>
+            </div>
+            {/* Acknowledge button — fires onComplete so SessionView can set redirectBlocked */}
+            <button
+              onClick={handleSkip}
+              style={{
+                padding: '9px 22px',
+                borderRadius: 8,
+                border: '1px solid var(--gold-dim)',
+                background: 'rgba(201,168,76,0.10)',
+                color: 'var(--gold)',
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                letterSpacing: '0.02em',
+              }}
+            >
+              Understood — dismiss
+            </button>
+          </div>
+        )}
+
+        {/* ── Normal question flow (GATE / OPEN) ──────────────────────────── */}
+        {fetchStatus === 'ready' && submitStatus === 'idle' && !isRedirect && (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {questions.map((q) => (
