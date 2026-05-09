@@ -152,7 +152,7 @@ export async function GET(req: Request) {
 
     console.log(
       `[Examiner] v2.0 session ${sessionId} | mode: ${ruleResult.mode} | ` +
-      `rules: ${questions.map(q => q.rule_id).join(',')}`
+      `surfaced: ${questions.map(q => q.rule_id).join(',') || 'none'}`
     )
 
     return NextResponse.json({

@@ -213,13 +213,15 @@ regret_asymmetry
 
 upstream_dependency
   1 = this decision stands alone; no prior unresolved question blocks it
-  3 = some upstream ambiguity exists but is not blocking
-  5 = a prior decision is unresolved and directly determines the answer to this one; working on this now produces an answer that won't hold
+  3 = some upstream ambiguity exists but is not blocking; the decision can proceed with reasonable assumptions
+  5 = a prior unresolved element directly determines the answer to this one — working on this now produces a conclusion that will not hold once the upstream element resolves
+  NOTE: Score 4–5 for ANY of: (a) a separate prior decision that must be made first; (b) an active negotiation or dispute (valuation, terms, counterparty agreement) that is unresolved and whose outcome changes what to do; (c) another party's decision that has not yet been made and materially affects this one. The upstream element does NOT need to be a separate decision — an unresolved agreement or blocking negotiation within the same situation qualifies.
 
 ambiguity
-  1 = the question being decided is clear and well-formed
-  3 = some ambiguity in what exactly is being decided
-  5 = the question itself is unclear; the decision-maker may be solving the wrong problem
+  1 = the question being decided is clear and well-formed; the decision-maker knows what they are deciding and what they want
+  3 = some ambiguity in what exactly is being decided, or in what the decision-maker wants
+  5 = the question itself is unclear; the decision-maker may be solving the wrong problem, OR the decision-maker expresses genuine confusion about what they want, even if the options themselves are named
+  NOTE: Score 4–5 when the decision-maker uses language like "I don't know what I want", "I'm not sure what I'm looking for", "I don't know who I want to be" — inner clarity confusion is high ambiguity even when the binary choice is stated
 
 task_complexity
   1 = simple decision; few variables, clear trade-offs

@@ -63,7 +63,7 @@ const LOW_CONFIDENCE_THRESHOLD = 0.55
 
 function evaluateR1(sv: ScoredVector): TriggeredRule | null {
   const dim = sv.upstream_dependency
-  if (dim.score < 5) return null
+  if (dim.score < 4) return null
 
   return {
     rule_id:    'R1',
@@ -79,7 +79,7 @@ function evaluateR1(sv: ScoredVector): TriggeredRule | null {
 function evaluateR2(sv: ScoredVector): TriggeredRule | null {
   const identity  = sv.identity_alignment
   const ambiguity = sv.ambiguity
-  if (identity.score < 5 || ambiguity.score < 4) return null
+  if (identity.score < 4 || ambiguity.score < 3) return null
 
   const lowConf = identity.confidence < LOW_CONFIDENCE_THRESHOLD
     || ambiguity.confidence < LOW_CONFIDENCE_THRESHOLD
@@ -119,7 +119,7 @@ function evaluateR3(sv: ScoredVector): TriggeredRule | null {
 
 function evaluateR4(sv: ScoredVector): TriggeredRule | null {
   const dim = sv.regret_asymmetry
-  if (dim.score < 5) return null
+  if (dim.score < 4) return null
 
   return {
     rule_id:    'R4',
@@ -147,7 +147,7 @@ function evaluateR5(sv: ScoredVector): TriggeredRule | null {
     dimension:  'emotional_intensity',
     score:      emotion.score,
     confidence: Math.min(emotion.confidence, timePres.confidence),
-    question:   'There is no hard external deadline here. What is creating the internal sense of urgency — and is that urgency giving you useful information, or is it pressure to move before you\'re ready?',
+    question:   'There\'s real emotional charge here but no hard external deadline. What is the feeling actually telling you — and is it useful signal to act on now, or is it asking you to slow down?',
     low_confidence: lowConf,
   }
 }
