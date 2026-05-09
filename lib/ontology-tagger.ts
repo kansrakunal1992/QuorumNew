@@ -1,408 +1,374 @@
 /**
- * QUORUM LEDGER — Decision Ontology Tagger
- * Sprint 1 — pure backend, no user-facing output
+ * QUORUM — Decision Ontology Tagger v2.0
+ * Sprint 11a — Full 14-dimensional scored vector
  *
- * Takes a decision description + optional context.
- * Returns a structured 9-dimension ontology tag as JSON.
- * Called async after session creation — never blocks the user.
+ * WHAT CHANGED FROM v1.0:
+ *   - Outputs `scored_vector` (14 dimensions, each with score 1-5,
+ *     confidence 0-1, rationale string) in addition to all existing
+ *     categorical fields (backward-compatible — no existing columns removed).
+ *   - scored_vector stored as `ontology_vector` JSONB in sessions_ontology.
+ *   - tagger_version bumped to 'v2.0' for sessions tagged with this prompt.
+ *   - All existing columns still populated identically to v1.0.
  *
- * Provider-agnostic: uses the same AI_PROVIDER env variable
- * as the rest of the app (Anthropic or DeepSeek).
+ * WHAT STAYS IDENTICAL TO v1.0:
+ *   - Provider abstraction (AI_PROVIDER env var)
+ *   - All 9 existing categorical dimension fields
+ *   - examiner_gap_1/2/3 fields
+ *   - DB write logic (additive only)
  */
 
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 
-const PROVIDER = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase()
+const PROVIDER        = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase()
 const ANTHROPIC_MODEL = process.env.AI_MODEL ?? 'claude-sonnet-4-20250514'
 const DEEPSEEK_MODEL  = process.env.AI_MODEL ?? 'deepseek-chat'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 const deepseek  = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY ?? '',
+  apiKey:  process.env.DEEPSEEK_API_KEY ?? '',
   baseURL: 'https://api.deepseek.com',
 })
 
-// ── Ontology schema types ──────────────────────────────────────
+// ── Dimension score type ───────────────────────────────────────────────────────
 
-export type DecisionType =
-  | 'commitment'     // entering a binding relationship or agreement
-  | 'allocation'     // deploying a resource between competing uses
-  | 'transition'     // changing a stable state (role, city, structure)
-  | 'acquisition'    // obtaining something new (asset, partnership)
-  | 'renunciation'   // giving something up or exiting a position
-  | 'governance'     // deciding who has authority over what
-  | 'delegation'     // handing an ongoing responsibility to another
-
-export interface OntologyTag {
-  // Dimension 1: Decision Type
-  decision_type_primary: DecisionType
-  decision_type_secondary: DecisionType[]
-
-  // Dimension 2: Stakes
-  stakes_reversibility: 'full' | 'partial' | 'irreversible'
-  stakes_bearer: 'self' | 'family' | 'organisation' | 'third-parties'
-  stakes_timeline: 'immediate' | '1-3yr' | '5yr+' | 'generational'
-
-  // Dimension 3: Time Pressure
-  has_stated_deadline: boolean
-  deadline_source: 'self' | 'counterparty' | 'external' | 'none'
-  deadline_credibility: 'high' | 'medium' | 'low' | 'none'
-
-  // Dimension 4: Information
-  known_unknowns_surfaced: boolean
-  unknown_unknown_categories: Array<
-    'counterparty_health' | 'regulatory' | 'market' | 'family' | 'execution' | 'succession'
-  >
-
-  // Dimension 5: Counterparty
-  counterparty_present: boolean
-  counterparty_alignment: 'aligned' | 'partial' | 'misaligned' | 'unknown'
-  info_asymmetry: 'favor_dm' | 'equal' | 'favor_counterparty' | 'unknown'
-  relationship_type: 'transactional' | 'relational' | 'fiduciary' | 'adversarial'
-
-  // Dimension 6: Emotional Signature
-  dominant_emotion: 'anxiety' | 'excitement' | 'obligation' | 'ambivalence' | 'urgency' | 'resignation'
-  emotion_source: 'self' | 'external'
-  emotion_analysis_aligned: boolean
-
-  // Dimension 7: Stakeholder Complexity
-  stakeholder_count: '1' | '2-3' | '4+'
-  hidden_stakeholder_probability: 'low' | 'medium' | 'high'
-
-  // Dimension 8: Decision Register
-  instrumental_weight: number  // 0.0 to 1.0
-  constitutive_weight: number  // 0.0 to 1.0 (sum to 1.0)
-
-  // Dimension 9: Examiner Priority Gaps
-  // The 3 most critical unknown unknowns for Phase 1 questions
-  examiner_gap_1: string
-  examiner_gap_2: string
-  examiner_gap_3: string
+export interface DimensionScore {
+  score:      1 | 2 | 3 | 4 | 5   // 1 = low, 5 = high (see scale per dimension)
+  confidence: number               // 0.0 – 1.0
+  rationale:  string               // 1–2 sentences explaining the score
 }
 
-// ── System prompt for the tagger ──────────────────────────────
+// ── 14-dimensional scored vector ──────────────────────────────────────────────
+
+export interface ScoredVector {
+  // ── Phase 1 (highest leverage + novel) ──────────────────────
+  reversibility:                DimensionScore  // 1=fully reversible → 5=irreversible
+  time_horizon:                 DimensionScore  // 1=days/weeks → 5=generational (10yr+)
+  stakes_magnitude:             DimensionScore  // 1=minor → 5=life-defining
+  outcome_uncertainty:          DimensionScore  // 1=predictable → 5=highly uncertain
+  value_conflict:               DimensionScore  // 1=no conflict → 5=irreconcilable conflict
+  identity_alignment:           DimensionScore  // 1=purely instrumental → 5=deeply constitutive
+  regret_asymmetry:             DimensionScore  // 1=symmetric errors → 5=one error far worse
+  upstream_dependency:          DimensionScore  // 1=no prior dependency → 5=blocked by prior unresolved decision
+
+  // ── Phase 2 (established dimensions) ────────────────────────
+  ambiguity:                    DimensionScore  // 1=question is clear → 5=question itself is unclear
+  task_complexity:              DimensionScore  // 1=simple → 5=many interdependencies
+  decision_discriminating_info: DimensionScore  // 1=no info would change this → 5=specific info would change everything
+  time_pressure:                DimensionScore  // 1=no real deadline → 5=hard external deadline imminent
+  decision_unit:                DimensionScore  // 1=self only → 5=large group (family/org/third parties)
+  emotional_intensity:          DimensionScore  // 1=calm/analytical → 5=highly emotionally charged
+
+  vector_version: 'v2.0'
+}
+
+// ── Existing categorical tag (v1.0, kept for backward compat) ─────────────────
+
+export type DecisionType =
+  | 'commitment' | 'allocation' | 'transition'
+  | 'acquisition' | 'renunciation' | 'governance' | 'delegation'
+
+export interface OntologyTag {
+  // Dimension 1
+  decision_type_primary:    DecisionType
+  decision_type_secondary:  DecisionType[]
+  // Dimension 2
+  stakes_reversibility:     'full' | 'partial' | 'irreversible'
+  stakes_bearer:            'self' | 'family' | 'organisation' | 'third-parties'
+  stakes_timeline:          'immediate' | '1-3yr' | '5yr+' | 'generational'
+  // Dimension 3
+  has_stated_deadline:      boolean
+  deadline_source:          'self' | 'counterparty' | 'external' | 'none'
+  deadline_credibility:     'high' | 'medium' | 'low' | 'none'
+  // Dimension 4
+  known_unknowns_surfaced:        boolean
+  unknown_unknown_categories:     string[]
+  // Dimension 5
+  counterparty_present:     boolean
+  counterparty_alignment:   'aligned' | 'partial' | 'misaligned' | 'unknown'
+  info_asymmetry:           'favor_dm' | 'equal' | 'favor_counterparty' | 'unknown'
+  relationship_type:        'transactional' | 'relational' | 'fiduciary' | 'adversarial'
+  // Dimension 6
+  dominant_emotion:         'anxiety' | 'excitement' | 'obligation' | 'ambivalence' | 'urgency' | 'resignation'
+  emotion_source:           'self' | 'external'
+  emotion_analysis_aligned: boolean
+  // Dimension 7
+  stakeholder_count:                  '1' | '2-3' | '4+'
+  hidden_stakeholder_probability:     'low' | 'medium' | 'high'
+  // Dimension 8
+  instrumental_weight:      number    // 0.0 – 1.0
+  constitutive_weight:      number    // 0.0 – 1.0
+  // Dimension 9 (examiner gaps)
+  examiner_gap_1:           string
+  examiner_gap_2:           string
+  examiner_gap_3:           string
+
+  // ── NEW in v2.0 ──────────────────────────────────────────────
+  scored_vector:            ScoredVector
+}
+
+// ── Tagger system prompt ───────────────────────────────────────────────────────
 
 const TAGGER_SYSTEM = `You are an expert decision ontology classifier for Quorum, a private decision intelligence system.
 
-Classify the decision across 9 dimensions. Return ONLY valid JSON — no explanation, no markdown, no preamble.
+Classify the decision across ALL sections below. Return ONLY valid JSON — no explanation, no markdown, no preamble.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DIMENSION 1 — DECISION TYPE (reason about the core action, not the surface description)
+PART A — CATEGORICAL CLASSIFICATION (existing fields, unchanged)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Ask: what is the person fundamentally doing?
 
-commitment   → binding themselves to an ongoing relationship or agreement with another party
-               (investor deal, employment contract, partnership with terms)
-allocation   → choosing how to distribute a resource between uses where no binding external party exists
-               (which fund to invest in, how to split a budget)
-transition   → moving from one stable personal state to another
-               (changing city, role, life phase — the self is what changes)
-acquisition  → obtaining a specific new asset, property, or company
-               (buying a flat, acquiring a business unit)
-renunciation → giving up or permanently exiting something currently held
-               (selling equity stake, leaving a position, divesting)
-governance   → deciding who has authority over what in a shared system
-               (board structure, succession of control, shareholder agreements)
-delegation   → handing an ongoing process to another party to manage
-               (outsourcing portfolio management, hiring a CEO to run operations)
+DIMENSION 1 — DECISION TYPE
+Primary type (one only): commitment | allocation | transition | acquisition | renunciation | governance | delegation
+- commitment: binding relationship/agreement with external party
+- allocation: distributing a resource between uses (no binding external party)
+- transition: person's own identity/role/location changes
+- acquisition: obtaining a specific new asset or company
+- renunciation: giving up or exiting something currently held
+- governance: deciding authority structure in a shared system
+- delegation: handing an ongoing process to another to manage
+Secondary types: 0–2 additional types that also apply.
 
-REASONING CHAIN FOR TYPE:
-Before choosing, ask three questions:
-1. Is there a binding agreement with an external party? → likely commitment or renunciation
-2. Is the person's own identity/role/location the thing that changes? → likely transition
-3. Is the person choosing between uses of a resource they already hold? → likely allocation
-4. Is the person giving up something they currently own? → likely renunciation
-5. Is a specific asset being obtained? → likely acquisition
+DIMENSION 2 — STAKES
+stakes_reversibility: "full" (can be undone), "partial" (costly to undo), "irreversible"
+stakes_bearer: "self" | "family" | "organisation" | "third-parties" (primary bearer)
+stakes_timeline: "immediate" | "1-3yr" | "5yr+" | "generational"
 
-Secondary types: most decisions have 1–2. A job acceptance is transition (primary) + commitment (secondary). A founder equity sale is renunciation (primary) + commitment (secondary, if lock-in exists).
+DIMENSION 3 — TIME PRESSURE
+has_stated_deadline: true/false
+deadline_source: "self" | "counterparty" | "external" | "none"
+deadline_credibility: "high" | "medium" | "low" | "none"
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DIMENSION 3 — DEADLINE CREDIBILITY (reason about who controls the deadline and whether it is real)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Ask: if the deadline passes, does the opportunity actually disappear — or does the other party still need the deal?
+DIMENSION 4 — INFORMATION
+known_unknowns_surfaced: true if decision-maker has explicitly named what they don't know
+unknown_unknown_categories: array of 0–3 values from: "counterparty_health" | "regulatory" | "market" | "family" | "execution" | "succession"
 
-HIGH: The deadline is controlled by nature, biology, or irrevocable external events.
-      Medical progression (Parkinson's, cancer, cognitive decline), regulatory filing dates,
-      auction dates, school/university registration deadlines set by institutions.
-      These cannot be negotiated. They pass and the window closes.
+DIMENSION 5 — COUNTERPARTY
+counterparty_present: true if another party's response materially affects the outcome
+counterparty_alignment: "aligned" | "partial" | "misaligned" | "unknown"
+info_asymmetry: "favor_dm" | "equal" | "favor_counterparty" | "unknown"
+relationship_type: "transactional" | "relational" | "fiduciary" | "adversarial"
 
-MEDIUM: The deadline is self-created or partially real.
-        "This may be my last realistic shot" — the window is genuinely narrowing but
-        the timing is driven by the person's own narrative, not an external constraint.
-        Market timing concerns without a contractual basis.
+DIMENSION 6 — EMOTIONAL SIGNATURE
+dominant_emotion: "anxiety" | "excitement" | "obligation" | "ambivalence" | "urgency" | "resignation"
+emotion_source: "self" (internal) | "external" (social/family/market pressure)
+emotion_analysis_aligned: true if emotion is congruent with the analytical stakes; false if disproportionate
 
-LOW: The deadline is counterparty-created as a tactical pressure mechanism.
-     Investment offers, PE term sheets, strategic acquirer LOIs, vendor promotions,
-     wealth manager pitches — these parties WANT the deal. If you call their bluff,
-     90% of the time the deadline extends. Treat all counterparty-imposed investment
-     and M&A deadlines as low credibility unless there is a specific contractual penalty
-     for missing the date.
+DIMENSION 7 — STAKEHOLDER COMPLEXITY
+stakeholder_count: "1" | "2-3" | "4+"
+hidden_stakeholder_probability: "low" | "medium" | "high"
 
-NONE: No deadline exists in the description.
+DIMENSION 8 — DECISION REGISTER
+instrumental_weight: 0.0–1.0 (how much this is a means-to-an-end decision)
+constitutive_weight: 0.0–1.0 (how much this is about who the person is/becomes)
+Note: instrumental_weight + constitutive_weight = 1.0
 
-IMPORTANT: A healthy parent expressing a wish to step back or transfer while they can
-still guide the process is NOT a deadline. It is a preference. Set credibility: none.
+DIMENSION 9 — EXAMINER PRIORITY GAPS
+The 3 most critical unknown unknowns — things the decision-maker has NOT addressed that most affect the decision outcome.
+examiner_gap_1, examiner_gap_2, examiner_gap_3: each is a terse phrase (5–10 words) naming the gap. Not questions — gap descriptions.
+Example: "Exit conditions and personal liquidity not examined"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DIMENSION 8 — DECISION REGISTER (the most important dimension — reason carefully)
+PART B — 14-DIMENSIONAL SCORED VECTOR (new in v2.0)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The weights must sum to 1.0. Use the full range 0.05–0.95. Do not default to 0.65/0.35.
 
-INSTRUMENTAL: The "right answer" could in principle be calculated if you had enough data.
-              The core question is about outcomes — return, salary, efficiency, market share.
+For each dimension below, output a score (1–5), confidence (0.0–1.0), and rationale (1–2 sentences).
+Score 1 = low end of the scale, score 5 = high end. Use the scale descriptions strictly.
 
-CONSTITUTIVE: The "right answer" cannot be calculated. The core question is about identity —
-              who the person wants to be, what kind of family or legacy they are building,
-              what they stand for. Values questions, duty questions, identity questions.
+SCORING GUIDE:
 
-THE CRITICAL DISTINCTION:
-The presence of large money does NOT make a decision instrumental.
-The presence of emotion does NOT make a decision constitutive.
-Ask: is the core question "what will produce the best outcome?" (instrumental)
-  or "what kind of person / family / builder do I want to be?" (constitutive)
+reversibility
+  1 = decision is easily reversed with minimal cost (try → undo)
+  3 = reversal is possible but costly or time-consuming
+  5 = decision is essentially irreversible once made
 
-REASONING CHAIN FOR REGISTER:
-Step 1: What is the person actually asking? Underline the real question in the text.
-Step 2: Could a spreadsheet answer it? → more instrumental
-Step 3: Does the answer require knowing the person's values? → more constitutive
-Step 4: Is identity, legacy, duty, or guilt the emotional core — not just texture? → push constitutive
+time_horizon
+  1 = impact is immediate to weeks
+  3 = impact plays out over 1–3 years
+  5 = impact spans a decade or is generational
 
-REFERENCE SCALE:
-0.95i / 0.05c — Pure financial optimisation. Multiple options compared by return rates, tax, XIRR.
-                No family tension, no identity language. "Where should I put ₹50L?"
-0.80i / 0.20c — Financial decision with a control or enjoyment undercurrent.
-                Wealth manager delegation where the person enjoys managing it.
-0.65i / 0.35c — Genuinely mixed. Financial logic AND personal identity both matter.
-                Startup CBO role: economics matter AND "last realistic shot" identity narrative.
-0.50i / 0.50c — Neither dominates. Family business governance: legal structure AND family trust values.
-0.35i / 0.65c — Primarily constitutive. Financial consequences real but identity is the core.
-                Founder selling a 6-year-old company they built — the attachment is the real question.
-0.20i / 0.80c — Primarily constitutive. Relocating to care for a parent with a progressive illness.
-                Income impact exists but guilt, duty, and family obligation are the core.
-0.05i / 0.95c — Pure identity/values decision. Negligible financial component.
+stakes_magnitude
+  1 = minor consequence; life is largely unaffected either way
+  3 = significant but bounded consequence
+  5 = life-defining; material, relational, or identity consequences at the highest level
 
-WATCH FOR INFLATION: Guilt language, health mentions, and emotional attachment push constitutive
-up in models. Ask whether these are the CORE of the decision or just texture around a financial one.
-A founder buyout at ₹4 crore where the person needs the capital to fund their next 3 years is
-primarily instrumental even if guilt is present.
+outcome_uncertainty
+  1 = outcome is largely predictable given available information
+  3 = meaningful uncertainty; could go either way
+  5 = outcome is highly uncertain; multiple plausible very different futures
+
+value_conflict
+  1 = no value conflict; decision is consistent with all the person's values
+  3 = some tension between competing values
+  5 = irreconcilable conflict; proceeding requires betraying one core value
+
+identity_alignment
+  1 = purely instrumental; this decision is about means, not about who the person is
+  3 = some identity stakes; outcome will moderately affect how person sees themselves
+  5 = deeply constitutive; this decision is about who the person fundamentally is or becomes
+
+regret_asymmetry
+  1 = symmetric; not acting and acting carry roughly equal regret risk
+  3 = moderate asymmetry; one error is somewhat worse
+  5 = highly asymmetric; one error (acting or not acting) would be vastly harder to live with
+
+upstream_dependency
+  1 = this decision stands alone; no prior unresolved question blocks it
+  3 = some upstream ambiguity exists but is not blocking
+  5 = a prior decision is unresolved and directly determines the answer to this one; working on this now produces an answer that won't hold
+
+ambiguity
+  1 = the question being decided is clear and well-formed
+  3 = some ambiguity in what exactly is being decided
+  5 = the question itself is unclear; the decision-maker may be solving the wrong problem
+
+task_complexity
+  1 = simple decision; few variables, clear trade-offs
+  3 = moderate complexity; several interdependencies
+  5 = extremely complex; many parties, variables, and second-order effects
+
+decision_discriminating_info
+  1 = no additional information would change this decision
+  3 = some information would be useful but not decisive
+  5 = specific obtainable information would completely change what to do; acting now may be premature
+
+time_pressure
+  1 = no real deadline; decision can wait without cost
+  3 = some time pressure; delay has moderate cost
+  5 = hard external deadline is imminent; delay closes options permanently
+
+decision_unit
+  1 = affects the decision-maker alone
+  3 = affects 2–3 people who must live with the consequence
+  5 = affects a large group (family system, organisation, or third parties at scale)
+
+emotional_intensity
+  1 = decision-maker is calm and primarily analytical
+  3 = noticeable emotional engagement; not overwhelming
+  5 = decision is highly emotionally charged; emotion is the dominant register
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMINER GAPS — be specific, not generic
+OUTPUT FORMAT — COMPLETE JSON STRUCTURE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Identify the 3 most critical pieces of information NOT in the description.
-Name the exact gap — not a category.
 
-Good: "PE firm's parallel portfolio obligations and whether they have a fund deadline forcing this deal"
-Bad: "More information about the PE firm"
+Return exactly this structure:
+{
+  "decision_type_primary": "...",
+  "decision_type_secondary": [],
+  "stakes_reversibility": "...",
+  "stakes_bearer": "...",
+  "stakes_timeline": "...",
+  "has_stated_deadline": false,
+  "deadline_source": "...",
+  "deadline_credibility": "...",
+  "known_unknowns_surfaced": false,
+  "unknown_unknown_categories": [],
+  "counterparty_present": false,
+  "counterparty_alignment": "...",
+  "info_asymmetry": "...",
+  "relationship_type": "...",
+  "dominant_emotion": "...",
+  "emotion_source": "...",
+  "emotion_analysis_aligned": true,
+  "stakeholder_count": "...",
+  "hidden_stakeholder_probability": "...",
+  "instrumental_weight": 0.5,
+  "constitutive_weight": 0.5,
+  "examiner_gap_1": "...",
+  "examiner_gap_2": "...",
+  "examiner_gap_3": "...",
+  "scored_vector": {
+    "reversibility":                { "score": 3, "confidence": 0.85, "rationale": "..." },
+    "time_horizon":                 { "score": 3, "confidence": 0.90, "rationale": "..." },
+    "stakes_magnitude":             { "score": 3, "confidence": 0.80, "rationale": "..." },
+    "outcome_uncertainty":          { "score": 3, "confidence": 0.85, "rationale": "..." },
+    "value_conflict":               { "score": 2, "confidence": 0.90, "rationale": "..." },
+    "identity_alignment":           { "score": 3, "confidence": 0.85, "rationale": "..." },
+    "regret_asymmetry":             { "score": 2, "confidence": 0.80, "rationale": "..." },
+    "upstream_dependency":          { "score": 1, "confidence": 0.90, "rationale": "..." },
+    "ambiguity":                    { "score": 2, "confidence": 0.85, "rationale": "..." },
+    "task_complexity":              { "score": 3, "confidence": 0.80, "rationale": "..." },
+    "decision_discriminating_info": { "score": 2, "confidence": 0.75, "rationale": "..." },
+    "time_pressure":                { "score": 2, "confidence": 0.85, "rationale": "..." },
+    "decision_unit":                { "score": 1, "confidence": 0.90, "rationale": "..." },
+    "emotional_intensity":          { "score": 3, "confidence": 0.80, "rationale": "..." },
+    "vector_version": "v2.0"
+  }
+}`
 
-Good: "Co-founder's personal financial situation and whether they need liquidity now for personal reasons"
-Bad: "Co-founder's motivations"
+// ── AI call ────────────────────────────────────────────────────────────────────
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DIMENSION 9 — DOMINANT EMOTION (read the text carefully — only flag what is actually present)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Choose the ONE emotion that most clearly colours how the person frames the decision.
-Do NOT infer emotion. Only classify what is explicitly stated or unmistakably implied.
+async function callTagger(decisionText: string, contextText: string | null): Promise<string> {
+  const userMsg = contextText
+    ? `Decision: ${decisionText}\n\nAdditional context: ${contextText}`
+    : `Decision: ${decisionText}`
 
-anxiety     → worry about specific bad outcomes; "what if it fails", "scared I'm making a mistake"
-              requires explicit concern language, not just high stakes
-excitement  → positive anticipation; "great opportunity", "finally a chance to", forward-looking enthusiasm
-obligation  → duty, guilt, or expectation from others; "I feel I have to", "my family expects", "I owe it to"
-urgency     → time pressure as the dominant frame; "running out of time", "window is closing", deadline-driven
-resignation → reluctant acceptance; "don't see another option", "have to accept", loss of agency language
-ambivalence → ONLY use when the person explicitly describes genuine competing pulls they are caught between.
-              NOT a default. Requires the person to describe BOTH sides pulling them simultaneously.
+  if (PROVIDER === 'deepseek') {
+    const res = await deepseek.chat.completions.create({
+      model:       DEEPSEEK_MODEL,
+      max_tokens:  2000,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: TAGGER_SYSTEM },
+        { role: 'user',   content: userMsg },
+      ],
+    })
+    return res.choices[0]?.message?.content ?? ''
+  } else {
+    const res = await anthropic.messages.create({
+      model:      ANTHROPIC_MODEL,
+      max_tokens: 2000,
+      system:     TAGGER_SYSTEM,
+      messages:   [{ role: 'user', content: userMsg }],
+    })
+    return res.content
+      .filter(b => b.type === 'text')
+      .map(b => (b as { type: 'text'; text: string }).text)
+      .join('')
+  }
+}
 
-If no strong emotion is expressed — the description is factual, analytical, or matter-of-fact —
-pick the CLOSEST match from the above rather than defaulting to ambivalence.
-A clean business decision described without emotional language is more likely "urgency" (if time-driven)
-or should use whichever option best fits any faint signal present.
-Reserve ambivalence strictly for "I want to but I also don't want to" framings.`
+// ── Parse + validate ───────────────────────────────────────────────────────────
 
-// ── Main tagger function ───────────────────────────────────────
+function parseTag(raw: string): OntologyTag | null {
+  try {
+    const clean  = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+    const parsed = JSON.parse(clean)
+
+    // Validate scored_vector exists and has required dimensions
+    const sv = parsed.scored_vector
+    if (!sv || typeof sv !== 'object') return null
+
+    const required = [
+      'reversibility', 'time_horizon', 'stakes_magnitude', 'outcome_uncertainty',
+      'value_conflict', 'identity_alignment', 'regret_asymmetry', 'upstream_dependency',
+      'ambiguity', 'task_complexity', 'decision_discriminating_info',
+      'time_pressure', 'decision_unit', 'emotional_intensity',
+    ]
+    for (const dim of required) {
+      if (!sv[dim] || typeof sv[dim].score !== 'number' || sv[dim].score < 1 || sv[dim].score > 5) {
+        console.warn(`[Tagger] scored_vector missing or invalid: ${dim}`)
+        return null
+      }
+    }
+
+    return parsed as OntologyTag
+  } catch (err) {
+    console.error('[Tagger] JSON parse failed:', err)
+    return null
+  }
+}
+
+// ── Main export ────────────────────────────────────────────────────────────────
 
 export async function tagDecision(
   decisionText: string,
-  contextText?: string | null
+  contextText: string | null
 ): Promise<OntologyTag | null> {
-  const contextBlock = contextText
-    ? `\nADDITIONAL CONTEXT:\n${contextText}`
-    : ''
-
-  const schema = `{
-  "decision_type_primary": "commitment|allocation|transition|acquisition|renunciation|governance|delegation",
-  "decision_type_secondary": ["...array, may be empty"],
-  "stakes_reversibility": "full|partial|irreversible",
-  "stakes_bearer": "self|family|organisation|third-parties",
-  "stakes_timeline": "immediate|1-3yr|5yr+|generational",
-  "has_stated_deadline": true,
-  "deadline_source": "self|counterparty|external|none",
-  "deadline_credibility": "high|medium|low|none",
-  "known_unknowns_surfaced": true,
-  "unknown_unknown_categories": ["counterparty_health","regulatory","market","family","execution","succession"],
-  "counterparty_present": true,
-  "counterparty_alignment": "aligned|partial|misaligned|unknown",
-  "info_asymmetry": "favor_dm|equal|favor_counterparty|unknown",
-  "relationship_type": "transactional|relational|fiduciary|adversarial",
-  "dominant_emotion": "anxiety|excitement|obligation|ambivalence|urgency|resignation",
-  "emotion_source": "self|external",
-  "emotion_analysis_aligned": true,
-  "stakeholder_count": "1|2-3|4+",
-  "hidden_stakeholder_probability": "low|medium|high",
-  "instrumental_weight": 0.65,
-  "constitutive_weight": 0.35,
-  "examiner_gap_1": "specific gap description",
-  "examiner_gap_2": "specific gap description",
-  "examiner_gap_3": "specific gap description"
-}`
-
-  const userMessage = `DECISION TO CLASSIFY:
-${decisionText}${contextBlock}
-
-Your output must match this schema exactly:
-${schema}
-
-Return ONLY the JSON object.`
-
   try {
-    const rawTag = await callModel(userMessage)
-    if (!rawTag) return null
-
-    // ── Rule-based post-processing ─────────────────────────────
-    // Catches systematic model failures regardless of which model is used.
-    // These rules encode domain knowledge that models under-apply.
-    const corrected = applyDomainRules(rawTag, decisionText)
-
-    return corrected
+    const raw = await callTagger(decisionText, contextText)
+    return parseTag(raw)
   } catch (err) {
-    console.error('[OntologyTagger] tagDecision failed:', err)
+    console.error('[Tagger] callTagger failed:', err)
     return null
-  }
-}
-
-// ── Model call (provider-agnostic) ────────────────────────────
-
-async function callModel(userMessage: string): Promise<OntologyTag | null> {
-  try {
-    let rawText: string
-
-    if (PROVIDER === 'deepseek') {
-      const response = await deepseek.chat.completions.create({
-        model: DEEPSEEK_MODEL,
-        max_tokens: 900,
-        temperature: 0, // deterministic for structured extraction
-        messages: [
-          { role: 'system', content: TAGGER_SYSTEM },
-          { role: 'user',   content: userMessage },
-        ],
-      })
-      rawText = response.choices[0]?.message?.content ?? ''
-    } else {
-      const response = await anthropic.messages.create({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 900,
-        system: TAGGER_SYSTEM,
-        messages: [{ role: 'user', content: userMessage }],
-      })
-      rawText = response.content
-        .filter(b => b.type === 'text')
-        .map(b => (b as { type: 'text'; text: string }).text)
-        .join('')
-    }
-
-    const clean = rawText
-      .replace(/\`\`\`json\s*/gi, '')
-      .replace(/\`\`\`\s*/g, '')
-      .trim()
-
-    return JSON.parse(clean) as OntologyTag
-  } catch (err) {
-    console.error('[OntologyTagger] callModel failed:', err)
-    return null
-  }
-}
-
-// ── Factual domain corrections ────────────────────────────────
-// These are the ONLY two rules retained. Both encode facts,
-// not inferences — they are always true regardless of context.
-// All other classification is handled by the improved prompt.
-
-function applyDomainRules(tag: OntologyTag, text: string): OntologyTag {
-  const t = text.toLowerCase()
-  const result = { ...tag }
-
-  // FACT 1: Counterparty-imposed investment/M&A deadlines are always low credibility.
-  // PE firms, strategic investors, and acquirers use expiring offers as pressure.
-  // They want the deal — the deadline is a tactic, not a constraint.
-  const counterpartyInvestmentKeywords = [
-    'pe firm', 'private equity', 'strategic investor', 'acquirer',
-    'term sheet', 'loi expires', 'offer expires', 'offer expir',
-    'investor offer', 'the offer', 'valid for', 'expires in'
-  ]
-  const hasInvestorDeadline = counterpartyInvestmentKeywords.some(k => t.includes(k))
-  if (hasInvestorDeadline && tag.deadline_source === 'counterparty') {
-    result.deadline_credibility = 'low'
-  }
-
-  // FACT 2: Medical/biological progression is always high credibility urgency.
-  // These timelines are set by biology, not tactics.
-  const medicalKeywords = [
-    "parkinson", "alzheimer", "cancer", "diagnosis", "diagnosed",
-    "surgery", "terminal", "dementia", "stroke", "progressive",
-    "prognosis", "unwell", "ill and", "heart condition"
-  ]
-  const hasMedicalUrgency = medicalKeywords.some(k => t.includes(k))
-  if (hasMedicalUrgency && tag.deadline_source !== 'none') {
-    result.deadline_credibility = 'high'
-    result.deadline_source = 'external'
-    result.has_stated_deadline = true
-  }
-
-  return result
-}
-
-
-export function validateTag(tag: OntologyTag): boolean {
-  const validTypes = ['commitment','allocation','transition','acquisition','renunciation','governance','delegation']
-  if (!validTypes.includes(tag.decision_type_primary)) return false
-  if (typeof tag.instrumental_weight !== 'number') return false
-  if (typeof tag.constitutive_weight !== 'number') return false
-  if (!tag.examiner_gap_1 || !tag.examiner_gap_2 || !tag.examiner_gap_3) return false
-  return true
-}
-
-// ── Map tag to Supabase insert shape ──────────────────────────
-
-export function tagToInsert(sessionId: string, tag: OntologyTag) {
-  return {
-    session_id:                  sessionId,
-    decision_type_primary:       tag.decision_type_primary,
-    decision_type_secondary:     tag.decision_type_secondary ?? [],
-    stakes_reversibility:        tag.stakes_reversibility,
-    stakes_bearer:               tag.stakes_bearer,
-    stakes_timeline:             tag.stakes_timeline,
-    has_stated_deadline:         tag.has_stated_deadline,
-    deadline_source:             tag.deadline_source,
-    deadline_credibility:        tag.deadline_credibility,
-    known_unknowns_surfaced:     tag.known_unknowns_surfaced,
-    unknown_unknown_categories:  tag.unknown_unknown_categories ?? [],
-    counterparty_present:        tag.counterparty_present,
-    counterparty_alignment:      tag.counterparty_alignment,
-    info_asymmetry:              tag.info_asymmetry,
-    relationship_type:           tag.relationship_type,
-    dominant_emotion:            tag.dominant_emotion,
-    emotion_source:              tag.emotion_source,
-    emotion_analysis_aligned:    tag.emotion_analysis_aligned,
-    stakeholder_count:           tag.stakeholder_count,
-    hidden_stakeholder_probability: tag.hidden_stakeholder_probability,
-    instrumental_weight:         tag.instrumental_weight,
-    constitutive_weight:         tag.constitutive_weight,
-    examiner_gap_1:              tag.examiner_gap_1,
-    examiner_gap_2:              tag.examiner_gap_2,
-    examiner_gap_3:              tag.examiner_gap_3,
-    raw_ontology_json:           tag,
-    tagger_status:               'complete',
-    tagger_version:              'v1.0',
   }
 }

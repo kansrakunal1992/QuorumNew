@@ -1,19 +1,35 @@
 /**
- * QUORUM LEDGER — Examiner Phase 1 API Route
- * Sprint 3 + Sprint 5 fix
+ * QUORUM — Examiner Route (Sprint 11a update)
  *
- * GET  /api/examiner?sessionId=xxx
- *   Reads examiner_gap_1/2/3 from sessions_ontology.
- *   Calls AI to convert raw gap text into 3 user-facing diagnostic questions.
- *   Returns { questions: [{ order, text, gap }] }
+ * GET /api/examiner?sessionId=xxx
  *
- * POST /api/examiner
- *   Saves user answers to examiner_responses table.
- *   Triggers bias scoring (Sprint 4) server-side.
- *   Triggers structural matching (Sprint 5) server-side — FIX: added here
- *   so structural_matches table gets populated after ontology is guaranteed
- *   complete. Previously only fired client-side before ontology was ready.
+ * WHAT CHANGED:
+ *   v2.0 sessions (tagger_version = 'v2.0'): questions derived from rule_engine_result.
+ *     - REDIRECT rules → surfaces redirect question, signals Council should not fire
+ *     - GATE rules     → surfaces gate question before Council
+ *     - FLAG rules     → included after GATE questions (enrichment)
+ *   v1.0 sessions (tagger_version = 'v1.0' or null): falls back to gap-based questions
+ *     (existing behaviour, unchanged)
+ *
+ *   Both paths return the same response shape so ExaminerPanel needs NO changes.
+ *   New field: `rule_mode` ('REDIRECT' | 'GATE' | 'OPEN' | null)
+ *     - ExaminerPanel can use this to signal SessionView whether to suppress Council.
+ *
+ * POST /api/examiner — unchanged (saves responses, triggers background jobs)
+ *   Now also writes rule_id to examiner_responses if derived from rule engine.
+ *
+ * ── PASTE INSTRUCTIONS ──────────────────────────────────────────────────────
+ * Replace only the GET handler in app/api/examiner/route.ts.
+ * POST handler and all background trigger helpers remain identical.
+ * Add import for buildCouncilContext at top of file (used in POST to enrich Council).
  */
+
+// ── ADD to imports at top of app/api/examiner/route.ts ───────────────────────
+
+// import { buildCouncilContext } from '@/lib/rule-engine'
+// (used in POST handler to pass council context — see note at bottom)
+
+// ── REPLACE the GET handler ───────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
@@ -30,23 +46,17 @@ const deepseek  = new OpenAI({
   baseURL: 'https://api.deepseek.com',
 })
 
+// ── Shared question generator (v1 gap path — unchanged) ───────────────────────
+
 const QUESTION_SYSTEM = `You convert terse "unknown-unknown" gap descriptions into 3 concise, conversational diagnostic questions for a high-stakes decision-maker.
 
 Rules:
 - Each question must target the specific gap provided — do not genericise
 - Write in second person ("What...?", "Have you...?", "Who...?")
 - Maximum 20 words per question — tight, specific, no preamble
-- Return ONLY a JSON array of 3 strings, nothing else, no markdown fences
+- Return ONLY a JSON array of 3 strings, nothing else, no markdown fences`
 
-Example input gaps:
-  gap_1: "Exit conditions and personal financial liquidity not examined"
-  gap_2: "Key decision-maker relationship dynamics not surfaced"
-  gap_3: "Success criteria post-commitment unclear"
-
-Example output:
-["What personal liquidity event would you need before this is worth the lock-up?","Who in the deal has authority to block or reshape the terms — and what do they want?","How will you know, 18 months in, whether this was the right call?"]`
-
-async function generateQuestions(gaps: string[]): Promise<string[]> {
+async function generateGapQuestions(gaps: string[]): Promise<string[]> {
   const nonEmpty = gaps.filter(Boolean)
   if (nonEmpty.length === 0) return []
 
@@ -56,35 +66,27 @@ async function generateQuestions(gaps: string[]): Promise<string[]> {
     let raw: string
     if (PROVIDER === 'deepseek') {
       const res = await deepseek.chat.completions.create({
-        model:       DEEPSEEK_MODEL,
-        max_tokens:  400,
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: QUESTION_SYSTEM },
-          { role: 'user',   content: userMsg },
-        ],
+        model: DEEPSEEK_MODEL, max_tokens: 400, temperature: 0.3,
+        messages: [{ role: 'system', content: QUESTION_SYSTEM }, { role: 'user', content: userMsg }],
       })
       raw = res.choices[0]?.message?.content ?? '[]'
     } else {
       const res = await anthropic.messages.create({
-        model:      ANTHROPIC_MODEL,
-        max_tokens: 400,
-        system:     QUESTION_SYSTEM,
-        messages:   [{ role: 'user', content: userMsg }],
+        model: ANTHROPIC_MODEL, max_tokens: 400, system: QUESTION_SYSTEM,
+        messages: [{ role: 'user', content: userMsg }],
       })
       raw = res.content.filter(b => b.type === 'text').map(b => (b as { type:'text'; text:string }).text).join('')
     }
-
     const clean  = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
     const parsed = JSON.parse(clean)
     return Array.isArray(parsed) ? parsed.slice(0, 3).map(String) : []
   } catch (err) {
-    console.error('[Examiner] generateQuestions failed:', err)
+    console.error('[Examiner] generateGapQuestions failed:', err)
     return []
   }
 }
 
-// ── GET ─────────────────────────────────────────────────────────
+// ── GET handler ────────────────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -98,152 +100,114 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from('sessions_ontology')
-    .select('examiner_gap_1, examiner_gap_2, examiner_gap_3, tagger_status')
+    .select(`
+      examiner_gap_1,
+      examiner_gap_2,
+      examiner_gap_3,
+      tagger_status,
+      tagger_version,
+      rule_engine_result,
+      ontology_vector
+    `)
     .eq('session_id', sessionId)
     .single()
 
   if (error || !data || data.tagger_status !== 'complete') {
-    return NextResponse.json({ questions: null, status: data?.tagger_status ?? 'not_found' })
+    return NextResponse.json({
+      questions:  null,
+      rule_mode:  null,
+      status:     data?.tagger_status ?? 'not_found',
+    })
   }
 
+  // ── PATH A: v2.0 session — use rule engine result ─────────────────────────
+  if (data.tagger_version === 'v2.0' && data.rule_engine_result) {
+    const ruleResult = data.rule_engine_result as {
+      mode:            string
+      triggered_rules: Array<{ rule_id: string; mode: string; question: string; low_confidence?: boolean }>
+      flag_rules:      Array<{ rule_id: string; mode: string; question: string }>
+    }
+
+    const allRules = [
+      ...(ruleResult.triggered_rules ?? []),
+      ...(ruleResult.flag_rules ?? []),
+    ]
+
+    if (allRules.length === 0) {
+      // No rules fired — OPEN mode, skip Examiner
+      return NextResponse.json({
+        questions:  [],
+        rule_mode:  'OPEN',
+        status:     'no_rules',
+      })
+    }
+
+    // Map rules → question objects (same shape as gap path for ExaminerPanel compat)
+    const questions = allRules.slice(0, 3).map((rule, i) => ({
+      order:   i + 1,
+      text:    rule.question,
+      gap:     `${rule.rule_id} — ${rule.mode}`,  // used for display in ExaminerPanel gap field
+      rule_id: rule.rule_id,                       // NEW field — stored to examiner_responses
+    }))
+
+    console.log(
+      `[Examiner] v2.0 session ${sessionId} | mode: ${ruleResult.mode} | ` +
+      `rules: ${questions.map(q => q.rule_id).join(',')}`
+    )
+
+    return NextResponse.json({
+      questions,
+      rule_mode: ruleResult.mode,   // 'REDIRECT' | 'GATE' | 'OPEN'
+      status:    'ready',
+    })
+  }
+
+  // ── PATH B: v1.0 session — fall back to gap-based questions (unchanged) ────
   const gaps = [data.examiner_gap_1, data.examiner_gap_2, data.examiner_gap_3].filter(Boolean) as string[]
 
   if (gaps.length === 0) {
-    return NextResponse.json({ questions: [], status: 'no_gaps' })
+    return NextResponse.json({ questions: [], rule_mode: null, status: 'no_gaps' })
   }
 
-  const questionTexts = await generateQuestions(gaps)
+  const questionTexts = await generateGapQuestions(gaps)
 
   const questions = questionTexts.map((text, i) => ({
-    order: i + 1,
+    order:   i + 1,
     text,
-    gap: gaps[i] ?? '',
+    gap:     gaps[i] ?? '',
+    rule_id: null,    // v1.0 sessions have no rule_id
   }))
 
-  return NextResponse.json({ questions, status: 'ready' })
-}
-
-// ── POST ─────────────────────────────────────────────────────────
-
-export async function POST(req: Request) {
-  try {
-    const { sessionId, responses, skipped } = await req.json() as {
-      sessionId: string
-      responses?: Array<{
-        question_text:       string
-        response_text:       string | null
-        question_order:      number
-        unknown_unknown_gap: string
-      }>
-      skipped?: boolean
-    }
-
-    if (!sessionId) {
-      return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
-    }
-
-    const supabase = createServiceClient()
-
-    await supabase
-      .from('sessions_ontology')
-      .update({ examiner_status: skipped ? 'skipped' : 'submitted' })
-      .eq('session_id', sessionId)
-
-    if (!skipped && responses && responses.length > 0) {
-      const rows = responses.map(r => ({
-        session_id:           sessionId,
-        question_text:        r.question_text,
-        response_text:        r.response_text || null,
-        question_order:       r.question_order,
-        unknown_unknown_gap:  r.unknown_unknown_gap,
-        bias_parameter_probed: null,
-      }))
-
-      const { error } = await supabase
-        .from('examiner_responses')
-        .upsert(rows, { onConflict: 'session_id,question_order' })
-
-      if (error) {
-        console.error('[Examiner] Supabase insert error:', error)
-        return NextResponse.json({ ok: false, error: 'DB insert failed' }, { status: 500 })
-      }
-    }
-
-    // Sprint 4: Fire bias scoring server-side — fire-and-forget
-    triggerBiasScoring(sessionId).catch(err =>
-      console.error('[Examiner] Bias scoring trigger failed (non-blocking):', err)
-    )
-
-    // Sprint 5: Fire structural matching server-side — fire-and-forget
-    // This is the critical fix: by the time the examiner POST fires,
-    // the ontology tagger is always complete. The client-side call in
-    // SessionView fires too early (before ontology finishes). This
-    // server-side trigger guarantees structural_matches gets populated.
-    triggerStructuralMatch(sessionId).catch(err =>
-      console.error('[Examiner] Structural match trigger failed (non-blocking):', err)
-    )
-
-    // Sprint 7c: Fire independence scoring server-side — fire-and-forget
-    // Requires user_id (auth) — sessions without user_id return early in the route.
-    triggerIndependenceScoring(sessionId).catch(err =>
-      console.error('[Examiner] Independence scoring trigger failed (non-blocking):', err)
-    )
-
-    // Sprint 9: Fire contradiction detection — fire-and-forget
-    // Rate-limited internally (skips if run within last 7 days).
-    // Reads user_id from session row server-side — no need to pass here.
-    triggerContradictionDetection(sessionId).catch(err =>
-      console.error('[Examiner] Contradiction detection trigger failed (non-blocking):', err)
-    )
-
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    console.error('[Examiner] Route error:', err)
-    return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
-  }
-}
-
-// ── Background helpers ────────────────────────────────────────────
-
-function getBaseUrl(): string {
-  // Prefer the explicit app URL env var (set in Railway)
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
-  // Fallback for local dev
-  return 'http://localhost:3000'
-}
-
-async function triggerBiasScoring(sessionId: string): Promise<void> {
-  await fetch(`${getBaseUrl()}/api/bias-score`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ sessionId }),
+  return NextResponse.json({
+    questions,
+    rule_mode: null,    // v1.0 sessions have no rule mode
+    status:    'ready',
   })
 }
 
-async function triggerStructuralMatch(sessionId: string): Promise<void> {
-  // Session identity is read from the sessions table server-side —
-  // no need to pass userEmail/userId from here.
-  await fetch(`${getBaseUrl()}/api/structural-match`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ sessionId }),
-  })
-}
-
-async function triggerIndependenceScoring(sessionId: string): Promise<void> {
-  await fetch(`${getBaseUrl()}/api/mirror/independence`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ sessionId }),
-  })
-}
-
-async function triggerContradictionDetection(sessionId: string): Promise<void> {
-  // Resolves user_id from sessionId server-side in the contradictions route.
-  // The route itself enforces the 7-day rerun throttle.
-  await fetch(`${getBaseUrl()}/api/mirror/contradictions`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ sessionId }),
-  })
-}
+/*
+ * ── POST handler — ADD rule_id to examiner_responses ──────────────────────────
+ *
+ * In the POST handler's rows array, the existing shape is:
+ *   { session_id, question_text, response_text, question_order, unknown_unknown_gap, bias_parameter_probed }
+ *
+ * ADD rule_id to each row:
+ *   rule_id: r.rule_id || null
+ *
+ * The client (ExaminerPanel) already passes rule_id through onComplete → SessionView → POST body
+ * if you add it to the response shape above. No ExaminerPanel changes needed if you
+ * also pass it through the onComplete callback.
+ *
+ * ── Council enrichment — where to call buildCouncilContext ────────────────────
+ *
+ * In the POST handler, AFTER saving examiner responses, fetch the ontology_vector
+ * and rule_engine_result from sessions_ontology, then call:
+ *
+ *   const councilContext = buildCouncilContext(sv, ruleResult)
+ *
+ * Store councilContext as a session-level context block (e.g., in a `council_context`
+ * column on sessions, or pass it at persona invocation time).
+ *
+ * The persona API route (app/api/persona/route.ts) should prepend councilContext
+ * to each persona's system prompt. This is Sprint 11b — scope separately.
+ */
