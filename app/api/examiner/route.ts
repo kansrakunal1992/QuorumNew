@@ -1,29 +1,26 @@
 /**
- * QUORUM — Examiner Route (Sprint 12 update)
+ * QUORUM — Examiner Route (Sprint 12 patch)
  *
- * CHANGES vs Sprint 11a:
+ * WHAT CHANGED vs Sprint 12 delivery:
+ *   - Removed inline triggerBiasScoring() — it called scoreBiasesForSession
+ *     directly and tried to insert with wrong bias_library column names
+ *     (bias_key, prosecutor_score, etc. don't exist; table uses bias_parameter,
+ *     detection_count, asymmetry_score_avg etc. with accumulation logic)
+ *   - Replaced with background HTTP call to /api/bias-score (the dedicated
+ *     accumulation endpoint that handles identity resolution + correct schema)
+ *   - Removed scoreBiasesForSession import (no longer needed here)
  *
- *   GET — Contextual Rule Questions (Sprint 12 Item 1)
- *     v2.0 sessions: hardcoded rule.question is now personalised to the specific
- *     decision_text via a fast parallel AI call (personaliseRuleQuestion).
- *     Falls back to the template question on any error — zero downside risk.
- *     v1.0 sessions: unchanged (gap-based questions are already AI-generated).
- *
- *   POST — Reconstructed handler (was missing from Sprint 11a paste)
- *     Saves examiner_responses with rule_id, updates examiner_status,
- *     triggers bias scoring as a non-blocking background job.
+ * GET handler — unchanged from Sprint 12 (contextual rule question personalisation)
  */
 
-import { NextResponse }          from 'next/server'
-import { createServiceClient }   from '@/lib/supabase'
-import { scoreBiasesForSession } from '@/lib/bias-scorer'
-import { createCompletion }      from '@/lib/ai-client'
+import { NextResponse }        from 'next/server'
+import { createServiceClient } from '@/lib/supabase'
+import { createCompletion }    from '@/lib/ai-client'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET — serve Examiner questions
+// GET — serve Examiner questions (unchanged from Sprint 12)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Prompt kept tight — this is a micro-rewrite call, not an analysis call. */
 const PERSONALISE_PROMPT = (ruleId: string, template: string, decision: string) => `
 You are the Quorum Examiner. Rewrite the diagnostic question below so it is specific to the decision described.
 
@@ -39,19 +36,14 @@ TEMPLATE QUESTION (${ruleId}): "${template}"
 
 REWRITTEN QUESTION:`.trim()
 
-/**
- * Personalise a single rule question to the specific decision.
- * Falls back to the template question on any failure.
- */
 async function personaliseRuleQuestion(
   ruleId:   string,
   template: string,
   decision: string,
 ): Promise<string> {
   try {
-    const raw    = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision), 80)
-    const clean  = raw.trim().replace(/^["']|["']$/g, '').trim()
-    // Sanity: if output is empty or suspiciously long, fall back
+    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision), 80)
+    const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return template
     return clean
   } catch (err) {
@@ -60,7 +52,6 @@ async function personaliseRuleQuestion(
   }
 }
 
-/** Shared question generator for v1.0 sessions — unchanged from Sprint 11a. */
 const GAP_QUESTION_PROMPT = (gaps: string[]) => `You convert terse "unknown-unknown" gap descriptions into 3 concise, conversational diagnostic questions for a high-stakes decision-maker.
 
 Rules:
@@ -96,7 +87,6 @@ export async function GET(req: Request) {
 
   const supabase = createServiceClient()
 
-  // Fetch ontology + decision text in parallel
   const [ontologyRes, sessionRes] = await Promise.all([
     supabase
       .from('sessions_ontology')
@@ -110,7 +100,7 @@ export async function GET(req: Request) {
       .single(),
   ])
 
-  const data        = ontologyRes.data
+  const data         = ontologyRes.data
   const decisionText = sessionRes.data?.decision_text ?? ''
 
   if (ontologyRes.error || !data || data.tagger_status !== 'complete') {
@@ -121,7 +111,6 @@ export async function GET(req: Request) {
     })
   }
 
-  // ── PATH A: v2.0 session — use rule engine result ─────────────────────────
   if (data.tagger_version === 'v2.0' && data.rule_engine_result) {
     const ruleResult = data.rule_engine_result as {
       mode:            string
@@ -144,14 +133,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ questions: [], rule_mode: 'OPEN', status: 'no_rules' })
     }
 
-    // ── Sprint 12: personalise each question in parallel ──────────────────
     const personalisedTexts = decisionText
       ? await Promise.all(
           allRules.map(rule =>
             personaliseRuleQuestion(rule.rule_id, rule.question, decisionText)
           )
         )
-      : allRules.map(r => r.question)   // fallback: no decision text available
+      : allRules.map(r => r.question)
 
     const questions = allRules.map((rule, i) => ({
       order:   i + 1,
@@ -173,7 +161,7 @@ export async function GET(req: Request) {
     })
   }
 
-  // ── PATH B: v1.0 session — gap-based questions (unchanged) ───────────────
+  // v1.0 fallback
   const gaps = [data.examiner_gap_1, data.examiner_gap_2, data.examiner_gap_3]
     .filter(Boolean) as string[]
 
@@ -182,7 +170,7 @@ export async function GET(req: Request) {
   }
 
   const questionTexts = await generateGapQuestions(gaps)
-  const questions     = questionTexts.map((text, i) => ({
+  const questions = questionTexts.map((text, i) => ({
     order:   i + 1,
     text,
     gap:     gaps[i] ?? '',
@@ -193,7 +181,7 @@ export async function GET(req: Request) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST — save examiner responses + trigger bias scoring
+// POST — save examiner responses + fire bias scoring via /api/bias-score
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ExaminerResponseRow = {
@@ -202,91 +190,6 @@ type ExaminerResponseRow = {
   question_order:      number
   unknown_unknown_gap: string
   rule_id:             string | null
-}
-
-/**
- * Background bias scoring — fires after POST response is returned.
- * Non-blocking: any failure is logged and swallowed.
- */
-async function triggerBiasScoring(
-  sessionId:        string,
-  examinerResponses: ExaminerResponseRow[],
-  supabase:         ReturnType<typeof createServiceClient>,
-) {
-  // Fetch everything needed in parallel
-  const [sessionRes, messagesRes, ontologyRes] = await Promise.all([
-    supabase
-      .from('sessions')
-      .select('decision_text, context_text, user_id')
-      .eq('id', sessionId)
-      .single(),
-    supabase
-      .from('messages')
-      .select('persona, role, content')
-      .eq('session_id', sessionId)
-      .eq('role', 'assistant'),
-    supabase
-      .from('sessions_ontology')
-      .select('ontology_vector')
-      .eq('session_id', sessionId)
-      .single(),
-  ])
-
-  if (!sessionRes.data) {
-    console.error('[Examiner POST] Bias trigger: session not found', sessionId)
-    return
-  }
-
-  const { decision_text, context_text, user_id } = sessionRes.data
-
-  // Build persona responses map (last write per persona wins — correct for message ordering)
-  const personaResponses: Record<string, string> = {}
-  for (const msg of (messagesRes.data ?? [])) {
-    personaResponses[msg.persona] = msg.content
-  }
-
-  // Build examiner QA
-  const examinerQA = examinerResponses
-    .filter(r => r.response_text?.trim())
-    .map(r => ({ question: r.question_text, answer: r.response_text! }))
-
-  // Resolve user_email for bias_library (required for Mirror module identity)
-  let user_email: string | null = null
-  if (user_id) {
-    const { data: authUser } = await supabase.auth.admin.getUserById(user_id)
-    user_email = authUser?.user?.email ?? null
-  }
-
-  const result = await scoreBiasesForSession({
-    sessionId,
-    decisionText:    decision_text,
-    contextText:     context_text ?? null,
-    personaResponses,
-    examinerQA,
-    ontologyJson:    (ontologyRes.data?.ontology_vector as Record<string, unknown> | null) ?? null,
-  })
-
-  // Insert one row per bias score
-  const biasRows = result.scores.map(s => ({
-    session_id:         sessionId,
-    user_email,                         // null for anonymous users
-    bias_key:           s.bias_key,
-    prosecutor_score:   s.prosecutor_score,
-    defense_score:      s.defense_score,
-    asymmetry:          s.asymmetry,
-    detected:           s.detected,
-    reasoning:          s.reasoning,
-    activation_context: s.activation_context ?? null,
-    scored_at:          result.scored_at,
-    model_used:         result.model_used,
-  }))
-
-  const { error: biasInsertError } = await supabase.from('bias_library').insert(biasRows)
-  if (biasInsertError) {
-    console.error('[Examiner POST] bias_library insert failed:', biasInsertError)
-  } else {
-    console.log(`[Examiner POST] Bias scoring complete for session ${sessionId} — ${biasRows.length} rows`)
-  }
 }
 
 export async function POST(req: Request) {
@@ -304,12 +207,18 @@ export async function POST(req: Request) {
 
     const supabase = createServiceClient()
 
-    // ── Skipped path — mark as submitted without saving responses ────────────
+    // ── Skipped path ──────────────────────────────────────────────────────────
     if (skipped) {
       await supabase
         .from('sessions_ontology')
         .update({ examiner_status: 'submitted' })
         .eq('session_id', sessionId)
+
+      // Still trigger bias scoring on skip — personas + ontology are enough
+      fireBiasScore(sessionId, req).catch(err =>
+        console.error('[Examiner POST] Bias trigger (skip) error:', err)
+      )
+
       return NextResponse.json({ ok: true })
     }
 
@@ -324,7 +233,7 @@ export async function POST(req: Request) {
       response_text:        r.response_text,
       question_order:       r.question_order,
       unknown_unknown_gap:  r.unknown_unknown_gap,
-      bias_parameter_probed: null,      // populated retroactively by bias scorer
+      bias_parameter_probed: null,
       rule_id:              r.rule_id ?? null,
     }))
 
@@ -340,14 +249,35 @@ export async function POST(req: Request) {
       .update({ examiner_status: 'submitted' })
       .eq('session_id', sessionId)
 
-    // ── Trigger bias scoring in background (non-blocking) ────────────────────
-    triggerBiasScoring(sessionId, responses, supabase).catch(err =>
-      console.error('[Examiner POST] Background bias scoring error:', err)
+    // ── Trigger bias scoring via dedicated endpoint (non-blocking) ────────────
+    fireBiasScore(sessionId, req).catch(err =>
+      console.error('[Examiner POST] Bias trigger error:', err)
     )
 
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[Examiner POST] Unexpected error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+/**
+ * Fire-and-forget HTTP call to /api/bias-score.
+ * /api/bias-score owns all bias_library accumulation logic — schema-correct,
+ * handles identity resolution (user_id → user_email → device_id → anonymous).
+ * Derives base URL from the incoming request so it works across envs.
+ */
+async function fireBiasScore(sessionId: string, req: Request): Promise<void> {
+  const { origin } = new URL(req.url)
+  const res = await fetch(`${origin}/api/bias-score`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    console.error(`[Examiner POST] /api/bias-score returned ${res.status}:`, body)
+  } else {
+    console.log(`[Examiner POST] Bias score triggered for session ${sessionId}`)
   }
 }
