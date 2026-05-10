@@ -7,6 +7,11 @@
   --radius:    18px;
   --radius-sm: 10px;
   --trans: background 0.32s ease, color 0.32s ease, border-color 0.32s ease, box-shadow 0.32s ease;
+
+  /* ── Typography system ──────────────────────────────────── */
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-mono:    'DM Mono', 'Courier New', monospace;
+  --font-body:    'Inter', system-ui, -apple-system, sans-serif;
 }
 
 /* ── DARK theme (default) ────────────────────────────────── */
@@ -32,6 +37,15 @@
   --error:       #e05050;
   --scrollbar-thumb: #253660;
   --shadow-card: 0 2px 12px rgba(0,0,0,0.5);
+
+  /* Synthesis card header state backgrounds */
+  --synthesis-done:      #162a1c;
+  --synthesis-streaming: #181408;
+  --synthesis-waiting:   #0d1220;
+  --synthesis-text-sub:  rgba(255,255,255,0.55);
+  --synthesis-border-sub: rgba(255,255,255,0.08);
+  --synthesis-btn-border: rgba(255,255,255,0.20);
+  --synthesis-btn-text:   rgba(255,255,255,0.70);
 }
 
 /* ── LIGHT theme ─────────────────────────────────────────── */
@@ -57,6 +71,15 @@
   --error:       #c03030;
   --scrollbar-thumb: #b0bece;
   --shadow-card: 0 1px 8px rgba(6,13,28,0.08), 0 4px 24px rgba(6,13,28,0.06);
+
+  /* Synthesis card header state backgrounds — light-mode safe */
+  --synthesis-done:      var(--green-soft);
+  --synthesis-streaming: rgba(192,140,24,0.07);
+  --synthesis-waiting:   var(--bg-card-alt);
+  --synthesis-text-sub:  var(--text-3);
+  --synthesis-border-sub: var(--border-dim);
+  --synthesis-btn-border: var(--border-mid);
+  --synthesis-btn-text:   var(--text-2);
 }
 
 /* ── Global resets & base ────────────────────────────────── */
@@ -65,12 +88,36 @@
 html, body {
   background: var(--bg-void);
   color: var(--text-2);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background 0.32s ease, color 0.32s ease;
+}
+
+/* ── Typography utilities ────────────────────────────────── */
+.t-display {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3vw, 42px);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--text-1);
+}
+
+.t-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+
+.t-mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────── */
@@ -100,6 +147,19 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+/* Hairline gradient at card top */
+.persona-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+  pointer-events: none;
 }
 .persona-card.streaming {
   border-color: var(--gold-dim);
@@ -111,7 +171,7 @@ html, body {
 
 /* ── Persona response prose ─────────────────────────────────── */
 .persona-response {
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.82;
   color: var(--text-2);
   white-space: pre-wrap;
@@ -127,7 +187,7 @@ textarea {
   color: var(--text-1);
   border-radius: 10px;
   padding: 14px 16px;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.7;
   resize: none;
   width: 100%;
@@ -150,16 +210,16 @@ textarea::placeholder { color: var(--text-4); }
 /* ── Buttons ─────────────────────────────────────────────────── */
 .btn-primary {
   background: var(--gold);
-  color: #05080f;
+  color: #ffffff;
   font-weight: 700;
   border: none;
   border-radius: 8px;
   padding: 12px 28px;
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
   letter-spacing: 0.03em;
-  font-family: inherit;
+  font-family: var(--font-body);
 }
 .btn-primary:hover  { background: var(--gold-bright); }
 .btn-primary:active { transform: scale(0.98); }
@@ -171,10 +231,10 @@ textarea::placeholder { color: var(--text-4); }
   border: 1px solid var(--border-dim);
   border-radius: 7px;
   padding: 7px 16px;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
-  font-family: inherit;
+  font-family: var(--font-body);
 }
 .btn-ghost:hover { border-color: var(--gold-dim); color: var(--gold); }
 
@@ -184,10 +244,10 @@ textarea::placeholder { color: var(--text-4); }
   border: 1px solid var(--border-dim);
   border-radius: 6px;
   padding: 5px 12px;
-  font-size: 11.5px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
-  font-family: inherit;
+  font-family: var(--font-body);
 }
 .btn-pushback:hover { color: var(--gold); border-color: var(--gold-dim); }
 
@@ -213,10 +273,10 @@ textarea::placeholder { color: var(--text-4); }
   border: 1px solid var(--border-mid);
   background: var(--bg-card);
   color: var(--text-3);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  font-family: inherit;
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
   cursor: pointer;
   box-shadow: var(--shadow-card);
   transition: border-color 0.2s, color 0.2s, background 0.32s;

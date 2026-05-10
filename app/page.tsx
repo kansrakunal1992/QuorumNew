@@ -181,11 +181,11 @@ export default function Home() {
             <div style={{ width: 46, height: 46, borderRadius: '50%', border: '1px solid var(--gold-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', background: 'rgba(201,168,76,0.06)' }}>
               <IconScale />
             </div>
-            <span style={{ fontSize: 26, fontWeight: 700, letterSpacing: '0.22em', color: 'var(--gold)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 22, fontWeight: 400, letterSpacing: '0.22em', color: 'var(--gold)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>
               Quorum
             </span>
           </div>
-          <p style={{ fontSize: 11, color: 'var(--text-4)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+          <p style={{ fontSize: 11, color: 'var(--text-4)', letterSpacing: '0.18em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
             Private Decision Intelligence
           </p>
           <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, var(--gold-dim), transparent)', margin: '14px auto 0', width: 180 }} />
@@ -193,7 +193,7 @@ export default function Home() {
 
         {/* ── Input card ───────────────────────────────── */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderRadius: 18, padding: '28px 32px', marginBottom: 28 }}>
-          <h1 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-1)', marginBottom: 6 }}>
+          <h1 style={{ fontSize: 17, fontWeight: 400, color: 'var(--text-1)', marginBottom: 6, fontFamily: 'var(--font-display)' }}>
             Describe your decision
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 18, lineHeight: 1.6 }}>
@@ -204,7 +204,7 @@ export default function Home() {
             key={formKey}
             className="decision-input"
             rows={5}
-            style={{ fontSize: 14 }}
+            style={{ fontSize: 15 }}
             autoComplete="off"
             placeholder="e.g. I am considering whether to sell my 40% stake in the family business to a PE firm at 8× EBITDA. The offer expires in 3 weeks…"
             value={decision}
@@ -218,7 +218,7 @@ export default function Home() {
               </button>
             ) : (
               <>
-                <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 8 }}>
+                <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 8 }}>
                   Paste relevant context — emails, WhatsApp, term sheets
                 </p>
                 <textarea rows={3} style={{ fontSize: 13 }} placeholder="Paste context here..." value={context} onChange={e => setContext(e.target.value)} />
@@ -231,7 +231,7 @@ export default function Home() {
 
           {/* ── Examiner Phase 0 — Register selector ──────────── */}
         <div style={{ marginTop: 18 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 10, letterSpacing: '0.04em' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', marginBottom: 10, letterSpacing: '0.04em' }}>
             What are you looking for from the Council?
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -300,8 +300,8 @@ export default function Home() {
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} />
               </div>
               <div>
-                <p style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-1)', marginBottom: 2 }}>{p.label}</p>
-                <p style={{ fontSize: 10.5, color: 'var(--text-4)', lineHeight: 1.4 }}>{p.hint}</p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-1)', marginBottom: 2, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>{p.label}</p>
+                <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>{p.hint}</p>
               </div>
             </div>
           ))}
@@ -317,11 +317,11 @@ export default function Home() {
                   <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
                 </svg>
               </div>
-              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>
                 Challenge the advisors
               </p>
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
               After each advisor responds, you&apos;ll see a <span style={{ color: 'var(--gold)', fontWeight: 600 }}>&quot;Challenge this · add context&quot;</span> button. Use it. Disagree with their analysis, add information they missed, or ask a follow-up. The Council re-synthesises after every pushback.
             </p>
           </div>
@@ -334,11 +334,11 @@ export default function Home() {
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
               </div>
-              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-text)', margin: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-text)', margin: 0 }}>
                 Log what you decided
               </p>
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
               Decisions often take time. Once you decide, return to this page — your past sessions appear below. Open any session and log your outcome. Over time this builds a private record of how you actually decide.
             </p>
           </div>
@@ -363,7 +363,7 @@ export default function Home() {
           <div ref={historyRef}>
             {/* Section header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
                 Your Decisions
               </p>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -459,7 +459,7 @@ export default function Home() {
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.5, marginBottom: 6 }}>
+                      <p style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.5, marginBottom: 6 }}>
                         {snippet}
                       </p>
 

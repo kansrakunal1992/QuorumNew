@@ -158,10 +158,10 @@ function AuthGate() {
       </div>
 
       <div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
+        <h2 style={{ fontSize: 22, fontWeight: 400, fontFamily: 'var(--font-display)', color: 'var(--text-1)', margin: '0 0 10px' }}>
           Your behavioral mirror
         </h2>
-        <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.65, margin: 0 }}>
+        <p style={{ fontSize: 15, color: 'var(--text-3)', lineHeight: 1.65, margin: 0 }}>
           Mirror surfaces how you actually make decisions — recurring patterns,
           activated biases, and whether your judgment is evolving across time.
         </p>
@@ -178,7 +178,7 @@ function AuthGate() {
           <p style={{ fontSize: 13, color: 'var(--gold)', fontWeight: 600, margin: '0 0 4px' }}>
             Check your email
           </p>
-          <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, margin: 0 }}>
+          <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5, margin: 0, fontFamily: 'var(--font-mono)' }}>
             A sign-in link was sent to <span style={{ color: 'var(--text-2)' }}>{email}</span>.
             Click it to access Mirror.
           </p>

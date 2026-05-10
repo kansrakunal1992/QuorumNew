@@ -230,7 +230,7 @@ export default function SynthesisCard({
             <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em', margin: 0 }}>
               Council Synthesis
             </p>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 }}>
+            <p style={{ fontSize: 11, color: 'var(--synthesis-text-sub)', marginTop: 1 }}>
               Blocked — upstream decision unresolved
             </p>
           </div>
@@ -266,7 +266,7 @@ export default function SynthesisCard({
       borderRadius: 14, marginBottom: 4, overflow: 'hidden', transition: 'border-color 0.3s',
     }}>
       {/* Header */}
-      <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: state === 'done' ? '#162a1c' : state === 'streaming' ? '#181408' : '#0d1220', borderRadius: '13px 13px 0 0' }}>
+      <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--synthesis-border-sub)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: state === 'done' ? 'var(--synthesis-done)' : state === 'streaming' ? 'var(--synthesis-streaming)' : 'var(--synthesis-waiting)', borderRadius: '13px 13px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -288,7 +288,7 @@ export default function SynthesisCard({
                 </span>
               )}
             </div>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 0 }}>
+            <p style={{ fontSize: 11, color: 'var(--synthesis-text-sub)', marginTop: 0 }}>
               {state === 'waiting' && !allDone ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
                 : state === 'waiting' && allDone && !examinerReady ? 'Answer the Examiner questions above to unlock synthesis'
                 : state === 'streaming' && isRecalibrating ? 'Recalibrating after pushback…'
@@ -303,7 +303,7 @@ export default function SynthesisCard({
           {state === 'done' && briefState === 'idle' && briefGate === 'locked' && (
             <button
               onClick={() => setBriefGate('prompt')}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7, border: '1px solid rgba(255,255,255,0.20)', background: 'transparent', color: 'rgba(255,255,255,0.70)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--synthesis-btn-border)', background: 'transparent', color: 'var(--synthesis-btn-text)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -328,11 +328,11 @@ export default function SynthesisCard({
               >
                 Unlock
               </button>
-              <button onClick={() => setBriefGate('locked')} style={{ fontSize: 11, color: 'rgba(255,255,255,0.40)', background: 'none', border: 'none', cursor: 'pointer', padding: '5px' }}>✕</button>
+              <button onClick={() => setBriefGate('locked')} style={{ fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: '5px' }}>✕</button>
             </div>
           )}
           {state === 'done' && briefGate === 'checking' && (
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>Checking…</span>
+            <span style={{ fontSize: 11, color: 'var(--text-4)' }}>Checking…</span>
           )}
           {state === 'done' && briefGate === 'invalid' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -360,7 +360,7 @@ export default function SynthesisCard({
             </span>
           )}
           {briefState === 'done' && (
-            <button onClick={() => setShowBrief(b => !b)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.20)', background: 'transparent', color: 'rgba(255,255,255,0.70)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => setShowBrief(b => !b)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid var(--synthesis-btn-border)', background: 'transparent', color: 'var(--synthesis-btn-text)', cursor: 'pointer', fontFamily: 'inherit' }}>
               {showBrief ? 'Hide Brief' : 'Show Brief'}
             </button>
           )}
