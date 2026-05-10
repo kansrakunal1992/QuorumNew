@@ -215,7 +215,7 @@ upstream_dependency
   1 = this decision stands alone; no prior unresolved question blocks it
   3 = some upstream ambiguity exists but is not blocking; the decision can proceed with reasonable assumptions
   5 = a prior unresolved element directly determines the answer to this one — working on this now produces a conclusion that will not hold once the upstream element resolves
-  NOTE: Score 4–5 for ANY of: (a) a separate prior decision that must be made first; (b) an active negotiation or dispute (valuation, terms, counterparty agreement) that is unresolved and whose outcome changes what to do; (c) another party's decision that has not yet been made and materially affects this one. The upstream element does NOT need to be a separate decision — an unresolved agreement or blocking negotiation within the same situation qualifies.
+  NOTE: Score 4–5 ONLY when the blocking element is EXTERNAL and specifically named — e.g. (a) a counterparty negotiation (valuation, terms, agreement) that is actively unresolved and whose outcome changes what to decide here; (b) a formal process or third-party decision that has not yet concluded; (c) a clearly prior separate decision that logically must be made first. Do NOT score 4–5 for: unresolved emotions, internal uncertainty, general situational complexity, or tensions within the decision itself. Emotional charge or anger about a past incident is NOT an upstream dependency.
 
 ambiguity
   1 = the question being decided is clear and well-formed; the decision-maker knows what they are deciding and what they want

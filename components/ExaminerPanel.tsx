@@ -27,11 +27,13 @@ const MAX_RETRIES    = 6
 const RETRY_DELAY_MS = 3000
 
 export default function ExaminerPanel({ sessionId, visible, onComplete }: Props) {
-  const [questions,    setQuestions]    = useState<ExaminerQuestion[]>([])
-  const [answers,      setAnswers]      = useState<Record<number, string>>({})
-  const [fetchStatus,  setFetchStatus]  = useState<FetchStatus>('idle')
-  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
-  const [ruleMode,     setRuleMode]     = useState<RuleMode>(null)   // Sprint 11b
+  const [questions,         setQuestions]         = useState<ExaminerQuestion[]>([])
+  const [answers,           setAnswers]            = useState<Record<number, string>>({})
+  const [fetchStatus,       setFetchStatus]        = useState<FetchStatus>('idle')
+  const [submitStatus,      setSubmitStatus]       = useState<SubmitStatus>('idle')
+  const [ruleMode,          setRuleMode]           = useState<RuleMode>(null)
+  const [upstreamRationale, setUpstreamRationale] = useState<string | null>(null)   // specific reason R1 fired
+  const [dismissed,         setDismissed]          = useState(false)                // local dismiss state for REDIRECT banner
 
   const retryCountRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -50,21 +52,22 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
       const res  = await fetch(`/api/examiner?sessionId=${sessionId}`)
       const data = await res.json()
 
-      // Capture rule_mode from every response (may be null for v1.0 sessions)
       const mode: RuleMode = data.rule_mode ?? null
       setRuleMode(mode)
+
+      if (data.upstream_rationale) {
+        setUpstreamRationale(data.upstream_rationale)
+      }
 
       if (data.status === 'ready' && Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestions(data.questions)
         setFetchStatus('ready')
         retryCountRef.current = 0
 
-        // REDIRECT: surface immediately — don't wait for user submit
-        // onComplete fires here so SessionView blocks synthesis right away
+        // REDIRECT: fire onComplete IMMEDIATELY so SessionView dims personas right away.
+        // "Understood — dismiss" only collapses this panel locally (setDismissed).
         if (mode === 'REDIRECT') {
-          setFetchStatus('ready')   // still render the panel (shows REDIRECT banner)
-          // Note: we do NOT call onComplete here on REDIRECT —
-          // user must see the banner. onComplete fires on skip/submit below.
+          onComplete([], 'REDIRECT')   // dims personas + blocks synthesis instantly
         }
         return
       }
@@ -75,7 +78,6 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         return
       }
 
-      // Ontology not ready yet — retry
       if (retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current += 1
         setFetchStatus('retry')
@@ -149,6 +151,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
   if (!visible) return null
   if (fetchStatus === 'idle' || fetchStatus === 'no_gaps' || fetchStatus === 'error') return null
   if (submitStatus === 'done') return null
+  if (dismissed) return null   // user clicked "Understood — dismiss" on REDIRECT banner
 
   const isLoading    = fetchStatus === 'loading' || fetchStatus === 'retry'
   const isSubmitting = submitStatus === 'submitting'
@@ -232,7 +235,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
 
         {/* ── REDIRECT banner ──────────────────────────────────────────────── */}
         {fetchStatus === 'ready' && isRedirect && (
-          <div style={{ marginBottom: questions.length > 0 ? 24 : 0 }}>
+          <div style={{ marginBottom: 0 }}>
             <div style={{
               padding: '18px 20px',
               borderRadius: 10,
@@ -243,20 +246,27 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 10, lineHeight: 1.3 }}>
                 This decision has an unresolved upstream dependency
               </p>
+              {/* Specific rationale from ontology scorer — what exactly is blocking */}
+              {upstreamRationale && (
+                <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.75, margin: '0 0 12px', fontStyle: 'italic' }}>
+                  {upstreamRationale}
+                </p>
+              )}
+              {/* R1 question as the call to action */}
               {questions[0] && (
-                <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.8, margin: '0 0 14px' }}>
+                <p style={{ fontSize: 13.5, color: 'var(--text-1)', lineHeight: 1.8, margin: '0 0 14px', fontWeight: 500 }}>
                   {questions[0].text}
                 </p>
               )}
               <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.7, margin: 0 }}>
-                The Council has run — their perspectives are visible below. But synthesis is
-                blocked until the upstream question is resolved. Return to Quorum and reanalyze
-                once it is.
+                The Council has run — their perspectives are visible below, marked as provisional.
+                Synthesis is blocked until the upstream question is resolved.
+                Use <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> once it is.
               </p>
             </div>
-            {/* Acknowledge button — fires onComplete so SessionView can set redirectBlocked */}
+            {/* Dismiss — only collapses panel locally. onComplete already fired on detection. */}
             <button
-              onClick={handleSkip}
+              onClick={() => setDismissed(true)}
               style={{
                 padding: '9px 22px',
                 borderRadius: 8,

@@ -63,7 +63,7 @@ const LOW_CONFIDENCE_THRESHOLD = 0.55
 
 function evaluateR1(sv: ScoredVector): TriggeredRule | null {
   const dim = sv.upstream_dependency
-  if (dim.score < 4) return null
+  if (dim.score < 5) return null  // REDIRECT is the most disruptive action — require maximum signal
 
   return {
     rule_id:    'R1',
@@ -211,7 +211,10 @@ export function evaluateRules(sv: ScoredVector): RuleEngineResult {
   // ── FLAG rules (P1) — always collect, never block ───────────────────────────
   const r4 = evaluateR4(sv)
   const r5 = evaluateR5(sv)
-  if (r4) flags.push(r4)
+  // Suppress R4 when R2 (identity-first gate) is firing — both address the identity/regret
+  // axis using the same 75-year-old retrospective frame. Showing both is repetitive.
+  const r2Firing = r2 && !r2.low_confidence
+  if (r4 && !r2Firing) flags.push(r4)
   if (r5) flags.push(r5)
 
   // ── Determine mode ───────────────────────────────────────────────────────────

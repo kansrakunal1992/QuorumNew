@@ -128,13 +128,19 @@ export async function GET(req: Request) {
       flag_rules:      Array<{ rule_id: string; mode: string; question: string }>
     }
 
+    // Extract upstream_dependency rationale for REDIRECT banner context
+    const upstreamRationale: string | null =
+      ruleResult.mode === 'REDIRECT' && data.ontology_vector
+        ? (data.ontology_vector as Record<string, { rationale?: string }>)
+            ?.upstream_dependency?.rationale ?? null
+        : null
+
     const allRules = [
       ...(ruleResult.triggered_rules ?? []),
       ...(ruleResult.flag_rules ?? []),
     ]
 
     if (allRules.length === 0) {
-      // No rules fired — OPEN mode, skip Examiner
       return NextResponse.json({
         questions:  [],
         rule_mode:  'OPEN',
@@ -142,12 +148,11 @@ export async function GET(req: Request) {
       })
     }
 
-    // Map rules → question objects (same shape as gap path for ExaminerPanel compat)
     const questions = allRules.slice(0, 3).map((rule, i) => ({
       order:   i + 1,
       text:    rule.question,
-      gap:     `${rule.rule_id} — ${rule.mode}`,  // used for display in ExaminerPanel gap field
-      rule_id: rule.rule_id,                       // NEW field — stored to examiner_responses
+      gap:     `${rule.rule_id} — ${rule.mode}`,
+      rule_id: rule.rule_id,
     }))
 
     console.log(
@@ -157,8 +162,9 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       questions,
-      rule_mode: ruleResult.mode,   // 'REDIRECT' | 'GATE' | 'OPEN'
-      status:    'ready',
+      rule_mode:         ruleResult.mode,
+      upstream_rationale: upstreamRationale,   // specific reason why R1 fired — shown in REDIRECT banner
+      status:            'ready',
     })
   }
 
