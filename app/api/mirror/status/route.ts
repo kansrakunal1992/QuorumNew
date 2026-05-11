@@ -1,5 +1,5 @@
 // app/api/mirror/status/route.ts
-// ── Mirror Module: Gateway Status Route (Sprint 7a) ───────────────────────────
+// ── Mirror Module: Gateway Status Route (Sprint 7a, patched Sprint 13) ────────
 //
 // Single round-trip check for the Mirror page.
 // Returns everything needed to determine which gate state to render.
@@ -14,6 +14,12 @@
 //   top 3 bias_parameter keys detected for this user (labels for blurred tiles).
 //   Shows the user their actual bias names even before paying — this is the
 //   conversion hook. Content stays blurred; only the label is revealed.
+//
+// Sprint 13 patch: bias_library identity key is user_email, not user_id.
+//   Resolve userEmail via supabase.auth.admin.getUserById(userId) after token
+//   validation, then query bias_library with .eq('user_email', userEmail).
+//   Previous query (.eq('user_id', userId)) always returned 0 rows — paywall
+//   users always saw the generic placeholder instead of their named biases.
 //
 // Auth: reads user_id from Bearer token (same pattern as /api/history).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,16 +100,30 @@ export async function GET(req: Request) {
   // Reveals actual bias *names* detected for this user — even before payment.
   // Content interpretation stays blurred; only the label is shown.
   // This creates real personalization in the locked state (conversion hook).
+  //
+  // Sprint 13 fix: bias_library keys on user_email, not user_id.
+  // Resolve userEmail from auth admin before querying.
   let teaserBiases: string[] = []
   if (gateState === 'paywall') {
-    const { data: biasRows } = await supabase
-      .from('bias_library')
-      .select('bias_parameter, detection_count')
-      .eq('user_id', userId)
-      .order('detection_count', { ascending: false })
-      .limit(3)
+    try {
+      // Resolve user_email from user_id via admin API (service role required)
+      const { data: { user: authUser } } = await supabase.auth.admin.getUserById(userId)
+      const userEmail = authUser?.email ?? null
 
-    teaserBiases = (biasRows ?? []).map(b => b.bias_parameter as string)
+      if (userEmail) {
+        const { data: biasRows } = await supabase
+          .from('bias_library')
+          .select('bias_parameter, detection_count')
+          .eq('user_email', userEmail)
+          .order('detection_count', { ascending: false })
+          .limit(3)
+
+        teaserBiases = (biasRows ?? []).map(b => b.bias_parameter as string)
+      }
+    } catch {
+      // If email resolution fails, fall through with empty teaserBiases
+      // (user sees generic placeholder — degraded but not broken)
+    }
   }
 
   const response: MirrorStatus = {
