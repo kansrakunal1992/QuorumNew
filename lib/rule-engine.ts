@@ -318,7 +318,13 @@ function evaluateR9(sv: ScoredVector): TriggeredRule | null {
 // Sprint 13: not implemented. Stub retained as documentation.
 
 // ── R12 — Couple Misalignment Check [FLAG, P2] ────────────────────────────────
-// Fires when: decision_unit == 2 AND value_conflict >= 4
+// Fires when: decision_unit >= 2 AND decision_unit <= 3 AND value_conflict >= 4
+// Range note: score 2 = pure dyad; score 3 = dyad with implied stakeholders
+//   (e.g. couple with children, two founders with downstream team effects).
+//   Strict equality (== 2) caused silent misses when the tagger correctly
+//   scored implied-stakeholder two-person decisions as 3. R6 covers >= 3 for
+//   alignment; R12 covers <= 3 for intimate value conflict — both can co-fire
+//   at score 3, which is intentional (different diagnostic angles).
 // Rationale: Two-person decision with high value conflict — high risk of
 //   assumption projection onto a specific partner.
 // Effect: Council enriched. Does not block.
@@ -327,8 +333,7 @@ function evaluateR12(sv: ScoredVector): TriggeredRule | null {
   const unit    = sv.decision_unit
   const conflict = sv.value_conflict
 
-  // decision_unit == 2 means exactly two-person decision
-  if (unit.score !== 2 || conflict.score < 4) return null
+  if (unit.score < 2 || unit.score > 3 || conflict.score < 4) return null
 
   const lowConf = unit.confidence < LOW_CONFIDENCE_THRESHOLD
     || conflict.confidence < LOW_CONFIDENCE_THRESHOLD

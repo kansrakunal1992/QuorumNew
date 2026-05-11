@@ -268,8 +268,11 @@ export async function POST(req: Request) {
  * Derives base URL from the incoming request so it works across envs.
  */
 async function fireBiasScore(sessionId: string, req: Request): Promise<void> {
-  const { origin } = new URL(req.url)
-  const res = await fetch(`${origin}/api/bias-score`, {
+  // Use localhost to avoid SSL termination errors on Railway self-calls.
+  // Railway exposes PORT (default 8080); INTERNAL_API_URL overrides for other envs.
+  const port = process.env.PORT ?? '8080'
+  const base = process.env.INTERNAL_API_URL ?? `http://localhost:${port}`
+  const res = await fetch(`${base}/api/bias-score`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ sessionId }),
