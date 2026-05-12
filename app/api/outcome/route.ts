@@ -73,16 +73,3 @@ export async function GET(req: Request) {
     .single()
   return NextResponse.json({ outcome: data ?? null })
 }
-
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  const sessionId = searchParams.get('sessionId')
-  if (!sessionId) return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
-  const supabase = createServiceClient()
-  const { data } = await supabase
-    .from('outcomes')
-    .select('*')
-    .eq('session_id', sessionId)
-    .single()
-  return NextResponse.json({ outcome: data ?? null })
-}
