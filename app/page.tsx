@@ -57,7 +57,8 @@ export default function Home() {
   const [loading,      setLoading]       = useState(false)
   const [showContext,  setShowContext]   = useState(false)
   const [error,        setError]         = useState('')
-  const [registerMode, setRegisterMode]  = useState<'analytical'|'clarification'>('analytical')
+  const [registerMode,           setRegisterMode]           = useState<'analytical'|'clarification'>('analytical')
+  const [preDecisionConfidence,  setPreDecisionConfidence]  = useState<number>(5)
   const [userEmail,    setUserEmail]     = useState<string | null>(() => {
     if (typeof window === 'undefined') return null
     try { return localStorage.getItem('quorum_user_email') } catch { return null }
@@ -74,6 +75,7 @@ export default function Home() {
     setDecision('')
     setContext('')
     setShowContext(false)
+    setPreDecisionConfidence(5)
     setFormKey(k => k + 1)
   }, [])
 
@@ -137,12 +139,13 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          decision_text: decision.trim(),
-          context_text:  context.trim() || null,
-          register_mode: registerMode,
-          user_email:    userEmail ?? null,
-          device_id:     getOrCreateDeviceId(),
-          user_id:       resolvedUserId,   // ← new: stamps user_id at session creation
+          decision_text:           decision.trim(),
+          context_text:            context.trim() || null,
+          register_mode:           registerMode,
+          pre_decision_confidence: preDecisionConfidence,
+          user_email:              userEmail ?? null,
+          device_id:               getOrCreateDeviceId(),
+          user_id:                 resolvedUserId,   // ← new: stamps user_id at session creation
         }),
       })
       if (!res.ok) throw new Error()
@@ -281,6 +284,47 @@ export default function Home() {
         </div>
 
         {error && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--error)' }}>{error}</p>}
+
+          {/* ── Sprint 14: Pre-decision confidence ─────────────────────── */}
+          <div style={{ marginTop: 20, marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.04em', margin: 0 }}>
+                HOW CONFIDENT ARE YOU IN YOUR CURRENT THINKING?
+              </p>
+              <span style={{
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: 'var(--font-mono)',
+                color: preDecisionConfidence <= 3 ? '#c04040'
+                     : preDecisionConfidence <= 6 ? 'var(--gold)'
+                     : 'var(--green-text)',
+                minWidth: 28,
+                textAlign: 'right',
+              }}>
+                {preDecisionConfidence}<span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-4)' }}>/10</span>
+              </span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              step={1}
+              value={preDecisionConfidence}
+              onChange={e => setPreDecisionConfidence(Number(e.target.value))}
+              style={{
+                width: '100%',
+                accentColor: preDecisionConfidence <= 3 ? '#c04040'
+                           : preDecisionConfidence <= 6 ? 'var(--gold)'
+                           : 'var(--green-text)',
+                cursor: 'pointer',
+                height: 4,
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Uncertain</span>
+              <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Very confident</span>
+            </div>
+          </div>
 
           <button
             className="btn-primary"

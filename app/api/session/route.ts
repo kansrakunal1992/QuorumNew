@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   try {
-    const { decision_text, context_text, register_mode, user_email, device_id, user_id } = await req.json()
+    const { decision_text, context_text, register_mode, pre_decision_confidence, user_email, device_id, user_id } = await req.json()
 
     if (!decision_text?.trim()) {
       return NextResponse.json({ error: 'decision_text is required' }, { status: 400 })
@@ -17,6 +17,9 @@ export async function POST(req: Request) {
         decision_text: decision_text.trim(),
         context_text: context_text?.trim() || null,
         register_mode: register_mode ?? 'analytical',
+        // ── Sprint 14: baseline confidence before Council ──────────────────
+        pre_decision_confidence: (typeof pre_decision_confidence === 'number' && pre_decision_confidence >= 1 && pre_decision_confidence <= 10)
+          ? pre_decision_confidence : null,
         status: 'active',
         // ── Sprint 4b: user identity chain ─────────────────────────────────
         // user_email: entered optionally on home page (pre-auth).
