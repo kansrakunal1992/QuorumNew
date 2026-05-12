@@ -287,7 +287,7 @@ export default function Home() {
 
           {/* ── Sprint 14: Pre-decision confidence ─────────────────────── */}
           <div style={{ marginTop: 20, marginBottom: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.04em', margin: 0 }}>
                 HOW CONFIDENT ARE YOU IN YOUR CURRENT THINKING?
               </p>
@@ -304,6 +304,9 @@ export default function Home() {
                 {preDecisionConfidence}<span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-4)' }}>/10</span>
               </span>
             </div>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '0 0 10px', lineHeight: 1.5 }}>
+              This is your baseline. After the decision plays out, we'll measure how your confidence shifted — and what that pattern reveals about your judgment over time.
+            </p>
             <input
               type="range"
               min={1}

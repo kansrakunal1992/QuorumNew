@@ -344,7 +344,7 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
                 padding: '4px 12px',
                 borderRadius: 20,
                 background: helpedBg,
-                color: 'var(--text-2)',
+                color: '#fff',
                 display: 'inline-block',
               }}>
                 {helpedLabel}
@@ -365,7 +365,9 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
                 <span style={{
                   fontSize: 11,
                   fontFamily: 'var(--font-mono)',
-                  color: 'var(--text-4)',
+                  color: displayOutcome.retrospective_confidence <= 3 ? '#c04040'
+                       : displayOutcome.retrospective_confidence <= 6 ? 'var(--gold)'
+                       : 'var(--green-text)',
                 }}>
                   Hindsight confidence: {displayOutcome.retrospective_confidence}/10
                 </span>
