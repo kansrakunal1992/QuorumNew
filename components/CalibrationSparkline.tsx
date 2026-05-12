@@ -204,12 +204,11 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
     return <InsufficientState pairedCount={summary.pairedCount} />
   }
 
-  // ── Paired points only for chart rendering ──────────────────────────────────
-  const paired = points.filter(
-    p => p.pre_decision_confidence !== null && p.retrospective_confidence !== null,
-  )
+  // ── Points for chart rendering ───────────────────────────────────────────────
+  // Use all points that have retro filled; pre line only where pre is non-null
+  const paired = points.filter(p => p.retrospective_confidence !== null)
   const total    = paired.length
-  const preVals  = paired.map(p => p.pre_decision_confidence)
+  const preVals  = paired.map(p => p.pre_decision_confidence)   // may contain nulls
   const retroVals= paired.map(p => p.retrospective_confidence)
 
   // Y-axis labels (1, 5, 10)
@@ -249,20 +248,22 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
               : '—'}
           </p>
           <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '3px 0 0', lineHeight: 1.4 }}>
-            retro − pre
+            {summary.avg_delta !== null ? 'retro − pre' : 'no pre scores yet'}
           </p>
         </div>
 
-        {/* Avg pre */}
-        <div style={{ minWidth: 80 }}>
-          <p style={{ fontSize: 10, color: 'var(--text-4)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>
-            Avg. Pre
-          </p>
-          <p style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-3)', margin: 0, fontFamily: 'var(--font-mono)' }}>
-            {summary.avg_pre?.toFixed(1) ?? '—'}
-          </p>
-          <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '3px 0 0' }}>/ 10</p>
-        </div>
+        {/* Avg pre — only shown when pre data exists */}
+        {summary.avg_pre !== null && (
+          <div style={{ minWidth: 80 }}>
+            <p style={{ fontSize: 10, color: 'var(--text-4)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>
+              Avg. Pre
+            </p>
+            <p style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-3)', margin: 0, fontFamily: 'var(--font-mono)' }}>
+              {summary.avg_pre.toFixed(1)}
+            </p>
+            <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '3px 0 0' }}>/ 10</p>
+          </div>
+        )}
 
         {/* Avg retro */}
         <div style={{ minWidth: 80 }}>
@@ -516,8 +517,8 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
 
       {/* ── Footnote ─────────────────────────────────────────────────────────── */}
       <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5 }}>
-        Based on {summary.pairedCount} decision{summary.pairedCount !== 1 ? 's' : ''} with both a pre-decision confidence score and a logged outcome.
-        {' '}Positive delta means you ended up more confident than when you entered — negative means the decision proved harder to call than it felt.
+        Based on {summary.pairedCount} decision{summary.pairedCount !== 1 ? 's' : ''} with a retrospective confidence score logged.
+        {summary.avg_delta !== null && ' Delta (retro − pre) shown where pre-decision confidence was also recorded.'}
       </p>
     </div>
   )

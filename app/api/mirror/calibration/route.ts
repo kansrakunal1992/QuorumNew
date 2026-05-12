@@ -179,52 +179,48 @@ export async function GET(req: Request) {
   })
 
   // ── 4. Compute summary ─────────────────────────────────────────────────────
-  // Only sessions that have BOTH pre + retro count as "paired" for analytics.
-  const paired = points.filter(
+  // dataReady: >= 3 outcomes with retrospective_confidence filled (retro-only ok).
+  // Pre-Sprint-14 sessions have null pre_decision_confidence — still chartable.
+  // avg_delta / avg_pre / pattern only computed where both sides exist.
+  const withRetro = points.filter(p => p.retrospective_confidence !== null)
+  const paired    = points.filter(
     p => p.pre_decision_confidence !== null && p.retrospective_confidence !== null,
   )
-  const pairedCount = paired.length
+  const pairedCount = withRetro.length
   const dataReady   = pairedCount >= 3
 
   let avg_delta:  number | null = null
   let avg_pre:    number | null = null
   let avg_retro:  number | null = null
   let pattern:    string | null = null
+  let trend: CalibrationSummary['trend'] = 'insufficient_data'
 
-  if (pairedCount > 0) {
-    const deltas  = paired.map(p => p.calibration_delta!)
-    const pres    = paired.map(p => p.pre_decision_confidence!)
-    const retros  = paired.map(p => p.retrospective_confidence!)
-
-    avg_delta = deltas.reduce((s, d) => s + d, 0) / pairedCount
-    avg_pre   = pres.reduce((s, d) => s + d, 0) / pairedCount
-    avg_retro = retros.reduce((s, d) => s + d, 0) / pairedCount
-
-    const slope = computeTrendSlope(deltas)
-    const trend = deriveTrend(slope)
-    pattern     = derivePattern(avg_delta, trend)
-
-    const summary: CalibrationSummary = {
-      avg_delta:   Math.round(avg_delta  * 10) / 10,
-      avg_pre:     Math.round(avg_pre    * 10) / 10,
-      avg_retro:   Math.round(avg_retro  * 10) / 10,
-      trend,
-      pattern,
-      dataReady,
-      pairedCount,
-    }
-
-    return NextResponse.json({ points, summary } satisfies CalibrationResponse)
+  if (withRetro.length > 0) {
+    const retros = withRetro.map(p => p.retrospective_confidence!)
+    avg_retro = Math.round(retros.reduce((s, d) => s + d, 0) / withRetro.length * 10) / 10
   }
 
-  // Insufficient data path
+  if (paired.length > 0) {
+    const deltas = paired.map(p => p.calibration_delta!)
+    const pres   = paired.map(p => p.pre_decision_confidence!)
+    avg_delta = Math.round(deltas.reduce((s, d) => s + d, 0) / paired.length * 10) / 10
+    avg_pre   = Math.round(pres.reduce((s, d) => s + d, 0)   / paired.length * 10) / 10
+    const slope = computeTrendSlope(deltas)
+    trend   = deriveTrend(slope)
+    pattern = derivePattern(avg_delta, trend)
+  } else if (withRetro.length >= 3) {
+    // retro-only: can still show a trend of retrospective confidence over time
+    const retros = withRetro.map(p => p.retrospective_confidence!)
+    trend = deriveTrend(computeTrendSlope(retros))
+  }
+
   const summary: CalibrationSummary = {
-    avg_delta:   null,
-    avg_pre:     null,
-    avg_retro:   null,
-    trend:       'insufficient_data',
-    pattern:     null,
-    dataReady:   false,
+    avg_delta,
+    avg_pre,
+    avg_retro,
+    trend:      dataReady ? trend : 'insufficient_data',
+    pattern,
+    dataReady,
     pairedCount,
   }
 
