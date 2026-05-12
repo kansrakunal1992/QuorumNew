@@ -186,7 +186,7 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
                   ? '1px solid var(--gold)'
                   : '1px solid var(--border-dim)',
                 background: helped === opt.value ? opt.bg : 'transparent',
-                color: helped === opt.value ? 'var(--text-1)' : 'var(--text-3)',
+                color: helped === opt.value ? '#fff' : 'var(--text-3)',
               }}
             >
               {opt.label}
