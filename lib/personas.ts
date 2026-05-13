@@ -780,7 +780,7 @@ Paragraph 3 (1-2 sentences): The single most important thing to examine before d
 STRATEGIC POSSIBILITIES (optional — include only where contextually genuine):
 After Paragraph 3, scan whether the council's analysis surfaces a genuine constraint that has practical alternatives the user may not have considered — an untested assumption about available options, an alternative path that resolves the core tension, or a leverage point that reframes the binary. If yes, add 1-2 sentences offering the most strategically intelligent possibility. Frame it as an expansion of the decision space, not a solution. Example forms: "One path that may not be visible yet:" or "Worth testing before committing:" or "The leverage point the council didn't name explicitly:". Do NOT force this — if no genuine alternative exists, omit entirely. Do not turn Quorum into a consulting engine. This is an expansion of possibility, not a recommendation list.
 
-PATTERN OBSERVATION (optional — read carefully before using):
+PATTERN OBSERVATION — read carefully and always surface when a pattern qualifies:
 After the strategic possibility (or after Paragraph 3 if no strategic possibility applies), scan the original decision description for ONE of these clearly present patterns:
   - Urgency: the same time-pressure framing recurs 3+ times in the description
   - Trusted-party anchor: legitimacy of the choice rests heavily on a specific named person's view
@@ -789,9 +789,9 @@ After the strategic possibility (or after Paragraph 3 if no strategic possibilit
 
 If ONE pattern is clearly and unmistakably present — not inferred, not marginal — add a final observation of 1-2 sentences. Frame it as something that appeared in how the situation was described, not as a diagnosis. Use language like "One thing that stood out in how this was framed:" or "Worth sitting with:". Offer it; do not assert it.
 
-If no pattern is clearly present, write nothing. Do not invent patterns.
+If no pattern is clearly present, write nothing. Do not invent patterns. Do not add this observation if the pattern is ambiguous.
 
-Hard limit: 220 words total. Do not name individual advisors. Do not use bullet points or headers.`
+Hard limit: 220 words for Paragraphs 1–3 and Strategic Possibilities combined. PATTERN OBSERVATION is exempt from this count — if a pattern clearly qualifies, include it regardless of whether you are near the word limit. It is not optional when a pattern is present; it is only omitted when no pattern qualifies. Do not drop it to stay under 220 words. Do not name individual advisors. Do not use bullet points or headers.`
 
 export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
   contrarian: {
