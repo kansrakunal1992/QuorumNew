@@ -72,19 +72,97 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
   if (authState === 'sent') {
     return (
       <div style={{
-        padding: '14px 18px',
+        padding: '20px 20px 18px',
         background: 'rgba(201,168,76,0.06)',
-        border: '1px solid var(--gold-dim)',
-        borderRadius: 12,
+        border: '1px solid rgba(201,168,76,0.3)',
+        borderRadius: 14,
         marginTop: 12,
       }}>
-        <p style={{ fontSize: 13, color: 'var(--gold)', fontWeight: 600, marginBottom: 4 }}>
-          Check your email
-        </p>
-        <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, margin: 0 }}>
-          A sign-in link was sent to <span style={{ color: 'var(--text-2)' }}>{email}</span>.
-          Click it to link your sessions across devices.
-        </p>
+        {/* Pulsing envelope icon */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: '50%',
+            background: 'rgba(201,168,76,0.1)',
+            border: '1px solid rgba(201,168,76,0.35)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+            animation: 'auth-pulse 2.2s ease-in-out infinite',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+            </svg>
+          </div>
+          <div>
+            <p style={{ fontSize: 13, color: 'var(--gold)', fontWeight: 700, marginBottom: 1, lineHeight: 1.3 }}>
+              Open your inbox now
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.4 }}>
+              Sent to <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{email}</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Step-by-step instruction */}
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-dim)',
+          borderRadius: 10,
+          padding: '12px 14px',
+          marginBottom: 12,
+        }}>
+          {[
+            { n: '1', text: 'Go to your email inbox' },
+            { n: '2', text: 'Find the email from Quorum — click the magic link inside' },
+            { n: '3', text: 'You\'ll be returned here with your sessions linked' },
+          ].map(step => (
+            <div key={step.n} style={{
+              display: 'flex', gap: 10, alignItems: 'flex-start',
+              paddingBottom: step.n === '3' ? 0 : 8,
+              marginBottom: step.n === '3' ? 0 : 8,
+              borderBottom: step.n === '3' ? 'none' : '1px solid var(--border-dim)',
+            }}>
+              <span style={{
+                width: 18, height: 18, borderRadius: '50%',
+                background: 'rgba(201,168,76,0.15)',
+                border: '1px solid rgba(201,168,76,0.3)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, fontWeight: 700, color: 'var(--gold)',
+                flexShrink: 0, marginTop: 1,
+              }}>{step.n}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>{step.text}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Waiting indicator + resend */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-5)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+              background: 'var(--gold)', opacity: 0.6,
+              animation: 'auth-pulse 1.8s ease-in-out infinite',
+            }} />
+            Waiting for you to click the link…
+          </span>
+          <button
+            onClick={() => { setAuthState('idle'); setEmail('') }}
+            style={{
+              fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none',
+              cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2,
+              padding: 0, transition: 'color 0.15s',
+            }}
+          >
+            Wrong email?
+          </button>
+        </div>
+
+        <style>{`
+          @keyframes auth-pulse {
+            0%, 100% { opacity: 0.5; transform: scale(1); }
+            50%       { opacity: 1;   transform: scale(1.12); }
+          }
+        `}</style>
       </div>
     )
   }
