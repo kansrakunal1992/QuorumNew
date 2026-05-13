@@ -89,7 +89,9 @@ export async function POST(req: Request) {
         instrumental_weight,
         constitutive_weight,
         dominant_emotion,
-        tagger_status
+        tagger_status,
+        tagger_version,
+        ontology_vector
       `)
       .eq('session_id', sessionId)
       .eq('tagger_status', 'complete')
@@ -136,6 +138,8 @@ export async function POST(req: Request) {
         constitutive_weight,
         dominant_emotion,
         tagger_status,
+        tagger_version,
+        ontology_vector,
         sessions!inner (
           id,
           decision_text,
@@ -201,6 +205,8 @@ export async function POST(req: Request) {
       instrumental_weight:     Number(currentOntology.instrumental_weight ?? 0.5),
       constitutive_weight:     Number(currentOntology.constitutive_weight ?? 0.5),
       dominant_emotion:        currentOntology.dominant_emotion ?? '',
+      tagger_version:          currentOntology.tagger_version ?? 'v1.0',
+      ontology_vector:         currentOntology.ontology_vector ?? null,
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -222,6 +228,8 @@ export async function POST(req: Request) {
       instrumental_weight:     Number(o.instrumental_weight ?? 0.5),
       constitutive_weight:     Number(o.constitutive_weight ?? 0.5),
       dominant_emotion:        o.dominant_emotion ?? '',
+      tagger_version:          o.tagger_version ?? 'v1.0',
+      ontology_vector:         o.ontology_vector ?? null,
       outcome:                 outcomesMap[o.session_id] ?? null,
     }))
 
@@ -243,6 +251,8 @@ export async function POST(req: Request) {
           stakes_score:         breakdown.stakes,
           counterparty_score:   breakdown.counterparty,
           time_pressure_score:  breakdown.time_pressure,
+          scoring_mode:         breakdown.scoring_mode,
+          vector_similarity:    breakdown.vector_similarity ?? null,
           computed_at:          new Date().toISOString(),
         }
       })
