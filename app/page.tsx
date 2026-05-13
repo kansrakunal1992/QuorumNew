@@ -69,6 +69,7 @@ export default function Home() {
   const [loadingHist,  setLoadingHist]  = useState(false)
   const [activeTab,    setActiveTab]    = useState<'all'|'pending'|'decided'>('all')
   const [authToken,    setAuthToken]    = useState<string | null>(null)
+  const [inputGlowing, setInputGlowing] = useState(false)
 
   // Reset form on mount — clears any browser-restored textarea content
   useEffect(() => {
@@ -77,6 +78,10 @@ export default function Home() {
     setShowContext(false)
     setPreDecisionConfidence(5)
     setFormKey(k => k + 1)
+    // One-time input discovery glow — fires 600ms after mount, clears after 1.8s
+    const t1 = setTimeout(() => setInputGlowing(true),  600)
+    const t2 = setTimeout(() => setInputGlowing(false), 2400)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
 
   // Load history on mount — merges localStorage IDs + user_id (cross-device)
@@ -207,7 +212,14 @@ export default function Home() {
             key={formKey}
             className="decision-input"
             rows={5}
-            style={{ fontSize: 15 }}
+            style={{
+              fontSize: 15,
+              transition: 'box-shadow 0.5s ease, border-color 0.5s ease',
+              ...(inputGlowing ? {
+                boxShadow: '0 0 0 2px rgba(201,168,76,0.18), 0 0 18px 4px rgba(201,168,76,0.13)',
+                borderColor: 'rgba(201,168,76,0.55)',
+              } : {}),
+            }}
             autoComplete="off"
             placeholder="e.g. I am considering whether to sell my 40% stake in the family business to a PE firm at 8× EBITDA. The offer expires in 3 weeks…"
             value={decision}
