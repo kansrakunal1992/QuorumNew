@@ -62,7 +62,12 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
       })
       if (!res.ok) throw new Error()
       setAuthState('sent')
-      onAuthenticated?.(email.trim().toLowerCase())
+      // NOTE: Do NOT call onAuthenticated here — the user has not clicked the link yet.
+      // Calling it here immediately sets userEmail in page.tsx → renders the green
+      // "Sessions linked" pill → the waiting-room sent state is never seen.
+      // onAuthenticated fires correctly on its own: after the user clicks the magic link,
+      // /auth/callback runs exchangeCodeForSession → storeUserEmail → redirects to /.
+      // page.tsx reads quorum_user_email from localStorage on init → userEmail is set.
     } catch {
       setAuthState('error')
       setErrMsg('Failed to send link. Try again.')
