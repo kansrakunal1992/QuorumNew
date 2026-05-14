@@ -688,6 +688,16 @@ You have failed if the decision-maker simply feels more vigilant about competiti
 `
 
 // ── Word limit appended to every persona ──────────────────────
+const PUSHBACK_DETECTION_PREFIX = `PUSHBACK MODE — READ THIS FIRST, BEFORE ALL OTHER INSTRUCTIONS:
+
+Scan the conversation history before doing anything else. If there is a user message that follows an assistant response, you are in PUSHBACK MODE.
+
+IN PUSHBACK MODE: your first sentence must name exactly what the user introduced — their specific new argument, fact, or objection. Not your position. Not a restatement of the decision. Not a transition. One sentence that identifies what they brought. Then proceed with the pushback classification protocol at the end of these instructions.
+
+WARNING: Failure to open with acknowledgment of the specific input is the most common error in pushback mode. Do not make it. The user must feel heard before they will hear you.
+
+`
+
 const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
 1. QUESTION FIRST: If the decision description is missing a critical piece of information your analysis depends on — a specific number, a timeline, a relationship, a constraint — ask exactly ONE question before giving your assessment. Make it the sharpest, most specific question missing. Do not ask multiple questions. If nothing critical is missing, proceed directly.
@@ -696,7 +706,15 @@ const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
 3. FORMAT: Write in short, dense paragraphs — 2 to 4 sentences each. Separate paragraphs with a blank line. No bullet points. No headers. Your opening sentence must be the hardest-hitting thing you say — not a preamble.
 
-4. DECISION TYPE CALIBRATION — READ CAREFULLY:
+4. LANGUAGE REGISTER:
+Write as a highly intelligent person speaking directly — not as a report being filed.
+Avoid nominalisations: "the identification of X" → "identifying X".
+Avoid latinate abstractions when a plain word exists: "utilise" → "use", "facilitate" → "help", "demonstrate" → "show".
+If a technical term is precise and load-bearing for the analysis, use it — but use it once and make its meaning clear from context. Never use a technical term as decoration or to signal expertise.
+Prefer short subject-verb-object sentences for your hardest-hitting points. The core insight should be fully clear after one read.
+This instruction changes how you write, not what you analyse. Full analytical depth is mandatory.
+
+5. DECISION TYPE CALIBRATION — READ CAREFULLY:
 Before responding, assess the nature of the query on this axis:
 
 IS THIS FUNDAMENTALLY STRAIGHTFORWARD? A query is straightforward when: it is primarily quantitative or cost-benefit driven, the tradeoffs are enumerable and concrete, the answer does not depend heavily on identity, values, or irreversible life architecture, and a reasonable analyst could reach a confident conclusion with basic math and domain knowledge. Example: "Should I buy a 1 lakh washing machine or hire domestic help?" — this is operationally solvable.
@@ -802,37 +820,37 @@ export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
     key: 'contrarian',
     label: 'The Contrarian',
     tagline: 'Argues your instinct away',
-    prompt: WORD_LIMIT_PREFIX + CONTRARIAN + WORD_LIMIT_SUFFIX,
+    prompt: PUSHBACK_DETECTION_PREFIX + WORD_LIMIT_PREFIX + CONTRARIAN + WORD_LIMIT_SUFFIX,
   },
   risk_architect: {
     key: 'risk_architect',
     label: 'The Risk Architect',
     tagline: 'Pre-mortems all failures',
-    prompt: WORD_LIMIT_PREFIX + RISK_ARCHITECT + WORD_LIMIT_SUFFIX,
+    prompt: PUSHBACK_DETECTION_PREFIX + WORD_LIMIT_PREFIX + RISK_ARCHITECT + WORD_LIMIT_SUFFIX,
   },
   pattern_analyst: {
     key: 'pattern_analyst',
     label: 'The Pattern Analyst',
     tagline: 'Finds your past analogues',
-    prompt: WORD_LIMIT_PREFIX + PATTERN_ANALYST + WORD_LIMIT_SUFFIX,
+    prompt: PUSHBACK_DETECTION_PREFIX + WORD_LIMIT_PREFIX + PATTERN_ANALYST + WORD_LIMIT_SUFFIX,
   },
   stakeholder_mirror: {
     key: 'stakeholder_mirror',
     label: 'The Stakeholder Mirror',
     tagline: 'Who else is affected',
-    prompt: WORD_LIMIT_PREFIX + STAKEHOLDER_MIRROR + WORD_LIMIT_SUFFIX,
+    prompt: PUSHBACK_DETECTION_PREFIX + WORD_LIMIT_PREFIX + STAKEHOLDER_MIRROR + WORD_LIMIT_SUFFIX,
   },
   elder: {
     key: 'elder',
     label: 'The Elder',
     tagline: 'Slow, long-term wisdom',
-    prompt: WORD_LIMIT_PREFIX + ELDER + WORD_LIMIT_SUFFIX,
+    prompt: PUSHBACK_DETECTION_PREFIX + WORD_LIMIT_PREFIX + ELDER + WORD_LIMIT_SUFFIX,
   },
   competitor: {
     key: 'competitor',
     label: 'The Competitor',
     tagline: 'Bets against your choice',
-    prompt: WORD_LIMIT_PREFIX + COMPETITOR + WORD_LIMIT_SUFFIX,
+    prompt: PUSHBACK_DETECTION_PREFIX + WORD_LIMIT_PREFIX + COMPETITOR + WORD_LIMIT_SUFFIX,
   },
   synthesis: {
     key: 'synthesis',

@@ -60,11 +60,13 @@ interface Props {
   examinerContext?: string
   /** Sprint 5: structural context from past sessions — injected for Pattern Analyst, Risk Architect, Elder */
   structuralContext?: string
+  /** Sprint 16b Fix 4: called after pushback completes — fans the pushback text out to all other advisors */
+  onShareContext?: (text: string) => void
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext }: Props) {
   const [response, setResponse]           = useState('')
   const [panelState, setPanelState]       = useState<PanelState>('idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -72,6 +74,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [showPushback, setShowPushback]   = useState(false)
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
+  const [contextShared, setContextShared] = useState(false)   // Sprint 16b Fix 4: tracks if share button was clicked
 
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
@@ -208,6 +211,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   }
 
   const StatusBadge = () => {
+    if (isPushingBack) return (
+      <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+        Reading your challenge…
+      </span>
+    )
     if (panelState === 'streaming' && !isPushingBack) return (
       <span style={{ fontSize: 11, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
@@ -218,6 +227,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       <span style={{ fontSize: 11, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
         Updating
+      </span>
+    )
+    // Sprint 16b Fix 3: show "Responded" once a pushback exchange has completed
+    if (panelState === 'done' && exchanges.length > 0) return (
+      <span style={{ fontSize: 11, color: 'rgba(74,222,128,0.9)', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+        Responded
       </span>
     )
     if (panelState === 'done') return <span style={{ fontSize: 11, color: 'rgba(74,222,128,0.9)' }}>✓</span>
@@ -299,6 +315,42 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
             Responding…
           </p>
+        )}
+
+        {/* Sprint 16b Fix 4: Share context button — shown once after pushback completes, gone after click */}
+        {panelState === 'done' && !isPushingBack && exchanges.length > 0 && !contextShared && onShareContext && (
+          <div style={{ marginTop: 16 }}>
+            <button
+              onClick={() => {
+                const lastExchange = exchanges[exchanges.length - 1]
+                onShareContext(lastExchange.user)
+                setContextShared(true)
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 8,
+                border: '1px solid rgba(96,165,250,0.3)',
+                background: 'rgba(96,165,250,0.07)',
+                color: '#93c5fd', fontSize: 11.5, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.02em',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(96,165,250,0.14)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(96,165,250,0.5)'
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(96,165,250,0.07)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(96,165,250,0.3)'
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              Share this context with all advisors
+            </button>
+          </div>
         )}
 
         {/* Examiner update — shown below original, never overwrites */}

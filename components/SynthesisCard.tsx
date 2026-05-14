@@ -25,6 +25,8 @@ interface Props {
   redirectBlocked?:  boolean   // Sprint 11b: R1 upstream block — shows redirect card, synthesis never fires
   /** Sprint 16b: the exact R1 question the user must resolve before Reanalyzing */
   redirectQuestion?: string
+  /** Sprint 16b Fix 1: callback fired when user overrides the R1 REDIRECT and chooses to proceed to Council */
+  onOverrideRedirect?: () => void
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -35,6 +37,7 @@ export default function SynthesisCard({
   registerMode, examinerReady,
   redirectBlocked,    // Sprint 11b
   redirectQuestion,   // Sprint 16b
+  onOverrideRedirect, // Sprint 16b Fix 1
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -277,11 +280,41 @@ export default function SynthesisCard({
             </>
           )}
 
-          <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.7, margin: 0 }}>
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.7, margin: '0 0 18px' }}>
             When the upstream question is resolved, return to Quorum and use{' '}
             <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> to run a fresh session.
             Synthesis will run at that point.
           </p>
+
+          {/* Override option — escape hatch when R1 misfired */}
+          {onOverrideRedirect && (
+            <div style={{ borderTop: '1px solid var(--border-dim)', paddingTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={onOverrideRedirect}
+                style={{
+                  padding: '8px 18px', borderRadius: 8,
+                  border: '1px solid var(--border-mid)',
+                  background: 'rgba(255,255,255,0.04)',
+                  color: 'var(--text-3)', fontSize: 12, fontWeight: 500,
+                  cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.01em',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-3)'
+                }}
+              >
+                This doesn't apply — continue to Council
+              </button>
+              <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
+                If the block doesn't fit your situation, proceed and synthesis will run.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     )

@@ -172,6 +172,33 @@ export default function SessionView({ session: initialSession }: Props) {
     []
   )
 
+  // Sprint 16b Fix 4: fan pushback context out to all other personas via examinerContext
+  const handleShareContext = useCallback((originPersonaKey: string, text: string) => {
+    const examinerMsg = `The user submitted the following new information while challenging another advisor. Review it and update your position if it changes your assessment:\n\n"${text}"\n\nProvide a concise update (under 200 words). If this materially changes your view, say so directly. If it confirms your original analysis, say that — and why.`
+    setExaminerContextByPersona(prev => {
+      const next = { ...prev }
+      for (const key of PERSONA_ORDER) {
+        if (key !== originPersonaKey) {   // don't re-send to the persona that originated it
+          next[key] = examinerMsg
+        }
+      }
+      return next
+    })
+  }, [])
+
+  const handleOverrideRedirect = useCallback(async () => {
+    // Non-blocking log — writes user_overrode_redirect: true into raw_ontology_json
+    fetch('/api/ontology', {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ sessionId: session.id }),
+    }).catch(() => {})
+
+    setRedirectBlocked(false)
+    setRuleMode(null)
+    setExaminerReady(true)   // synthesis gate opens — personas are already done
+  }, [session.id])
+
   const [drawerOpen,     setDrawerOpen]     = useState(false)
   const [reDecision,     setReDecision]     = useState(initialSession.decision_text)
   const [reContext,      setReContext]       = useState(initialSession.context_text ?? '')
@@ -324,6 +351,7 @@ export default function SessionView({ session: initialSession }: Props) {
             examinerReady={examinerReady}
             redirectBlocked={redirectBlocked}
             redirectQuestion={redirectQuestion}
+            onOverrideRedirect={handleOverrideRedirect}
           />
         </div>
 
@@ -357,6 +385,7 @@ export default function SessionView({ session: initialSession }: Props) {
               onComplete={handlePersonaComplete}
               examinerContext={examinerContextByPersona[key]}
               structuralContext={structuralContext ?? undefined}
+              onShareContext={(text) => handleShareContext(key, text)}
             />
           ))}
         </div>

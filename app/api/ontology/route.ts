@@ -173,3 +173,44 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ tag: data })
 }
+
+// ── PATCH handler — log user redirect override (Sprint 16b Fix 1) ─────────────
+// Called when the user clicks "This doesn't apply — continue to Council" on
+// an R1 REDIRECT. Writes user_overrode_redirect: true into raw_ontology_json
+// so mis-fire frequency can be tracked without a schema migration.
+
+export async function PATCH(req: Request) {
+  try {
+    const { sessionId } = await req.json()
+    if (!sessionId) {
+      return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
+    }
+
+    const supabase = createServiceClient()
+
+    // Fetch current raw_ontology_json, merge in override flag
+    const { data: existing } = await supabase
+      .from('sessions_ontology')
+      .select('raw_ontology_json')
+      .eq('session_id', sessionId)
+      .single()
+
+    const current = (existing?.raw_ontology_json as Record<string, unknown>) ?? {}
+    const updated  = { ...current, user_overrode_redirect: true, user_overrode_redirect_at: new Date().toISOString() }
+
+    const { error } = await supabase
+      .from('sessions_ontology')
+      .update({ raw_ontology_json: updated })
+      .eq('session_id', sessionId)
+
+    if (error) {
+      console.error('[Ontology PATCH] Override log failed:', error)
+      return NextResponse.json({ ok: false }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('[Ontology PATCH] Error:', err)
+    return NextResponse.json({ ok: false }, { status: 500 })
+  }
+}

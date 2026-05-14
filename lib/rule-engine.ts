@@ -77,6 +77,11 @@ function evaluateR1(sv: ScoredVector): TriggeredRule | null {
   const dim = sv.upstream_dependency
   if (dim.score < 5) return null
 
+  // Sprint 16b: confidence guard — low-confidence score 5 produces false positive
+  // REDIRECTs on normal decisions. Return null so R1 does not fire at all.
+  // The score threshold stays at 5 (permanent per design decision #10).
+  if (dim.confidence < LOW_CONFIDENCE_THRESHOLD) return null
+
   return {
     rule_id:    'R1',
     mode:       'REDIRECT',
