@@ -172,15 +172,31 @@ export default function SessionView({ session: initialSession }: Props) {
     []
   )
 
+  // Sprint 16b Fix 4b: track which personas still have a share-context update in flight
+  // When the set empties, all 5 updated responses are in completedResponses — fire synthesis re-run
+  const shareContextPendingRef = useRef<Set<string>>(new Set())
+
+  const handleExaminerUpdateComplete = useCallback((personaKey: string) => {
+    if (!shareContextPendingRef.current.has(personaKey)) return   // not a share-context update
+    shareContextPendingRef.current.delete(personaKey)
+    if (shareContextPendingRef.current.size === 0) {
+      // All 5 updates done — bump synthesisVersion to re-run Council synthesis
+      setSynthesisVersion(v => v + 1)
+    }
+  }, [])
+
   // Sprint 16b Fix 4: fan pushback context out to all other personas via examinerContext
   const handleShareContext = useCallback((originPersonaKey: string, text: string) => {
     const examinerMsg = `The user submitted the following new information while challenging another advisor. Review it and update your position if it changes your assessment:\n\n"${text}"\n\nProvide a concise update (under 200 words). If this materially changes your view, say so directly. If it confirms your original analysis, say that — and why.`
+
+    // Mark all non-origin personas as pending — synthesis re-runs when all 5 complete
+    const pendingKeys = PERSONA_ORDER.filter(k => k !== originPersonaKey)
+    shareContextPendingRef.current = new Set(pendingKeys)
+
     setExaminerContextByPersona(prev => {
       const next = { ...prev }
-      for (const key of PERSONA_ORDER) {
-        if (key !== originPersonaKey) {   // don't re-send to the persona that originated it
-          next[key] = examinerMsg
-        }
+      for (const key of pendingKeys) {
+        next[key] = examinerMsg
       }
       return next
     })
@@ -386,6 +402,7 @@ export default function SessionView({ session: initialSession }: Props) {
               examinerContext={examinerContextByPersona[key]}
               structuralContext={structuralContext ?? undefined}
               onShareContext={(text) => handleShareContext(key, text)}
+              onExaminerUpdateComplete={handleExaminerUpdateComplete}
             />
           ))}
         </div>

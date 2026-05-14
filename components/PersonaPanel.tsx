@@ -62,11 +62,13 @@ interface Props {
   structuralContext?: string
   /** Sprint 16b Fix 4: called after pushback completes — fans the pushback text out to all other advisors */
   onShareContext?: (text: string) => void
+  /** Sprint 16b Fix 4b: called when an examiner/share-context update stream finishes — used to trigger synthesis re-run */
+  onExaminerUpdateComplete?: (personaKey: string, content: string) => void
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete }: Props) {
   const [response, setResponse]           = useState('')
   const [panelState, setPanelState]       = useState<PanelState>('idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -182,12 +184,14 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           setExaminerUpdate(acc)
         }
         setExaminerUpdateState('done')
-        // Notify synthesis of the updated content
+        // Update completedResponses in SessionView with the full combined content
         if (acc) {
           const fullContent = [responseRef.current, `[Updated after Examiner answers]\n${acc}`,
             ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
           ].join('\n\n')
           onCompleteRef.current?.(persona.key, fullContent)
+          // Sprint 16b Fix 4b: notify SessionView this update is done — used to count share-context completions
+          onExaminerUpdateComplete?.(persona.key, fullContent)
         }
       } catch {
         setExaminerUpdateState('done')
