@@ -80,6 +80,7 @@ export default function SessionView({ session: initialSession }: Props) {
   const [sessionKey, setSessionKey] = useState(0)
   const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
   const [decisionExpanded, setDecisionExpanded] = useState(false)
+  const [contextExpanded,  setContextExpanded]  = useState(false)
 
   // Synthesis gate state
   const [examinerReady,            setExaminerReady]            = useState(false)
@@ -339,8 +340,18 @@ export default function SessionView({ session: initialSession }: Props) {
         </div>
 
         {session.context_text && (
-          <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', fontSize: 12, color: 'var(--text-4)', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-            <span style={{ color: 'var(--text-3)' }}>Context · </span>{session.context_text}
+          <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)' }}>
+            <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, ...(contextExpanded ? {} : { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
+              <span style={{ color: 'var(--text-3)' }}>Context · </span>{session.context_text}
+            </p>
+            {session.context_text.length > 120 && (
+              <button
+                onClick={() => setContextExpanded(v => !v)}
+                style={{ marginTop: 3, fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, letterSpacing: '0.02em' }}
+              >
+                {contextExpanded ? '↑ See less' : '↓ See more'}
+              </button>
+            )}
           </div>
         )}
         <p style={{ marginTop: 8, fontSize: 11, color: 'var(--text-4)' }}>

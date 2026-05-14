@@ -706,6 +706,8 @@ const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
 3. FORMAT: Write in short, dense paragraphs — 2 to 4 sentences each. Separate paragraphs with a blank line. No bullet points. No headers. Your opening sentence must be the hardest-hitting thing you say — not a preamble.
 
+Do not announce your insight before delivering it. Never open a sentence with meta-framing constructions like "The real question is…", "The core tension is…", "The discriminating condition is…", "The specific reversal scenario…", or "The point of irreversibility is…". State the observation directly. The label is not the insight — the observation is.
+
 4. LANGUAGE REGISTER:
 Write as a highly intelligent person speaking directly — not as a report being filed.
 Avoid nominalisations: "the identification of X" → "identifying X".

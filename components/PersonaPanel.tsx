@@ -76,7 +76,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [showPushback, setShowPushback]   = useState(false)
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
-  const [contextShared, setContextShared] = useState(false)   // Sprint 16b Fix 4: tracks if share button was clicked
+  const [contextShared, setContextShared] = useState(false)   // Sprint 16b Fix 4
+  const [responseExpanded, setResponseExpanded] = useState(false)   // Sprint 16c Fix 2: progressive disclosure
+
+  const PREVIEW_LENGTH = 200
 
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
@@ -295,9 +298,28 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
         {/* Original response — never mutated */}
         {response && (
-          <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>
-            {response}
-          </p>
+          <>
+            <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>
+              {panelState === 'done' && !responseExpanded && response.length > PREVIEW_LENGTH
+                ? response.slice(0, PREVIEW_LENGTH).trimEnd() + '…'
+                : response}
+            </p>
+            {panelState === 'done' && response.length > PREVIEW_LENGTH && (
+              <button
+                onClick={() => setResponseExpanded(v => !v)}
+                style={{
+                  marginTop: 8, fontSize: 11.5, fontWeight: 600,
+                  color: 'var(--gold)', background: 'none', border: 'none',
+                  cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+                  letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: 4,
+                }}
+              >
+                {responseExpanded
+                  ? <>↑ Collapse</>
+                  : <>Read full analysis →</>}
+              </button>
+            )}
+          </>
         )}
 
         {/* Pushback exchanges */}

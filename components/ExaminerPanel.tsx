@@ -11,6 +11,22 @@ interface ExaminerQuestion {
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
 
+// Sprint 16c Fix 6: human-readable hints per rule — shown as subtext under examiner questions
+// so users understand why this specific question matters for their analysis
+const RULE_HINTS: Record<string, string> = {
+  R1:  'There may be a prior decision that needs resolving before this one can be analysed cleanly.',
+  R7:  'Specific information exists that would change the right answer — your response helps identify what to gather first.',
+  R2:  'This decision may be more about who you are than what the data says — your answer helps separate the two.',
+  R3:  'Without key information, analysis would be speculative. Your answer focuses the Council on what actually needs resolving.',
+  R4:  'The cost of reversing one path may be much higher than the other — your answer helps calibrate that asymmetry.',
+  R5:  'Urgency may be driving the frame rather than the facts. Your answer helps test whether the timeline is real.',
+  R6:  'Other people will be affected and may need to be involved. Your answer helps map who and how.',
+  R8:  'Competing values are in play that no amount of data resolves. Your answer clarifies which matters more to you.',
+  R9:  'One path may be genuinely irreversible. Your answer helps the Council assess whether that changes the calculus.',
+  R10: 'The decision involves enough moving parts that clarity on structure helps before analysis begins.',
+  R12: 'Misalignment between decision-makers is often the real risk. Your answer surfaces where that tension sits.',
+}
+
 interface Props {
   sessionId: string
   visible:   boolean    // true once all 6 personas are done
@@ -299,7 +315,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
                     fontSize: 13.5, fontWeight: 600,
                     color: 'var(--text-1)',
                     lineHeight: 1.5,
-                    marginBottom: 8,
+                    marginBottom: 4,
                   }}>
                     <span style={{
                       fontSize: 10, fontWeight: 700,
@@ -312,6 +328,14 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
                     </span>
                     {q.text}
                   </label>
+                  {/* Sprint 16c Fix 6: subtext — shows why this question helps */}
+                  <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic', margin: '0 0 8px', lineHeight: 1.5 }}>
+                    {q.rule_id
+                      ? RULE_HINTS[q.rule_id] ?? 'Your answer helps the Council refine its assessment.'
+                      : q.gap
+                        ? `Helps surface: ${q.gap.toLowerCase()}`
+                        : 'Your answer helps the Council refine its assessment.'}
+                  </p>
                   <textarea
                     rows={3}
                     value={answers[q.order] ?? ''}
