@@ -15,8 +15,9 @@ interface Props {
   sessionId: string
   visible:   boolean    // true once all 6 personas are done
   onComplete: (
-    responses: Array<{ question_text: string; response_text: string | null; gap: string }>,
-    ruleMode:  RuleMode  // Sprint 11b: passed upstream so SessionView can gate synthesis
+    responses:       Array<{ question_text: string; response_text: string | null; gap: string }>,
+    ruleMode:        RuleMode,  // Sprint 11b: passed upstream so SessionView can gate synthesis
+    redirectQuestion?: string   // Sprint 16b: R1 question text — shown in SynthesisCard REDIRECT banner
   ) => void
 }
 
@@ -67,7 +68,9 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
         // REDIRECT: fire onComplete IMMEDIATELY so SessionView dims personas right away.
         // "Understood — dismiss" only collapses this panel locally (setDismissed).
         if (mode === 'REDIRECT') {
-          onComplete([], 'REDIRECT')   // dims personas + blocks synthesis instantly
+          // Pass the R1 question text — available in data.questions here (state hasn't settled yet)
+          const redirectQ = data.questions[0]?.text ?? undefined
+          onComplete([], 'REDIRECT', redirectQ)   // dims personas + blocks synthesis instantly
         }
         return
       }

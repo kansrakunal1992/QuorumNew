@@ -87,8 +87,9 @@ export default function SessionView({ session: initialSession }: Props) {
   const [examinerContextByPersona, setExaminerContextByPersona] = useState<Record<string, string>>({})
 
   // Sprint 11b: rule engine state
-  const [ruleMode,        setRuleMode]        = useState<RuleMode>(null)
-  const [redirectBlocked, setRedirectBlocked] = useState(false)
+  const [ruleMode,          setRuleMode]          = useState<RuleMode>(null)
+  const [redirectBlocked,   setRedirectBlocked]   = useState(false)
+  const [redirectQuestion,  setRedirectQuestion]  = useState<string | undefined>(undefined) // Sprint 16b: R1 question for banner
 
   // Sprint 5: structural context
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
@@ -135,14 +136,16 @@ export default function SessionView({ session: initialSession }: Props) {
   // Sprint 11b: receives rule_mode from ExaminerPanel
   const handleExaminerComplete = useCallback(
     (
-      responses: Array<{ question_text: string; response_text: string | null; gap: string }>,
-      mode: RuleMode
+      responses:       Array<{ question_text: string; response_text: string | null; gap: string }>,
+      mode:            RuleMode,
+      redirectQuestion?: string   // Sprint 16b: R1 question text for SynthesisCard banner
     ) => {
       setRuleMode(mode)
 
       // REDIRECT — synthesis must never fire; block immediately
       if (mode === 'REDIRECT') {
         setRedirectBlocked(true)
+        if (redirectQuestion) setRedirectQuestion(redirectQuestion)
         setExaminerReady(false)   // synthesis gate stays closed
         return                    // skip persona context mapping entirely
       }
@@ -233,6 +236,7 @@ export default function SessionView({ session: initialSession }: Props) {
       // Sprint 11b: reset rule engine state on reanalyze
       setRuleMode(null)
       setRedirectBlocked(false)
+      setRedirectQuestion(undefined)
       window.history.replaceState(null, '', `/session/${id}`)
     } catch {
       setReanalyzeError('Something went wrong. Please try again.')
@@ -319,6 +323,7 @@ export default function SessionView({ session: initialSession }: Props) {
             registerMode={registerMode}
             examinerReady={examinerReady}
             redirectBlocked={redirectBlocked}
+            redirectQuestion={redirectQuestion}
           />
         </div>
 

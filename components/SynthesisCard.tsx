@@ -14,15 +14,17 @@ function storeBriefCode(code: string) {
 }
 
 interface Props {
-  sessionId:        string
-  decisionText:     string
-  contextText?:     string
-  personaResponses: Record<string, string>
-  totalPersonas:    number
-  version:          number
-  registerMode?:    'analytical' | 'clarification'
-  examinerReady?:   boolean   // Sprint 3: synthesis only fires after Examiner Phase 1 completes
-  redirectBlocked?: boolean   // Sprint 11b: R1 upstream block — shows redirect card, synthesis never fires
+  sessionId:         string
+  decisionText:      string
+  contextText?:      string
+  personaResponses:  Record<string, string>
+  totalPersonas:     number
+  version:           number
+  registerMode?:     'analytical' | 'clarification'
+  examinerReady?:    boolean   // Sprint 3: synthesis only fires after Examiner Phase 1 completes
+  redirectBlocked?:  boolean   // Sprint 11b: R1 upstream block — shows redirect card, synthesis never fires
+  /** Sprint 16b: the exact R1 question the user must resolve before Reanalyzing */
+  redirectQuestion?: string
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -31,7 +33,8 @@ export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
   registerMode, examinerReady,
-  redirectBlocked,   // Sprint 11b
+  redirectBlocked,    // Sprint 11b
+  redirectQuestion,   // Sprint 16b
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -237,14 +240,43 @@ export default function SynthesisCard({
         </div>
         {/* Body */}
         <div style={{ padding: '22px 24px 26px' }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-2)', lineHeight: 1.8, margin: '0 0 14px' }}>
-            Synthesis cannot run on this decision yet.
-          </p>
-          <p style={{ fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.8, margin: '0 0 16px' }}>
-            There is a prior question that must be resolved first — any synthesis produced now
-            would shift once that upstream decision becomes clear. The Council's individual
-            perspectives are visible below and remain useful as context.
-          </p>
+
+          {/* The specific question to resolve — shown prominently when available */}
+          {redirectQuestion ? (
+            <>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-4)', letterSpacing: '0.07em', textTransform: 'uppercase', margin: '0 0 10px' }}>
+                Resolve this before returning
+              </p>
+              {/* Question callout box */}
+              <div style={{
+                padding: '16px 20px',
+                borderRadius: 10,
+                border: '1px solid rgba(201,168,76,0.35)',
+                background: 'rgba(201,168,76,0.07)',
+                margin: '0 0 18px',
+              }}>
+                <p style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-1)', lineHeight: 1.75, margin: 0 }}>
+                  {redirectQuestion}
+                </p>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.75, margin: '0 0 16px' }}>
+                Any synthesis produced now would shift once this is resolved. The Council's individual
+                perspectives are visible below — treat them as provisional context, not a final read.
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-2)', lineHeight: 1.8, margin: '0 0 14px' }}>
+                Synthesis cannot run on this decision yet.
+              </p>
+              <p style={{ fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.8, margin: '0 0 16px' }}>
+                There is a prior question that must be resolved first — any synthesis produced now
+                would shift once that upstream decision becomes clear. The Council's individual
+                perspectives are visible below and remain useful as context.
+              </p>
+            </>
+          )}
+
           <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.7, margin: 0 }}>
             When the upstream question is resolved, return to Quorum and use{' '}
             <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> to run a fresh session.
