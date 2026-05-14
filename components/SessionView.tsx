@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { pushSessionId } from '@/lib/storage'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
