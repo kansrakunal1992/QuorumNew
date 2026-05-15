@@ -100,7 +100,8 @@ export default function SessionView({ session: initialSession }: Props) {
   const [orderedPersonaKeys,  setOrderedPersonaKeys]  = useState<PersonaKey[]>([...PERSONA_ORDER])
   const [gridReordered,       setGridReordered]       = useState(false)   // shows "Ranked by relevance" label
   const [gridTransitioning,   setGridTransitioning]   = useState(false)   // drives fade-out/in
-  const pendingOrderRef = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
+  const pendingOrderRef    = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
+  const [pendingOrderReady, setPendingOrderReady] = useState(false) // triggers re-render so effect can fire
 
   useEffect(() => {
     let attempt = 0
@@ -122,6 +123,7 @@ export default function SessionView({ session: initialSession }: Props) {
               data.ontology_vector    ?? null,
             )
             pendingOrderRef.current = ordered as PersonaKey[]
+            setPendingOrderReady(true)   // ← causes re-render so animation useEffect re-evaluates
           }
           if (data.threshold_met && data.context_block) {
             setStructuralContext(data.context_block)
@@ -149,18 +151,22 @@ export default function SessionView({ session: initialSession }: Props) {
 
   const allPersonasDone = Object.keys(completedResponses).length >= PERSONA_ORDER.length
 
-  // After all 6 personas finish: pause → fade out → reorder → fade in → show label
+  // After all 6 personas finish AND structural-match returns: pause → fade out → reorder → fade in → show label
+  // Both allPersonasDone and pendingOrderReady must be true before animation fires.
+  // Either can arrive first — whichever arrives second triggers the effect.
+  // gridReordered guards against double-firing if both flip in the same render.
   useEffect(() => {
-    if (!allPersonasDone) return
+    if (!allPersonasDone || !pendingOrderReady) return
+    if (gridReordered) return                          // already animated — don't fire again
     const pending = pendingOrderRef.current
     if (!pending) return
     const isDifferent = pending.some((k, i) => k !== orderedPersonaKeys[i])
     if (!isDifferent) return   // order unchanged — no animation needed
-
+ 
     let t1: ReturnType<typeof setTimeout>
     let t2: ReturnType<typeof setTimeout>
     let t3: ReturnType<typeof setTimeout>
-
+ 
     t1 = setTimeout(() => {
       setGridTransitioning(true)                        // fade out (~350ms)
       t2 = setTimeout(() => {
@@ -170,11 +176,11 @@ export default function SessionView({ session: initialSession }: Props) {
         t3 = setTimeout(() => setGridTransitioning(false), 50) // brief paint delay then fade in
       }, 350)
     }, 400)                                             // 400ms pause after all cards done
-
+ 
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  // orderedPersonaKeys intentionally excluded — only run once when allPersonasDone flips
+  // orderedPersonaKeys intentionally excluded — reads as stale snapshot, intentional
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPersonasDone])
+  }, [allPersonasDone, pendingOrderReady, gridReordered])
 
   // Sprint 11b: receives rule_mode from ExaminerPanel
   const handleExaminerComplete = useCallback(
@@ -327,6 +333,7 @@ export default function SessionView({ session: initialSession }: Props) {
       setOrderedPersonaKeys([...PERSONA_ORDER])
       setGridReordered(false)
       setGridTransitioning(false)
+      setPendingOrderReady(false)     // ← reset so next session's animation can fire
       pendingOrderRef.current = null
       window.history.replaceState(null, '', `/session/${id}`)
     } catch {
