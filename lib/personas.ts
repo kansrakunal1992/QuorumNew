@@ -877,6 +877,106 @@ export const PERSONA_ORDER: PersonaKey[] = [
   'competitor',
 ]
 
+// ── Dynamic Persona Grid Reorder ──────────────────────────────────────────────
+// computePersonaOrder — given rule_engine_result + ontology_vector from
+// sessions_ontology, returns a reordered PersonaKey[] that surfaces the most
+// relevant advisors first. Returns PERSONA_ORDER unchanged when no signal.
+//
+// Rule → persona priority map (higher boost = appears earlier in the grid):
+//   R2  Identity-First Gate     → elder (values before analysis)
+//   R3  No-Information Mode     → pattern_analyst, contrarian (what do we know?)
+//   R4  Regret Asymmetry Alert  → risk_architect, contrarian (irreversibility lens)
+//   R5  False Urgency Detector  → elder, stakeholder_mirror (real vs artificial pressure)
+//   R6  Multi-Party Alignment   → stakeholder_mirror (alignment before analysis)
+//   R7  Information-First       → pattern_analyst, contrarian (surface the gap)
+//   R8  Irreconcilable Values   → elder (values axis first)
+//   R9  Irreversibility Warning → risk_architect, contrarian (downside first)
+//   R10 Complexity Overload     → pattern_analyst, risk_architect (structure before action)
+//   R12 Couple Misalignment     → stakeholder_mirror (alignment first)
+//
+// Dimension fallback: if no rule fired but a scored vector dim >= 4 with
+// confidence >= 0.5, that dim's mapped persona gets a smaller nudge.
+// This catches signals that approached but did not cross a rule threshold.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type RuleEngineResult = {
+  mode:             string
+  triggered_rules:  Array<{ rule_id: string }>
+  flag_rules:       Array<{ rule_id: string }>
+}
+
+type OntologyVector = Record<string, { score: number; confidence: number; rationale?: string }>
+
+const RULE_PERSONA_BOOSTS: Record<string, Partial<Record<string, number>>> = {
+  R2:  { elder: 3 },
+  R3:  { pattern_analyst: 2, contrarian: 1 },
+  R4:  { risk_architect: 3, contrarian: 2 },
+  R5:  { elder: 2, stakeholder_mirror: 1 },
+  R6:  { stakeholder_mirror: 3 },
+  R7:  { pattern_analyst: 2, contrarian: 1 },
+  R8:  { elder: 3 },
+  R9:  { risk_architect: 3, contrarian: 1 },
+  R10: { pattern_analyst: 2, risk_architect: 1 },
+  R12: { stakeholder_mirror: 3 },
+}
+
+const DIM_PERSONA_BOOSTS: Record<string, Partial<Record<string, number>>> = {
+  identity_alignment:  { elder: 2 },
+  regret_asymmetry:    { risk_architect: 2 },
+  upstream_dependency: { contrarian: 2 },
+  value_conflict:      { elder: 1 },
+  emotional_intensity: { elder: 1 },
+  outcome_uncertainty: { contrarian: 1 },
+  ambiguity:           { pattern_analyst: 1 },
+  time_pressure:       { competitor: 2 },
+  decision_unit:       { stakeholder_mirror: 2 },
+}
+
+export function computePersonaOrder(
+  ruleEngineResult: RuleEngineResult | null,
+  ontologyVector:   OntologyVector   | null,
+): string[] {
+  const scores: Record<string, number> = {}
+  for (const key of PERSONA_ORDER) scores[key] = 0
+
+  // ── Rule-based boosts from triggered_rules + flag_rules ──────────────────
+  if (ruleEngineResult) {
+    const allRules = [
+      ...(ruleEngineResult.triggered_rules ?? []).map(r => r.rule_id),
+      ...(ruleEngineResult.flag_rules      ?? []).map(r => r.rule_id),
+    ]
+    for (const ruleId of allRules) {
+      const boosts = RULE_PERSONA_BOOSTS[ruleId]
+      if (!boosts) continue
+      for (const [persona, boost] of Object.entries(boosts)) {
+        if (persona in scores) scores[persona] += boost
+      }
+    }
+  }
+
+  // ── Dimension fallback (score >= 4, confidence >= 0.5) ───────────────────
+  // Adds a smaller nudge for near-threshold signals that didn't fire a rule.
+  if (ontologyVector) {
+    for (const [dim, boostMap] of Object.entries(DIM_PERSONA_BOOSTS)) {
+      const dimData = ontologyVector[dim]
+      if (!dimData || dimData.score < 4 || (dimData.confidence ?? 1) < 0.5) continue
+      for (const [persona, boost] of Object.entries(boostMap)) {
+        if (persona in scores) scores[persona] += boost
+      }
+    }
+  }
+
+  // If no signal from either source, return default order unchanged
+  if (Object.values(scores).every(s => s === 0)) return [...PERSONA_ORDER]
+
+  // Stable sort: score desc; ties use original PERSONA_ORDER as tiebreaker
+  return [...PERSONA_ORDER].sort((a, b) => {
+    const diff = (scores[b] ?? 0) - (scores[a] ?? 0)
+    if (diff !== 0) return diff
+    return PERSONA_ORDER.indexOf(a) - PERSONA_ORDER.indexOf(b)
+  })
+}
+
 // ── Mirror Fingerprint Narrative Prompt ───────────────────────────────────────
 // Used by lib/mirror-fingerprint.ts to generate the user's personal decision
 // profile narrative and per-tile interpretations in a single API call.

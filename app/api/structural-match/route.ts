@@ -44,6 +44,12 @@ export async function POST(req: Request) {
 
     if (cached) {
       console.log(`[StructuralMatch] Cache hit for session ${sessionId}`)
+      // Fast single-row read for grid reorder signals (not stored in structural_matches)
+      const { data: cachedSignals } = await supabase
+        .from('sessions_ontology')
+        .select('rule_engine_result, ontology_vector')
+        .eq('session_id', sessionId)
+        .maybeSingle()
       return NextResponse.json({
         context_block:      cached.context_block,
         matches:            cached.matches_json,
@@ -51,6 +57,8 @@ export async function POST(req: Request) {
         threshold_met:      cached.threshold_met,
         from_cache:         true,
         ontology_ready:     true,
+        rule_engine_result: cachedSignals?.rule_engine_result ?? null,
+        ontology_vector:    cachedSignals?.ontology_vector    ?? null,
       })
     }
 
@@ -91,7 +99,8 @@ export async function POST(req: Request) {
         dominant_emotion,
         tagger_status,
         tagger_version,
-        ontology_vector
+        ontology_vector,
+        rule_engine_result
       `)
       .eq('session_id', sessionId)
       .eq('tagger_status', 'complete')
@@ -115,6 +124,8 @@ export async function POST(req: Request) {
       return NextResponse.json({
         context_block: '', matches: [], threshold_met: false,
         session_count_used: 0, ontology_ready: true,
+        rule_engine_result: currentOntology.rule_engine_result ?? null,
+        ontology_vector:    currentOntology.ontology_vector    ?? null,
       })
     }
 
@@ -300,6 +311,8 @@ export async function POST(req: Request) {
       threshold_met:      result.threshold_met,
       from_cache:         false,
       ontology_ready:     true,
+      rule_engine_result: currentOntology.rule_engine_result ?? null,
+      ontology_vector:    currentOntology.ontology_vector    ?? null,
     })
 
   } catch (err) {

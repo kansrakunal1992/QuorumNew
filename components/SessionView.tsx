@@ -6,7 +6,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
-import { PERSONAS, PERSONA_ORDER } from '@/lib/personas'
+import { PERSONAS, PERSONA_ORDER, computePersonaOrder } from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
 
 interface Props {
@@ -95,6 +95,12 @@ export default function SessionView({ session: initialSession }: Props) {
   // Sprint 5: structural context
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
 
+  // Dynamic grid order — computed during streaming, applied after all 6 personas complete
+  const [orderedPersonaKeys,  setOrderedPersonaKeys]  = useState<string[]>([...PERSONA_ORDER])
+  const [gridReordered,       setGridReordered]       = useState(false)   // shows "Ranked by relevance" label
+  const [gridTransitioning,   setGridTransitioning]   = useState(false)   // drives fade-out/in
+  const pendingOrderRef = useRef<string[] | null>(null)  // holds computed order until all 6 done
+
   useEffect(() => {
     let attempt = 0
     const MAX_ATTEMPTS = 4
@@ -108,6 +114,14 @@ export default function SessionView({ session: initialSession }: Props) {
       })
         .then(r => r.json())
         .then(data => {
+          // Store computed order — applied after all 6 personas complete, not during streaming
+          if (data.ontology_ready && !pendingOrderRef.current) {
+            const ordered = computePersonaOrder(
+              data.rule_engine_result ?? null,
+              data.ontology_vector    ?? null,
+            )
+            pendingOrderRef.current = ordered
+          }
           if (data.threshold_met && data.context_block) {
             setStructuralContext(data.context_block)
             return
@@ -133,6 +147,33 @@ export default function SessionView({ session: initialSession }: Props) {
   }, [])
 
   const allPersonasDone = Object.keys(completedResponses).length >= PERSONA_ORDER.length
+
+  // After all 6 personas finish: pause → fade out → reorder → fade in → show label
+  useEffect(() => {
+    if (!allPersonasDone) return
+    const pending = pendingOrderRef.current
+    if (!pending) return
+    const isDifferent = pending.some((k, i) => k !== orderedPersonaKeys[i])
+    if (!isDifferent) return   // order unchanged — no animation needed
+
+    let t1: ReturnType<typeof setTimeout>
+    let t2: ReturnType<typeof setTimeout>
+    let t3: ReturnType<typeof setTimeout>
+
+    t1 = setTimeout(() => {
+      setGridTransitioning(true)                        // fade out (~350ms)
+      t2 = setTimeout(() => {
+        setOrderedPersonaKeys(pending)                  // instant DOM reorder while invisible
+        pendingOrderRef.current = null
+        setGridReordered(true)                          // "Ranked by relevance" label appears
+        t3 = setTimeout(() => setGridTransitioning(false), 50) // brief paint delay then fade in
+      }, 350)
+    }, 400)                                             // 400ms pause after all cards done
+
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+  // orderedPersonaKeys intentionally excluded — only run once when allPersonasDone flips
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPersonasDone])
 
   // Sprint 11b: receives rule_mode from ExaminerPanel
   const handleExaminerComplete = useCallback(
@@ -281,6 +322,11 @@ export default function SessionView({ session: initialSession }: Props) {
       setRuleMode(null)
       setRedirectBlocked(false)
       setRedirectQuestion(undefined)
+      // Reset grid order for fresh ontology signals on new session
+      setOrderedPersonaKeys([...PERSONA_ORDER])
+      setGridReordered(false)
+      setGridTransitioning(false)
+      pendingOrderRef.current = null
       window.history.replaceState(null, '', `/session/${id}`)
     } catch {
       setReanalyzeError('Something went wrong. Please try again.')
@@ -396,12 +442,12 @@ export default function SessionView({ session: initialSession }: Props) {
           className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
           style={{
             marginTop: 16,
-            opacity:       redirectBlocked ? 0.55 : 1,
-            transition:    'opacity 0.4s ease',
+            opacity:       redirectBlocked ? 0.55 : gridTransitioning ? 0 : 1,
+            transition:    'opacity 0.35s ease',
             pointerEvents: redirectBlocked ? 'none' : 'auto',
           }}
         >
-          {PERSONA_ORDER.map((key) => (
+          {orderedPersonaKeys.map((key) => (
             <PersonaPanel
               key={`${key}-${sessionKey}`}
               persona={PERSONAS[key]}
@@ -416,6 +462,18 @@ export default function SessionView({ session: initialSession }: Props) {
               onExaminerUpdateComplete={handleExaminerUpdateComplete}
             />
           ))}
+        </div>
+
+        {/* Ranked by relevance label — appears after reorder animation completes */}
+        {gridReordered && !redirectBlocked && (
+          <p style={{
+            marginTop: 10, fontSize: 11, color: 'var(--text-4)',
+            textAlign: 'center', letterSpacing: '0.05em', opacity: gridTransitioning ? 0 : 1,
+            transition: 'opacity 0.4s ease',
+          }}>
+            Ranked by relevance to your decision
+          </p>
+        )}
         </div>
 
       </div>
