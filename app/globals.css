@@ -300,3 +300,26 @@ textarea::placeholder { color: var(--text-4); }
   --outcome-partial: rgba(253,235,160,0.85);
   --outcome-no:      rgba(252,200,200,0.85);
 }
+
+/* ── Relevance label pill (persona grid reorder) ─────────── */
+.relevance-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 13px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+[data-theme="dark"] .relevance-label {
+  background: rgba(201, 168, 76, 0.18);
+  color: #e8c96a;
+  border: 1px solid rgba(201, 168, 76, 0.45);
+}
+[data-theme="light"] .relevance-label {
+  background: #2a2418;
+  color: #f5e9c0;
+  border: 1px solid rgba(201, 168, 76, 0.30);
+}

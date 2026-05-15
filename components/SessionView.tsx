@@ -413,9 +413,25 @@ export default function SessionView({ session: initialSession }: Props) {
 
       <div className="max-w-7xl mx-auto">
 
-        {/* ── 1. Six persona panels — always at top so cards stay visible ── */}
+        {/* ── 1. Examiner — full width, appears once all 6 personas done ── */}
+        <ExaminerPanel
+          key={`examiner-${sessionKey}`}
+          sessionId={session.id}
+          visible={allPersonasDone}
+          onComplete={handleExaminerComplete}
+        />
+
+        {/* ── 2. "Ranked by relevance" label — above persona cards, visible after reorder ── */}
+        {gridReordered && !redirectBlocked && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10, marginTop: allPersonasDone ? 4 : 0 }}>
+            <span className="relevance-label">
+              ↑ Ranked by relevance to your decision
+            </span>
+          </div>
+        )}
+
+        {/* ── 3. Six persona panels ── */}
         {/* Sprint 11b: dim at 55% opacity on REDIRECT — still stream, visually provisional */}
-        {/* Sprint 17: grid fades and reorders after all 6 complete + ontology resolves */}
         <div
           className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
           style={{
@@ -438,30 +454,9 @@ export default function SessionView({ session: initialSession }: Props) {
               onExaminerUpdateComplete={handleExaminerUpdateComplete}
             />
           ))}
-
-          {/* "Ranked by relevance" label — full-width grid item, appears after reorder */}
-          {gridReordered && !redirectBlocked && (
-            <p style={{
-              gridColumn: '1 / -1',
-              fontSize: 11, color: 'var(--gold)', opacity: 0.6,
-              textAlign: 'center', letterSpacing: '0.07em',
-              margin: '-8px 0 -4px',
-            }}>
-              ↑ Ranked by relevance to your decision
-            </p>
-          )}
-
-          {/* ── Examiner — full-width grid item, appears once all 6 personas done ── */}
-          {/* gridColumn: '1 / -1' is set inside ExaminerPanel's own styles */}
-          <ExaminerPanel
-            key={`examiner-${sessionKey}`}
-            sessionId={session.id}
-            visible={allPersonasDone}
-            onComplete={handleExaminerComplete}
-          />
         </div>
 
-        {/* ── Council Synthesis — below the grid ── */}
+        {/* ── 4. Council Synthesis — below persona cards ── */}
         <div style={{ marginTop: 16 }}>
           <SynthesisCard
             key={`synthesis-${sessionKey}`}
