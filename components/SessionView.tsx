@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { pushSessionId } from '@/lib/storage'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
@@ -103,6 +103,63 @@ export default function SessionView({ session: initialSession }: Props) {
   const pendingOrderRef    = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
   const allPersonasDoneRef = useRef(false)
 
+  // ── FLIP animation refs ──────────────────────────────────────────────────
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const snapRef  = useRef<Record<string, DOMRect>>({})
+
+  // FLIP — Play step: fires after React commits the new DOM order
+  useLayoutEffect(() => {
+    const snap = snapRef.current
+    if (Object.keys(snap).length === 0) return
+
+    const DURATION = 520
+    const EASING   = 'cubic-bezier(0.4, 0, 0.2, 1)'
+
+    for (const [key, el] of Object.entries(cardRefs.current)) {
+      if (!el || !snap[key]) continue
+      const newRect = el.getBoundingClientRect()
+      const oldRect = snap[key]
+      const dx = oldRect.left - newRect.left
+      const dy = oldRect.top  - newRect.top
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue   // didn't actually move
+
+      // Invert: jump card back to old visual position (no transition)
+      el.style.transition = 'none'
+      el.style.transform  = `translate(${dx}px, ${dy}px)`
+
+      // Play: next frame → clear transform with transition → card glides to real position
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.style.transition = `transform ${DURATION}ms ${EASING}`
+          el.style.transform  = ''
+        })
+      })
+    }
+
+    // Cleanup transforms after animation finishes
+    const cleanup = setTimeout(() => {
+      for (const el of Object.values(cardRefs.current)) {
+        if (el) { el.style.transition = ''; el.style.transform = '' }
+      }
+    }, DURATION + 60)
+
+    snapRef.current = {}
+    return () => clearTimeout(cleanup)
+  }, [orderedPersonaKeys])
+
+  // applyOrderWithFlip — snapshot first, then update state
+  const applyOrderWithFlip = useCallback((newOrder: PersonaKey[]) => {
+    // FIRST: snapshot current card positions before React re-renders
+    const snap: Record<string, DOMRect> = {}
+    for (const [key, el] of Object.entries(cardRefs.current)) {
+      if (el) snap[key] = el.getBoundingClientRect()
+    }
+    snapRef.current = snap
+    // State update → React re-renders → useLayoutEffect fires (Play step)
+    setOrderedPersonaKeys(newOrder)
+    setGridReordered(true)
+  }, [])
+
   // Typewriter effect for "Ranked by relevance" label — fires once when gridReordered flips true
   const LABEL_FULL = 'Ranked by relevance to your decision \u2192'
   useEffect(() => {
@@ -142,8 +199,7 @@ export default function SessionView({ session: initialSession }: Props) {
             if (allPersonasDoneRef.current) {
               const isDifferent = ordered.some((k: string, i: number) => k !== PERSONA_ORDER[i])
               if (isDifferent) {
-                setOrderedPersonaKeys(ordered as PersonaKey[])
-                setGridReordered(true)
+                applyOrderWithFlip(ordered as PersonaKey[])
               }
               pendingOrderRef.current = null
             }
@@ -179,8 +235,7 @@ export default function SessionView({ session: initialSession }: Props) {
           if (isDifferent) {
             // Use setTimeout(0) so state update doesn't conflict with the current render
             setTimeout(() => {
-              setOrderedPersonaKeys(pending as PersonaKey[])
-              setGridReordered(true)
+              applyOrderWithFlip(pending as PersonaKey[])
               pendingOrderRef.current = null
             }, 0)
           } else {
@@ -477,19 +532,24 @@ export default function SessionView({ session: initialSession }: Props) {
           }}
         >
           {orderedPersonaKeys.map((key) => (
-            <PersonaPanel
+            <div
               key={`${key}-${sessionKey}`}
-              persona={PERSONAS[key]}
-              sessionId={session.id}
-              decisionText={session.decision_text}
-              contextText={session.context_text ?? undefined}
-              registerMode={registerMode}
-              onComplete={handlePersonaComplete}
-              examinerContext={examinerContextByPersona[key]}
-              structuralContext={structuralContext ?? undefined}
-              onShareContext={(text) => handleShareContext(key, text)}
-              onExaminerUpdateComplete={handleExaminerUpdateComplete}
-            />
+              ref={el => { cardRefs.current[key] = el }}
+              style={{ willChange: 'transform' }}
+            >
+              <PersonaPanel
+                persona={PERSONAS[key]}
+                sessionId={session.id}
+                decisionText={session.decision_text}
+                contextText={session.context_text ?? undefined}
+                registerMode={registerMode}
+                onComplete={handlePersonaComplete}
+                examinerContext={examinerContextByPersona[key]}
+                structuralContext={structuralContext ?? undefined}
+                onShareContext={(text) => handleShareContext(key, text)}
+                onExaminerUpdateComplete={handleExaminerUpdateComplete}
+              />
+            </div>
           ))}
         </div>
         </div>
