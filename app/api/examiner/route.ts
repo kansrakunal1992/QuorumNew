@@ -218,6 +218,12 @@ export async function POST(req: Request) {
       fireBiasScore(sessionId, req).catch(err =>
         console.error('[Examiner POST] Bias trigger (skip) error:', err)
       )
+      fireIndependenceScore(sessionId, req).catch(err =>
+        console.error('[Examiner POST] Independence trigger (skip) error:', err)
+      )
+      fireContradictions(sessionId, req).catch(err =>
+        console.error('[Examiner POST] Contradictions trigger (skip) error:', err)
+      )
 
       return NextResponse.json({ ok: true })
     }
@@ -253,6 +259,12 @@ export async function POST(req: Request) {
     fireBiasScore(sessionId, req).catch(err =>
       console.error('[Examiner POST] Bias trigger error:', err)
     )
+    fireIndependenceScore(sessionId, req).catch(err =>
+      console.error('[Examiner POST] Independence trigger error:', err)
+    )
+    fireContradictions(sessionId, req).catch(err =>
+      console.error('[Examiner POST] Contradictions trigger error:', err)
+    )
 
     return NextResponse.json({ ok: true })
   } catch (err) {
@@ -282,5 +294,51 @@ async function fireBiasScore(sessionId: string, req: Request): Promise<void> {
     console.error(`[Examiner POST] /api/bias-score returned ${res.status}:`, body)
   } else {
     console.log(`[Examiner POST] Bias score triggered for session ${sessionId}`)
+  }
+}
+
+/**
+ * Fire-and-forget HTTP call to /api/mirror/independence.
+ * Recalculates Decision Independence Score for the session owner.
+ * Upserts one row per session_id — idempotent, safe to call every submit.
+ * No-ops silently if session has no user_id (anonymous session).
+ */
+async function fireIndependenceScore(sessionId: string, _req: Request): Promise<void> {
+  const port = process.env.PORT ?? '8080'
+  const base = process.env.INTERNAL_API_URL ?? `http://localhost:${port}`
+  const res = await fetch(`${base}/api/mirror/independence`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    console.error(`[Examiner POST] /api/mirror/independence returned ${res.status}:`, body)
+  } else {
+    console.log(`[Examiner POST] Independence score triggered for session ${sessionId}`)
+  }
+}
+
+/**
+ * Fire-and-forget HTTP call to /api/mirror/contradictions.
+ * Runs two-pass contradiction detection pipeline if ≥5 sessions with evidence
+ * AND last run was >7 days ago (RERUN_DAYS_THRESHOLD inside the route).
+ * The 7-day throttle is intentional — the AI pipeline is expensive and
+ * contradictions do not change meaningfully session-to-session.
+ * No-ops silently if session has no user_id (anonymous session).
+ */
+async function fireContradictions(sessionId: string, _req: Request): Promise<void> {
+  const port = process.env.PORT ?? '8080'
+  const base = process.env.INTERNAL_API_URL ?? `http://localhost:${port}`
+  const res = await fetch(`${base}/api/mirror/contradictions`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    console.error(`[Examiner POST] /api/mirror/contradictions returned ${res.status}:`, body)
+  } else {
+    console.log(`[Examiner POST] Contradictions triggered for session ${sessionId}`)
   }
 }
