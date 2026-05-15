@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { pushSessionId } from '@/lib/storage'
+import { pushSessionId, getOrCreateDeviceId } from '@/lib/storage'
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
@@ -395,7 +395,13 @@ export default function SessionView({ session: initialSession }: Props) {
       const res = await fetch('/api/session', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ decision_text: reDecision.trim(), context_text: reContext.trim() || null, register_mode: reRegisterMode }),
+        body:    JSON.stringify({
+          decision_text: reDecision.trim(),
+          context_text:  reContext.trim() || null,
+          register_mode: reRegisterMode,
+          user_id:       session.user_id   ?? null,  // ← carry auth across reanalyze
+          device_id:     getOrCreateDeviceId(),       // ← device fallback, same as home page
+        }),
       })
       if (!res.ok) throw new Error()
       const { id }         = await res.json()
