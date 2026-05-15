@@ -949,7 +949,7 @@ export function computePersonaOrder(
       const boosts = RULE_PERSONA_BOOSTS[ruleId]
       if (!boosts) continue
       for (const [persona, boost] of Object.entries(boosts)) {
-        if (persona in scores) scores[persona] += boost
+        if (persona in scores && boost !== undefined) scores[persona] += boost
       }
     }
   }
@@ -961,7 +961,7 @@ export function computePersonaOrder(
       const dimData = ontologyVector[dim]
       if (!dimData || dimData.score < 4 || (dimData.confidence ?? 1) < 0.5) continue
       for (const [persona, boost] of Object.entries(boostMap)) {
-        if (persona in scores) scores[persona] += boost
+        if (persona in scores && boost !== undefined) scores[persona] += boost
       }
     }
   }
