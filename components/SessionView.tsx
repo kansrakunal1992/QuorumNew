@@ -99,8 +99,24 @@ export default function SessionView({ session: initialSession }: Props) {
   // Dynamic grid order — computed from ontology, applied after all 6 personas complete (no animation)
   const [orderedPersonaKeys, setOrderedPersonaKeys] = useState<PersonaKey[]>([...PERSONA_ORDER])
   const [gridReordered,      setGridReordered]      = useState(false)  // shows "Ranked by relevance" label
+  const [labelText,          setLabelText]          = useState('')     // typewriter text for relevance label
   const pendingOrderRef    = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
   const allPersonasDoneRef = useRef(false)
+
+  // Typewriter effect for "Ranked by relevance" label — fires once when gridReordered flips true
+  const LABEL_FULL = 'Ranked by relevance to your decision \u2192'
+  useEffect(() => {
+    if (!gridReordered) return
+    let i = 0
+    setLabelText('')
+    const iv = setInterval(() => {
+      i++
+      setLabelText(LABEL_FULL.slice(0, i))
+      if (i >= LABEL_FULL.length) clearInterval(iv)
+    }, 32)
+    return () => clearInterval(iv)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridReordered])
 
   useEffect(() => {
     let attempt = 0
@@ -328,6 +344,7 @@ export default function SessionView({ session: initialSession }: Props) {
       // Reset grid order for fresh ontology signals on new session
       setOrderedPersonaKeys([...PERSONA_ORDER])
       setGridReordered(false)
+      setLabelText('')
       allPersonasDoneRef.current = false
       pendingOrderRef.current = null
       window.history.replaceState(null, '', `/session/${id}`)
@@ -413,7 +430,23 @@ export default function SessionView({ session: initialSession }: Props) {
 
       <div className="max-w-7xl mx-auto">
 
-        {/* ── 1. Examiner — full width, appears once all 6 personas done ── */}
+        {/* ── 1. Council Synthesis — top, locked until examiner submitted ── */}
+        <SynthesisCard
+          key={`synthesis-${sessionKey}`}
+          sessionId={session.id}
+          decisionText={session.decision_text}
+          contextText={session.context_text ?? undefined}
+          personaResponses={completedResponses}
+          totalPersonas={PERSONA_ORDER.length}
+          version={synthesisVersion}
+          registerMode={registerMode}
+          examinerReady={examinerReady}
+          redirectBlocked={redirectBlocked}
+          redirectQuestion={redirectQuestion}
+          onOverrideRedirect={handleOverrideRedirect}
+        />
+
+        {/* ── 2. Examiner — appears once all 6 personas done, glows on entry ── */}
         <ExaminerPanel
           key={`examiner-${sessionKey}`}
           sessionId={session.id}
@@ -421,16 +454,20 @@ export default function SessionView({ session: initialSession }: Props) {
           onComplete={handleExaminerComplete}
         />
 
-        {/* ── 2. "Ranked by relevance" label — above persona cards, visible after reorder ── */}
+        {/* ── 3. "Ranked by relevance" label — typewriter, above persona cards ── */}
         {gridReordered && !redirectBlocked && (
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10, marginTop: allPersonasDone ? 4 : 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0 10px' }}>
             <span className="relevance-label">
-              ↑ Ranked by relevance to your decision
+              {labelText}
+              {/* blinking cursor while typing */}
+              {labelText.length < LABEL_FULL.length && (
+                <span style={{ opacity: 1, animation: 'blink 0.7s step-end infinite', marginLeft: 1 }}>|</span>
+              )}
             </span>
           </div>
         )}
 
-        {/* ── 3. Six persona panels ── */}
+        {/* ── 4. Six persona panels ── */}
         {/* Sprint 11b: dim at 55% opacity on REDIRECT — still stream, visually provisional */}
         <div
           className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
@@ -454,24 +491,6 @@ export default function SessionView({ session: initialSession }: Props) {
               onExaminerUpdateComplete={handleExaminerUpdateComplete}
             />
           ))}
-        </div>
-
-        {/* ── 4. Council Synthesis — below persona cards ── */}
-        <div style={{ marginTop: 16 }}>
-          <SynthesisCard
-            key={`synthesis-${sessionKey}`}
-            sessionId={session.id}
-            decisionText={session.decision_text}
-            contextText={session.context_text ?? undefined}
-            personaResponses={completedResponses}
-            totalPersonas={PERSONA_ORDER.length}
-            version={synthesisVersion}
-            registerMode={registerMode}
-            examinerReady={examinerReady}
-            redirectBlocked={redirectBlocked}
-            redirectQuestion={redirectQuestion}
-            onOverrideRedirect={handleOverrideRedirect}
-          />
         </div>
         </div>
 

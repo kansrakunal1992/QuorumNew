@@ -312,6 +312,8 @@ textarea::placeholder { color: var(--text-4); }
   padding: 4px 13px;
   border-radius: 20px;
   white-space: nowrap;
+  min-width: 6ch;   /* prevents pill collapsing to nothing during typewriter */
+  font-family: inherit;
 }
 [data-theme="dark"] .relevance-label {
   background: rgba(201, 168, 76, 0.18);

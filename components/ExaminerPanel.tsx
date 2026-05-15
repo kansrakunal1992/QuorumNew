@@ -51,6 +51,14 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
   const [ruleMode,          setRuleMode]           = useState<RuleMode>(null)
   const [upstreamRationale, setUpstreamRationale] = useState<string | null>(null)   // specific reason R1 fired
   const [dismissed,         setDismissed]          = useState(false)                // local dismiss state for REDIRECT banner
+  const [glowing,           setGlowing]            = useState(false)               // one-time entry glow
+
+  // Fire one-time glow on mount — component only mounts when visible becomes true
+  useEffect(() => {
+    const t1 = setTimeout(() => setGlowing(true),  100)
+    const t2 = setTimeout(() => setGlowing(false), 1900)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [])
 
   const retryCountRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -180,10 +188,14 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
     <div style={{
       gridColumn: '1 / -1',
       background: 'var(--bg-card)',
-      border: `1px solid ${isRedirect ? 'rgba(201,168,76,0.45)' : 'rgba(201,168,76,0.3)'}`,
+      border: `1px solid ${isRedirect ? 'rgba(201,168,76,0.45)' : glowing ? 'rgba(201,168,76,0.55)' : 'rgba(201,168,76,0.3)'}`,
       borderRadius: 14,
       overflow: 'hidden',
       marginBottom: 4,
+      transition: 'box-shadow 0.5s ease, border-color 0.5s ease',
+      boxShadow: glowing
+        ? '0 0 0 2px rgba(201,168,76,0.18), 0 0 22px 6px rgba(201,168,76,0.12)'
+        : 'none',
     }}>
       {/* Header */}
       <div style={{
