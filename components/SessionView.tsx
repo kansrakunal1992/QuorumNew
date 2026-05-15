@@ -418,38 +418,12 @@ export default function SessionView({ session: initialSession }: Props) {
 
       <div className="max-w-7xl mx-auto">
 
-        {/* ── 1. Council Synthesis — pinned at top ── */}
-        <div style={{ marginBottom: 16 }}>
-          <SynthesisCard
-            key={`synthesis-${sessionKey}`}
-            sessionId={session.id}
-            decisionText={session.decision_text}
-            contextText={session.context_text ?? undefined}
-            personaResponses={completedResponses}
-            totalPersonas={PERSONA_ORDER.length}
-            version={synthesisVersion}
-            registerMode={registerMode}
-            examinerReady={examinerReady}
-            redirectBlocked={redirectBlocked}
-            redirectQuestion={redirectQuestion}
-            onOverrideRedirect={handleOverrideRedirect}
-          />
-        </div>
-
-        {/* ── 2. Examiner — appears once all 6 personas done ── */}
-        <ExaminerPanel
-          key={`examiner-${sessionKey}`}
-          sessionId={session.id}
-          visible={allPersonasDone}
-          onComplete={handleExaminerComplete}
-        />
-
-        {/* ── 3. Six persona panels ── */}
+        {/* ── 1. Six persona panels — always at top so cards stay visible ── */}
         {/* Sprint 11b: dim at 55% opacity on REDIRECT — still stream, visually provisional */}
+        {/* Sprint 17: grid fades and reorders after all 6 complete + ontology resolves */}
         <div
           className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
           style={{
-            marginTop: 16,
             opacity:       redirectBlocked ? 0.55 : gridTransitioning ? 0 : 1,
             transition:    'opacity 0.35s ease',
             pointerEvents: redirectBlocked ? 'none' : 'auto',
@@ -482,6 +456,32 @@ export default function SessionView({ session: initialSession }: Props) {
             Ranked by relevance to your decision
           </p>
         )}
+
+        {/* ── 2. Examiner — appears below cards once all 6 personas done ── */}
+        <ExaminerPanel
+          key={`examiner-${sessionKey}`}
+          sessionId={session.id}
+          visible={allPersonasDone}
+          onComplete={handleExaminerComplete}
+        />
+
+        {/* ── 3. Council Synthesis — below cards and examiner ── */}
+        <div style={{ marginTop: 16 }}>
+          <SynthesisCard
+            key={`synthesis-${sessionKey}`}
+            sessionId={session.id}
+            decisionText={session.decision_text}
+            contextText={session.context_text ?? undefined}
+            personaResponses={completedResponses}
+            totalPersonas={PERSONA_ORDER.length}
+            version={synthesisVersion}
+            registerMode={registerMode}
+            examinerReady={examinerReady}
+            redirectBlocked={redirectBlocked}
+            redirectQuestion={redirectQuestion}
+            onOverrideRedirect={handleOverrideRedirect}
+          />
+        </div>
         </div>
 
       {/* ── Bottom bar ── */}
