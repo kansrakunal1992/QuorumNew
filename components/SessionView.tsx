@@ -476,8 +476,6 @@ export default function SessionView({ session: initialSession }: Props) {
         )}
         </div>
 
-      </div>
-
       {/* ── Bottom bar ── */}
       <div style={{ maxWidth: '80rem', margin: '28px auto 0', display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
         <button className="btn-ghost" style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={handleNewDecision}>
