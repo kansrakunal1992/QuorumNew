@@ -100,8 +100,9 @@ export default function SessionView({ session: initialSession }: Props) {
   const [orderedPersonaKeys, setOrderedPersonaKeys] = useState<PersonaKey[]>([...PERSONA_ORDER])
   const [gridReordered,      setGridReordered]      = useState(false)  // shows "Ranked by relevance" label
   const [labelText,          setLabelText]          = useState('')     // typewriter text for relevance label
-  const pendingOrderRef    = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
-  const allPersonasDoneRef = useRef(false)
+  const pendingOrderRef      = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
+  const allPersonasDoneRef   = useRef(false)
+  const examinerSubmittedRef = useRef(false)  // true once user skips or submits examiner
 
   // ── FLIP animation refs ──────────────────────────────────────────────────
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -112,7 +113,7 @@ export default function SessionView({ session: initialSession }: Props) {
     const snap = snapRef.current
     if (Object.keys(snap).length === 0) return
 
-    const DURATION = 520
+    const DURATION = 1100
     const EASING   = 'cubic-bezier(0.4, 0, 0.2, 1)'
 
     for (const [key, el] of Object.entries(cardRefs.current)) {
@@ -195,8 +196,9 @@ export default function SessionView({ session: initialSession }: Props) {
               data.ontology_vector    ?? null,
             )
             pendingOrderRef.current = ordered as PersonaKey[]
-            // If all personas already done, apply the order right now
-            if (allPersonasDoneRef.current) {
+            // If all personas done AND examiner already submitted, animate immediately
+            // (ontology arrived late — slow network). Otherwise wait for examiner submit.
+            if (allPersonasDoneRef.current && examinerSubmittedRef.current) {
               const isDifferent = ordered.some((k: string, i: number) => k !== PERSONA_ORDER[i])
               if (isDifferent) {
                 applyOrderWithFlip(ordered as PersonaKey[])
@@ -230,10 +232,10 @@ export default function SessionView({ session: initialSession }: Props) {
       if (!isUpdate && Object.keys(next).length >= PERSONA_ORDER.length) {
         allPersonasDoneRef.current = true
         const pending = pendingOrderRef.current
-        if (pending) {
+        if (pending && examinerSubmittedRef.current) {
+          // Examiner already submitted — animate now
           const isDifferent = pending.some((k, i) => k !== PERSONA_ORDER[i])
           if (isDifferent) {
-            // Use setTimeout(0) so state update doesn't conflict with the current render
             setTimeout(() => {
               applyOrderWithFlip(pending as PersonaKey[])
               pendingOrderRef.current = null
@@ -242,6 +244,8 @@ export default function SessionView({ session: initialSession }: Props) {
             pendingOrderRef.current = null
           }
         }
+        // If examiner not yet submitted, leave pendingOrderRef in place —
+        // handleExaminerComplete will pick it up and animate then
       }
       return next
     })
@@ -266,8 +270,24 @@ export default function SessionView({ session: initialSession }: Props) {
         return                    // skip persona context mapping entirely
       }
 
-      // GATE or OPEN — normal path
+      // GATE or OPEN — normal path (includes skip: OPEN with empty responses)
+      examinerSubmittedRef.current = true
       setExaminerReady(true)
+
+      // Trigger card shuffle now that user has submitted / skipped the examiner
+      const pending = pendingOrderRef.current
+      if (pending && allPersonasDoneRef.current) {
+        const isDifferent = pending.some((k, i) => k !== PERSONA_ORDER[i])
+        if (isDifferent) {
+          setTimeout(() => {
+            applyOrderWithFlip(pending as PersonaKey[])
+            pendingOrderRef.current = null
+          }, 0)
+        } else {
+          pendingOrderRef.current = null
+        }
+      }
+
       if (!responses.length) return
 
       const seen       = new Set<string>()
@@ -402,6 +422,7 @@ export default function SessionView({ session: initialSession }: Props) {
       setLabelText('')
       allPersonasDoneRef.current = false
       pendingOrderRef.current = null
+      examinerSubmittedRef.current = false
       window.history.replaceState(null, '', `/session/${id}`)
     } catch {
       setReanalyzeError('Something went wrong. Please try again.')
