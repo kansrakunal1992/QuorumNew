@@ -8,6 +8,7 @@ import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
 import { PERSONAS, PERSONA_ORDER, computePersonaOrder } from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
+import type { PersonaKey } from '@/lib/types'
 
 interface Props {
   session: Session
@@ -96,10 +97,10 @@ export default function SessionView({ session: initialSession }: Props) {
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
 
   // Dynamic grid order — computed during streaming, applied after all 6 personas complete
-  const [orderedPersonaKeys,  setOrderedPersonaKeys]  = useState<string[]>([...PERSONA_ORDER])
+  const [orderedPersonaKeys,  setOrderedPersonaKeys]  = useState<PersonaKey[]>([...PERSONA_ORDER])
   const [gridReordered,       setGridReordered]       = useState(false)   // shows "Ranked by relevance" label
   const [gridTransitioning,   setGridTransitioning]   = useState(false)   // drives fade-out/in
-  const pendingOrderRef = useRef<string[] | null>(null)  // holds computed order until all 6 done
+  const pendingOrderRef = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
 
   useEffect(() => {
     let attempt = 0
@@ -120,7 +121,7 @@ export default function SessionView({ session: initialSession }: Props) {
               data.rule_engine_result ?? null,
               data.ontology_vector    ?? null,
             )
-            pendingOrderRef.current = ordered
+            pendingOrderRef.current = ordered as PersonaKey[]
           }
           if (data.threshold_met && data.context_block) {
             setStructuralContext(data.context_block)
