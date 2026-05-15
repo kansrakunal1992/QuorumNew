@@ -438,26 +438,30 @@ export default function SessionView({ session: initialSession }: Props) {
               onExaminerUpdateComplete={handleExaminerUpdateComplete}
             />
           ))}
+
+          {/* "Ranked by relevance" label — full-width grid item, appears after reorder */}
+          {gridReordered && !redirectBlocked && (
+            <p style={{
+              gridColumn: '1 / -1',
+              fontSize: 11, color: 'var(--gold)', opacity: 0.6,
+              textAlign: 'center', letterSpacing: '0.07em',
+              margin: '-8px 0 -4px',
+            }}>
+              ↑ Ranked by relevance to your decision
+            </p>
+          )}
+
+          {/* ── Examiner — full-width grid item, appears once all 6 personas done ── */}
+          {/* gridColumn: '1 / -1' is set inside ExaminerPanel's own styles */}
+          <ExaminerPanel
+            key={`examiner-${sessionKey}`}
+            sessionId={session.id}
+            visible={allPersonasDone}
+            onComplete={handleExaminerComplete}
+          />
         </div>
 
-        {gridReordered && !redirectBlocked && (
-          <p style={{
-            marginTop: 10, fontSize: 11, color: 'var(--text-4)',
-            textAlign: 'center', letterSpacing: '0.05em',
-          }}>
-            Ranked by relevance to your decision
-          </p>
-        )}
-
-        {/* ── 2. Examiner — appears below cards once all 6 personas done ── */}
-        <ExaminerPanel
-          key={`examiner-${sessionKey}`}
-          sessionId={session.id}
-          visible={allPersonasDone}
-          onComplete={handleExaminerComplete}
-        />
-
-        {/* ── 3. Council Synthesis — below cards and examiner ── */}
+        {/* ── Council Synthesis — below the grid ── */}
         <div style={{ marginTop: 16 }}>
           <SynthesisCard
             key={`synthesis-${sessionKey}`}
