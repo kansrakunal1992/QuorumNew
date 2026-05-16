@@ -35,6 +35,7 @@ interface Props {
     ruleMode:        RuleMode,  // Sprint 11b: passed upstream so SessionView can gate synthesis
     redirectQuestion?: string   // Sprint 16b: R1 question text — shown in SynthesisCard REDIRECT banner
   ) => void
+  forceDismissed?: boolean  // set true by SessionView when user clicks "This doesn't apply — continue to Council"
 }
 
 type FetchStatus  = 'idle' | 'loading' | 'ready' | 'no_gaps' | 'retry' | 'error'
@@ -43,7 +44,7 @@ type SubmitStatus = 'idle' | 'submitting' | 'done'
 const MAX_RETRIES    = 6
 const RETRY_DELAY_MS = 3000
 
-export default function ExaminerPanel({ sessionId, visible, onComplete }: Props) {
+export default function ExaminerPanel({ sessionId, visible, onComplete, forceDismissed }: Props) {
   const [questions,         setQuestions]         = useState<ExaminerQuestion[]>([])
   const [answers,           setAnswers]            = useState<Record<number, string>>({})
   const [fetchStatus,       setFetchStatus]        = useState<FetchStatus>('idle')
@@ -178,7 +179,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete }: Props)
   if (!visible) return null
   if (fetchStatus === 'idle' || fetchStatus === 'no_gaps' || fetchStatus === 'error') return null
   if (submitStatus === 'done') return null
-  if (dismissed) return null   // user clicked "Understood — dismiss" on REDIRECT banner
+  if (dismissed || forceDismissed) return null   // user clicked "Understood — dismiss" OR override fired from SynthesisCard
 
   const isLoading    = fetchStatus === 'loading' || fetchStatus === 'retry'
   const isSubmitting = submitStatus === 'submitting'

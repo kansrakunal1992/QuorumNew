@@ -702,7 +702,7 @@ const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
 1. QUESTION FIRST: If the decision description is missing a critical piece of information your analysis depends on — a specific number, a timeline, a relationship, a constraint — ask exactly ONE question before giving your assessment. Make it the sharpest, most specific question missing. Do not ask multiple questions. If nothing critical is missing, proceed directly.
 
-2. LENGTH: Your response must be 140–170 words. Count before submitting. If you exceed 170 words, cut the weakest paragraph entirely. No exceptions. Every sentence must earn its place.
+2. LENGTH — ABSOLUTE HARD LIMIT: Your response must be 180–200 words. Count every word before outputting. If you exceed 200 words, do the following in order: (a) find every sentence that restates something already said — delete it entirely, (b) find every transitional phrase that adds no information ("It is worth noting that…", "Additionally…", "This matters because…") — cut it, (c) find the paragraph with the least analytical load and cut its weakest sentence. Repeat until you are at or under 200 words. Do NOT cut substance — cut repetition and padding only. Exceeding 200 words is a failure regardless of content quality.
 
 3. FORMAT: Write in short, dense paragraphs — 2 to 4 sentences each. Separate paragraphs with a blank line. No bullet points. No headers. Your opening sentence must be the hardest-hitting thing you say — not a preamble.
 
@@ -776,7 +776,12 @@ STEP 4 — REWARD STRONG REASONING. If the user has made a genuinely good point,
 
 You may adapt this structure into prose — do not use these as literal section headers. The point is intellectual honesty: reward good thinking when it is earned. Reflexive adversarialism when the user is right destroys trust faster than agreement ever could.
 
-TONE: Engagement must feel genuinely responsive, not procedural. If you are holding your position, explain specifically why their argument fails — do not simply reassert your prior conclusion. If you are updating, update visibly and specifically.`
+TONE: Engagement must feel genuinely responsive, not procedural. If you are holding your position, explain specifically why their argument fails — do not simply reassert your prior conclusion. If you are updating, update visibly and specifically.
+
+---
+
+FINAL CHECK BEFORE OUTPUTTING — MANDATORY:
+Count your words. Your response must be 180–200 words. If it exceeds 200 words, rewrite before sending. No exceptions.`
 
 // ── Synthesis prompt ──────────────────────────────────────────
 export const SYNTHESIS = `You are the synthesis layer of Quorum, a private decision intelligence system. You have just received the independent assessments of six specialist advisors on a single high-stakes decision.

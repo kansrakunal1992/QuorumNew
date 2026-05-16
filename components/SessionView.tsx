@@ -92,6 +92,7 @@ export default function SessionView({ session: initialSession }: Props) {
   const [ruleMode,          setRuleMode]          = useState<RuleMode>(null)
   const [redirectBlocked,   setRedirectBlocked]   = useState(false)
   const [redirectQuestion,  setRedirectQuestion]  = useState<string | undefined>(undefined) // Sprint 16b: R1 question for banner
+  const [examinerDismissed, setExaminerDismissed] = useState(false)                         // auto-closes ExaminerPanel on override
 
   // Sprint 5: structural context
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
@@ -349,6 +350,7 @@ export default function SessionView({ session: initialSession }: Props) {
     setRedirectBlocked(false)
     setRuleMode(null)
     setExaminerReady(true)   // synthesis gate opens — personas are already done
+    setExaminerDismissed(true) // auto-closes ExaminerPanel — no need to click "Understood — dismiss"
   }, [session.id])
 
   const [drawerOpen,     setDrawerOpen]     = useState(false)
@@ -422,6 +424,7 @@ export default function SessionView({ session: initialSession }: Props) {
       setRuleMode(null)
       setRedirectBlocked(false)
       setRedirectQuestion(undefined)
+      setExaminerDismissed(false)
       // Reset grid order for fresh ontology signals on new session
       setOrderedPersonaKeys([...PERSONA_ORDER])
       setGridReordered(false)
@@ -534,6 +537,7 @@ export default function SessionView({ session: initialSession }: Props) {
           sessionId={session.id}
           visible={allPersonasDone}
           onComplete={handleExaminerComplete}
+          forceDismissed={examinerDismissed}
         />
 
         {/* ── 3. "Ranked by relevance" label — typewriter, above persona cards ── */}
