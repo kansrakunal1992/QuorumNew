@@ -59,6 +59,35 @@ async function fetchCouncilContext(sessionId: string): Promise<string | null> {
   }
 }
 
+/**
+ * Sprint 19 fix — race condition guard for initial personas.
+ *
+ * Initial personas fire immediately in parallel with ontology tagging.
+ * sessions_ontology is often not yet written when the first DB read happens,
+ * so fetchCouncilContext returns null silently — context never injected.
+ *
+ * Fix: retry with 400ms intervals for up to 3 seconds. Ontology typically
+ * writes within 1–2 seconds. Adds ≤400ms latency before streaming starts
+ * in the common case (first or second retry succeeds), which is imperceptible
+ * given personas take 5–15s to complete.
+ *
+ * Synthesis calls do NOT use this — ontology is always written by then.
+ */
+async function fetchCouncilContextWithRetry(
+  sessionId: string,
+  maxWaitMs = 3000,
+  intervalMs = 400,
+): Promise<string | null> {
+  const start = Date.now()
+  while (true) {
+    const result = await fetchCouncilContext(sessionId)
+    if (result !== null) return result
+    const elapsed = Date.now() - start
+    if (elapsed + intervalMs >= maxWaitMs) return null
+    await new Promise(r => setTimeout(r, intervalMs))
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +127,9 @@ export async function POST(req: Request) {
     const isSynthesisCall  = rawMessages && (personaKey === 'synthesis' || personaKey === 'decision_brief')
     const isInitialPersona = !rawMessages && messages.length === 0
     const councilContextPromise = (isSynthesisCall || isInitialPersona) && sessionId
-      ? fetchCouncilContext(sessionId)
+      ? isInitialPersona
+        ? fetchCouncilContextWithRetry(sessionId)  // retry — ontology may not be written yet
+        : fetchCouncilContext(sessionId)            // synthesis always fires after ontology
       : Promise.resolve(null)
 
     // ── Build chat messages ───────────────────────────────────────────────────
