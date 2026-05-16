@@ -570,7 +570,7 @@ function TeaserView({
       .catch(() => {/* degrade gracefully */})
   }, [authToken])
 
-  const PRICING_URL = 'https://www.quorumvault.xyz/#pricing'
+  const PRICING_URL = 'https://www.quorumvault.org/#pricing'
 
   const lockedBadge = (
     <span style={{

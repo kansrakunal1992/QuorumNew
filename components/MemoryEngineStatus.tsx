@@ -22,7 +22,8 @@ interface Props {
 }
 
 const PATTERN_MEMORY_THRESHOLD = 5
-const MIRROR_THRESHOLD = 5   // Sprint 7a: Mirror unlocks at 5 sessions (same as Pattern Memory)
+const MIRROR_TEASER_THRESHOLD  = 3   // Sprint 19: Mirror preview (teaser) activates at 3 sessions
+const MIRROR_THRESHOLD         = 5   // Pattern Memory threshold (segment bar total)
 
 function SegmentBar({ filled, total }: { filled: number; total: number }) {
   return (
@@ -117,20 +118,24 @@ export default function MemoryEngineStatus({
   // ── Identified view (email or user_id present) ─────────────────────────────
   const sessionsTowardMirror  = Math.min(sessionCount, MIRROR_THRESHOLD)
   const patternActive         = sessionCount >= PATTERN_MEMORY_THRESHOLD
+  const mirrorTeaserReady     = sessionCount >= MIRROR_TEASER_THRESHOLD
   const mirrorReady           = sessionCount >= MIRROR_THRESHOLD
 
   let statusLabel: string
   let statusColor: string
   if (mirrorReady) {
-    statusLabel = 'Pattern Memory active · Mirror unlocked'
+    statusLabel = 'Pattern Memory active · Mirror available'
     statusColor = 'var(--green-text)'
   } else if (patternActive) {
-    // patternActive and mirrorReady are same threshold now — this branch shouldn't fire
     statusLabel = 'Pattern Memory active'
     statusColor = 'var(--green-text)'
-  } else {
+  } else if (mirrorTeaserReady) {
     const remaining = PATTERN_MEMORY_THRESHOLD - sessionCount
-    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} to activate Pattern Memory + Mirror`
+    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} for Pattern Memory · Mirror preview ready`
+    statusColor = 'var(--gold)'
+  } else {
+    const remaining = MIRROR_TEASER_THRESHOLD - sessionCount
+    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} to unlock Mirror preview`
     statusColor = 'var(--gold)'
   }
 
@@ -211,7 +216,7 @@ export default function MemoryEngineStatus({
             </div>
             <p style={{ fontSize: 11, color: statusColor, margin: 0, lineHeight: 1.4 }}>
               {statusLabel}
-              {mirrorReady && (
+              {mirrorTeaserReady && (
                 <a
                   href="/mirror"
                   style={{
@@ -219,7 +224,7 @@ export default function MemoryEngineStatus({
                     alignItems:     'center',
                     gap:            4,
                     marginLeft:     10,
-                    color:          'var(--green-text)',
+                    color:          mirrorReady ? 'var(--green-text)' : 'var(--gold)',
                     fontSize:       10.5,
                     fontWeight:     600,
                     textDecoration: 'none',
