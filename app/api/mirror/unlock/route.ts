@@ -79,38 +79,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid unlock code' }, { status: 403 })
   }
 
-  // ── 4. Check if already unlocked ──────────────────────────────────────────
-  const supabase = createServiceClient()
-
-  const { data: existing } = await supabase
-    .from('mirror_access')
-    .select('id, granted_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (existing) {
-    // Already unlocked — return success (idempotent)
-    return NextResponse.json({
-      status:    'ok',
-      grantedAt: existing.granted_at,
-      message:   'Mirror already unlocked',
-    })
-  }
-
-  // ── 5. Insert mirror_access row ───────────────────────────────────────────
+  // ── 4. Upsert mirror_access row ───────────────────────────────────────────
+  // Uses upsert (not insert) to handle edge case where an expired row exists.
+  // access_type: 'lifetime' — unlock codes are permanent grants.
   const grantedAt = new Date().toISOString()
 
-  const { error: insertError } = await supabase
+  const { error: upsertError } = await supabase
     .from('mirror_access')
-    .insert({
-      user_id:     userId,
-      access_type: 'paid',
-      granted_at:  grantedAt,
-      payment_ref: `code:${code.slice(0, 6)}…`,  // partial ref for audit trail
-    })
+    .upsert(
+      {
+        user_id:     userId,
+        access_type: 'lifetime',
+        granted_at:  grantedAt,
+        started_at:  grantedAt,
+        expires_at:  null,
+        payment_ref: `code:${code.slice(0, 6)}…`,  // partial ref for audit trail
+      },
+      { onConflict: 'user_id' },
+    )
 
-  if (insertError) {
-    console.error('[mirror/unlock] Insert error:', insertError)
+  if (upsertError) {
+    console.error('[mirror/unlock] Upsert error:', upsertError)
     return NextResponse.json({ error: 'Failed to grant access' }, { status: 500 })
   }
 

@@ -131,7 +131,7 @@ export default function MemoryEngineStatus({
     statusColor = 'var(--green-text)'
   } else if (mirrorTeaserReady) {
     const remaining = PATTERN_MEMORY_THRESHOLD - sessionCount
-    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} for Pattern Memory · Mirror preview ready`
+    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} for Pattern Memory`
     statusColor = 'var(--gold)'
   } else {
     const remaining = MIRROR_TEASER_THRESHOLD - sessionCount
@@ -216,7 +216,10 @@ export default function MemoryEngineStatus({
             </div>
             <p style={{ fontSize: 11, color: statusColor, margin: 0, lineHeight: 1.4 }}>
               {statusLabel}
-              {mirrorTeaserReady && (
+            </p>
+            {mirrorTeaserReady && (
+              <p style={{ fontSize: 11, color: 'var(--green-text)', margin: '3px 0 0', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 0 }}>
+                Mirror preview ready
                 <a
                   href="/mirror"
                   style={{
@@ -224,7 +227,7 @@ export default function MemoryEngineStatus({
                     alignItems:     'center',
                     gap:            4,
                     marginLeft:     10,
-                    color:          mirrorReady ? 'var(--green-text)' : 'var(--gold)',
+                    color:          'var(--green-text)',
                     fontSize:       10.5,
                     fontWeight:     600,
                     textDecoration: 'none',
@@ -234,8 +237,8 @@ export default function MemoryEngineStatus({
                 >
                   View Mirror →
                 </a>
-              )}
-            </p>
+              </p>
+            )}
           </div>
 
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
