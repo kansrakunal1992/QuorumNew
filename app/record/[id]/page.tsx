@@ -93,11 +93,8 @@ export default async function RecordPage({ params }: Props) {
               sessionId={session.id}
               decisionText={session.decision_text}
               contextText={session.context_text}
+              userId={session.user_id ?? null}
             />
-          </div>
-        </div>
-
-        {/* Decision Brief CTA — Sprint 8 */}
         <div style={{ marginBottom: 24 }}>
           <BriefCTA sessionId={session.id} />
         </div>
@@ -161,6 +158,7 @@ export default async function RecordPage({ params }: Props) {
             sessionId={session.id}
             decisionText={session.decision_text}
             contextText={session.context_text}
+            userId={session.user_id ?? null}
           />
           <Link href="/">
             <button className="btn-ghost" style={{ padding: '10px 20px', fontSize: 13 }}>
