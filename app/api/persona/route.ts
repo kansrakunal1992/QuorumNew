@@ -1,24 +1,21 @@
 /**
- * QUORUM — Persona Route (Sprint 12 update)
+ * QUORUM — Persona Route (Sprint 19 update)
  *
- * CHANGES vs Sprint 11:
+ * Sprint 19 additions:
  *
- *   Council Context Enrichment (Sprint 12 Item 2)
- *     When personaKey is 'synthesis' or 'decision_brief' (rawMessages path),
- *     the route fetches sessions_ontology and calls buildCouncilContext to
- *     prepend a structured decision-structure block to the system prompt.
+ *   Council Context Enrichment — extended to all 6 initial personas
+ *     Previously (Sprint 12), buildCouncilContext() was only injected for
+ *     'synthesis' and 'decision_brief'. Initial Council personas ran blind
+ *     to rule engine signals.
  *
- *     This gives the synthesis persona awareness of:
- *       - High-signal ontology dimensions (identity stakes, regret asymmetry, etc.)
- *       - Which examiner rules fired (GATE/FLAG) and why
- *     …so it can engage with structural signals rather than treating the session
- *     as a generic advisor conversation.
+ *     Now: fetchCouncilContext() fires for ALL persona calls where
+ *     messages.length === 0 (first-pass Council) AND the session has a
+ *     stored v2.0 ontology_vector + rule_engine_result.
  *
- *     Only fires for v2.0 sessions (tagger_version = 'v2.0') with a stored
- *     ontology_vector and rule_engine_result. Gracefully no-ops otherwise.
- *     No client-side changes required.
+ *     Pushback calls (messages.length > 0, !rawMessages) are excluded —
+ *     they are user-reactive and don't need structural re-injection.
  *
- *   All other paths (6 initial personas, pushbacks) — unchanged.
+ *     Gracefully no-ops for v1.0 sessions or missing data. Non-blocking.
  */
 
 import { PERSONAS }                            from '@/lib/personas'
@@ -91,10 +88,16 @@ export async function POST(req: Request) {
     const persona = PERSONAS[personaKey]
     if (!persona) return new Response('Unknown persona', { status: 400 })
 
-    // ── Sprint 12: council context for synthesis / decision_brief ────────────
+    // ── Sprint 19: council context for all initial personas + synthesis ───────
     // Fetched in parallel with message construction to avoid blocking.
-    const isSynthesisCall = rawMessages && (personaKey === 'synthesis' || personaKey === 'decision_brief')
-    const councilContextPromise = isSynthesisCall && sessionId
+    // Fires for:
+    //   - All 6 initial Council personas (messages.length === 0, !rawMessages)
+    //   - synthesis / decision_brief (rawMessages path — unchanged from Sprint 12)
+    // Excluded: pushback calls (messages.length > 0, !rawMessages) — user-reactive,
+    //   structural re-injection would distort the pushback dynamic.
+    const isSynthesisCall  = rawMessages && (personaKey === 'synthesis' || personaKey === 'decision_brief')
+    const isInitialPersona = !rawMessages && messages.length === 0
+    const councilContextPromise = (isSynthesisCall || isInitialPersona) && sessionId
       ? fetchCouncilContext(sessionId)
       : Promise.resolve(null)
 
@@ -146,7 +149,7 @@ export async function POST(req: Request) {
       : persona.prompt
 
     if (councilContext) {
-      console.log(`[Persona] Council context injected for ${personaKey} | session ${sessionId}`)
+      console.log(`[Persona] Council context injected for ${personaKey} (${isInitialPersona ? 'initial' : 'synthesis'}) | session ${sessionId}`)
     }
 
     // ── Stream ────────────────────────────────────────────────────────────────

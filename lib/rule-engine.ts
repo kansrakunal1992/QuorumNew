@@ -132,7 +132,7 @@ function evaluateR7(sv: ScoredVector): TriggeredRule | null {
 function evaluateR2(sv: ScoredVector): TriggeredRule | null {
   const identity  = sv.identity_alignment
   const ambiguity = sv.ambiguity
-  if (identity.score < 5 || ambiguity.score < 3) return null
+  if (identity.score < 5 || ambiguity.score < 4) return null
 
   const lowConf = identity.confidence < LOW_CONFIDENCE_THRESHOLD
     || ambiguity.confidence < LOW_CONFIDENCE_THRESHOLD
