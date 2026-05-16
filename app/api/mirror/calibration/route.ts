@@ -36,6 +36,7 @@
 import { NextResponse }         from 'next/server'
 import { createServiceClient }  from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 export interface CalibrationPoint {
   session_id:               string
@@ -137,7 +138,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  // ── 2. Fetch sessions with pre_decision_confidence ─────────────────────────
+  // ── 2. Mirror access gate ─────────────────────────────────────────────────
+  const accessState = await getMirrorAccessState(userId, supabase)
+  if (accessState !== 'unlocked') {
+    return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
+  }
+
+  // ── 3. Fetch sessions with pre_decision_confidence ─────────────────────────
   // Join with outcomes to get retro confidence and delta.
   // Ordered oldest-first so the sparkline reads left-to-right chronologically.
   const { data: rows, error } = await supabase
@@ -162,7 +169,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
-  // ── 3. Flatten into CalibrationPoints ─────────────────────────────────────
+  // ── 4. Flatten into CalibrationPoints ─────────────────────────────────────
   const points: CalibrationPoint[] = (rows ?? []).map(row => {
     // Supabase returns the joined outcomes row as an object or null
     const outcome = Array.isArray(row.outcomes) ? row.outcomes[0] : row.outcomes
@@ -178,7 +185,7 @@ export async function GET(req: Request) {
     }
   })
 
-  // ── 4. Compute summary ─────────────────────────────────────────────────────
+  // ── 5. Compute summary ─────────────────────────────────────────────────────
   // dataReady: >= 3 outcomes with retrospective_confidence filled (retro-only ok).
   // Pre-Sprint-14 sessions have null pre_decision_confidence — still chartable.
   // avg_delta / avg_pre / pattern only computed where both sides exist.

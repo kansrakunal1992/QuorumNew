@@ -1,35 +1,25 @@
 // app/api/mirror/status/route.ts
-// ── Mirror Module: Gateway Status Route (Sprint 7a, patched Sprint 13) ────────
+// ── Mirror Module: Gateway Status Route (Sprint 19) ──────────────────────────
 //
-// Single round-trip check for the Mirror page.
-// Returns everything needed to determine which gate state to render.
+// Gate state machine (Sprint 19):
+//   auth     → user_id not present (not authenticated)
+//   locked   → authenticated, < 3 sessions, no valid subscription
+//   teaser   → ≥ 3 sessions, no valid subscription — shows teaser UI
+//   unlocked → valid subscription (any plan, not expired)
 //
-// Gate state machine:
-//   auth      → user_id not present (not authenticated)
-//   threshold → authenticated but fewer than 5 sessions logged
-//   paywall   → threshold met, no mirror_access row
-//   unlocked  → threshold met + mirror_access exists
+// When gateState = 'teaser', also returns teaserBiases:
+//   top 3 bias_parameter keys detected for this user.
+//   Shows their actual bias names before subscribing (conversion hook).
+//   Content stays blurred; only the label is revealed.
 //
-// When gateState = 'paywall', also returns teaserBiases:
-//   top 3 bias_parameter keys detected for this user (labels for blurred tiles).
-//   Shows the user their actual bias names even before paying — this is the
-//   conversion hook. Content stays blurred; only the label is revealed.
-//
-// Sprint 13 patch: bias_library identity key is user_email, not user_id.
-//   Resolve userEmail via supabase.auth.admin.getUserById(userId) after token
-//   validation, then query bias_library with .eq('user_email', userEmail).
-//   Previous query (.eq('user_id', userId)) always returned 0 rows — paywall
-//   users always saw the generic placeholder instead of their named biases.
-//
-// Auth: reads user_id from Bearer token (same pattern as /api/history).
+// Sprint 13 patch retained: bias_library identity key is user_email, not user_id.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 import type { MirrorStatus } from '@/lib/types'
-
-const MIRROR_THRESHOLD = 5
 
 export async function GET(req: Request) {
   const supabase = createServiceClient()
@@ -58,55 +48,31 @@ export async function GET(req: Request) {
       authenticated: false,
       sessionCount: 0,
       hasAccess: false,
-      threshold: MIRROR_THRESHOLD,
-      meetsThreshold: false,
       gateState: 'auth',
       teaserBiases: [],
     }
     return NextResponse.json(response)
   }
 
-  // ── 3. Count authenticated sessions for this user ─────────────────────────
+  // ── 3. Resolve access state via helper ────────────────────────────────────
+  const accessState = await getMirrorAccessState(userId, supabase)
+
+  // ── 4. Count sessions (for display only) ──────────────────────────────────
   const { count: rawCount } = await supabase
     .from('sessions')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
-
   const sessionCount = rawCount ?? 0
-  const meetsThreshold = sessionCount >= MIRROR_THRESHOLD
 
-  // ── 4. Check mirror_access ─────────────────────────────────────────────────
-  let hasAccess = false
-  if (meetsThreshold) {
-    const { data: accessRow } = await supabase
-      .from('mirror_access')
-      .select('id')
-      .eq('user_id', userId)
-      .maybeSingle()
-    hasAccess = !!accessRow
-  }
+  const hasAccess = accessState === 'unlocked'
 
-  // ── 5. Determine gate state ────────────────────────────────────────────────
-  let gateState: MirrorStatus['gateState']
-  if (!meetsThreshold) {
-    gateState = 'threshold'
-  } else if (!hasAccess) {
-    gateState = 'paywall'
-  } else {
-    gateState = 'unlocked'
-  }
+  // Map MirrorAccessState to MirrorGateState (both share 'unlocked' / 'teaser' / 'locked')
+  const gateState: MirrorStatus['gateState'] = accessState
 
-  // ── 6. Fetch teaser biases for paywall state ───────────────────────────────
-  // Reveals actual bias *names* detected for this user — even before payment.
-  // Content interpretation stays blurred; only the label is shown.
-  // This creates real personalization in the locked state (conversion hook).
-  //
-  // Sprint 13 fix: bias_library keys on user_email, not user_id.
-  // Resolve userEmail from auth admin before querying.
+  // ── 5. Fetch teaser biases for teaser state ───────────────────────────────
   let teaserBiases: string[] = []
-  if (gateState === 'paywall') {
+  if (gateState === 'teaser') {
     try {
-      // Resolve user_email from user_id via admin API (service role required)
       const { data: { user: authUser } } = await supabase.auth.admin.getUserById(userId)
       const userEmail = authUser?.email ?? null
 
@@ -122,7 +88,6 @@ export async function GET(req: Request) {
       }
     } catch {
       // If email resolution fails, fall through with empty teaserBiases
-      // (user sees generic placeholder — degraded but not broken)
     }
   }
 
@@ -130,8 +95,6 @@ export async function GET(req: Request) {
     authenticated: true,
     sessionCount,
     hasAccess,
-    threshold: MIRROR_THRESHOLD,
-    meetsThreshold,
     gateState,
     teaserBiases,
   }

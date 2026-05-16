@@ -23,6 +23,7 @@ import { createServiceClient }    from '@/lib/supabase'
 import { createClient as anonClient } from '@supabase/supabase-js'
 import { detectContradictions }  from '@/lib/contradiction-detector'
 import type { SessionEvidence }  from '@/lib/contradiction-detector'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 const MIN_SESSIONS          = 5    // minimum sessions with examiner data before running
 const RERUN_DAYS_THRESHOLD  = 7    // don't rerun within 7 days unless forced
@@ -51,15 +52,9 @@ export async function GET(req: Request) {
   const supabase = createServiceClient()
 
   // Mirror access gate
-  const { data: access } = await supabase
-    .from('mirror_access')
-    .select('id, expires_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (!access) return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
-  if (access.expires_at && new Date(access.expires_at) < new Date()) {
-    return NextResponse.json({ error: 'Mirror access expired' }, { status: 403 })
+  const accessState = await getMirrorAccessState(userId, supabase)
+  if (accessState !== 'unlocked') {
+    return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
   }
 
   // Session count

@@ -23,6 +23,7 @@ import { NextResponse }         from 'next/server'
 import { createServiceClient }   from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { BIAS_PARAMETERS }       from '@/lib/bias-scorer'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 // ── Bias label lookup ─────────────────────────────────────────────────────────
 
@@ -177,6 +178,12 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ alerts: [] })
 
   const supabase = createServiceClient()
+
+  // Mirror access gate
+  const accessState = await getMirrorAccessState(userId, supabase)
+  if (accessState !== 'unlocked') {
+    return NextResponse.json({ alerts: [] })
+  }
 
   const { data: biasRows } = await supabase
     .from('bias_library')

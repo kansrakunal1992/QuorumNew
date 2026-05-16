@@ -461,6 +461,36 @@ export default function SynthesisCard({
             {synthesis}
           </p>
         )}
+
+        {/* Mirror nudge — shown once synthesis completes (Sprint 19) */}
+        {state === 'done' && synthesis && (
+          <div style={{
+            marginTop:    16,
+            paddingTop:   14,
+            borderTop:    '1px solid var(--border-dim)',
+            display:      'flex',
+            alignItems:   'center',
+            justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
+              This decision has been added to your Mirror profile.
+            </span>
+            <a
+              href="/mirror"
+              style={{
+                fontSize:       12,
+                color:          'var(--gold)',
+                textDecoration: 'none',
+                fontWeight:     600,
+                whiteSpace:     'nowrap',
+                marginLeft:     16,
+                flexShrink:     0,
+              }}
+            >
+              View Mirror →
+            </a>
+          </div>
+        )}
         {state === 'streaming' && !synthesis && (
           <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>Reading all perspectives…</p>
         )}

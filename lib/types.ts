@@ -41,18 +41,27 @@ export interface DecisionRecord {
   messages: Message[]
 }
 
-// ── Mirror Module Types (Sprint 7a) ───────────────────────────────────────────
+// ── Mirror Module Types (Sprint 7a, updated Sprint 19) ────────────────────────
 
-export type MirrorGateState = 'auth' | 'threshold' | 'paywall' | 'unlocked'
+// Gate states:
+//   auth    → not authenticated
+//   locked  → authenticated, < 3 sessions, no access row
+//   teaser  → ≥ 3 sessions, no valid subscription (shows teaser UI)
+//   unlocked → valid subscription (lifetime/advisory always; annual/monthly if not expired)
+export type MirrorGateState = 'auth' | 'locked' | 'teaser' | 'unlocked'
+
+// Internal access-check result (used by getMirrorAccessState helper)
+export type MirrorAccessState = 'unlocked' | 'teaser' | 'locked'
+
+// Subscription plan types
+export type SubscriptionPlan = 'monthly' | 'annual' | 'lifetime' | 'advisory'
 
 export interface MirrorStatus {
   authenticated: boolean
   sessionCount: number
   hasAccess: boolean
-  threshold: number         // always 5
-  meetsThreshold: boolean   // sessionCount >= threshold
   gateState: MirrorGateState
-  teaserBiases: string[]    // bias_parameter keys for paywall teaser tiles
+  teaserBiases: string[]    // bias_parameter keys shown in teaser state
 }
 
 export interface TimelineSession {

@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { TimelineSession } from '@/lib/types'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 export async function GET(req: Request) {
   const supabase = createServiceClient()
@@ -43,7 +44,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // ── 2. Fetch sessions with ontology (joined) ──────────────────────────────
+  // ── 2. Mirror access gate ─────────────────────────────────────────────────
+  // Timeline is visible in teaser state too — only block if fully locked
+  const accessState = await getMirrorAccessState(userId, supabase)
+  if (accessState === 'locked') {
+    return NextResponse.json({ sessions: [] })
+  }
+
+  // ── 3. Fetch sessions with ontology (joined) ──────────────────────────────
   // sessions_ontology has a unique FK on session_id → PostgREST treats it as
   // a one-to-one relationship and returns a single object (not array).
   const { data: sessions, error } = await supabase
@@ -73,7 +81,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ sessions: [] })
   }
 
-  // ── 3. Fetch outcomes for these sessions ──────────────────────────────────
+  // ── 4. Fetch outcomes for these sessions ──────────────────────────────────
   const sessionIds = sessions.map(s => s.id)
 
   const { data: outcomes } = await supabase
@@ -83,7 +91,7 @@ export async function GET(req: Request) {
 
   const outcomeSet = new Set((outcomes ?? []).map(o => o.session_id as string))
 
-  // ── 4. Shape response ─────────────────────────────────────────────────────
+  // ── 5. Shape response ─────────────────────────────────────────────────────
   // sessions_ontology may come back as object or array depending on PostgREST
   // version — handle both defensively.
   const result: TimelineSession[] = sessions.map(s => {

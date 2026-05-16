@@ -241,9 +241,10 @@ function AuthGate() {
 }
 
 // ── Gate: Session threshold not met ──────────────────────────────────────────
-function ThresholdGate({ sessionCount, threshold }: { sessionCount: number; threshold: number }) {
+function LockedView({ sessionCount }: { sessionCount: number }) {
   const router = useRouter()
-  const remaining = threshold - sessionCount
+  const LOCK_THRESHOLD = 3
+  const remaining = LOCK_THRESHOLD - sessionCount
 
   return (
     <div style={{
@@ -283,12 +284,12 @@ function ThresholdGate({ sessionCount, threshold }: { sessionCount: number; thre
 
       <div style={{ textAlign: 'center' }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
-          Mirror activates at {threshold} decisions
+          Mirror activates at {LOCK_THRESHOLD} decisions
         </h2>
         <p style={{ fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.65, margin: 0 }}>
           {remaining === 1
             ? 'One more session to go.'
-            : `${remaining} more decisions to unlock your behavioral mirror.`
+            : `${remaining} more decisions to unlock your Mirror preview.`
           }
         </p>
       </div>
@@ -306,10 +307,10 @@ function ThresholdGate({ sessionCount, threshold }: { sessionCount: number; thre
             Progress
           </span>
           <span style={{ fontSize: 11, color: 'var(--gold)', fontVariantNumeric: 'tabular-nums' }}>
-            {sessionCount} / {threshold}
+            {sessionCount} / {LOCK_THRESHOLD}
           </span>
         </div>
-        <SegmentBar filled={sessionCount} total={threshold} />
+        <SegmentBar filled={sessionCount} total={LOCK_THRESHOLD} />
       </div>
 
       {/* Preview of what's coming */}
@@ -536,8 +537,17 @@ function UnlockCodeInput({ authToken, onSuccess }: { authToken: string; onSucces
   )
 }
 
-// ── Gate: Paywall ─────────────────────────────────────────────────────────────
-function PaywallGate({
+// ── Teaser View (≥3 sessions, no subscription) ────────────────────────────────
+interface TeaserData {
+  sessionCount:      number
+  patternCount:      number
+  independenceScore: number | null
+  contradictionCount: number
+  calibrationDates:  string[]
+  teaserBiases:      string[]
+}
+
+function TeaserView({
   status,
   sessions,
   authToken,
@@ -548,10 +558,41 @@ function PaywallGate({
   authToken: string
   onUnlocked: () => void
 }) {
+  const [teaser, setTeaser] = useState<TeaserData | null>(null)
+
+  useEffect(() => {
+    if (!authToken) return
+    fetch('/api/mirror/teaser', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then(r => r.json())
+      .then(d => setTeaser(d as TeaserData))
+      .catch(() => {/* degrade gracefully */})
+  }, [authToken])
+
+  const PRICING_URL = 'https://www.quorumvault.xyz/#pricing'
+
+  const lockedBadge = (
+    <span style={{
+      display:        'inline-flex',
+      alignItems:     'center',
+      gap:            5,
+      fontSize:       10,
+      color:          'var(--text-4)',
+      background:     'var(--bg-card)',
+      border:         '1px solid var(--border-dim)',
+      borderRadius:   6,
+      padding:        '3px 9px',
+    }}>
+      <IconLock size={10} />
+      Locked
+    </span>
+  )
+
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
 
-      {/* Section: Decision Timeline (free) */}
+      {/* Section: Decision Timeline (always free) */}
       <div style={{ marginBottom: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
@@ -564,35 +605,56 @@ function PaywallGate({
         <MirrorTimeline sessions={sessions} />
       </div>
 
-      {/* Divider */}
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Section: Locked Bias Fingerprint */}
+      {/* Section: Mirror stats summary (teaser numbers) */}
+      {teaser && (
+        <div style={{
+          display:             'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap:                 12,
+          marginBottom:        32,
+        }}>
+          {[
+            { label: 'Patterns detected',      value: teaser.patternCount > 0 ? String(teaser.patternCount) : '—' },
+            {
+              label: 'Independence score',
+              value: teaser.independenceScore != null
+                ? <span style={{ filter: 'blur(6px)', userSelect: 'none' }}>{Math.round(teaser.independenceScore)}</span>
+                : '—',
+            },
+            { label: 'Active contradictions', value: teaser.contradictionCount > 0 ? String(teaser.contradictionCount) : '—' },
+          ].map((stat, i) => (
+            <div key={i} style={{
+              background:   'var(--bg-card)',
+              border:       '1px solid var(--border-dim)',
+              borderRadius: 10,
+              padding:      '14px 16px',
+              textAlign:    'center',
+            }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>
+                {stat.value}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                {stat.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Section: Bias Fingerprint (locked) */}
       <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Bias Fingerprint
           </h3>
-          <span style={{
-            display:        'inline-flex',
-            alignItems:     'center',
-            gap:            5,
-            fontSize:       10,
-            color:          'var(--text-4)',
-            background:     'var(--bg-card)',
-            border:         '1px solid var(--border-dim)',
-            borderRadius:   6,
-            padding:        '3px 9px',
-          }}>
-            <IconLock size={10} />
-            Locked
-          </span>
+          {lockedBadge}
         </div>
-
         {status.teaserBiases.length > 0 ? (
           <>
             <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-              {status.teaserBiases.length} pattern{status.teaserBiases.length !== 1 ? 's' : ''} detected across your decisions. Unlock to read your full profile.
+              {status.teaserBiases.length} pattern{status.teaserBiases.length !== 1 ? 's' : ''} detected across your decisions. Subscribe to read your full profile.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
               {status.teaserBiases.map(key => (
@@ -602,49 +664,98 @@ function PaywallGate({
           </>
         ) : (
           <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
-            Bias patterns are being compiled from your sessions.
-            Continue running decisions to build your fingerprint.
+            Bias patterns are being compiled from your decisions.
           </p>
         )}
       </div>
 
+      {/* Section: Independence Score (locked / blurred) */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Decision Independence Score
+          </h3>
+          {lockedBadge}
+        </div>
+        <div style={{
+          background:   'var(--bg-card)',
+          border:       '1px solid var(--border-dim)',
+          borderRadius: 10,
+          padding:      '18px 20px',
+          display:      'flex',
+          alignItems:   'center',
+          gap:          20,
+        }}>
+          <div style={{ fontSize: 38, fontWeight: 700, color: 'var(--text-1)', filter: 'blur(8px)', userSelect: 'none', flexShrink: 0 }}>
+            {teaser?.independenceScore != null ? Math.round(teaser.independenceScore) : 72}
+          </div>
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
+            Your independence score measures how much your judgment compounds over time versus deferring to external validation. Visible after subscribing.
+          </p>
+        </div>
+      </div>
+
+      {/* Section: Contradiction Detector (locked) */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Contradiction Detector
+          </h3>
+          {lockedBadge}
+        </div>
+        <div style={{
+          background:   'var(--bg-card)',
+          border:       '1px solid var(--border-dim)',
+          borderRadius: 10,
+          padding:      '16px 20px',
+        }}>
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
+            {teaser && teaser.contradictionCount > 0
+              ? `${teaser.contradictionCount} active contradiction${teaser.contradictionCount !== 1 ? 's' : ''} detected across your decisions. Subscribe to see where your stated principles conflict with your actual choices.`
+              : 'Scans your decisions for inconsistencies between your stated principles and actual choices. Visible after subscribing.'}
+          </p>
+        </div>
+      </div>
+
       {/* CTA card */}
       <div style={{
-        background:    'var(--bg-card)',
-        border:        '1px solid var(--border-mid)',
-        borderRadius:  14,
-        padding:       '24px 24px',
-        marginTop:     28,
+        background:   'var(--bg-card)',
+        border:       '1px solid var(--gold-dim)',
+        borderRadius: 14,
+        padding:      '24px 24px',
+        marginTop:    36,
       }}>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>
-          Unlock Decision Profile
+        <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>
+          Subscribe to unlock
         </p>
         <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 6px' }}>
-          Your full behavioral mirror — ₹4,999
+          Your behavioral mirror is already building.
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 20px' }}>
-          The same quality of insight advisors charge ₹50,000 for —
-          derived from your actual decisions, not a questionnaire.
+          From ₹1,499/month. Cancel anytime. The same quality of insight advisors charge ₹50,000 for — derived from your actual decisions, not a questionnaire.
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
-          {[
-            'Full Bias Fingerprint — your conditional patterns in plain language',
-            'Pattern interpretation — what activates each tendency and when',
-            'Decision Independence Score — is your judgment compounding?',
-          ].map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                style={{ flexShrink: 0, marginTop: 2 }}>
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              <span style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5 }}>{item}</span>
-            </div>
-          ))}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <a
+            href={PRICING_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display:      'inline-block',
+              padding:      '10px 22px',
+              background:   'rgba(201,168,76,0.12)',
+              border:       '1px solid var(--gold-dim)',
+              borderRadius: 8,
+              color:        'var(--gold)',
+              fontSize:     13,
+              fontWeight:   600,
+              fontFamily:   'inherit',
+              textDecoration: 'none',
+              transition:   'all 0.15s',
+            }}
+          >
+            See plans →
+          </a>
         </div>
-        <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 6px', lineHeight: 1.5 }}>
-          Mirror unlock is also included in the ₹25,000 live advisory session + Brief.
-        </p>
         <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
       </div>
     </div>
@@ -816,8 +927,8 @@ export default function MirrorPage() {
       const data = await res.json() as MirrorStatus
       setStatus(data)
 
-      // If user can see the timeline (paywall or unlocked), fetch it
-      if (data.gateState === 'paywall' || data.gateState === 'unlocked') {
+      // Fetch timeline for teaser and unlocked states
+      if (data.gateState === 'teaser' || data.gateState === 'unlocked') {
         const tlRes  = await fetch('/api/mirror/timeline', { headers })
         const tlData = await tlRes.json() as { sessions: TimelineSession[] }
         setSessions(tlData.sessions ?? [])
@@ -837,7 +948,7 @@ export default function MirrorPage() {
   }, [authToken, fetchStatus])
 
   // ── Called when unlock code succeeds ──────────────────────────────────────
-  // Re-fetches status so gateState transitions paywall → unlocked in-place.
+  // Re-fetches status so gateState transitions teaser → unlocked in-place.
   const handleUnlocked = useCallback(() => {
     setLoading(true)
     fetchStatus(authToken)
@@ -920,8 +1031,8 @@ export default function MirrorPage() {
           {status?.gateState !== 'unlocked' && <span style={{ width: 60 }} />}
         </div>
 
-        {/* ── Page header (paywall/unlocked only) ──────────────────────────── */}
-        {(status?.gateState === 'paywall' || status?.gateState === 'unlocked') && (
+        {/* ── Page header (teaser/unlocked only) ──────────────────────────── */}
+        {(status?.gateState === 'teaser' || status?.gateState === 'unlocked') && (
           <div style={{
             padding:      '32px 24px 24px',
             maxWidth:     680,
@@ -933,7 +1044,7 @@ export default function MirrorPage() {
             <p style={{ fontSize: 13.5, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
               {status.gateState === 'unlocked'
                 ? 'Your behavioral patterns across all decisions.'
-                : 'Your decision history — bias fingerprint locked below.'}
+                : 'Your Mirror is building. Subscribe to unlock the full profile.'}
             </p>
           </div>
         )}
@@ -978,19 +1089,19 @@ export default function MirrorPage() {
           {/* Gate states */}
           {!loading && !fetchError && status && (
             <>
-              {status.gateState === 'auth'      && <AuthGate />}
-              {status.gateState === 'threshold' && (
-                <ThresholdGate sessionCount={status.sessionCount} threshold={status.threshold} />
+              {status.gateState === 'auth'     && <AuthGate />}
+              {status.gateState === 'locked'   && (
+                <LockedView sessionCount={status.sessionCount} />
               )}
-              {status.gateState === 'paywall'   && (
-                <PaywallGate
+              {status.gateState === 'teaser'   && (
+                <TeaserView
                   status={status}
                   sessions={sessions}
                   authToken={authToken ?? ''}
                   onUnlocked={handleUnlocked}
                 />
               )}
-              {status.gateState === 'unlocked'  && (
+              {status.gateState === 'unlocked' && (
                 <UnlockedView
                   status={status}
                   sessions={sessions}

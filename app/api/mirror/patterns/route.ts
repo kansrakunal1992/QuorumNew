@@ -31,6 +31,7 @@
 import { NextResponse }       from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 const PATTERNS_SESSION_THRESHOLD = 3
 
@@ -108,18 +109,9 @@ export async function GET(req: Request) {
   const supabase = createServiceClient()
 
   // ── 2. Mirror access gate ─────────────────────────────────────────────────
-  const { data: accessRow } = await supabase
-    .from('mirror_access')
-    .select('id, expires_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (!accessRow) {
+  const accessState = await getMirrorAccessState(userId, supabase)
+  if (accessState !== 'unlocked') {
     return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
-  }
-
-  if (accessRow.expires_at && new Date(accessRow.expires_at) < new Date()) {
-    return NextResponse.json({ error: 'Mirror access has expired' }, { status: 403 })
   }
 
   // ── 3. Fetch user sessions ────────────────────────────────────────────────

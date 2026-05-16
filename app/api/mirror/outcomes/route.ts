@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 /**
  * GET /api/mirror/outcomes
@@ -37,6 +38,14 @@ export async function GET(req: Request) {
     }
 
     const supabase = createServiceClient()
+
+    // ── Access gate (authenticated users only) ────────────────────────────────
+    if (userId) {
+      const accessState = await getMirrorAccessState(userId, supabase)
+      if (accessState !== 'unlocked') {
+        return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
+      }
+    }
 
     // ── Step 1: resolve all session IDs for this identity ────────
     // outcomes.session_id → sessions is the only ownership link.

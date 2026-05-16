@@ -20,6 +20,7 @@ import { NextResponse }         from 'next/server'
 import { createServiceClient }   from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { calculateIndependenceScore, getScoreBand } from '@/lib/independence-score'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 // ── Auth helper (shared with fingerprint route) ───────────────────────────────
 
@@ -49,19 +50,10 @@ export async function GET(req: Request) {
 
   const supabase = createServiceClient()
 
-  // Require mirror_access — Independence Score is part of the paid tier
-  const { data: accessRow } = await supabase
-    .from('mirror_access')
-    .select('id, expires_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (!accessRow) {
+  // Require mirror access — Independence Score is part of the paid tier
+  const accessState = await getMirrorAccessState(userId, supabase)
+  if (accessState !== 'unlocked') {
     return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
-  }
-
-  if (accessRow.expires_at && new Date(accessRow.expires_at) < new Date()) {
-    return NextResponse.json({ error: 'Mirror access has expired' }, { status: 403 })
   }
 
   // Fetch the most recent score entry for this user

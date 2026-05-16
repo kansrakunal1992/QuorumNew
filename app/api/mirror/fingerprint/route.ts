@@ -22,6 +22,7 @@ import { NextResponse }       from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { buildFingerprint }   from '@/lib/mirror-fingerprint'
+import { getMirrorAccessState } from '@/lib/mirror-access'
 
 export async function GET(req: Request) {
   const supabase = createServiceClient()
@@ -48,20 +49,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // ── 2. Check mirror_access ─────────────────────────────────────────────────
-  const { data: accessRow } = await supabase
-    .from('mirror_access')
-    .select('id, expires_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (!accessRow) {
+  // ── 2. Check mirror access state ──────────────────────────────────────────
+  const accessState = await getMirrorAccessState(userId, supabase)
+  if (accessState !== 'unlocked') {
     return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
-  }
-
-  // Check expiry (for trial access_type)
-  if (accessRow.expires_at && new Date(accessRow.expires_at) < new Date()) {
-    return NextResponse.json({ error: 'Mirror access has expired' }, { status: 403 })
   }
 
   // ── 3. Build fingerprint ───────────────────────────────────────────────────
