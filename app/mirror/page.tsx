@@ -32,6 +32,7 @@ import IndependenceScore      from '@/components/IndependenceScore'
 import DecisionRules          from '@/components/DecisionRules'
 import ContradictionDetector  from '@/components/ContradictionDetector'
 import CalibrationSparkline   from '@/components/CalibrationSparkline'
+import PatternStore           from '@/components/PatternStore'
 import type { MirrorStatus, TimelineSession } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -717,6 +718,28 @@ function UnlockedView({
           The operating principles you implicitly follow — extracted from how you reason, not what you say about yourself.
         </p>
         <DecisionRules authToken={authToken} sessionCount={status.sessionCount} />
+      </div>
+
+      {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* Pattern Store — Sprint 18b */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Decision Patterns
+          </h3>
+          {status.sessionCount >= 3 && (
+            <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
+              From {status.sessionCount} decisions
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          What keeps showing up in how you make decisions — not what you say about yourself, but what Quorum
+          has observed across your actual sessions.
+        </p>
+        <PatternStore authToken={authToken} />
       </div>
 
       {/* Divider */}

@@ -97,3 +97,32 @@ export interface FingerprintData {
   sessionCount: number
   generatedAt: string
 }
+
+// ── Pattern Store (Sprint 17 / 18b) ──────────────────────────────────────────
+
+export type RuleType = 'REDIRECT' | 'GATE' | 'FLAG'
+
+export interface RulePattern {
+  rule_id:     string
+  label:       string
+  description: string
+  type:        RuleType
+  fire_count:  number
+  pct:         number   // fraction of sessions_with_rules — e.g. 0.67
+}
+
+export interface DimPattern {
+  dim:        string
+  label:      string
+  avg_score:  number   // 1–5 scale
+  high_count: number   // sessions where score >= 4
+}
+
+export interface PatternStoreData {
+  threshold_met:         boolean
+  session_count:         number
+  sessions_with_rules:   number
+  sessions_with_vectors: number
+  patterns:              RulePattern[]
+  top_dimensions:        DimPattern[]
+}
