@@ -42,68 +42,68 @@ const TYPE_CONFIG: Record<RuleType, { label: string; color: string; bg: string }
 
 const RULE_CONTENT: Record<string, { plain: string; action: string }> = {
   R1: {
-    plain:  'You're trying to decide something that depends on a bigger, unresolved question you haven't faced yet. Working on the downstream decision before the upstream one is settled tends to produce analysis that doesn't stick.',
-    action: 'Before starting any significant decision, ask: "Is there a larger, prior question this one depends on?" If yes — that's the decision to make first.',
+    plain:  `You're trying to decide something that depends on a bigger, unresolved question you haven't faced yet. Working on the downstream decision before the upstream one is settled tends to produce analysis that doesn't stick.`,
+    action: `Before starting any significant decision, ask: "Is there a larger, prior question this one depends on?" If yes — that's the decision to make first.`,
   },
   R2: {
-    plain:  'This decision is tangled up with who you are or want to be. When identity is at stake, pure analysis won't cut through — the values question has to come first, or you'll keep circling.',
-    action: 'Write down what going each way says about you. The identity question needs to be named and answered before you start weighing options.',
+    plain:  `This decision is tangled up with who you are or want to be. When identity is at stake, pure analysis won't cut through — the values question has to come first, or you'll keep circling.`,
+    action: `Write down what going each way says about you. The identity question needs to be named and answered before you start weighing options.`,
   },
   R3: {
-    plain:  'The information you have isn't good enough to discriminate between your options. Deciding here means guessing dressed up as reasoning.',
-    action: 'Don't force it. Name the one or two things you'd need to know, and go find them before you proceed.',
+    plain:  `The information you have isn't good enough to discriminate between your options. Deciding here means guessing dressed up as reasoning.`,
+    action: `Don't force it. Name the one or two things you'd need to know, and go find them before you proceed.`,
   },
   R4: {
-    plain:  'The downside of being wrong on this decision is much larger than the upside of being right — but the way you're approaching it doesn't always reflect that asymmetry. You're treating a high-consequence decision like a normal one.',
-    action: 'Before committing, write down the worst realistic outcome if you're wrong. If that number or consequence is much bigger than the gain, your bar for deciding should be higher than it currently feels.',
+    plain:  `The downside of being wrong on this decision is much larger than the upside of being right — but the way you're approaching it doesn't always reflect that asymmetry. You're treating a high-consequence decision like a normal one.`,
+    action: `Before committing, write down the worst realistic outcome if you're wrong. If that number or consequence is much bigger than the gain, your bar for deciding should be higher than it currently feels.`,
   },
   R5: {
-    plain:  'The decision feels urgent — but the pressure is coming from your emotional state, not from a real deadline. Emotional intensity is manufacturing urgency that doesn't exist in the situation itself.',
-    action: 'Ask yourself: "What actually happens if I wait 72 hours?" If the answer is "not much" — the urgency isn't real. The intensity is.',
+    plain:  `The decision feels urgent — but the pressure is coming from your emotional state, not from a real deadline. Emotional intensity is manufacturing urgency that doesn't exist in the situation itself.`,
+    action: `Ask yourself: "What actually happens if I wait 72 hours?" If the answer is "not much" — the urgency isn't real. The intensity is.`,
   },
   R6: {
-    plain:  'Multiple people are emotionally involved, and you're trying to think your way to an answer before everyone is even on the same page. The analysis becomes irrelevant if the people part isn't resolved first.',
-    action: 'Make alignment the explicit first step — not something you hope happens once you've figured out what you want. Ask each person what they actually need from the outcome before you start analysing options.',
+    plain:  `Multiple people are emotionally involved, and you're trying to think your way to an answer before everyone is even on the same page. The analysis becomes irrelevant if the people part isn't resolved first.`,
+    action: `Make alignment the explicit first step — not something you hope happens once you've figured out what you want. Ask each person what they actually need from the outcome before you start analysing options.`,
   },
   R7: {
-    plain:  'There's one specific piece of missing information that would meaningfully change your answer — and you're moving forward without it.',
-    action: 'Ask: "What one thing, if I knew it, would change my answer?" If you can name it clearly — go get it before you decide.',
+    plain:  `There's one specific piece of missing information that would meaningfully change your answer — and you're moving forward without it.`,
+    action: `Ask: "What one thing, if I knew it, would change my answer?" If you can name it clearly — go get it before you decide.`,
   },
   R8: {
-    plain:  'Two things you genuinely care about are pulling in opposite directions, and no amount of analysis will resolve that. This isn't an information problem — it's a values conflict.',
-    action: 'Name the two values in conflict explicitly. Then decide which one you're choosing to prioritise in this specific situation — and own that choice rather than trying to optimise around it.',
+    plain:  `Two things you genuinely care about are pulling in opposite directions, and no amount of analysis will resolve that. This isn't an information problem — it's a values conflict.`,
+    action: `Name the two values in conflict explicitly. Then decide which one you're choosing to prioritise in this specific situation — and own that choice rather than trying to optimise around it.`,
   },
   R9: {
-    plain:  'This decision is hard to undo, and you're feeling pressure to commit — but there's no real reason to rush. The combination of irreversibility and emotional urgency is dangerous.',
-    action: 'Write it down: can this be undone? If not, the bar for deciding should be significantly higher than it currently feels. Slow down in proportion to how permanent the outcome is.',
+    plain:  `This decision is hard to undo, and you're feeling pressure to commit — but there's no real reason to rush. The combination of irreversibility and emotional urgency is dangerous.`,
+    action: `Write it down: can this be undone? If not, the bar for deciding should be significantly higher than it currently feels. Slow down in proportion to how permanent the outcome is.`,
   },
   R10: {
-    plain:  'Too many moving parts, too many unknowns — trying to analyse this as one decision generates noise, not clarity.',
-    action: 'Break it into 2–3 core sub-questions and solve those separately first. Don't attempt the whole picture until the component questions are clearer.',
+    plain:  `Too many moving parts, too many unknowns — trying to analyse this as one decision generates noise, not clarity.`,
+    action: `Break it into 2–3 core sub-questions and solve those separately first. Don't attempt the whole picture until the component questions are clearer.`,
   },
   R12: {
-    plain:  'This is a joint decision, but the people involved aren't aligned on what actually matters. Analysing options together before that's resolved means everyone is arguing past each other.',
-    action: 'Have the values conversation first. What does each person actually need from this outcome — not want, need. That question comes before any option is put on the table.',
+    plain:  `This is a joint decision, but the people involved aren't aligned on what actually matters. Analysing options together before that's resolved means everyone is arguing past each other.`,
+    action: `Have the values conversation first. What does each person actually need from this outcome — not want, need. That question comes before any option is put on the table.`,
   },
 }
 
 // ── Per-dimension plain content ───────────────────────────────────────────────
 
 const DIM_CONTENT: Record<string, { meaning: string }> = {
-  reversibility:                { meaning: 'How easy it would be to undo this decision if it turns out to be wrong.' },
-  time_horizon:                 { meaning: 'How far into the future the effects of this decision reach.' },
-  stakes_magnitude:             { meaning: 'How much is actually at stake — financially, professionally, or relationally.' },
-  outcome_uncertainty:          { meaning: 'How unclear the result will be, even if you decide thoughtfully.' },
-  ambiguity:                    { meaning: 'How unclear the decision itself is — what you're even choosing between.' },
-  task_complexity:              { meaning: 'How many moving parts, people, and variables are involved.' },
-  decision_discriminating_info: { meaning: 'How much the right information would actually change your answer.' },
-  time_pressure:                { meaning: 'How much of a real deadline exists on this decision.' },
-  decision_unit:                { meaning: 'How many people are making this decision together.' },
-  value_conflict:               { meaning: 'How much two things you genuinely care about are pulling in opposite directions.' },
-  emotional_intensity:          { meaning: 'How much emotion is active in how you're approaching this.' },
-  identity_alignment:           { meaning: 'How much this decision is tied to who you are or want to be.' },
-  regret_asymmetry:             { meaning: 'How much worse the downside is compared to the upside of getting it right.' },
-  upstream_dependency:          { meaning: 'How much this decision depends on a bigger, unresolved one that sits behind it.' },
+  reversibility:                { meaning: `How easy it would be to undo this decision if it turns out to be wrong.` },
+  time_horizon:                 { meaning: `How far into the future the effects of this decision reach.` },
+  stakes_magnitude:             { meaning: `How much is actually at stake — financially, professionally, or relationally.` },
+  outcome_uncertainty:          { meaning: `How unclear the result will be, even if you decide thoughtfully.` },
+  ambiguity:                    { meaning: `How unclear the decision itself is — what you're even choosing between.` },
+  task_complexity:              { meaning: `How many moving parts, people, and variables are involved.` },
+  decision_discriminating_info: { meaning: `How much the right information would actually change your answer.` },
+  time_pressure:                { meaning: `How much of a real deadline exists on this decision.` },
+  decision_unit:                { meaning: `How many people are making this decision together.` },
+  value_conflict:               { meaning: `How much two things you genuinely care about are pulling in opposite directions.` },
+  emotional_intensity:          { meaning: `How much emotion is active in how you're approaching this.` },
+  identity_alignment:           { meaning: `How much this decision is tied to who you are or want to be.` },
+  regret_asymmetry:             { meaning: `How much worse the downside is compared to the upside of getting it right.` },
+  upstream_dependency:          { meaning: `How much this decision depends on a bigger, unresolved one that sits behind it.` },
 }
 
 // ── Computed headline synthesis ───────────────────────────────────────────────
