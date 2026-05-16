@@ -163,13 +163,15 @@ function computeDimSynthesis(dims: DimPattern[]): string | null {
   const hasEmotion= dims.some(d => d.dim === 'emotional_intensity' && d.avg_score >= 3.5)
 
   if (allHigh && hasStakes && hasUncert) {
-    return 'All your top dimensions score high. You consistently bring decisions that are genuinely difficult — high stakes, real uncertainty, meaningful complexity. This isn't anxiety or overthinking. These are the hardest category of decisions. That context matters when judging how you approach them.'
+    return `All your top dimensions score high. You consistently bring decisions that are genuinely difficult — high stakes, real uncertainty, meaningful complexity. This isn't anxiety or overthinking. These are the hardest category of decisions. That context matters when judging how you approach them.`
+
   }
   if (hasStakes && hasEmotion) {
     return 'High stakes and high emotional intensity appear together consistently. These two factors together make it harder to assess risk accurately — emotion compresses the time horizon and inflates urgency.'
   }
   if (hasUncert && dims.some(d => d.dim === 'ambiguity' && d.avg_score >= 3.0)) {
-    return 'Uncertainty and ambiguity are both elevated across your decisions — meaning you often don't know what you're choosing between, and even if you did, you couldn't predict the outcome. Structured thinking helps here more than more information.'
+    return `Uncertainty and ambiguity are both elevated across your decisions — meaning you often don't know what you're choosing between, and even if you did, you couldn't predict the outcome. Structured thinking helps here more than more information.`
+
   }
   return null
 }
