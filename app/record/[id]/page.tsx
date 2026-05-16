@@ -95,6 +95,10 @@ export default async function RecordPage({ params }: Props) {
               contextText={session.context_text}
               userId={session.user_id ?? null}
             />
+            </div>
+        </div>
+
+        {/* Decision Brief CTA — Sprint 8 */}
         <div style={{ marginBottom: 24 }}>
           <BriefCTA sessionId={session.id} />
         </div>
