@@ -82,6 +82,7 @@ export async function POST(req: Request) {
   // ── 4. Upsert mirror_access row ───────────────────────────────────────────
   // Uses upsert (not insert) to handle edge case where an expired row exists.
   // access_type: 'lifetime' — unlock codes are permanent grants.
+  const supabase  = createServiceClient()
   const grantedAt = new Date().toISOString()
 
   const { error: upsertError } = await supabase
