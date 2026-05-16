@@ -355,7 +355,7 @@ export default function SynthesisCard({
             </div>
             <p style={{ fontSize: 11, color: 'var(--synthesis-text-sub)', marginTop: 0 }}>
               {state === 'waiting' && !allDone ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
-                : state === 'waiting' && allDone && !examinerReady ? 'Answer the Examiner questions above to unlock synthesis'
+                : state === 'waiting' && allDone && !examinerReady ? 'Answer the Examiner questions to unlock synthesis'
                 : state === 'streaming' && isRecalibrating ? 'Recalibrating after pushback…'
                 : state === 'streaming' ? 'Synthesising across all perspectives…'
                 : 'What the council collectively surfaced'}
