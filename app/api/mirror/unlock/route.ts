@@ -1,31 +1,37 @@
 // app/api/mirror/unlock/route.ts
-// ── Mirror Module: Access Unlock Route (Sprint 7b) ────────────────────────────
+// ── Mirror Module: Access Unlock Route (Sprint 19) ────────────────────────────
 //
 // POST /api/mirror/unlock
 //
 // Body: { code: string }
 // Auth: Bearer token required (user must be signed in)
 //
-// Validates the unlock code against MIRROR_UNLOCK_TOKEN env var.
-// On match: inserts a row into mirror_access for this user_id.
-// Returns: { status: 'ok', grantedAt: string }
+// Validates the unlock code against three Railway env vars:
+//   MIRROR_TOKEN_MONTHLY   → grants monthly access (30 days)
+//   MIRROR_TOKEN_ANNUAL    → grants annual access (365 days)
+//   MIRROR_TOKEN_LIFETIME  → grants lifetime access (no expiry)
 //
-// This enables the manual sales flow:
-//   1. User sees paywall on Mirror page
-//   2. They contact Quorum (WhatsApp / email)
-//   3. We share the unlock code privately
-//   4. User enters it in the Mirror UI — instant access
+// Each token is a shared secret — share the appropriate one privately
+// (WhatsApp / email) after payment. Rotate any token in Railway at any time;
+// existing mirror_access rows are unaffected by rotation.
 //
-// The token is a shared secret (not user-specific). It can be rotated
-// at any time by updating MIRROR_UNLOCK_TOKEN in Railway env vars.
-// Old grants in mirror_access are not affected by rotation.
+// Legacy: MIRROR_UNLOCK_TOKEN still accepted as lifetime fallback
+//         so existing shared codes don't break on deploy.
 //
-// Future: replace with Razorpay webhook that calls this internally.
+// Future: replace with Razorpay webhook that calls /api/payment/create-subscription.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }        from 'next/server'
 import { createServiceClient }  from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+
+function getExpiresAt(accessType: 'monthly' | 'annual' | 'lifetime'): string | null {
+  if (accessType === 'lifetime') return null
+  const d = new Date()
+  if (accessType === 'monthly') d.setDate(d.getDate() + 30)
+  if (accessType === 'annual')  d.setDate(d.getDate() + 365)
+  return d.toISOString()
+}
 
 export async function POST(req: Request) {
   // ── 1. Resolve user_id from Bearer token ──────────────────────────────────
@@ -63,38 +69,47 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unlock code required' }, { status: 400 })
   }
 
-  // ── 3. Validate code against env var ──────────────────────────────────────
-  const validToken = process.env.MIRROR_UNLOCK_TOKEN
-  if (!validToken) {
-    console.error('[mirror/unlock] MIRROR_UNLOCK_TOKEN env var not set')
-    return NextResponse.json({ error: 'Unlock not configured' }, { status: 500 })
+  // ── 3. Match code against all three token env vars ────────────────────────
+  // Also accepts legacy MIRROR_UNLOCK_TOKEN as lifetime fallback.
+  const provided = code.trim().toLowerCase()
+
+  const tokenMap: Array<{ envKey: string; accessType: 'monthly' | 'annual' | 'lifetime' }> = [
+    { envKey: 'MIRROR_TOKEN_MONTHLY',  accessType: 'monthly'  },
+    { envKey: 'MIRROR_TOKEN_ANNUAL',   accessType: 'annual'   },
+    { envKey: 'MIRROR_TOKEN_LIFETIME', accessType: 'lifetime' },
+    { envKey: 'MIRROR_UNLOCK_TOKEN',   accessType: 'lifetime' }, // legacy fallback
+  ]
+
+  let matchedType: 'monthly' | 'annual' | 'lifetime' | null = null
+
+  for (const { envKey, accessType } of tokenMap) {
+    const envVal = process.env[envKey]
+    if (envVal && provided === envVal.trim().toLowerCase()) {
+      matchedType = accessType
+      break
+    }
   }
 
-  // Constant-time comparison to prevent timing attacks
-  const providedCode  = code.trim().toLowerCase()
-  const expectedToken = validToken.trim().toLowerCase()
-
-  if (providedCode !== expectedToken) {
-    // Intentionally vague error message — don't confirm what's wrong
+  if (!matchedType) {
+    // Intentionally vague — don't confirm what's wrong
     return NextResponse.json({ error: 'Invalid unlock code' }, { status: 403 })
   }
 
   // ── 4. Upsert mirror_access row ───────────────────────────────────────────
-  // Uses upsert (not insert) to handle edge case where an expired row exists.
-  // access_type: 'lifetime' — unlock codes are permanent grants.
-  const supabase  = createServiceClient()
-  const grantedAt = new Date().toISOString()
+  const supabase   = createServiceClient()
+  const grantedAt  = new Date().toISOString()
+  const expiresAt  = getExpiresAt(matchedType)
 
   const { error: upsertError } = await supabase
     .from('mirror_access')
     .upsert(
       {
         user_id:     userId,
-        access_type: 'lifetime',
+        access_type: matchedType,
         granted_at:  grantedAt,
         started_at:  grantedAt,
-        expires_at:  null,
-        payment_ref: `code:${code.slice(0, 6)}…`,  // partial ref for audit trail
+        expires_at:  expiresAt,
+        payment_ref: `code:${code.trim().slice(0, 6)}…`,
       },
       { onConflict: 'user_id' },
     )
@@ -104,9 +119,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to grant access' }, { status: 500 })
   }
 
+  console.log(`[mirror/unlock] Granted ${matchedType} to ${userId} (expires: ${expiresAt ?? 'never'})`)
+
   return NextResponse.json({
-    status:    'ok',
+    status:     'ok',
+    accessType: matchedType,
+    expiresAt,
     grantedAt,
-    message:   'Mirror unlocked',
+    message:    'Mirror unlocked',
   })
 }
