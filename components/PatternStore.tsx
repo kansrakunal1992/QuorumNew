@@ -275,7 +275,7 @@ function RuleSourceDrawer({
 
 // ── Rule row ──────────────────────────────────────────────────────────────────
 
-function RuleRow({ pattern, maxCount, authToken }: { pattern: RulePattern; maxCount: number }) {
+function RuleRow({ pattern, maxCount, authToken }: { pattern: RulePattern; maxCount: number; authToken?: string }) {
   const cfg        = TYPE_CONFIG[pattern.type]
   const barPct     = `${Math.round((pattern.fire_count / Math.max(maxCount, 1)) * 100)}%`
   const isStrong   = pattern.fire_count >= 3
