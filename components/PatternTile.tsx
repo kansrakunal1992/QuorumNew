@@ -1,34 +1,23 @@
 'use client'
 
 // components/PatternTile.tsx
-// ── Mirror Module: Individual Pattern Tile (Sprint 7b) ────────────────────────
+// ── Mirror Module: Individual Pattern Tile (Sprint 7b, updated Sprint 20) ─────
 //
-// Renders a single detected bias pattern as a card.
-//
-// Two visual states:
-//
-//   CONFIRMED (isTeaser: false, detectionCount >= 2)
-//     Shows: bias label, confidence dots, AI interpretation,
-//            activation summary (if available), detection count footer
-//
-//   FORMING   (isTeaser: true, detectionCount === 1)
-//     Shows: bias label, single confidence dot, "Pattern forming" copy,
-//            blurred content bars — signals more sessions needed
-//
-// Confidence dots:
-//   ● ○ ○   1 detection — forming
-//   ● ● ○   2 detections — confirmed
-//   ● ● ●   3+ detections — conditional pattern known
-//
-// Used in BiasFingerprint.tsx — rendered in a 2-column grid on desktop,
-// single column on mobile.
+// Sprint 20 additions:
+//   - signalType pill: 'distorting' | 'neutral' | 'adaptive' shown in footer
+//     when signalType is non-null (null for pre-Sprint-20 sessions → no pill)
+//   - Source session drawer: clicking "N of your sessions" in the footer
+//     fetches /api/mirror/sessions-lookup and shows an inline list of the
+//     decisions that drove the detection. Closes on click-outside.
+//     Requires authToken prop (passed down from BiasFingerprint → PatternTile).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { FingerprintTile } from '@/lib/types'
+import { useState, useEffect, useRef } from 'react'
+import type { FingerprintTile, SessionPreview, BiasSignalType } from '@/lib/types'
 
 // ── Confidence dot row ────────────────────────────────────────────────────────
 
-function ConfidenceDots({ dots, filled }: { dots: 1 | 2 | 3; filled: number }) {
+function ConfidenceDots({ filled }: { filled: number }) {
   return (
     <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
       {[0, 1, 2].map(i => (
@@ -59,7 +48,124 @@ const IconLock = () => (
   </svg>
 )
 
-// ── Forming tile (isTeaser: true) ─────────────────────────────────────────────
+// ── Signal type pill ──────────────────────────────────────────────────────────
+//
+// Shown only for confirmed tiles with a non-null signalType.
+// Absent for forming tiles and for detections from before Sprint 20.
+
+const SIGNAL_CONFIG: Record<BiasSignalType, { label: string; color: string; bg: string }> = {
+  distorting: { label: 'Working against you here', color: '#e05a5a', bg: 'rgba(224,90,90,0.07)'   },
+  neutral:    { label: 'Neutral in this context',  color: 'var(--text-4)', bg: 'transparent'      },
+  adaptive:   { label: 'May be an asset here',     color: '#4caf7d', bg: 'rgba(76,175,125,0.07)'  },
+}
+
+function SignalPill({ signalType }: { signalType: BiasSignalType }) {
+  const cfg = SIGNAL_CONFIG[signalType]
+  // Don't render a pill for 'neutral' — it's the default state, not worth labelling
+  if (signalType === 'neutral') return null
+  return (
+    <span style={{
+      display:       'inline-flex',
+      alignItems:    'center',
+      fontSize:      9.5,
+      fontWeight:    600,
+      letterSpacing: '0.04em',
+      color:         cfg.color,
+      background:    cfg.bg,
+      border:        `1px solid ${cfg.color}40`,
+      borderRadius:  4,
+      padding:       '2px 7px',
+    }}>
+      {cfg.label}
+    </span>
+  )
+}
+
+// ── Source session drawer ─────────────────────────────────────────────────────
+//
+// Inline popover listing the decisions that triggered this pattern.
+// Fetched lazily on first open — result cached in component state.
+
+interface DrawerProps {
+  sessionIds:  string[]
+  authToken:   string
+  onClose:     () => void
+}
+
+function SourceDrawer({ sessionIds, authToken, onClose }: DrawerProps) {
+  const [sessions, setSessions] = useState<SessionPreview[] | null>(null)
+  const [loading,  setLoading]  = useState(true)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  // Fetch session previews
+  useEffect(() => {
+    if (!sessionIds.length) { setLoading(false); return }
+    const ids = sessionIds.slice(0, 10).join(',')   // cap at 10
+    fetch(`/api/mirror/sessions-lookup?ids=${encodeURIComponent(ids)}`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then(r => r.json())
+      .then(d => setSessions(d.sessions ?? []))
+      .catch(() => setSessions([]))
+      .finally(() => setLoading(false))
+  }, [sessionIds, authToken])
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        marginTop:    8,
+        background:   'var(--bg-card)',
+        border:       '1px solid var(--border-mid)',
+        borderRadius: 8,
+        padding:      '12px 14px',
+        fontSize:     11.5,
+      }}
+    >
+      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px' }}>
+        Detected in these decisions
+      </p>
+
+      {loading && (
+        <p style={{ color: 'var(--text-4)', margin: 0 }}>Loading…</p>
+      )}
+
+      {!loading && sessions && sessions.length === 0 && (
+        <p style={{ color: 'var(--text-4)', margin: 0 }}>No sessions found.</p>
+      )}
+
+      {!loading && sessions && sessions.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {sessions.map(s => (
+            <div key={s.id} style={{
+              borderBottom: '1px solid var(--border-dim)',
+              paddingBottom: 6,
+              marginBottom: 2,
+            }}>
+              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px', lineHeight: 1.45 }}>
+                {s.decision_preview}
+              </p>
+              <p style={{ fontSize: 10, color: 'var(--text-4)', margin: 0 }}>
+                {new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Forming tile ──────────────────────────────────────────────────────────────
 
 function FormingTile({ tile }: { tile: FingerprintTile }) {
   return (
@@ -71,26 +177,15 @@ function FormingTile({ tile }: { tile: FingerprintTile }) {
       position:     'relative',
       overflow:     'hidden',
     }}>
-      {/* Subtle forming indicator stripe */}
       <div style={{
-        position:   'absolute',
-        top:        0,
-        left:       0,
-        width:      '100%',
-        height:     2,
+        position:   'absolute', top: 0, left: 0, width: '100%', height: 2,
         background: 'linear-gradient(90deg, var(--border-mid) 0%, transparent 100%)',
       }} />
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
         <span style={{
-          fontSize:      9.5,
-          fontWeight:    700,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color:         'var(--text-4)',
-          lineHeight:    1.4,
-          flex:          1,
+          fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em',
+          textTransform: 'uppercase', color: 'var(--text-4)', lineHeight: 1.4, flex: 1,
         }}>
           {tile.biasLabel}
         </span>
@@ -99,82 +194,63 @@ function FormingTile({ tile }: { tile: FingerprintTile }) {
         </span>
       </div>
 
-      {/* Blurred placeholder bars */}
       <div style={{ filter: 'blur(4px)', userSelect: 'none', pointerEvents: 'none', marginBottom: 10 }}>
         <div style={{ height: 7, background: 'var(--border-mid)', borderRadius: 3, marginBottom: 5, width: '90%', opacity: 0.6 }} />
         <div style={{ height: 7, background: 'var(--border-mid)', borderRadius: 3, marginBottom: 5, width: '75%', opacity: 0.5 }} />
         <div style={{ height: 7, background: 'var(--border-mid)', borderRadius: 3, width: '55%', opacity: 0.4 }} />
       </div>
 
-      {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <ConfidenceDots dots={1} filled={1} />
-        <span style={{ fontSize: 10, color: 'var(--text-4)', fontStyle: 'italic' }}>
-          Pattern forming
-        </span>
+        <ConfidenceDots filled={1} />
+        <span style={{ fontSize: 10, color: 'var(--text-4)', fontStyle: 'italic' }}>Pattern forming</span>
       </div>
     </div>
   )
 }
 
-// ── Confirmed tile (isTeaser: false) ─────────────────────────────────────────
+// ── Confirmed tile ────────────────────────────────────────────────────────────
 
-function ConfirmedTile({ tile }: { tile: FingerprintTile }) {
-  // Show activation summary for ALL confirmed tiles — gold for 3+, subtle for 2
-  const isStrong = tile.confidenceDots === 3
+function ConfirmedTile({ tile, authToken }: { tile: FingerprintTile; authToken: string }) {
+  const isStrong         = tile.confidenceDots === 3
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   return (
-    <div style={{
-      background:   'var(--bg-card)',
-      border:       '1px solid var(--border-mid)',
-      borderRadius: 10,
-      padding:      '15px 16px',
-      position:     'relative',
-      overflow:     'hidden',
-      transition:   'border-color 0.2s',
-    }}
+    <div
+      style={{
+        background:   'var(--bg-card)',
+        border:       '1px solid var(--border-mid)',
+        borderRadius: 10,
+        padding:      '15px 16px',
+        position:     'relative',
+        overflow:     'hidden',
+        transition:   'border-color 0.2s',
+      }}
       onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-hi)')}
       onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-mid)')}
     >
       {/* Active indicator stripe */}
       <div style={{
-        position:   'absolute',
-        top:        0,
-        left:       0,
-        width:      '100%',
-        height:     2,
+        position: 'absolute', top: 0, left: 0, width: '100%', height: 2,
         background: 'linear-gradient(90deg, var(--gold-dim) 0%, transparent 70%)',
       }} />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
         <span style={{
-          fontSize:      9.5,
-          fontWeight:    700,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color:         'var(--text-3)',
-          lineHeight:    1.4,
-          flex:          1,
+          fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em',
+          textTransform: 'uppercase', color: 'var(--text-3)', lineHeight: 1.4, flex: 1,
         }}>
           {tile.biasLabel}
         </span>
-        <ConfidenceDots dots={tile.confidenceDots} filled={tile.confidenceDots} />
+        <ConfidenceDots filled={tile.confidenceDots} />
       </div>
 
       {/* AI interpretation */}
-      <p style={{
-        fontSize:   12.5,
-        color:      'var(--text-2)',
-        lineHeight: 1.6,
-        margin:     '0 0 10px',
-      }}>
+      <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 10px' }}>
         {tile.interpretation}
       </p>
 
-      {/* Activation summary — own block for ALL confirmed tiles.
-          3+ detections: gold border + gold text (strong signal)
-          2 detections:  dim border + text-4 (emerging signal) */}
+      {/* Activation summary */}
       {tile.activationSummary && (
         <div style={{
           background:   isStrong ? 'rgba(201,168,76,0.05)' : 'transparent',
@@ -195,20 +271,66 @@ function ConfirmedTile({ tile }: { tile: FingerprintTile }) {
         </div>
       )}
 
-      {/* Footer — session count only, activation summary moved above */}
-      <div style={{ marginTop: 4 }}>
-        <span style={{ fontSize: 10, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
-          {tile.detectionCount} of your sessions
-        </span>
+      {/* Footer: signal pill + session count link */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {/* Signal type pill — only shown when non-null and non-neutral */}
+          {tile.signalType && <SignalPill signalType={tile.signalType} />}
+        </div>
+
+        {/* Clickable session count — opens source drawer */}
+        <button
+          onClick={() => setDrawerOpen(o => !o)}
+          style={{
+            background:  'transparent',
+            border:      'none',
+            cursor:      'pointer',
+            fontFamily:  'inherit',
+            fontSize:    10,
+            color:       drawerOpen ? 'var(--gold)' : 'var(--text-4)',
+            padding:     0,
+            transition:  'color 0.15s',
+            fontVariantNumeric: 'tabular-nums',
+            textDecoration: 'underline',
+            textDecorationColor: 'transparent',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--gold)'
+            ;(e.currentTarget as HTMLButtonElement).style.textDecorationColor = 'var(--gold)'
+          }}
+          onMouseLeave={e => {
+            if (!drawerOpen) {
+              (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-4)'
+              ;(e.currentTarget as HTMLButtonElement).style.textDecorationColor = 'transparent'
+            }
+          }}
+        >
+          {tile.detectionCount} of your sessions ↓
+        </button>
       </div>
+
+      {/* Source session drawer */}
+      {drawerOpen && tile.sessionIds.length > 0 && (
+        <SourceDrawer
+          sessionIds={tile.sessionIds}
+          authToken={authToken}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
     </div>
   )
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export default function PatternTile({ tile }: { tile: FingerprintTile }) {
+export default function PatternTile({
+  tile,
+  authToken = '',
+}: {
+  tile: FingerprintTile
+  authToken?: string
+}) {
   return tile.isTeaser
     ? <FormingTile tile={tile} />
-    : <ConfirmedTile tile={tile} />
+    : <ConfirmedTile tile={tile} authToken={authToken} />
 }

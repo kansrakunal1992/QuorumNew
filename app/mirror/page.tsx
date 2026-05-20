@@ -33,7 +33,7 @@ import DecisionRules          from '@/components/DecisionRules'
 import ContradictionDetector  from '@/components/ContradictionDetector'
 import CalibrationSparkline   from '@/components/CalibrationSparkline'
 import PatternStore           from '@/components/PatternStore'
-import type { MirrorStatus, TimelineSession } from '@/lib/types'
+import type { MirrorStatus, TimelineSession, BenchmarkData } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -762,6 +762,109 @@ function TeaserView({
   )
 }
 
+// ── Benchmark module (Sprint 20) ─────────────────────────────────────────────
+//
+// Fetches /api/mirror/benchmark and shows anonymised aggregate signals from
+// structurally similar decisions in the corpus.
+// Silently renders nothing when the cluster is too small (< 5 sessions).
+
+const BIAS_LABELS_BENCH: Record<string, string> = {
+  fomo_urgency:                      'FOMO / Manufactured Urgency',
+  overconfidence:                    'Overconfidence',
+  attribution_asymmetry:             'Attribution Asymmetry',
+  social_proof:                      'Social Proof Bias',
+  control_illusion:                  'Control Illusion',
+  speed_bias:                        'Speed Bias',
+  exit_optionality_mispricing:       'Exit Optionality Mispricing',
+  recency_bias:                      'Recency Bias',
+  uniqueness_fallacy:                'Uniqueness Fallacy',
+  deference_distortion:              'Deference Distortion',
+  relationship_alignment_assumption: 'Relationship Alignment',
+  success_compression:               'Success Compression',
+  commitment_escalation:             'Commitment Escalation',
+  information_anchoring:             'Information Anchoring',
+  loss_aversion_asymmetry:           'Loss Aversion Asymmetry',
+}
+
+function BenchmarkModule({ authToken }: { authToken: string }) {
+  const [data,    setData]    = useState<BenchmarkData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!authToken) return
+    fetch('/api/mirror/benchmark', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then(r => r.json())
+      .then(d => setData(d as BenchmarkData))
+      .catch(() => setData({ insufficient: true, cluster_size: 0, top_dimensions: [], top_biases: [] }))
+      .finally(() => setLoading(false))
+  }, [authToken])
+
+  // Silently hide while loading or when cluster is insufficient
+  if (loading || !data || data.insufficient) return null
+
+  return (
+    <>
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Others in Similar Decisions
+          </h3>
+          <span style={{ fontSize: 10, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
+            {data.cluster_size} in record
+          </span>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          Decisions with the same structural shape as yours, from others in the Quorum record.
+          No identities. No decision text. What keeps showing up in that cluster.
+        </p>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '16px 18px' }}>
+          {data.top_dimensions.length > 0 && (
+            <div style={{ marginBottom: data.top_biases.length > 0 ? 14 : 0 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px' }}>
+                Most elevated dimensions in this cluster
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.top_dimensions.map(d => (
+                  <div key={d.dim} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, height: 2, background: 'var(--bg-inset)', borderRadius: 1 }}>
+                      <div style={{ width: `${Math.round((d.avg_score / 5) * 100)}%`, height: '100%', background: 'var(--gold-dim)', borderRadius: 1 }} />
+                    </div>
+                    <span style={{ fontSize: 11.5, color: 'var(--text-2)', width: 180 }}>{d.label}</span>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums', width: 30, textAlign: 'right' }}>
+                      {d.avg_score.toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.top_biases.length > 0 && (
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px' }}>
+                Most common patterns in this cluster
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {data.top_biases.map(key => (
+                  <span key={key} style={{
+                    fontSize: 11, color: 'var(--text-3)', background: 'var(--bg-card-alt)',
+                    border: '1px solid var(--border-dim)', borderRadius: 4, padding: '3px 8px',
+                  }}>
+                    {BIAS_LABELS_BENCH[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+
 // ── Unlocked view ─────────────────────────────────────────────────────────────
 function UnlockedView({
   status,
@@ -793,9 +896,12 @@ function UnlockedView({
 
       {/* Bias Fingerprint — live (Sprint 7b) */}
       <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 14px' }}>
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
           Bias Fingerprint
         </h3>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          The conditions that trigger your patterns — not that you have them, but exactly when and why they show up.
+        </p>
         <BiasFingerprint authToken={authToken} />
       </div>
 
@@ -804,9 +910,12 @@ function UnlockedView({
 
       {/* Decision Independence Score — Sprint 7c */}
       <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 14px' }}>
-          Decision Independence
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+          Decision Independence Score
         </h3>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          How much this decision came from you. Whether your judgment is compounding or deferring over time.
+        </p>
         <IndependenceScore authToken={authToken} />
       </div>
 
@@ -817,7 +926,7 @@ function UnlockedView({
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Decision Rules
+            Your Implicit Rules
           </h3>
           {status.sessionCount >= 8 && (
             <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
@@ -838,7 +947,7 @@ function UnlockedView({
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Decision Patterns
+            What Keeps Coming Up
           </h3>
           {status.sessionCount >= 3 && (
             <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
@@ -881,7 +990,7 @@ function UnlockedView({
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Calibration Trend
+            Confidence Calibration
           </h3>
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
@@ -889,6 +998,9 @@ function UnlockedView({
         </p>
         <CalibrationSparkline authToken={authToken} />
       </div>
+
+      {/* Others in Similar Decisions — Sprint 20 */}
+      <BenchmarkModule authToken={authToken} />
     </div>
   )
 }

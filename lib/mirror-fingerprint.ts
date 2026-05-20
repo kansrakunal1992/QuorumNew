@@ -1,29 +1,19 @@
 // lib/mirror-fingerprint.ts
-// ── Mirror Module: Fingerprint Data Layer (Sprint 7b) ─────────────────────────
+// ── Mirror Module: Fingerprint Data Layer (Sprint 7b, updated Sprint 20) ───────
 //
-// Pulls from bias_library for a given user_id, applies confidence gating,
-// derives activation summaries from activation_contexts, then generates
-// the narrative + tile interpretations via a single AI call.
-//
-// Confidence tiers:
-//   detection_count == 1  → formingTile (isTeaser: true) — label shown, content blurred
-//   detection_count >= 2  → confirmedTile — full tile rendered
-//   detection_count >= 3  → conditional pattern added to activation_summary
-//
-// Narrative is generated only when >= 2 confirmed tiles exist.
-// If no confirmed tiles: narrative = null, page shows "Pattern forming" copy.
-//
-// One AI call generates: narrative + all tile interpretations + activation summaries.
-// This is intentional — avoids N calls per tile and keeps latency acceptable.
-//
-// Cached at the route level for 60s (Next.js fetch cache) to prevent
-// re-generating on every Mirror page visit.
+// Sprint 20 additions:
+//   - signalType: BiasSignalType | null  — predominant signal across all sessions
+//     for this bias (distorting / neutral / adaptive). Derived from signal_type
+//     stored inside activation_contexts per session by bias-score route.
+//     Uses getPredominantSignal() from bias-scorer.ts — no new DB column.
+//   - sessionIds: string[]  — passed through from bias_library.session_ids
+//     for the source-decision drawer in BiasFingerprint.tsx / PatternTile.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServiceClient } from '@/lib/supabase'
 import { createCompletion }    from '@/lib/ai-client'
 import { MIRROR_FINGERPRINT_NARRATIVE } from '@/lib/personas'
-import { BIAS_PARAMETERS }     from '@/lib/bias-scorer'
+import { BIAS_PARAMETERS, getPredominantSignal } from '@/lib/bias-scorer'
 import type { FingerprintTile, FingerprintData } from '@/lib/types'
 
 // ── Bias label lookup ─────────────────────────────────────────────────────────
@@ -42,19 +32,7 @@ function getConfidenceDots(detectionCount: number): 1 | 2 | 3 {
   return 1
 }
 
-// ── Derive activation summary from activation_contexts ───────────────────────
-//
-// activation_contexts is JSONB keyed by session_id:
-// {
-//   "session-uuid": {
-//     decision_type, emotional_signature, urgency_present, counterparty_present,
-//     reasoning, prosecutor_score, defense_score
-//   }
-// }
-//
 // ── Plain-English label maps ──────────────────────────────────────────────────
-// Maps raw ontology values (decision_type, emotional_signature) to
-// conversational phrases a non-technical user would recognize.
 
 const DECISION_TYPE_LABELS: Record<string, string> = {
   commitment:   'when committing to something hard to reverse',
@@ -89,7 +67,6 @@ function humanizeActivationSummary(
   const entries = Object.values(activationContexts) as Array<Record<string, unknown>>
   if (entries.length === 0) return null
 
-  // Count frequencies
   const typeCounts:    Record<string, number> = {}
   const emotionCounts: Record<string, number> = {}
   let urgencyCount      = 0
@@ -109,7 +86,6 @@ function humanizeActivationSummary(
 
   const conditions: string[] = []
 
-  // Prefer mapped labels; fall back to a generic but still readable phrase
   if (topType) {
     conditions.push(
       DECISION_TYPE_LABELS[topType]
@@ -131,7 +107,6 @@ function humanizeActivationSummary(
 
   if (detectionCount < 2 || conditions.length === 0) return null
 
-  // Compose as a readable sentence, not a tag list
   if (conditions.length === 1) {
     return `Most active ${conditions[0]}`
   }
@@ -161,13 +136,11 @@ async function generateFingerprintContent(
   sessionCount: number,
   emotionPatterns: string,
 ): Promise<AIFingerprintResponse> {
-  // Build context for the AI prompt
   const confirmedBiasesJson = confirmedBiasRows.map(b => ({
     bias_key:      b.biasKey,
     label:         b.biasLabel,
     detections:    b.detectionCount,
     asymmetry_avg: b.asymmetryAvg,
-    // Send a condensed version of activation_contexts — top 3 sessions only
     sample_contexts: Object.values(b.activationContexts).slice(0, 3),
   }))
 
@@ -183,7 +156,6 @@ async function generateFingerprintContent(
   try {
     return JSON.parse(clean) as AIFingerprintResponse
   } catch {
-    // Graceful degradation — return null narrative, empty interpretations
     return { narrative: null, tile_interpretations: [] }
   }
 }
@@ -225,7 +197,6 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       biasRows.flatMap(b => (b.session_ids as string[] | null) ?? []).slice(0, 20),
     )
 
-  // Build decision type distribution string
   const typeCounts: Record<string, number> = {}
   const emotionCounts: Record<string, number> = {}
 
@@ -273,7 +244,6 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     )
   }
 
-  // Build an interpretation lookup from AI response
   const interpLookup: Record<string, { interpretation: string; activation_summary: string }> = {}
   for (const tile of aiContent.tile_interpretations) {
     interpLookup[tile.bias_key] = {
@@ -288,10 +258,14 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     const aiTile     = interpLookup[biasKey]
     const activCtx   = (b.activation_contexts as Record<string, unknown>) ?? {}
     const detections = b.detection_count as number
+    const sessionIds = (b.session_ids as string[] | null) ?? []
 
-    // Activation summary: prefer AI-derived, fallback to rule-based
     const activationSummary =
       aiTile?.activation_summary || humanizeActivationSummary(activCtx, detections)
+
+    // Sprint 20: derive predominant signal type from per-session signal_type
+    // values stored in activation_contexts. Returns null for pre-Sprint-20 rows.
+    const signalType = getPredominantSignal(activCtx)
 
     return {
       biasKey,
@@ -301,19 +275,20 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       confidenceDots:    getConfidenceDots(detections),
       asymmetryAvg:      b.asymmetry_score_avg as number,
       activationSummary,
-      // Fallback if AI didn't generate interpretation for this tile:
-      // Use activation context to produce a minimal but meaningful string
       interpretation:    aiTile?.interpretation
         ?? (activationSummary
           ? `This pattern has appeared consistently across ${detections} of your sessions. ${activationSummary}.`
           : `A recurring pattern detected across ${detections} of your sessions — the data shows consistent activation under similar decision conditions.`),
       isTeaser:          false,
+      signalType,        // Sprint 20
+      sessionIds,        // Sprint 20
     }
   })
 
   // ── 7. Build forming tiles (teasers) ─────────────────────────────────────
   const formingTiles: FingerprintTile[] = formingRows.map(b => {
-    const biasKey = b.bias_parameter as string
+    const biasKey    = b.bias_parameter as string
+    const sessionIds = (b.session_ids as string[] | null) ?? []
     return {
       biasKey,
       biasLabel:         getBiasLabel(biasKey),
@@ -324,6 +299,8 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       activationSummary: null,
       interpretation:    'Pattern forming — one more session to confirm.',
       isTeaser:          true,
+      signalType:        null,   // Sprint 20
+      sessionIds,                // Sprint 20
     }
   })
 

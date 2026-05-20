@@ -223,3 +223,116 @@ export async function scoreBiasesForSession(params: {
     model_used:  `${provider}/${model}`,
   }
 }
+
+// ── Bias Signal Classification (Sprint 20) ───────────────────────────────────
+//
+// Crosses a detected bias against the ontology_vector of the specific decision
+// to determine whether the bias is working for the decision-maker, against them,
+// or is contextually neutral.
+//
+// Called immediately after scoreBiasesForSession() in the bias-score route.
+// Result is stored inside activation_contexts per session — no new DB column.
+//
+// OntologyScoreMap: { dim_name: { score: number, confidence: number } }
+// Only time_pressure, reversibility, and decision_discriminating_info are
+// used for classification — all other dims are irrelevant to signal type.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type BiasSignalType = 'distorting' | 'neutral' | 'adaptive'
+
+export type OntologyScoreMap = Record<string, { score: number; confidence?: number } | undefined>
+
+export function classifyBiasSignal(
+  biasKey: BiasParameterKey,
+  score: BiasScore,
+  ontologyVector: OntologyScoreMap | null,
+): BiasSignalType {
+  // Extract the three dimensions relevant to signal classification.
+  // Default to mid-range (3) when the ontology isn't available — produces 'neutral'.
+  const ddInfo       = ontologyVector?.decision_discriminating_info?.score ?? 3
+  const timePressure = ontologyVector?.time_pressure?.score ?? 3
+  const reversibility = ontologyVector?.reversibility?.score ?? 3
+
+  switch (biasKey) {
+    // fomo_urgency: distorting when urgency is manufactured (low real time pressure).
+    // Adaptive when genuine deadline + irreversible stakes — acting fast is correct.
+    case 'fomo_urgency':
+      if (timePressure <= 2) return 'distorting'
+      if (timePressure >= 4 && reversibility >= 4) return 'adaptive'
+      return 'neutral'
+
+    // overconfidence: distorting when get-able information exists that they're ignoring.
+    // Neutral when no new information would change the answer.
+    case 'overconfidence':
+      if (ddInfo >= 4) return 'distorting'
+      return 'neutral'
+
+    // speed_bias: distorting when the rush is self-imposed (no real external deadline).
+    // Neutral or adaptive when a genuine deadline exists.
+    case 'speed_bias':
+      if (timePressure <= 2) return 'distorting'
+      if (timePressure >= 4) return 'neutral'
+      return 'neutral'
+
+    // loss_aversion_reversal: distorting when it pushes excess risk-taking.
+    // Neutral when the decision is highly irreversible — appropriate caution is warranted.
+    case 'loss_aversion_reversal':
+      if (reversibility >= 4) return 'neutral'
+      return 'distorting'
+
+    // exit_optionality_mispricing: distorting when the decision is hard to undo
+    // and exit hasn't been structured. Neutral when the decision is reversible.
+    case 'exit_optionality_mispricing':
+      if (reversibility >= 4) return 'distorting'
+      return 'neutral'
+
+    // recency_bias: neutral when the recent reference is genuinely analogous (same conditions).
+    // Distorting when conditions have shifted (high ambiguity is a proxy for changed context).
+    case 'recency_bias':
+      return 'neutral'   // ambiguity not in top-3 dims; default neutral for this bias
+
+    // social_proof: distorting when ample discriminating info exists — you should form
+    // your own view rather than defer to peers.
+    case 'social_proof':
+      if (ddInfo >= 4) return 'distorting'
+      return 'neutral'
+
+    // deference_distortion: always distorting when detected — filtered information
+    // is harmful regardless of context.
+    case 'deference_distortion':
+      return 'distorting'
+
+    // control_illusion: distorting when irreversibility is high — believing you can
+    // undo what you cannot is dangerous. Neutral in more reversible contexts.
+    case 'control_illusion':
+      if (reversibility >= 4) return 'distorting'
+      return 'neutral'
+
+    // Default for all other biases: use asymmetry strength.
+    // High asymmetry (prosecutor >> defense) = distorting. Lower = neutral.
+    default:
+      if (score.asymmetry >= 5) return 'distorting'
+      return 'neutral'
+  }
+}
+
+// ── Predominant signal helper (used in mirror-fingerprint.ts) ────────────────
+//
+// Given activation_contexts for a bias (keyed by session_id), extracts all
+// stored signal_type values and returns the most common one.
+// Returns null when no sessions have signal_type (pre-Sprint-20 sessions).
+
+export function getPredominantSignal(
+  activationContexts: Record<string, unknown>,
+): BiasSignalType | null {
+  const counts: Record<string, number> = {}
+  for (const ctx of Object.values(activationContexts)) {
+    const st = (ctx as Record<string, unknown>)?.signal_type as string | undefined
+    if (st === 'distorting' || st === 'neutral' || st === 'adaptive') {
+      counts[st] = (counts[st] ?? 0) + 1
+    }
+  }
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])
+  if (entries.length === 0) return null
+  return entries[0][0] as BiasSignalType
+}

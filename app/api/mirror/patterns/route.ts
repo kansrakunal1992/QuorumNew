@@ -1,31 +1,9 @@
 // app/api/mirror/patterns/route.ts
-// ── Mirror Module: Pattern Store (Sprint 17) ──────────────────────────────────
+// ── Mirror Module: Pattern Store (Sprint 17, updated Sprint 20) ───────────────
 //
-// GET /api/mirror/patterns
-//
-// Auth-gated: requires valid Bearer token (user_id)
-// Access-gated: requires mirror_access row
-// Session threshold: >= 3 sessions with rule_engine_result (patterns surface early)
-//
-// Aggregates rule firing frequency from the rule_engine_result JSONB column in
-// sessions_ontology. No AI call — pure DB aggregation over existing data.
-// Also computes top ontology dimensions from ontology_vector for v2.0 sessions.
-//
-// Returns:
-//   {
-//     threshold_met:         boolean
-//     session_count:         number   — total sessions for this user
-//     sessions_with_rules:   number   — sessions with a complete rule_engine_result
-//     sessions_with_vectors: number   — sessions with v2.0 ontology_vector
-//     patterns:              RulePattern[]   — sorted by fire_count desc
-//     top_dimensions:        DimPattern[]    — top 3 by avg_score (v2.0 sessions only)
-//   }
-//
-// RulePattern: { rule_id, label, description, type, fire_count, pct }
-// DimPattern:  { dim, label, avg_score, high_count }
-//
-// Only rules that fired at least once are included in patterns[].
-// top_dimensions is empty when sessions_with_vectors < 3.
+// Sprint 20 change: each RulePattern now includes session_ids[] — the list of
+// session IDs that fired that rule. Used by PatternStore's source-session drawer.
+// No schema changes — session IDs are tracked client-side during aggregation.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }       from 'next/server'
@@ -34,8 +12,6 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 
 const PATTERNS_SESSION_THRESHOLD = 3
-
-// ── Rule metadata ─────────────────────────────────────────────────────────────
 
 type RuleType = 'REDIRECT' | 'GATE' | 'FLAG'
 
@@ -46,20 +22,18 @@ interface RuleMeta {
 }
 
 const RULE_META: Record<string, RuleMeta> = {
-  R1:  { label: 'Upstream Dependency',    description: 'Decision depends on a prior unresolved decision',               type: 'REDIRECT' },
-  R2:  { label: 'Identity-First Gate',    description: 'High identity alignment + ambiguity — values before analysis',  type: 'GATE'     },
-  R3:  { label: 'No-Information Mode',    description: 'Low discriminating info + high uncertainty',                    type: 'GATE'     },
-  R4:  { label: 'Regret Asymmetry',       description: 'Strong irreversibility asymmetry — downside vastly exceeds up', type: 'FLAG'     },
-  R5:  { label: 'False Urgency',          description: 'High emotional intensity without genuine time pressure',        type: 'FLAG'     },
-  R6:  { label: 'Multi-Party Alignment',  description: 'Multiple stakeholders + high emotion — alignment needed first', type: 'FLAG'     },
-  R7:  { label: 'Information-First',      description: 'Specific missing info would change the answer — gather first',  type: 'REDIRECT' },
-  R8:  { label: 'Irreconcilable Values',  description: 'Deep value conflict coinciding with identity stakes',           type: 'FLAG'     },
-  R9:  { label: 'Irreversibility Warning', description: 'High irreversibility + emotional pressure + no real urgency', type: 'FLAG'     },
-  R10: { label: 'Complexity Overload',    description: 'High task complexity + high ambiguity — structure before action', type: 'GATE'   },
-  R12: { label: 'Couple Misalignment',    description: 'Joint decision with value conflict — alignment before analysis', type: 'FLAG'   },
+  R1:  { label: 'Upstream Dependency',     description: 'Decision depends on a prior unresolved decision',               type: 'REDIRECT' },
+  R2:  { label: 'Identity-First Gate',     description: 'High identity alignment + ambiguity — values before analysis',  type: 'GATE'     },
+  R3:  { label: 'No-Information Mode',     description: 'Low discriminating info + high uncertainty',                    type: 'GATE'     },
+  R4:  { label: 'Regret Asymmetry',        description: 'Strong irreversibility asymmetry — downside vastly exceeds up', type: 'FLAG'     },
+  R5:  { label: 'False Urgency',           description: 'High emotional intensity without genuine time pressure',        type: 'FLAG'     },
+  R6:  { label: 'Multi-Party Alignment',   description: 'Multiple stakeholders + high emotion — alignment needed first', type: 'FLAG'     },
+  R7:  { label: 'Information-First',       description: 'Specific missing info would change the answer — gather first',  type: 'REDIRECT' },
+  R8:  { label: 'Irreconcilable Values',   description: 'Deep value conflict coinciding with identity stakes',           type: 'FLAG'     },
+  R9:  { label: 'Irreversibility Warning', description: 'High irreversibility + emotional pressure + no real urgency',   type: 'FLAG'     },
+  R10: { label: 'Complexity Overload',     description: 'High task complexity + high ambiguity — structure before action', type: 'GATE'   },
+  R12: { label: 'Couple Misalignment',     description: 'Joint decision with value conflict — alignment before analysis', type: 'FLAG'   },
 }
-
-// ── Ontology dimension labels ─────────────────────────────────────────────────
 
 const DIM_LABELS: Record<string, string> = {
   reversibility:               'Reversibility',
@@ -78,8 +52,6 @@ const DIM_LABELS: Record<string, string> = {
   upstream_dependency:         'Upstream Dependency',
 }
 
-// ── Auth helper ───────────────────────────────────────────────────────────────
-
 async function resolveUserId(req: Request): Promise<string | null> {
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) return null
@@ -95,8 +67,6 @@ async function resolveUserId(req: Request): Promise<string | null> {
     return null
   }
 }
-
-// ── GET ───────────────────────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
 
@@ -162,9 +132,10 @@ export async function GET(req: Request) {
 
   const rows = ontologyRows ?? []
 
-  // ── 5. Aggregate rule firing frequency ────────────────────────────────────
-  // Count each rule_id across triggered_rules and flag_rules in all sessions.
-  const ruleCounts: Record<string, number> = {}
+  // ── 5. Aggregate rule firing frequency + track session_ids per rule ───────
+  // Sprint 20: ruleSessionIds tracks which sessions fired each rule
+  const ruleCounts:     Record<string, number>   = {}
+  const ruleSessionIds: Record<string, string[]> = {}
   let sessionsWithRules = 0
 
   for (const row of rows) {
@@ -180,10 +151,15 @@ export async function GET(req: Request) {
 
     for (const ruleId of allRules) {
       ruleCounts[ruleId] = (ruleCounts[ruleId] ?? 0) + 1
+      // Track session_id for this rule — Sprint 20
+      if (!ruleSessionIds[ruleId]) ruleSessionIds[ruleId] = []
+      if (row.session_id && !ruleSessionIds[ruleId].includes(row.session_id)) {
+        ruleSessionIds[ruleId].push(row.session_id as string)
+      }
     }
   }
 
-  // Build sorted pattern array — only rules that fired at least once
+  // Build sorted pattern array including session_ids per rule
   const patterns = Object.entries(ruleCounts)
     .filter(([, count]) => count > 0)
     .map(([ruleId, count]) => {
@@ -195,13 +171,14 @@ export async function GET(req: Request) {
         type:        meta?.type        ?? 'FLAG' as RuleType,
         fire_count:  count,
         pct:         sessionsWithRules > 0 ? Math.round((count / sessionsWithRules) * 100) / 100 : 0,
+        session_ids: ruleSessionIds[ruleId] ?? [],   // Sprint 20
       }
     })
     .sort((a, b) => b.fire_count - a.fire_count)
 
   // ── 6. Aggregate ontology dimensions (v2.0 sessions only) ─────────────────
-  const dimSums:  Record<string, number> = {}
-  const dimCounts: Record<string, number> = {}
+  const dimSums:       Record<string, number> = {}
+  const dimCounts:     Record<string, number> = {}
   const dimHighCounts: Record<string, number> = {}
   let sessionsWithVectors = 0
 
@@ -223,7 +200,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // Only surface top_dimensions when we have enough v2.0 sessions for signal
   const top_dimensions = sessionsWithVectors >= 3
     ? Object.keys(DIM_LABELS)
         .filter(dim => dimCounts[dim] > 0)

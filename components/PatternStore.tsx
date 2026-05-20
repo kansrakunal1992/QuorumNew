@@ -24,8 +24,9 @@
 // No internal terms (rule engine, tagger, ontology vector) in user-facing copy.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react'
-import type { PatternStoreData, RulePattern, DimPattern, RuleType } from '@/lib/types'
+import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import type { PatternStoreData, RulePattern, DimPattern, RuleType, SessionPreview } from '@/lib/types'
 
 // ── Type badges ───────────────────────────────────────────────────────────────
 
@@ -200,13 +201,87 @@ function scoreColor(score: number): string {
   return 'var(--border-hi)'
 }
 
+
+// ── Source session drawer (Sprint 20) ─────────────────────────────────────────
+//
+// Opens inline below a RuleRow when the user clicks the fire count badge.
+// Fetches session previews from /api/mirror/sessions-lookup for the sessions
+// that fired that specific rule.
+
+function RuleSourceDrawer({
+  sessionIds,
+  authToken,
+  onClose,
+}: {
+  sessionIds: string[]
+  authToken:  string
+  onClose:    () => void
+}) {
+  const [sessions, setSessions] = useState<SessionPreview[] | null>(null)
+  const [loading,  setLoading]  = useState(true)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  useEffect(() => {
+    if (!sessionIds.length) { setLoading(false); return }
+    const ids = sessionIds.slice(0, 10).join(',')
+    fetch(`/api/mirror/sessions-lookup?ids=${encodeURIComponent(ids)}`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then(r => r.json())
+      .then(d => setSessions(d.sessions ?? []))
+      .catch(() => setSessions([]))
+      .finally(() => setLoading(false))
+  }, [sessionIds, authToken])
+
+  return (
+    <div ref={ref} style={{
+      marginTop:    8,
+      background:   'var(--bg-card)',
+      border:       '1px solid var(--border-mid)',
+      borderRadius: 8,
+      padding:      '12px 14px',
+    }}>
+      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px' }}>
+        Appeared in these decisions
+      </p>
+      {loading && <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: 0 }}>Loading…</p>}
+      {!loading && sessions && sessions.length === 0 && (
+        <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: 0 }}>No sessions found.</p>
+      )}
+      {!loading && sessions && sessions.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {sessions.map(s => (
+            <div key={s.id} style={{ borderBottom: '1px solid var(--border-dim)', paddingBottom: 6 }}>
+              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px', lineHeight: 1.45 }}>
+                {s.decision_preview}
+              </p>
+              <p style={{ fontSize: 10, color: 'var(--text-4)', margin: 0 }}>
+                {new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Rule row ──────────────────────────────────────────────────────────────────
 
-function RuleRow({ pattern, maxCount }: { pattern: RulePattern; maxCount: number }) {
-  const cfg      = TYPE_CONFIG[pattern.type]
-  const barPct   = `${Math.round((pattern.fire_count / Math.max(maxCount, 1)) * 100)}%`
-  const isStrong = pattern.fire_count >= 3
-  const content  = RULE_CONTENT[pattern.rule_id]
+function RuleRow({ pattern, maxCount, authToken }: { pattern: RulePattern; maxCount: number }) {
+  const cfg        = TYPE_CONFIG[pattern.type]
+  const barPct     = `${Math.round((pattern.fire_count / Math.max(maxCount, 1)) * 100)}%`
+  const isStrong   = pattern.fire_count >= 3
+  const content    = RULE_CONTENT[pattern.rule_id]
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   return (
     <div
@@ -240,16 +315,30 @@ function RuleRow({ pattern, maxCount }: { pattern: RulePattern; maxCount: number
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', flex: 1, lineHeight: 1.4 }}>
           {pattern.label}
         </span>
-        <span style={{
-          fontSize:           11,
-          color:              isStrong ? 'var(--gold)' : 'var(--text-4)',
-          fontVariantNumeric: 'tabular-nums',
-          flexShrink:         0,
-          paddingTop:         2,
-          fontWeight:         isStrong ? 600 : 400,
-        }}>
+        <button
+          onClick={() => setDrawerOpen(o => !o)}
+          title="See which decisions triggered this pattern"
+          style={{
+            fontSize:           11,
+            color:              drawerOpen ? 'var(--gold)' : isStrong ? 'var(--gold)' : 'var(--text-4)',
+            fontVariantNumeric: 'tabular-nums',
+            flexShrink:         0,
+            paddingTop:         2,
+            fontWeight:         isStrong ? 600 : 400,
+            background:         'transparent',
+            border:             'none',
+            cursor:             'pointer',
+            fontFamily:         'inherit',
+            padding:            '2px 0',
+            textDecoration:     'underline',
+            textDecorationStyle: 'dotted',
+            textDecorationColor: 'var(--border-mid)',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--gold)' }}
+          onMouseLeave={e => { if (!drawerOpen) (e.currentTarget as HTMLButtonElement).style.color = isStrong ? 'var(--gold)' : 'var(--text-4)' }}
+        >
           {pattern.fire_count}×
-        </span>
+        </button>
       </div>
 
       {/* Plain explanation */}
@@ -302,6 +391,15 @@ function RuleRow({ pattern, maxCount }: { pattern: RulePattern; maxCount: number
           {freqPhrase(pattern.pct, pattern.fire_count)}
         </span>
       </div>
+
+      {/* Source session drawer — Sprint 20 */}
+      {drawerOpen && authToken && pattern.session_ids?.length > 0 && (
+        <RuleSourceDrawer
+          sessionIds={pattern.session_ids}
+          authToken={authToken}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -483,7 +581,7 @@ export default function PatternStore({ authToken }: { authToken: string }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {data.patterns.map(pattern => (
-            <RuleRow key={pattern.rule_id} pattern={pattern} maxCount={maxCount} />
+            <RuleRow key={pattern.rule_id} pattern={pattern} maxCount={maxCount} authToken={authToken} />
           ))}
         </div>
       </div>

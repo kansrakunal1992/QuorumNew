@@ -1,11 +1,11 @@
 'use client'
 
 // components/BiasFingerprint.tsx
-// ── Mirror Module: Bias Fingerprint Section (Sprint 7b) ───────────────────────
+// ── Mirror Module: Bias Fingerprint Section (Sprint 7b, updated Sprint 20) ────
 //
-// Shows top 3 confirmed tiles by default; remaining confirmed tiles are
-// expandable behind a "Show N more" toggle.
-// Forming tiles (single detection) are shown in a separate collapsible section.
+// Sprint 20: passes authToken down to PatternTile so each tile can open
+// a source-session drawer. signalType and sessionIds are now in FingerprintTile
+// (populated by mirror-fingerprint.ts) and flow through automatically.
 
 import { useState, useEffect } from 'react'
 import PatternTile              from '@/components/PatternTile'
@@ -161,12 +161,12 @@ export default function BiasFingerprint({ authToken }: Props) {
     <div>
       <NarrativeBlock narrative={data.narrative} sessionCount={data.sessionCount} />
 
-      {/* Confirmed tiles — top 3 visible, rest expandable */}
+      {/* Confirmed tiles — authToken passed for source drawer */}
       {data.confirmedTiles.length > 0 && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
             {confirmedVisible.map(tile => (
-              <PatternTile key={tile.biasKey} tile={tile} />
+              <PatternTile key={tile.biasKey} tile={tile} authToken={authToken} />
             ))}
           </div>
 
@@ -181,7 +181,7 @@ export default function BiasFingerprint({ authToken }: Props) {
         </>
       )}
 
-      {/* Forming tiles — separate collapsible section */}
+      {/* Forming tiles */}
       {data.formingTiles.length > 0 && (
         <div style={{ marginTop: confirmedHidden > 0 && !confirmedExpanded ? 14 : 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
@@ -205,7 +205,7 @@ export default function BiasFingerprint({ authToken }: Props) {
           {formingExpanded && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
               {data.formingTiles.map(tile => (
-                <PatternTile key={tile.biasKey} tile={tile} />
+                <PatternTile key={tile.biasKey} tile={tile} authToken={authToken} />
               ))}
             </div>
           )}

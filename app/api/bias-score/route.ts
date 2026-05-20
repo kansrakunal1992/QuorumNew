@@ -1,20 +1,23 @@
 // app/api/bias-score/route.ts
 // ── Sprint 4 / 4b: Bias Library — Background Scoring Endpoint ────────────────
+// ── Sprint 20: Added signal_type classification per detection ─────────────────
 //
 // Called server-side from /api/examiner POST after examiner submit/skip.
 //
-// Identity resolution for accumulation (priority order):
-//   1. user_id    — post magic-link auth (stable, cross-device)
-//   2. user_email — entered on home page pre-auth (device-portable)
-//   3. device_id  — silent UUID generated on first visit (device-local only)
-//   4. null       — fully anonymous: INSERT only, no accumulation
-//
-// Body: { sessionId: string }
+// Sprint 20 change: after scoreBiasesForSession() returns, each detected bias
+// is classified via classifyBiasSignal() against the session's ontology_vector.
+// The signal_type ('distorting' | 'neutral' | 'adaptive') is stored inside
+// activation_contexts per session — no new DB column required.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import { scoreBiasesForSession, BIAS_PARAMETERS } from '@/lib/bias-scorer'
+import {
+  scoreBiasesForSession,
+  classifyBiasSignal,
+  BIAS_PARAMETERS,
+} from '@/lib/bias-scorer'
+import type { OntologyScoreMap } from '@/lib/bias-scorer'
 
 export async function POST(req: Request) {
   try {
@@ -51,7 +54,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    // Resolved identity — first non-null value wins
     const resolvedUserId    = session.user_id    ?? null
     const resolvedUserEmail = session.user_email ?? null
     const resolvedDeviceId  = session.device_id  ?? null
@@ -99,20 +101,20 @@ export async function POST(req: Request) {
         .filter(r => r.response_text?.trim())
         .map(r => ({ question: r.question_text, answer: r.response_text! }))
 
-    if (examinerQA.length > 0) {
-      console.log(`[BiasScore] Loaded examiner answers`)
-    } else {
-      console.log(`[BiasScore] Loaded personas`)
-    }
-
-    // ── 5. Fetch ontology tag ─────────────────────────────────────────────
+    // ── 5. Fetch ontology tag + vector ────────────────────────────────────
+    // Sprint 20: also fetch ontology_vector for signal classification
     const { data: ontology } = await supabase
       .from('sessions_ontology')
-      .select('raw_ontology_json, decision_type_primary, instrumental_weight, constitutive_weight, dominant_emotion, has_stated_deadline, counterparty_present')
+      .select('raw_ontology_json, ontology_vector, decision_type_primary, instrumental_weight, constitutive_weight, dominant_emotion, has_stated_deadline, counterparty_present')
       .eq('session_id', sessionId)
       .maybeSingle()
 
     const ontologyJson = ontology?.raw_ontology_json as Record<string, unknown> | null ?? null
+
+    // Build the OntologyScoreMap for signal classification.
+    // ontology_vector is stored as { dim_name: { score, confidence } }
+    const ontologyVector: OntologyScoreMap | null =
+      (ontology?.ontology_vector as OntologyScoreMap | null) ?? null
 
     // ── 6. Score biases ───────────────────────────────────────────────────
     const result = await scoreBiasesForSession({
@@ -132,23 +134,14 @@ export async function POST(req: Request) {
     }
 
     // ── 7. Upsert into bias_library ───────────────────────────────────────
-    //
-    // Accumulation key priority (matches identity tier above):
-    //   user_id    → scoped to auth'd user, cross-device, permanent
-    //   user_email → scoped to email, cross-device once auth'd
-    //   device_id  → scoped to this device only (localStorage-fragile)
-    //   anonymous  → INSERT only, no accumulation
-    //
-    // For device_id: accumulation is device-local. When the user later adds
-    // their email, new sessions use email as the key. The device_id rows are
-    // not retroactively migrated (acceptable — email-keyed rows start fresh
-    // but the Council continues to work uninterrupted).
-
     let upsertedCount = 0
 
     for (const score of detected) {
       const biasParam = BIAS_PARAMETERS.find(b => b.key === score.bias_key)
       if (!biasParam) continue
+
+      // Sprint 20: classify signal type for this detection in this session's context
+      const signalType = classifyBiasSignal(score.bias_key, score, ontologyVector)
 
       const newActivationContext = {
         ...score.activation_context,
@@ -156,9 +149,9 @@ export async function POST(req: Request) {
         prosecutor_score: score.prosecutor_score,
         defense_score:    score.defense_score,
         decision_type:    ontology?.decision_type_primary ?? score.activation_context?.decision_type ?? null,
+        signal_type:      signalType,   // ← Sprint 20: stored per-session in JSONB
       }
 
-      // Look up existing bias row scoped to this specific user identity
       let existingBias: {
         id: string
         detection_count: number
@@ -196,10 +189,8 @@ export async function POST(req: Request) {
           .maybeSingle()
         existingBias = data
       }
-      // anonymous → existingBias stays null → INSERT below
 
       if (existingBias) {
-        // ── UPDATE: accumulate into existing row ─────────────────────────
         const newCount  = existingBias.detection_count + 1
         const newWeight = Math.min(existingBias.confidence_weight + 0.30, 1.0)
         const newAvg    = ((existingBias.asymmetry_score_avg ?? 0) * existingBias.detection_count + (score.asymmetry ?? 0)) / newCount
@@ -221,7 +212,6 @@ export async function POST(req: Request) {
           })
           .eq('id', existingBias.id)
       } else {
-        // ── INSERT: first occurrence of this bias for this user ──────────
         await supabase.from('bias_library').insert({
           user_id:             resolvedUserId,
           user_email:          resolvedUserEmail,

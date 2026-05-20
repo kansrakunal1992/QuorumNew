@@ -85,7 +85,15 @@ export interface IndependenceScoreEntry {
   signals: Record<string, number> | null
 }
 
-// ── Mirror Fingerprint (Sprint 7b) ────────────────────────────────────────────
+// ── Bias Signal Classification (Sprint 20) ───────────────────────────────────
+//
+// Contextual read on whether a detected bias is working for or against the
+// decision-maker in the specific structural context of a given decision.
+// Stored per-session inside activation_contexts JSONB — no new DB column needed.
+// Predominant signal across all sessions is surfaced on the fingerprint tile.
+export type BiasSignalType = 'distorting' | 'neutral' | 'adaptive'
+
+// ── Mirror Fingerprint (Sprint 7b, updated Sprint 20) ────────────────────────
 
 export interface FingerprintTile {
   biasKey: string
@@ -97,6 +105,8 @@ export interface FingerprintTile {
   activationSummary: string | null // "Activates when: X + Y" — derived from contexts
   interpretation: string           // AI-generated, 25–35 words
   isTeaser: boolean                // detection_count === 1 (blurred in paid view)
+  signalType: BiasSignalType | null   // Sprint 20: predominant signal across sessions
+  sessionIds: string[]                // Sprint 20: source sessions for drawer
 }
 
 export interface FingerprintData {
@@ -107,7 +117,15 @@ export interface FingerprintData {
   generatedAt: string
 }
 
-// ── Pattern Store (Sprint 17 / 18b) ──────────────────────────────────────────
+// ── Session preview (Sprint 20: source-decision drawer) ──────────────────────
+
+export interface SessionPreview {
+  id: string
+  decision_preview: string   // first 90 chars of decision_text
+  created_at: string
+}
+
+// ── Pattern Store (Sprint 17 / 18b, updated Sprint 20) ───────────────────────
 
 export type RuleType = 'REDIRECT' | 'GATE' | 'FLAG'
 
@@ -117,7 +135,8 @@ export interface RulePattern {
   description: string
   type:        RuleType
   fire_count:  number
-  pct:         number   // fraction of sessions_with_rules — e.g. 0.67
+  pct:         number       // fraction of sessions_with_rules — e.g. 0.67
+  session_ids: string[]     // Sprint 20: sessions that fired this rule
 }
 
 export interface DimPattern {
@@ -134,4 +153,19 @@ export interface PatternStoreData {
   sessions_with_vectors: number
   patterns:              RulePattern[]
   top_dimensions:        DimPattern[]
+}
+
+// ── Benchmark (Sprint 20) ─────────────────────────────────────────────────────
+
+export interface BenchmarkDimension {
+  dim:       string
+  label:     string
+  avg_score: number
+}
+
+export interface BenchmarkData {
+  insufficient:    boolean
+  cluster_size:    number
+  top_dimensions:  BenchmarkDimension[]
+  top_biases:      string[]   // bias_parameter keys most common in cluster
 }
