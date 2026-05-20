@@ -25,7 +25,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react'
-import { useState, useEffect, useRef } from 'react'
 import type { PatternStoreData, RulePattern, DimPattern, RuleType, SessionPreview } from '@/lib/types'
 
 // ── Type badges ───────────────────────────────────────────────────────────────
