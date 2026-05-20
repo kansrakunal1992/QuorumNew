@@ -5,16 +5,10 @@
 //
 // Auth-gated: requires valid Bearer token (user_id).
 // Access-gated: requires mirror_access row.
+// Ownership-gated: only returns sessions belonging to the authenticated user.
 //
-// Returns previews of sessions belonging to the authenticated user only.
-// Security: filters by user_id so users cannot look up other users' sessions.
-//
-// Used by PatternTile and PatternStore's source-session drawer.
-// Called lazily on first drawer open — result is cached in component state.
-//
-// Response: { sessions: SessionPreview[] }
-// SessionPreview: { id, decision_preview, created_at }
-// decision_preview: first 90 chars of decision_text
+// Sprint 20 fix: removed decision_text truncation (full text returned),
+// cap raised from 10 to 30.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }        from 'next/server'
@@ -22,7 +16,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 
-const MAX_IDS = 10   // cap to prevent abuse
+const MAX_IDS = 30   // raised from 10
 
 async function resolveUserId(req: Request): Promise<string | null> {
   const authHeader = req.headers.get('authorization')
@@ -68,13 +62,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ sessions: [] })
   }
 
-  // ── 4. Fetch sessions — scoped to this user only ──────────────────────────
-  // Security: .eq('user_id', userId) ensures users can only look up their own sessions.
+  // ── 4. Fetch sessions — scoped to this user only ───────────────────────────
   const { data: sessionRows, error } = await supabase
     .from('sessions')
     .select('id, decision_text, created_at')
     .in('id', ids)
-    .eq('user_id', userId)        // ← ownership gate
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(MAX_IDS)
 
@@ -83,11 +76,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'DB error' }, { status: 500 })
   }
 
-  // ── 5. Build previews ──────────────────────────────────────────────────────
+  // ── 5. Return full decision_text — no truncation ───────────────────────────
   const sessions = (sessionRows ?? []).map(s => ({
     id:               s.id,
-    decision_preview: (s.decision_text as string ?? '').slice(0, 90).trimEnd()
-      + ((s.decision_text as string ?? '').length > 90 ? '…' : ''),
+    decision_preview: (s.decision_text as string ?? '').trim(),
     created_at:       s.created_at as string,
   }))
 

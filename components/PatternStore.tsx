@@ -230,7 +230,7 @@ function RuleSourceDrawer({
 
   useEffect(() => {
     if (!sessionIds.length) { setLoading(false); return }
-    const ids = sessionIds.slice(0, 10).join(',')
+    const ids = sessionIds.slice(0, 30).join(',')
     fetch(`/api/mirror/sessions-lookup?ids=${encodeURIComponent(ids)}`, {
       headers: { Authorization: `Bearer ${authToken}` },
     })
@@ -256,10 +256,10 @@ function RuleSourceDrawer({
         <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: 0 }}>No sessions found.</p>
       )}
       {!loading && sessions && sessions.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
           {sessions.map(s => (
-            <div key={s.id} style={{ borderBottom: '1px solid var(--border-dim)', paddingBottom: 6 }}>
-              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px', lineHeight: 1.45 }}>
+            <div key={s.id} style={{ borderBottom: '1px solid var(--border-dim)', paddingBottom: 8, marginBottom: 2 }}>
+              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 3px', lineHeight: 1.55 }}>
                 {s.decision_preview}
               </p>
               <p style={{ fontSize: 10, color: 'var(--text-4)', margin: 0 }}>
