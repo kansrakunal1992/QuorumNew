@@ -9,6 +9,7 @@ import SynthesisCard from './SynthesisCard'
 import { PERSONAS, PERSONA_ORDER, computePersonaOrder } from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
+import { createClient } from '@/lib/supabase'
 
 interface Props {
   session: Session
@@ -104,6 +105,8 @@ export default function SessionView({ session: initialSession }: Props) {
   const pendingOrderRef      = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
   const allPersonasDoneRef   = useRef(false)
   const examinerSubmittedRef = useRef(false)  // true once user skips or submits examiner
+  // Sprint 21: user style cue — fetched once on mount, used to seed persona order baseline
+  const styleCueRef          = useRef<string | null>(null)
 
   // ── FLIP animation refs ──────────────────────────────────────────────────
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -177,6 +180,29 @@ export default function SessionView({ session: initialSession }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridReordered])
 
+  // Sprint 21: Fetch style_cue once on mount — populates styleCueRef for computePersonaOrder.
+  // Fast DB read; always resolves before ontology is ready (ontology can take up to 24s).
+  // Silent on failure — style calibration is non-critical to session flow.
+  useEffect(() => {
+    async function fetchStyleCue() {
+      try {
+        const supabase = createClient()
+        const { data: { session: authSession } } = await supabase.auth.getSession()
+        if (!authSession?.access_token) return
+        const res = await fetch('/api/mirror/preferences', {
+          headers: { Authorization: `Bearer ${authSession.access_token}` },
+        })
+        if (!res.ok) return
+        const { style_cue } = await res.json()
+        if (style_cue) styleCueRef.current = style_cue
+      } catch {
+        // Non-critical — persona order falls back to rule/dim signals only
+      }
+    }
+    fetchStyleCue()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     let attempt = 0
     const MAX_ATTEMPTS = 4
@@ -195,6 +221,7 @@ export default function SessionView({ session: initialSession }: Props) {
             const ordered = computePersonaOrder(
               data.rule_engine_result ?? null,
               data.ontology_vector    ?? null,
+              styleCueRef.current,       // Sprint 21: user style baseline
             )
             pendingOrderRef.current = ordered as PersonaKey[]
             // If all personas done AND examiner already submitted, animate immediately

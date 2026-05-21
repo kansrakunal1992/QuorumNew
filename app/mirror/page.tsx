@@ -33,7 +33,8 @@ import DecisionRules          from '@/components/DecisionRules'
 import ContradictionDetector  from '@/components/ContradictionDetector'
 import CalibrationSparkline   from '@/components/CalibrationSparkline'
 import PatternStore           from '@/components/PatternStore'
-import type { MirrorStatus, TimelineSession, BenchmarkData } from '@/lib/types'
+import StyleCalibration        from '@/components/StyleCalibration'
+import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -870,13 +871,33 @@ function UnlockedView({
   status,
   sessions,
   authToken,
+  initialStyleCue,
 }: {
-  status: MirrorStatus
-  sessions: TimelineSession[]
-  authToken: string
+  status:           MirrorStatus
+  sessions:         TimelineSession[]
+  authToken:        string
+  initialStyleCue?: StyleCue | null
 }) {
+  // Sprint 21: style calibration — show when sessionCount >= 5 and no cue stored yet
+  const [showCalibration, setShowCalibration] = useState(
+    status.sessionCount >= 5 && !initialStyleCue,
+  )
+
+  function handleCalibrationComplete(_cue: StyleCue) {
+    setShowCalibration(false)
+  }
+
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
+
+      {/* Sprint 21: Style Calibration — shown once when sessionCount >= 5 */}
+      {showCalibration && (
+        <StyleCalibration
+          authToken={authToken}
+          onComplete={handleCalibrationComplete}
+          onDismiss={() => setShowCalibration(false)}
+        />
+      )}
 
       {/* Decision Timeline */}
       <div style={{ marginBottom: 40 }}>
@@ -1010,10 +1031,12 @@ export default function MirrorPage() {
   const router = useRouter()
 
   const [loading,    setLoading]    = useState(true)
-  const [status,     setStatus]     = useState<MirrorStatus | null>(null)
-  const [sessions,   setSessions]   = useState<TimelineSession[]>([])
-  const [authToken,  setAuthToken]  = useState<string | null>(null)
-  const [fetchError, setFetchError] = useState(false)
+  const [status,          setStatus]          = useState<MirrorStatus | null>(null)
+  const [sessions,        setSessions]        = useState<TimelineSession[]>([])
+  const [authToken,       setAuthToken]       = useState<string | null>(null)
+  const [fetchError,      setFetchError]      = useState(false)
+  // Sprint 21: fetched once when status resolves to 'unlocked'
+  const [initialStyleCue, setInitialStyleCue] = useState<StyleCue | null>(null)
 
   // ── 1. Get auth token ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1044,6 +1067,18 @@ export default function MirrorPage() {
         const tlRes  = await fetch('/api/mirror/timeline', { headers })
         const tlData = await tlRes.json() as { sessions: TimelineSession[] }
         setSessions(tlData.sessions ?? [])
+      }
+      // Sprint 21: fetch existing style_cue so StyleCalibration knows whether to show
+      if (data.gateState === 'unlocked' && token) {
+        try {
+          const prefRes  = await fetch('/api/mirror/preferences', { headers })
+          if (prefRes.ok) {
+            const prefData = await prefRes.json() as { style_cue: StyleCue | null }
+            setInitialStyleCue(prefData.style_cue ?? null)
+          }
+        } catch {
+          // Non-critical — calibration simply shows if sessionCount >= 5
+        }
       }
     } catch {
       setFetchError(true)
@@ -1218,6 +1253,7 @@ export default function MirrorPage() {
                   status={status}
                   sessions={sessions}
                   authToken={authToken ?? ''}
+                  initialStyleCue={initialStyleCue}
                 />
               )}
             </>

@@ -53,6 +53,9 @@ export type MirrorGateState = 'auth' | 'locked' | 'teaser' | 'unlocked'
 // Internal access-check result (used by getMirrorAccessState helper)
 export type MirrorAccessState = 'unlocked' | 'teaser' | 'locked'
 
+// Sprint 21: Style calibration — which advisor lens the user responds to most
+export type StyleCue = 'direct' | 'challenge' | 'pattern' | 'risk' | 'stakeholder' | 'long'
+
 // Subscription plan types
 export type SubscriptionPlan = 'monthly' | 'annual' | 'lifetime' | 'advisory'
 

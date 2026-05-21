@@ -905,6 +905,13 @@ export const PERSONA_ORDER: PersonaKey[] = [
 // Dimension fallback: if no rule fired but a scored vector dim >= 4 with
 // confidence >= 0.5, that dim's mapped persona gets a smaller nudge.
 // This catches signals that approached but did not cross a rule threshold.
+//
+// Sprint 21 addition — userStyle (StyleCue | null):
+//   When sessionCount >= 5 and style_cue is set, USER_STYLE_BOOSTS applies a
+//   +1 baseline to each relevant persona BEFORE rule/dim boosts. This means the
+//   user's preferred lens appears earlier when signals are otherwise tied, but
+//   a strong rule signal (e.g. +3 for elder on R2) still dominates. No persona
+//   is ever suppressed — only ordering is affected.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type RuleEngineResult = {
@@ -940,12 +947,41 @@ const DIM_PERSONA_BOOSTS: Record<string, Partial<Record<string, number>>> = {
   decision_unit:       { stakeholder_mirror: 2 },
 }
 
+// Sprint 21: Style calibration → persona baseline boosts (+1 each, applied before rule/dim boosts)
+// style_cue answers the question "which advisor lens resonates most with you?"
+//   direct       → contrarian (prefers direct, no-frills challenge)
+//   challenge    → contrarian + risk_architect (wants to be pushed hard)
+//   pattern      → pattern_analyst (values historical analogues and base rates)
+//   risk         → risk_architect (wants failure-space mapped first)
+//   stakeholder  → stakeholder_mirror (relationship/people dimension first)
+//   long         → elder (long-horizon, reversibility framing first)
+const USER_STYLE_BOOSTS: Record<string, Partial<Record<string, number>>> = {
+  direct:      { contrarian: 1 },
+  challenge:   { contrarian: 1, risk_architect: 1 },
+  pattern:     { pattern_analyst: 1 },
+  risk:        { risk_architect: 1 },
+  stakeholder: { stakeholder_mirror: 1 },
+  long:        { elder: 1 },
+}
+
 export function computePersonaOrder(
   ruleEngineResult: RuleEngineResult | null,
   ontologyVector:   OntologyVector   | null,
+  userStyle?:       string           | null,
 ): string[] {
   const scores: Record<string, number> = {}
   for (const key of PERSONA_ORDER) scores[key] = 0
+
+  // ── Sprint 21: User style baseline (+1 before rule/dim boosts) ───────────
+  // Applied first so rule signals (max +3) always dominate. A +1 style nudge
+  // only affects ordering when rule/dim signals are absent or tied.
+  // Guards: userStyle must be a recognised key; no persona is suppressed.
+  if (userStyle && userStyle in USER_STYLE_BOOSTS) {
+    const styleBoosts = USER_STYLE_BOOSTS[userStyle]
+    for (const [persona, boost] of Object.entries(styleBoosts)) {
+      if (persona in scores && boost !== undefined) scores[persona] += boost
+    }
+  }
 
   // ── Rule-based boosts from triggered_rules + flag_rules ──────────────────
   if (ruleEngineResult) {
