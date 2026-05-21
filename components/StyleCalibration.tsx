@@ -20,6 +20,11 @@
 
 import { useState } from 'react'
 
+// ── Persistence key ──────────────────────────────────────────────────────────
+// Written on both complete AND dismiss so the banner never re-surfaces in
+// the same browser, regardless of DB save outcome.
+const DISMISSED_KEY = 'quorum_style_calibration_dismissed'
+
 // ── Style derivation ──────────────────────────────────────────────────────────
 // 3 questions, each with 2 options mapped to a style tag.
 // Final style_cue = the most-selected tag (ties broken by Q1 answer).
@@ -87,6 +92,8 @@ export default function StyleCalibration({ authToken, onComplete, onDismiss }: P
 
     // Final answer — derive + save
     const cue = deriveStyleCue(next)
+    // Persist locally first so banner never re-surfaces even if POST fails
+    try { localStorage.setItem(DISMISSED_KEY, 'true') } catch { /* private browsing */ }
     try {
       await fetch('/api/mirror/preferences', {
         method:  'POST',
@@ -114,7 +121,10 @@ export default function StyleCalibration({ authToken, onComplete, onDismiss }: P
 
       {/* Dismiss */}
       <button
-        onClick={onDismiss}
+        onClick={() => {
+          try { localStorage.setItem(DISMISSED_KEY, 'true') } catch { /* private browsing */ }
+          onDismiss()
+        }}
         title="Skip calibration"
         style={{
           position:   'absolute',

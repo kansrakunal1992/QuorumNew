@@ -878,10 +878,12 @@ function UnlockedView({
   authToken:        string
   initialStyleCue?: StyleCue | null
 }) {
-  // Sprint 21: style calibration — show when sessionCount >= 5 and no cue stored yet
-  const [showCalibration, setShowCalibration] = useState(
-    status.sessionCount >= 5 && !initialStyleCue,
-  )
+  // Sprint 21: style calibration — show when sessionCount >= 5, no DB cue, and not
+  // previously dismissed/completed in this browser (localStorage guard).
+  const [showCalibration, setShowCalibration] = useState(() => {
+    if (status.sessionCount < 5 || initialStyleCue) return false
+    try { return localStorage.getItem('quorum_style_calibration_dismissed') !== 'true' } catch { return true }
+  })
 
   function handleCalibrationComplete(_cue: StyleCue) {
     setShowCalibration(false)
