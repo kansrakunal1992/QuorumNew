@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         .select('id')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(500)   // raised Sprint 21 — history route was capping at 100, diverging from Mirror COUNT
 
       const userIds = (userSessions ?? []).map(s => s.id)
       // Merge and deduplicate

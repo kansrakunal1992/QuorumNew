@@ -378,6 +378,18 @@ export default function SessionView({ session: initialSession }: Props) {
     setRuleMode(null)
     setExaminerReady(true)   // synthesis gate opens — personas are already done
     setExaminerDismissed(true) // auto-closes ExaminerPanel — no need to click "Understood — dismiss"
+    // Sprint 21 fix: mark examiner as submitted so persona reorder can fire.
+    // handleExaminerComplete returned early on REDIRECT without setting this ref.
+    examinerSubmittedRef.current = true
+    const pending = pendingOrderRef.current
+    if (pending && allPersonasDoneRef.current) {
+      const isDifferent = pending.some((k, i) => k !== PERSONA_ORDER[i])
+      if (isDifferent) {
+        setTimeout(() => { applyOrderWithFlip(pending as PersonaKey[]); pendingOrderRef.current = null }, 0)
+      } else {
+        pendingOrderRef.current = null
+      }
+    }
   }, [session.id])
 
   const [drawerOpen,     setDrawerOpen]     = useState(false)
