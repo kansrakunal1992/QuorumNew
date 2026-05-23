@@ -220,7 +220,7 @@ export function useSoniox(): UseSonioxReturn {
   const start = useCallback(async () => {
     if (state !== 'idle' && state !== 'error' && state !== 'done') return
 
-    setFinalText(''); setPartialText(''); setErrorCode('')
+    setFinalText(''); setPartialText(''); setErrorCode(null)
     finalTextRef.current = ''
 
     if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
