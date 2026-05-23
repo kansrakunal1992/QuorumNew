@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
 import BehaviorAlerts from '@/components/BehaviorAlerts'
+import VoiceInput from '@/components/VoiceInput'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -204,9 +205,13 @@ export default function Home() {
           <h1 style={{ fontSize: 17, fontWeight: 400, color: 'var(--text-1)', marginBottom: 6, fontFamily: 'var(--font-display)' }}>
             Describe your decision
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 18, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.6 }}>
             Six private advisors will review it simultaneously — each from a distinct angle.
           </p>
+
+          <div style={{ marginBottom: 10 }}>
+            <VoiceInput onTranscript={(text) => setDecision(text)} />
+          </div>
 
           <textarea
             key={formKey}

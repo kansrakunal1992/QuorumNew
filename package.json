@@ -2,7 +2,9 @@
   "name": "quorum",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -17,7 +19,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "jspdf": "^2.5.2",
-    "html2canvas": "^1.4.1"
+    "html2canvas": "^1.4.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20",
@@ -28,6 +31,7 @@
     "postcss": "^8",
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
-    "eslint-config-next": "15.1.0"
+    "eslint-config-next": "15.1.0",
+    "@types/ws": "^8.5.13"
   }
 }
