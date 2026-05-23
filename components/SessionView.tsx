@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
+import CouncilStatusBar from './CouncilStatusBar'
 import { PERSONAS, PERSONA_ORDER, computePersonaOrder } from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
@@ -97,6 +98,11 @@ export default function SessionView({ session: initialSession }: Props) {
 
   // Sprint 5: structural context
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
+
+  // Council status bar state
+  const [ontologyReady,      setOntologyReady]      = useState(false)
+  const [synthesisStreaming,  setSynthesisStreaming]  = useState(false)
+  const [synthesisDone,       setSynthesisDone]       = useState(false)
 
   // Dynamic grid order — computed from ontology, applied after all 6 personas complete (no animation)
   const [orderedPersonaKeys, setOrderedPersonaKeys] = useState<PersonaKey[]>([...PERSONA_ORDER])
@@ -218,6 +224,7 @@ export default function SessionView({ session: initialSession }: Props) {
         .then(data => {
           // Store computed order — applied after all 6 personas complete (no animation)
           if (data.ontology_ready && !pendingOrderRef.current) {
+            setOntologyReady(true)
             const ordered = computePersonaOrder(
               data.rule_engine_result ?? null,
               data.ontology_vector    ?? null,
@@ -471,6 +478,10 @@ export default function SessionView({ session: initialSession }: Props) {
       allPersonasDoneRef.current = false
       pendingOrderRef.current = null
       examinerSubmittedRef.current = false
+      // Reset council status bar
+      setOntologyReady(false)
+      setSynthesisStreaming(false)
+      setSynthesisDone(false)
       window.history.replaceState(null, '', `/session/${id}`)
     } catch {
       setReanalyzeError('Something went wrong. Please try again.')
@@ -554,6 +565,18 @@ export default function SessionView({ session: initialSession }: Props) {
 
       <div className="max-w-7xl mx-auto">
 
+        {/* ── Council Status Bar ── */}
+        <CouncilStatusBar
+          key={`statusbar-${sessionKey}`}
+          personasComplete={Object.keys(completedResponses).length}
+          totalPersonas={PERSONA_ORDER.length}
+          ontologyReady={ontologyReady}
+          examinerActive={allPersonasDone && !examinerReady}
+          examinerDone={examinerReady}
+          synthesisStreaming={synthesisStreaming}
+          synthesisDone={synthesisDone}
+        />
+
         {/* ── 1. Council Synthesis — top, locked until examiner submitted ── */}
         <SynthesisCard
           key={`synthesis-${sessionKey}`}
@@ -568,6 +591,8 @@ export default function SessionView({ session: initialSession }: Props) {
           redirectBlocked={redirectBlocked}
           redirectQuestion={redirectQuestion}
           onOverrideRedirect={handleOverrideRedirect}
+          onSynthesisStart={() => setSynthesisStreaming(true)}
+          onSynthesisComplete={() => { setSynthesisStreaming(false); setSynthesisDone(true) }}
         />
 
         {/* ── 2. Examiner — appears once all 6 personas done, glows on entry ── */}

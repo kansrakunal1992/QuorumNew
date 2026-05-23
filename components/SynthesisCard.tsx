@@ -27,6 +27,10 @@ interface Props {
   redirectQuestion?: string
   /** Sprint 16b Fix 1: callback fired when user overrides the R1 REDIRECT and chooses to proceed to Council */
   onOverrideRedirect?: () => void
+  /** Council status bar: fires when synthesis stream begins */
+  onSynthesisStart?: () => void
+  /** Council status bar: fires when synthesis stream completes */
+  onSynthesisComplete?: () => void
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -38,6 +42,8 @@ export default function SynthesisCard({
   redirectBlocked,    // Sprint 11b
   redirectQuestion,   // Sprint 16b
   onOverrideRedirect, // Sprint 16b Fix 1
+  onSynthesisStart,   // Council status bar
+  onSynthesisComplete,// Council status bar
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -83,6 +89,7 @@ export default function SynthesisCard({
     abortRef.current = ctrl
     setSynthesis('')
     setState('streaming')
+    onSynthesisStart?.()
     setBriefText('')
     setBriefState('idle')
     setShowBrief(false)
@@ -113,6 +120,7 @@ export default function SynthesisCard({
           setSynthesis(acc)
         }
         setState('done')
+        onSynthesisComplete?.()
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return
         setState('error')
