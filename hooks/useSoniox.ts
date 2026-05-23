@@ -99,9 +99,10 @@ export function useSoniox(): UseSonioxReturn {
   const teardown = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current)
     streamRef.current?.getTracks().forEach(t => t.stop())
-    try { audioCtxRef.current?.close() } catch { /* ignore */ }
-    streamRef.current   = null
+    const _ctx = audioCtxRef.current
     audioCtxRef.current = null
+    try { _ctx?.close() } catch { /* ignore */ }
+    streamRef.current = null
     amplitudeRef.current = 0
     try {
       if (mediaRecorderRef.current?.state === 'recording') {
@@ -297,7 +298,9 @@ export function useSoniox(): UseSonioxReturn {
       // Stop mic + amplitude but keep SSE open — Soniox still sending final tokens
       cancelAnimationFrame(animFrameRef.current)
       streamRef.current?.getTracks().forEach(t => t.stop())
-      try { audioCtxRef.current?.close() } catch { /* ignore */ }
+      const _ctx = audioCtxRef.current
+      audioCtxRef.current = null
+      try { _ctx?.close() } catch { /* ignore */ }
       amplitudeRef.current = 0
       // Send finalize — flushes remaining non-final tokens from Soniox
       postChunk(new Blob([], { type: mimeType || 'audio/webm' }), true)

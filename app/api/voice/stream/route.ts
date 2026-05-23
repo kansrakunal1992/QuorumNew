@@ -121,6 +121,13 @@ export async function GET(req: NextRequest) {
               hasEndpoint,
             })
           }
+          // All tokens are already final when endpoint is detected —
+          // close proactively instead of waiting for Soniox to time out
+          if (hasEndpoint) {
+            sendSSE(session!, { type: 'finished' })
+            cleanup(sessionId, ws, controller)
+            return
+          }
         }
 
         // ── Session finished ────────────────────────────────────────────────
