@@ -87,6 +87,7 @@ export function useSoniox(): UseSonioxReturn {
   const animFrameRef     = useRef<number>(0)
   const eventSourceRef   = useRef<EventSource | null>(null)
   const finalTextRef     = useRef<string>('')
+  const finishedRef      = useRef<boolean>(false)
   const mountedRef       = useRef(true)
 
   useEffect(() => {
@@ -185,6 +186,7 @@ export function useSoniox(): UseSonioxReturn {
 
           case 'finished':
             if (!mountedRef.current) break
+            finishedRef.current = true
             setPartialText('')
             if (finalTextRef.current.trim()) {
               setState('done')
@@ -207,7 +209,8 @@ export function useSoniox(): UseSonioxReturn {
 
       es.onerror = () => {
         clearTimeout(readyTimer)
-        if (mountedRef.current) {
+        // If session finished normally, onerror fires when SSE closes — ignore it
+        if (mountedRef.current && !finishedRef.current) {
           setState('error')
           setErrorCode('NETWORK_ERROR')
         }
@@ -320,7 +323,8 @@ export function useSoniox(): UseSonioxReturn {
   // ── reset() ─────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
     teardown()
-    finalTextRef.current = ''
+    finalTextRef.current  = ''
+    finishedRef.current   = false
     setFinalText(''); setPartialText(''); setErrorCode(null)
     setState('idle')
   }, [teardown])
