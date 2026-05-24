@@ -8,16 +8,26 @@ export interface SonioxTTSHook {
   isSpeaking:      boolean
   isLoading:       boolean
   activeSpeakerId: string | null
+  rate:            number
+  setRate:         (r: number) => void
 }
 
 export function useSonioxTTS(): SonioxTTSHook {
   const [isSpeaking,      setIsSpeaking]      = useState(false)
   const [isLoading,       setIsLoading]       = useState(false)
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null)
+  const [rate,            setRateState]       = useState(1)
 
   const audioRef     = useRef<HTMLAudioElement | null>(null)
   const objectUrlRef = useRef<string | null>(null)
   const abortRef     = useRef<AbortController | null>(null)
+  const rateRef      = useRef(1)   // keeps rate accessible inside async callbacks
+
+  const setRate = (r: number) => {
+    rateRef.current = r
+    setRateState(r)
+    if (audioRef.current) audioRef.current.playbackRate = r
+  }
 
   const stopInternal = () => {
     abortRef.current?.abort()
@@ -71,6 +81,7 @@ export function useSonioxTTS(): SonioxTTSHook {
         }
         setIsLoading(false)
         setIsSpeaking(true)
+        audio.playbackRate = rateRef.current
         audio.play().catch(() => {
           // Browser autoplay blocked — fail silently
           stopInternal()
@@ -92,5 +103,5 @@ export function useSonioxTTS(): SonioxTTSHook {
     return () => { stopInternal() }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { speak, stop, isSpeaking, isLoading, activeSpeakerId }
+  return { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate }
 }

@@ -62,7 +62,7 @@ export default function SynthesisCard({
   const [accessCode,   setAccessCode]  = useState('')
 
   // ── TTS ───────────────────────────────────────────────────────────────────
-  const { speak, stop, isSpeaking, isLoading, activeSpeakerId } = useTTSContext()
+  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === 'synthesis'
 
   const completedCount = Object.keys(personaResponses).length
@@ -428,6 +428,43 @@ export default function SynthesisCard({
               <span>
                 {isThisSpeaking && isLoading ? '' : isThisSpeaking ? 'Stop' : 'Read aloud'}
               </span>
+            </button>
+          )}
+
+
+          {/* ── Pace — Sprint 23b ── */}
+          {state === 'done' && (
+            <button
+              onClick={() => {
+                const rates = [1, 1.5, 2]
+                const next = rates[(rates.indexOf(rate) + 1) % rates.length]
+                setRate(next)
+              }}
+              title="Playback speed"
+              style={{
+                display:       'flex',
+                alignItems:    'center',
+                padding:       '5px 9px',
+                borderRadius:  6,
+                border:        rate !== 1
+                                 ? '1px solid var(--gold-dim)'
+                                 : '1px solid var(--synthesis-btn-border)',
+                background:    rate !== 1
+                                 ? 'rgba(201,168,76,0.10)'
+                                 : 'transparent',
+                color:         rate !== 1
+                                 ? 'var(--gold)'
+                                 : 'var(--synthesis-btn-text)',
+                fontSize:      11,
+                fontWeight:    600,
+                cursor:        'pointer',
+                fontFamily:    'inherit',
+                transition:    'all 0.18s',
+                letterSpacing: '0.02em',
+                whiteSpace:    'nowrap',
+              }}
+            >
+              {rate === 1 ? '1×' : rate === 1.5 ? '1.5×' : '2×'}
             </button>
           )}
 
