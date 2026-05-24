@@ -94,7 +94,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const icon = ICONS[persona.key]
 
   // ── TTS ────────────────────────────────────────────────────────────────────────────────
-  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate } = useTTSContext()
+  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === persona.key
 
   const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
@@ -462,7 +462,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
             )}
-            <span>{isThisSpeaking && isLoading ? 'Loading…' : isThisSpeaking ? 'Stop' : 'Read aloud'}</span>
+            <span>{isThisSpeaking && isLoading ? (countdown !== null && countdown > 0 ? `~${countdown}s` : 'Starting…') : isThisSpeaking ? 'Stop' : 'Read aloud'}</span>
           </button>
 
           {/* Pace cycle button — pre-set or change mid-play */}

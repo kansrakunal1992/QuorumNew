@@ -10,17 +10,13 @@ export interface SonioxTTSHook {
   activeSpeakerId: string | null
   rate:            number
   setRate:         (r: number) => void
+  countdown:       number | null
 }
 
 // ─── Chunk splitter ────────────────────────────────────────────────────────────
-// Splits on sentence boundaries, targeting ~80 words per chunk.
-// 80 words ≈ 32s of audio at 150wpm → ~3-5s fetch from Soniox REST.
-// First chunk starts playing in ~4s; subsequent chunks pre-fetch during playback.
-
 const MAX_WORDS = 80
 
 function chunkText(text: string): string[] {
-  // Split on sentence-ending punctuation followed by whitespace or end-of-string
   const sentences = text.match(/[^.!?]+[.!?]+[\s]*/g) ?? [text]
   const chunks: string[] = []
   let current = ''
@@ -48,23 +44,34 @@ export function useSonioxTTS(): SonioxTTSHook {
   const [isLoading,       setIsLoading]       = useState(false)
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null)
   const [rate,            setRateState]       = useState(1)
+  const [countdown,       setCountdown]       = useState<number | null>(null)
 
-  const audioRef     = useRef<HTMLAudioElement | null>(null)
-  const objectUrlRef = useRef<string | null>(null)
-  const abortRef     = useRef<AbortController | null>(null)
-  const rateRef      = useRef(1) // stays accurate inside async callbacks
+  const audioRef            = useRef<HTMLAudioElement | null>(null)
+  const objectUrlRef        = useRef<string | null>(null)
+  const abortRef            = useRef<AbortController | null>(null)
+  const rateRef             = useRef(1)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ── Rate control ────────────────────────────────────────────────────────────
   const setRate = (r: number) => {
     rateRef.current = r
     setRateState(r)
-    if (audioRef.current) audioRef.current.playbackRate = r // live update
+    if (audioRef.current) audioRef.current.playbackRate = r
   }
 
   // ── Internals ───────────────────────────────────────────────────────────────
+  const clearCountdown = () => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+    setCountdown(null)
+  }
+
   const stopInternal = () => {
     abortRef.current?.abort()
     abortRef.current = null
+    clearCountdown()
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.onended = null
@@ -90,13 +97,12 @@ export function useSonioxTTS(): SonioxTTSHook {
       return res.blob()
     })
 
-  // Plays a blob; resolves when audio ends; rejects on error
   const playBlob = (blob: Blob): Promise<void> => {
     const url   = URL.createObjectURL(blob)
     const audio = new Audio(url)
     objectUrlRef.current = url
     audioRef.current     = audio
-    audio.playbackRate   = rateRef.current  // apply current pace on every chunk
+    audio.playbackRate   = rateRef.current
 
     return new Promise((resolve, reject) => {
       audio.onended = () => {
@@ -113,32 +119,44 @@ export function useSonioxTTS(): SonioxTTSHook {
     })
   }
 
-  // ── Sequential pre-fetch queue ──────────────────────────────────────────────
-  // Fetches chunk N+1 while chunk N is playing → seamless joins, no gaps.
+  // ── Sliding-window pre-fetch queue (PREFETCH = 2) ───────────────────────────
+  // Fetches chunks[i+1] and chunks[i+2] while chunks[i] plays.
+  // At 2× speed a chunk finishes in ~16s; Soniox fetch takes ~30s.
+  // With PREFETCH=1 (old), chunk N+1 starts fetching when chunk N blob arrives
+  // (~30s into playback) → finishes at ~60s, but chunk N ends at ~46s → 14s gap.
+  // With PREFETCH=2, chunks 0+1+2 are ALL in-flight from T=0 → blobs land at ~30s,
+  // all queued before chunk 0 even finishes at 2×. Zero gap at any speed.
+  const PREFETCH = 2
+
   const runQueue = async (chunks: string[], ctrl: AbortController) => {
-    // Start fetching chunk 0 immediately
-    let nextFetch: Promise<Blob> = fetchChunk(chunks[0], ctrl.signal)
+    // Seed first PREFETCH+1 fetches simultaneously (within Soniox 3-concurrent limit)
+    const pending: Promise<Blob>[] = []
+    for (let j = 0; j < Math.min(PREFETCH + 1, chunks.length); j++) {
+      pending.push(fetchChunk(chunks[j], ctrl.signal))
+    }
 
     for (let i = 0; i < chunks.length; i++) {
       if (ctrl.signal.aborted) return
 
+      // Kick off next pre-fetch on each iteration to keep window rolling
+      const ahead = i + PREFETCH + 1
+      if (ahead < chunks.length) {
+        pending.push(fetchChunk(chunks[ahead], ctrl.signal))
+      }
+
       let blob: Blob
       try {
-        blob = await nextFetch
+        blob = await pending[i]
       } catch (e) {
         if ((e as Error)?.name === 'AbortError') return
-        break // silent fail on chunk error — stop queue
+        break
       }
 
       if (ctrl.signal.aborted) return
 
-      // Pre-fetch next chunk in background while we play current
-      if (i + 1 < chunks.length) {
-        nextFetch = fetchChunk(chunks[i + 1], ctrl.signal)
-      }
-
-      // First chunk ready — transition loading → speaking
+      // First chunk ready — clear countdown, flip to playing
       if (i === 0) {
+        clearCountdown()
         setIsLoading(false)
         setIsSpeaking(true)
       }
@@ -146,13 +164,12 @@ export function useSonioxTTS(): SonioxTTSHook {
       try {
         await playBlob(blob)
       } catch {
-        break // audio error — stop queue silently
+        break
       }
 
       if (ctrl.signal.aborted) return
     }
 
-    // All chunks done (or bailed early)
     if (!ctrl.signal.aborted) {
       setIsSpeaking(false)
       setActiveSpeakerId(null)
@@ -162,7 +179,6 @@ export function useSonioxTTS(): SonioxTTSHook {
   // ── Public API ──────────────────────────────────────────────────────────────
   const speak = (text: string, speakerId: string) => {
     stopInternal()
-
     setIsLoading(true)
     setActiveSpeakerId(speakerId)
 
@@ -170,6 +186,20 @@ export function useSonioxTTS(): SonioxTTSHook {
     abortRef.current = ctrl
 
     const chunks = chunkText(text)
+
+    // Estimate first-chunk fetch time: words / 150wpm * 60s ≈ Soniox generation time
+    const firstWords    = chunks[0]?.trim().split(/\s+/).length ?? MAX_WORDS
+    const estimatedSec  = Math.round((firstWords / 150) * 60)
+    setCountdown(estimatedSec)
+
+    countdownIntervalRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev === null) return null
+        if (prev <= 1) return 0   // hold at 0 rather than going negative
+        return prev - 1
+      })
+    }, 1000)
+
     runQueue(chunks, ctrl).catch(() => {
       if (!ctrl.signal.aborted) stopInternal()
     })
@@ -181,5 +211,5 @@ export function useSonioxTTS(): SonioxTTSHook {
     return () => { stopInternal() }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate }
+  return { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate, countdown }
 }

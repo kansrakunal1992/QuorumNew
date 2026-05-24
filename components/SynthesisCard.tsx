@@ -62,7 +62,7 @@ export default function SynthesisCard({
   const [accessCode,   setAccessCode]  = useState('')
 
   // ── TTS ───────────────────────────────────────────────────────────────────
-  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate } = useTTSContext()
+  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === 'synthesis'
 
   const completedCount = Object.keys(personaResponses).length
@@ -426,7 +426,11 @@ export default function SynthesisCard({
                 </svg>
               )}
               <span>
-                {isThisSpeaking && isLoading ? '' : isThisSpeaking ? 'Stop' : 'Read aloud'}
+                {isThisSpeaking && isLoading
+                  ? (countdown !== null && countdown > 0 ? `~${countdown}s` : 'Starting…')
+                  : isThisSpeaking
+                  ? 'Stop'
+                  : 'Read aloud'}
               </span>
             </button>
           )}
