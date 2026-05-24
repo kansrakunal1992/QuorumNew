@@ -101,6 +101,15 @@ export default function Home() {
         // Store token for BehaviorAlerts
         setAuthToken(token)
 
+        // Set userEmail from auth session — covers the case where user clicks
+        // magic link in a fresh window with no localStorage (e.g. private mode
+        // session → clicked link in regular window). Without this, AuthPanel
+        // re-appears even though auth succeeded.
+        if (authSession?.user?.email) {
+          setUserEmail(authSession.user.email)
+          storeUserEmail(authSession.user.email)
+        }
+
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
 

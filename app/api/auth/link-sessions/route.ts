@@ -22,22 +22,29 @@ export async function POST(req: Request) {
       deviceId?: string   // ← new: used to retro-link device_id-keyed bias rows
     }
 
-    if (!sessionIds?.length || !userId) {
-      return NextResponse.json({ error: 'sessionIds and userId required' }, { status: 400 })
+    if (!userId) {
+      return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
 
     const supabase = createServiceClient()
 
-    // Link sessions to user via the SQL function defined in sprint6_auth.sql
-    const { data, error } = await supabase.rpc('link_sessions_to_user', {
-      p_session_ids: sessionIds,
-      p_user_id:     userId,
-      p_user_email:  userEmail ?? null,
-    })
+    // Link sessions to user — sessionIds may be empty if user clicked magic link
+    // from a different window/device than where sessions were created (e.g. private
+    // mode → regular window). Still proceed to create user_preferences and retro-link
+    // bias rows — account initialisation must complete regardless.
+    let linkedCount = 0
+    if (sessionIds?.length) {
+      const { data, error } = await supabase.rpc('link_sessions_to_user', {
+        p_session_ids: sessionIds,
+        p_user_id:     userId,
+        p_user_email:  userEmail ?? null,
+      })
 
-    if (error) {
-      console.error('[LinkSessions] RPC error:', error)
-      return NextResponse.json({ error: 'Failed to link sessions' }, { status: 500 })
+      if (error) {
+        console.error('[LinkSessions] RPC error:', error)
+        return NextResponse.json({ error: 'Failed to link sessions' }, { status: 500 })
+      }
+      linkedCount = data ?? 0
     }
 
     // Also update bias_library rows if they exist for this email
@@ -87,11 +94,11 @@ export async function POST(req: Request) {
       console.warn('[LinkSessions] user_preferences upsert failed (non-critical):', prefError)
     }
 
-    console.log(`[LinkSessions] Linked ${data} sessions to user ${userId}`)
+    console.log(`[LinkSessions] Linked ${linkedCount} sessions to user ${userId}`)
 
     return NextResponse.json({
       status: 'ok',
-      linked_sessions: data,
+      linked_sessions: linkedCount,
       user_id: userId,
     })
 

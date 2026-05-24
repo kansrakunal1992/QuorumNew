@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   // Explicit NOT instructions for every possible overreach.
   const prompt = `Maximum output: 500 words. Return only the cleaned text — no preamble, no commentary, nothing else.
 
-Your task: Fix grammar, punctuation, filler words ("uh", "um", "like", "basically", "you know"), and sentence structure in the text below.
+Your task: Fix grammar, punctuation, filler words ("uh", "um", "like", "basically", "you know"), and sentence structure in the text below. If any part or all of the text is in a language other than English, translate it to English as part of the cleanup — preserving meaning exactly, no additions.
 
 Rules you must follow:
 - Do NOT add any information not explicitly present in the input
