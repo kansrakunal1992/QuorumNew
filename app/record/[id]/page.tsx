@@ -4,6 +4,7 @@ import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
 import Link from 'next/link'
 import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
+import BackButton from '@/components/BackButton'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
 
@@ -56,9 +57,10 @@ export default async function RecordPage({ params }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between mb-8" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <Link href={`/session/${id}`} className="text-xs mb-3 block" style={{ color: 'var(--text-4)' }}>
-              ← Back to Council
-            </Link>
+            <BackButton
+              label="← Back to Council"
+              style={{ padding: 0, fontSize: 12, background: 'none', border: 'none', color: 'var(--text-4)', cursor: 'pointer', marginBottom: 12, display: 'block', fontFamily: 'inherit' }}
+            />
             <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--gold)', textTransform: 'uppercase' }}>
               Quorum
             </span>
@@ -158,11 +160,7 @@ export default async function RecordPage({ params }: Props) {
 
         {/* Bottom */}
         <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Link href={`/session/${id}`}>
-            <button className="btn-ghost" style={{ padding: '10px 20px', fontSize: 13 }}>
-              ← Back to Council
-            </button>
-          </Link>
+          <BackButton />
           <ReanalyzeDrawer
             sessionId={session.id}
             decisionText={session.decision_text}

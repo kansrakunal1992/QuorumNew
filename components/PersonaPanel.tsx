@@ -297,7 +297,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
+      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', minHeight: 0 }}>
         {/* Original response — never mutated */}
         {response && (
           <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>
