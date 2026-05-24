@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { getStoredSessionIds, pushSessionId, getStoredUserEmail, getOrCreateDeviceId } from '@/lib/storage'
+import { getStoredSessionIds, pushSessionId, removeSessionId, getStoredUserEmail, getOrCreateDeviceId } from '@/lib/storage'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
@@ -27,6 +27,14 @@ const IconCheck = () => (
 const IconDot = () => (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="12" r="6"/>
+  </svg>
+)
+const IconTrash = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+    <path d="M10 11v6M14 11v6"/>
+    <path d="M9 6V4h6v2"/>
   </svg>
 )
 
@@ -173,6 +181,24 @@ export default function Home() {
     }
   }
 
+  // Delete a session (removes from DB + localStorage + local state)
+  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation()
+    if (!window.confirm('Delete this decision? This cannot be undone.')) return
+    // Optimistic removal from UI
+    setSessions(prev => prev.filter(s => s.id !== sessionId))
+    removeSessionId(sessionId)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+      await fetch('/api/record', {
+        method:  'DELETE',
+        headers,
+        body:    JSON.stringify({ sessionId }),
+      })
+    } catch { /* silent — already removed from UI */ }
+  }
+
   // Derived counts
   const pending = sessions.filter(s => !s.outcome)
   const decided = sessions.filter(s => s.outcome)
@@ -214,7 +240,7 @@ export default function Home() {
           <h1 style={{ fontSize: 17, fontWeight: 400, color: 'var(--text-1)', marginBottom: 6, fontFamily: 'var(--font-display)' }}>
             Describe your decision
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 12, lineHeight: 1.6, fontStyle: 'italic' }}>
             Six private advisors will review it simultaneously — each from a distinct angle.
           </p>
 
@@ -557,9 +583,42 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--text-4)', marginTop: 4 }}>
-                      <polyline points="9 18 15 12 9 6"/>
-                    </svg>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 4 }}>
+                      <button
+                        onClick={e => handleDeleteSession(e, s.id)}
+                        title="Delete this decision"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 26,
+                          height: 26,
+                          borderRadius: 6,
+                          border: '1px solid transparent',
+                          background: 'transparent',
+                          color: 'var(--text-4)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                          flexShrink: 0,
+                          padding: 0,
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.color = '#c04040'
+                          e.currentTarget.style.borderColor = 'rgba(192,64,64,0.3)'
+                          e.currentTarget.style.background = 'rgba(192,64,64,0.07)'
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.color = 'var(--text-4)'
+                          e.currentTarget.style.borderColor = 'transparent'
+                          e.currentTarget.style.background = 'transparent'
+                        }}
+                      >
+                        <IconTrash />
+                      </button>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-4)' }}>
+                        <polyline points="9 18 15 12 9 6"/>
+                      </svg>
+                    </div>
                   </div>
                 )
               })}

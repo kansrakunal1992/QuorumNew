@@ -25,6 +25,14 @@ export function pushSessionId(id: string): void {
   } catch {}
 }
 
+export function removeSessionId(id: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const ids = getStoredSessionIds()
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids.filter(i => i !== id)))
+  } catch {}
+}
+
 // Sprint 6: user email stored after magic link auth
 export function getStoredUserEmail(): string | null {
   if (typeof window === 'undefined') return null
