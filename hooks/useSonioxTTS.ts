@@ -86,16 +86,28 @@ export function useSonioxTTS(): SonioxTTSHook {
     setActiveSpeakerId(null)
   }
 
-  const fetchChunk = (text: string, signal: AbortSignal): Promise<Blob> =>
-    fetch('/api/voice/tts', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ text }),
-      signal,
-    }).then(res => {
-      if (!res.ok) throw new Error('TTS_FAILED')
+  // Retries once after 1.5s — handles Railway cold starts & transient Soniox blips.
+  const fetchChunkWithRetry = async (text: string, signal: AbortSignal): Promise<Blob> => {
+    const attempt = async (): Promise<Blob> => {
+      const res = await fetch('/api/voice/tts', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text }),
+        signal,
+      })
+      if (!res.ok) throw new Error(`TTS_FAILED:${res.status}`)
       return res.blob()
-    })
+    }
+    try {
+      return await attempt()
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') throw e
+      // Wait then retry once
+      await new Promise(r => setTimeout(r, 1500))
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      return attempt()
+    }
+  }
 
   const playBlob = (blob: Blob): Promise<void> => {
     const url   = URL.createObjectURL(blob)
@@ -119,29 +131,24 @@ export function useSonioxTTS(): SonioxTTSHook {
     })
   }
 
-  // ── Sliding-window pre-fetch queue (PREFETCH = 2) ───────────────────────────
-  // Fetches chunks[i+1] and chunks[i+2] while chunks[i] plays.
-  // At 2× speed a chunk finishes in ~16s; Soniox fetch takes ~30s.
-  // With PREFETCH=1 (old), chunk N+1 starts fetching when chunk N blob arrives
-  // (~30s into playback) → finishes at ~60s, but chunk N ends at ~46s → 14s gap.
-  // With PREFETCH=2, chunks 0+1+2 are ALL in-flight from T=0 → blobs land at ~30s,
-  // all queued before chunk 0 even finishes at 2×. Zero gap at any speed.
-  const PREFETCH = 2
+  // ── Pre-fetch queue (PREFETCH = 1) ──────────────────────────────────────────
+  // PREFETCH=1 keeps max 2 concurrent Soniox requests (safely under the 3-limit).
+  // PREFETCH=2 was firing 3 simultaneously → any transient error stopped the queue.
+  // Retry in fetchChunkWithRetry covers the 2× pace gap (tech debt) adequately.
+  const PREFETCH = 1
 
   const runQueue = async (chunks: string[], ctrl: AbortController) => {
-    // Seed first PREFETCH+1 fetches simultaneously (within Soniox 3-concurrent limit)
     const pending: Promise<Blob>[] = []
     for (let j = 0; j < Math.min(PREFETCH + 1, chunks.length); j++) {
-      pending.push(fetchChunk(chunks[j], ctrl.signal))
+      pending.push(fetchChunkWithRetry(chunks[j], ctrl.signal))
     }
 
     for (let i = 0; i < chunks.length; i++) {
       if (ctrl.signal.aborted) return
 
-      // Kick off next pre-fetch on each iteration to keep window rolling
       const ahead = i + PREFETCH + 1
       if (ahead < chunks.length) {
-        pending.push(fetchChunk(chunks[ahead], ctrl.signal))
+        pending.push(fetchChunkWithRetry(chunks[ahead], ctrl.signal))
       }
 
       let blob: Blob
@@ -149,12 +156,13 @@ export function useSonioxTTS(): SonioxTTSHook {
         blob = await pending[i]
       } catch (e) {
         if ((e as Error)?.name === 'AbortError') return
+        // Retry exhausted — clear loading state and stop cleanly
+        clearCountdown()
         break
       }
 
       if (ctrl.signal.aborted) return
 
-      // First chunk ready — clear countdown, flip to playing
       if (i === 0) {
         clearCountdown()
         setIsLoading(false)
@@ -170,6 +178,8 @@ export function useSonioxTTS(): SonioxTTSHook {
       if (ctrl.signal.aborted) return
     }
 
+    // Always fires — whether loop completed normally or broke early
+    setIsLoading(false)
     if (!ctrl.signal.aborted) {
       setIsSpeaking(false)
       setActiveSpeakerId(null)
