@@ -14,7 +14,7 @@ export interface SonioxTTSHook {
 }
 
 // ─── Chunk splitter ────────────────────────────────────────────────────────────
-const MAX_WORDS = 80
+const MAX_WORDS = 40
 
 function chunkText(text: string): string[] {
   const sentences = text.match(/[^.!?]+[.!?]+[\s]*/g) ?? [text]
