@@ -107,7 +107,7 @@ export default function Home() {
         // re-appears even though auth succeeded.
         if (authSession?.user?.email) {
           setUserEmail(authSession.user.email)
-          storeUserEmail(authSession.user.email)
+          try { localStorage.setItem('user_email', authSession.user.email) } catch { /* ignore */ }
         }
 
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
