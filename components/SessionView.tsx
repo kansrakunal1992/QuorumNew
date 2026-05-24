@@ -7,6 +7,7 @@ import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
 import CouncilStatusBar from './CouncilStatusBar'
+import { TTSProvider } from '@/context/TTSContext'
 import { PERSONAS, PERSONA_ORDER, computePersonaOrder } from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
@@ -563,6 +564,7 @@ export default function SessionView({ session: initialSession }: Props) {
         </p>
       </div>
 
+      <TTSProvider>
       <div className="max-w-7xl mx-auto">
 
         {/* ── Council Status Bar ── */}
@@ -648,6 +650,7 @@ export default function SessionView({ session: initialSession }: Props) {
           ))}
         </div>
         </div>
+      </TTSProvider>
 
       {/* ── Bottom bar ── */}
       <div style={{ maxWidth: '80rem', margin: '28px auto 0', display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
