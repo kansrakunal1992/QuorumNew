@@ -211,14 +211,16 @@ export default function VoiceInput({ onTranscript }: VoiceInputProps) {
   const { state, finalText, partialText, errorCode, amplitudeRef, start, stop, reset } = useSoniox()
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const rawRef = useRef('')
+  const onTranscriptRef = useRef(onTranscript)
+  useEffect(() => { onTranscriptRef.current = onTranscript }, [onTranscript])
 
   // Push final tokens to textarea incrementally as they arrive
   useEffect(() => {
     if (finalText && (state === 'recording' || state === 'finalizing' || state === 'done')) {
       rawRef.current = finalText
-      onTranscript(finalText)
+      onTranscriptRef.current(finalText)
     }
-  }, [finalText, state, onTranscript])
+  }, [finalText, state])
 
   const handleCleanup = useCallback(async () => {
     if (!rawRef.current || cleanupLoading) return
