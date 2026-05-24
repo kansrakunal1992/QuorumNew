@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
           model:                     'stt-rt-v4',
           audio_format:              'auto',
           enable_endpoint_detection: true,
+          max_endpoint_delay_ms: 3000,
           language_hints:            ['en'],
         }))
         sendSSE(session!, { type: 'ready' })
