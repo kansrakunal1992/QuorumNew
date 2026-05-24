@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { useTTSContext } from '@/context/TTSContext'
 import type { PersonaMeta, Message } from '@/lib/types'
 
 const ICONS: Record<string, React.ReactNode> = {
@@ -91,6 +92,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
   const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
   const icon = ICONS[persona.key]
+
+  // ── TTS ────────────────────────────────────────────────────────────────────────────────
+  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate } = useTTSContext()
+  const isThisSpeaking = activeSpeakerId === persona.key
 
   const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
     setPanelState('streaming')
@@ -402,6 +407,94 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback('') }}>Cancel</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── TTS strip — Sprint 23c — bottom of card, accent bg matches header ── */}
+      {panelState === 'done' && !showPushback && (
+        <div style={{
+          borderTop:    '1px solid rgba(255,255,255,0.10)',
+          padding:      '7px 14px',
+          display:      'flex',
+          alignItems:   'center',
+          justifyContent: 'space-between',
+          background:   accentColor,
+          borderRadius: '0 0 14px 14px',
+        }}>
+          {/* Read aloud / Stop */}
+          <button
+            onClick={() => isThisSpeaking ? stop() : speak(response, persona.key)}
+            title={isThisSpeaking ? 'Stop' : 'Read aloud'}
+            style={{
+              display:       'flex',
+              alignItems:    'center',
+              gap:           5,
+              padding:       '4px 10px',
+              borderRadius:  5,
+              border:        isThisSpeaking
+                               ? '1px solid rgba(201,168,76,0.5)'
+                               : '1px solid rgba(255,255,255,0.18)',
+              background:    isThisSpeaking
+                               ? 'rgba(201,168,76,0.15)'
+                               : 'rgba(255,255,255,0.08)',
+              color:         isThisSpeaking
+                               ? 'var(--gold)'
+                               : 'rgba(255,255,255,0.70)',
+              fontSize:      11,
+              fontWeight:    500,
+              cursor:        'pointer',
+              fontFamily:    'inherit',
+              transition:    'all 0.18s',
+              letterSpacing: '0.01em',
+            }}
+          >
+            {isThisSpeaking && isLoading ? (
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                style={{ animation: 'spin 0.9s linear infinite' }}>
+                <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
+              </svg>
+            ) : isThisSpeaking ? (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+            )}
+            <span>{isThisSpeaking && isLoading ? 'Loading…' : isThisSpeaking ? 'Stop' : 'Read aloud'}</span>
+          </button>
+
+          {/* Pace cycle button — pre-set or change mid-play */}
+          <button
+            onClick={() => {
+              const rates = [1, 1.5, 2]
+              const next = rates[(rates.indexOf(rate) + 1) % rates.length]
+              setRate(next)
+            }}
+            title="Playback speed"
+            style={{
+              padding:       '4px 9px',
+              borderRadius:  5,
+              border:        rate !== 1
+                               ? '1px solid rgba(201,168,76,0.5)'
+                               : '1px solid rgba(255,255,255,0.18)',
+              background:    rate !== 1
+                               ? 'rgba(201,168,76,0.15)'
+                               : 'rgba(255,255,255,0.08)',
+              color:         rate !== 1
+                               ? 'var(--gold)'
+                               : 'rgba(255,255,255,0.60)',
+              fontSize:      11,
+              fontWeight:    600,
+              cursor:        'pointer',
+              fontFamily:    'inherit',
+              transition:    'all 0.18s',
+              letterSpacing: '0.03em',
+            }}
+          >
+            {rate === 1 ? '1×' : rate === 1.5 ? '1.5×' : '2×'}
+          </button>
         </div>
       )}
     </div>
