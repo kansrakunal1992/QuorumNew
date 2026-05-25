@@ -79,7 +79,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [showPushback, setShowPushback]   = useState(false)
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
-  const [contextShared, setContextShared] = useState(false)   // Sprint 16b Fix 4
+  const [contextShared, setContextShared] = useState(false)
+
+  // Header block — parsed from <lens>, <position>, <tradeoff> tags in streamed output
+  const [lensText,     setLensText]     = useState('')
+  const [positionText, setPositionText] = useState('')
+  const [tradeoffText, setTradeoffText] = useState('')
 
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
@@ -95,8 +100,29 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
   const icon = ICONS[persona.key]
 
+  // ── Header tag extractor ───────────────────────────────────────────────────
+  // Strips <lens>, <position>, <tradeoff> tags from streamed output and returns clean prose
+  const extractHeaderTags = useCallback((raw: string): string => {
+    const get = (tag: string) => {
+      const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
+      return m ? m[1].trim() : ''
+    }
+    const lens     = get('lens')
+    const position = get('position')
+    const tradeoff = get('tradeoff')
+    if (lens)     setLensText(lens)
+    if (position) setPositionText(position)
+    if (tradeoff) setTradeoffText(tradeoff)
+    // Strip all three tag blocks + any leading blank line from prose
+    return raw
+      .replace(/<lens>[\s\S]*?<\/lens>/g, '')
+      .replace(/<position>[\s\S]*?<\/position>/g, '')
+      .replace(/<tradeoff>[\s\S]*?<\/tradeoff>/g, '')
+      .replace(/^\s+/, '')
+  }, [])
+
   // ── TTS ────────────────────────────────────────────────────────────────────────────────
-  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
+  const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === persona.key
 
   const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
@@ -125,8 +151,9 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         acc += decoder.decode(value, { stream: true })
 
         if (isFirst) {
-          setResponse(acc)
-          responseRef.current = acc
+          const prose = extractHeaderTags(acc)
+          setResponse(prose)
+          responseRef.current = prose
         }
       }
 
@@ -147,6 +174,14 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       setResponse('Connection error.')
     }
   }, [sessionId, persona.key, decisionText, contextText, registerMode])
+
+  // Parse header tags from initialContent so Lens/Position/Trade-off render on Back to Council
+  useEffect(() => {
+    if (!initialContent) return
+    const prose = extractHeaderTags(initialContent)
+    setResponse(prose)
+    responseRef.current = prose
+  }, [initialContent, extractHeaderTags])
 
   useEffect(() => {
     if (initialContent) return   // already hydrated from DB — no re-fetch
@@ -258,16 +293,17 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   return (
     <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280 }}>
       {/* Header */}
-      <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: accentColor, borderRadius: '14px 14px 0 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.9)', flexShrink: 0 }}>
-            {icon}
+      <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.10)', background: accentColor, borderRadius: '14px 14px 0 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.9)', flexShrink: 0 }}>
+              {icon}
+            </div>
+            <div>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#f0f4ff', lineHeight: 1.2 }}>{persona.label}</p>
+              <p style={{ fontSize: 11, color: 'rgba(240,244,255,0.60)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
+            </div>
           </div>
-          <div>
-            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#f0f4ff', lineHeight: 1.2 }}>{persona.label}</p>
-            <p style={{ fontSize: 11, color: 'rgba(240,244,255,0.60)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
-          </div>
-        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && !showPushback && (
             <button
@@ -300,6 +336,28 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           <StatusBadge />
         </div>
       </div>
+
+      {/* Lens / Position / Trade-off — shown once header tags arrive */}
+      {(lensText || positionText || tradeoffText) && (
+        <div style={{ padding: '8px 16px 10px', background: `${accentColor}cc`, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          {lensText && (
+            <p style={{ fontSize: 10.5, color: 'rgba(240,244,255,0.55)', lineHeight: 1.5, margin: 0 }}>
+              <span style={{ fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: 9.5 }}>Lens </span>
+              {lensText}
+            </p>
+          )}
+          {positionText && (
+            <p style={{ fontSize: 11.5, color: '#f0f4ff', fontWeight: 600, lineHeight: 1.45, margin: lensText ? '5px 0 0' : '0' }}>
+              {positionText}
+            </p>
+          )}
+          {tradeoffText && (
+            <p style={{ fontSize: 10.5, color: 'rgba(240,244,255,0.50)', lineHeight: 1.55, margin: positionText ? '5px 0 0' : lensText ? '5px 0 0' : '0', fontStyle: 'italic' }}>
+              {tradeoffText}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Body */}
       <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
@@ -428,8 +486,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         }}>
           {/* Read aloud / Stop */}
           <button
-            onClick={() => isThisSpeaking ? stop() : speak(response, persona.key)}
-            title={isThisSpeaking ? 'Stop' : 'Read aloud'}
+            onClick={() => {
+              if (isThisSpeaking && isPaused) { resume(); return }
+              if (isThisSpeaking) { pause(); return }
+              speak(response, persona.key)
+            }}
+            title={isThisSpeaking && isPaused ? 'Resume' : isThisSpeaking ? 'Pause' : 'Read aloud'}
             style={{
               display:       'flex',
               alignItems:    'center',
@@ -458,17 +520,43 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
                 style={{ animation: 'spin 0.9s linear infinite' }}>
                 <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
               </svg>
+            ) : isThisSpeaking && isPaused ? (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
             ) : isThisSpeaking ? (
               <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                <rect x="5" y="4" width="4" height="16" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/>
               </svg>
             ) : (
               <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
             )}
-            <span>{isThisSpeaking && isLoading ? (countdown !== null && countdown > 0 ? `~${countdown}s` : 'Starting…') : isThisSpeaking ? 'Stop' : 'Read aloud'}</span>
+            <span>{isThisSpeaking && isLoading ? (countdown !== null && countdown > 0 ? `~${countdown}s` : 'Starting…') : isThisSpeaking && isPaused ? 'Resume' : isThisSpeaking ? 'Pause' : 'Read aloud'}</span>
           </button>
+
+          {/* Stop button — shown while speaking or paused */}
+          {isThisSpeaking && (
+            <button
+              onClick={() => stop()}
+              title="Stop"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '4px 8px', borderRadius: 5,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.55)',
+                fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                fontFamily: 'inherit', transition: 'all 0.18s',
+              }}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+              </svg>
+              <span>Stop</span>
+            </button>
+          )}
 
           {/* Pace cycle button — pre-set or change mid-play */}
           <button

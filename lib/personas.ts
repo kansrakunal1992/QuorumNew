@@ -703,6 +703,14 @@ WARNING: Failure to open with acknowledgment of the specific input is the most c
 
 const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
+0. HEADER BLOCK — OUTPUT FIRST, MANDATORY:
+Before your analysis, output exactly three lines in this format with no deviation:
+<lens>One concise phrase naming the specific analytical frame you are applying to this decision — your lens, not a description of your role</lens>
+<position>One sentence stating your lean on this specific decision — not a generic stance, a verdict on what they asked</position>
+<tradeoff>One full sentence describing the specific real-world trade-off this decision forces — written as a consequence the decision-maker will feel, not a category label. Example form: "Choosing to raise now captures the window but commits you to a growth trajectory before your unit economics are proven." Write the actual trade-off for this decision, not a template.</tradeoff>
+
+These three tags must appear before any analysis. Do not include them anywhere else. Do not label or explain them. After the closing </tradeoff> tag, begin your analysis directly with a blank line.
+
 1. QUESTION FIRST: If the decision description is missing a critical piece of information your analysis depends on — a specific number, a timeline, a relationship, a constraint — ask exactly ONE question before giving your assessment. Make it the sharpest, most specific question missing. Do not ask multiple questions. If nothing critical is missing, proceed directly.
 
 2. LENGTH — ABSOLUTE HARD LIMIT: Your response must be 180–200 words. Count every word before outputting. If you exceed 200 words, do the following in order: (a) find every sentence that restates something already said — delete it entirely, (b) find every transitional phrase that adds no information ("It is worth noting that…", "Additionally…", "This matters because…") — cut it, (c) find the paragraph with the least analytical load and cut its weakest sentence. Repeat until you are at or under 200 words. Do NOT cut substance — cut repetition and padding only. Exceeding 200 words is a failure regardless of content quality.
@@ -823,7 +831,10 @@ If ONE pattern is clearly and unmistakably present — not inferred, not margina
 
 If no pattern is clearly present, write nothing. Do not invent patterns. Do not add this observation if the pattern is ambiguous.
 
-Hard limit: 220 words for Paragraphs 1–3 and Strategic Possibilities combined. PATTERN OBSERVATION is exempt from this count — if a pattern clearly qualifies, include it regardless of whether you are near the word limit. It is not optional when a pattern is present; it is only omitted when no pattern qualifies. Do not drop it to stay under 220 words. Do not name individual advisors. Do not use bullet points or headers.`
+Hard limit: 220 words for Paragraphs 1–3 and Strategic Possibilities combined. PATTERN OBSERVATION is exempt from this count — if a pattern clearly qualifies, include it regardless of whether you are near the word limit. It is not optional when a pattern is present; it is only omitted when no pattern qualifies. Do not drop it to stay under 220 words. Do not name individual advisors. Do not use bullet points or headers.
+
+TRADE-OFF SUMMARY — always include, always last:
+After everything above, add a final paragraph that maps the real-world trade-offs the decision forces. Write it as a direct consequence narrative — what following the council's lean costs the decision-maker in concrete terms, and what rejecting it preserves. Cover two to three dimensions drawn from what was actually at stake in this decision (e.g. financial exposure, team trust, strategic optionality, personal reputation, reversibility). Do not use a list. Do not use category labels as standalone words. Write it as connected prose: "Proceeding means accepting X in exchange for Y; the cost of waiting is Z." The reader should finish this paragraph knowing exactly what they are trading, not just which way the council leans. Hard limit: 60 words. Always present — not optional.`
 
 export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
   contrarian: {

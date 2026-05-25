@@ -5,7 +5,10 @@ import { useState, useRef, useEffect } from 'react'
 export interface SonioxTTSHook {
   speak:           (text: string, speakerId: string) => void
   stop:            () => void
+  pause:           () => void
+  resume:          () => void
   isSpeaking:      boolean
+  isPaused:        boolean
   isLoading:       boolean
   activeSpeakerId: string | null
   rate:            number
@@ -41,6 +44,7 @@ function chunkText(text: string): string[] {
 
 export function useSonioxTTS(): SonioxTTSHook {
   const [isSpeaking,      setIsSpeaking]      = useState(false)
+  const [isPaused,        setIsPaused]        = useState(false)
   const [isLoading,       setIsLoading]       = useState(false)
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null)
   const [rate,            setRateState]       = useState(1)
@@ -82,8 +86,23 @@ export function useSonioxTTS(): SonioxTTSHook {
       objectUrlRef.current = null
     }
     setIsSpeaking(false)
+    setIsPaused(false)
     setIsLoading(false)
     setActiveSpeakerId(null)
+  }
+
+  const pause = () => {
+    if (audioRef.current && isSpeaking && !isPaused) {
+      audioRef.current.pause()
+      setIsPaused(true)
+    }
+  }
+
+  const resume = () => {
+    if (audioRef.current && isPaused) {
+      audioRef.current.play().catch(() => {})
+      setIsPaused(false)
+    }
   }
 
   // Retries once after 1.5s — handles Railway cold starts & transient Soniox blips.
@@ -221,5 +240,5 @@ export function useSonioxTTS(): SonioxTTSHook {
     return () => { stopInternal() }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate, countdown }
+  return { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown }
 }
