@@ -345,19 +345,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         {(lensText || positionText || realCostText) && (
           <div style={{ marginBottom: 14 }}>
             {lensText && (
-              <p style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
                 <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>Lens: </span>
                 {lensText}
               </p>
             )}
             {positionText && (
-              <p style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
                 <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>Position: </span>
                 {positionText}
               </p>
             )}
             {realCostText && (
-              <p style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-3)', lineHeight: 1.6, margin: '0' }}>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: '0' }}>
                 <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>The real cost: </span>
                 {realCostText}
               </p>
