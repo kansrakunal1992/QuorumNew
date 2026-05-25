@@ -65,13 +65,15 @@ interface Props {
   onShareContext?: (text: string) => void
   /** Sprint 16b Fix 4b: called when an examiner/share-context update stream finishes — used to trigger synthesis re-run */
   onExaminerUpdateComplete?: (personaKey: string, content: string) => void
+  /** Pre-loaded content from DB — skips the AI call entirely (used on Back to Council navigation) */
+  initialContent?: string
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete }: Props) {
-  const [response, setResponse]           = useState('')
-  const [panelState, setPanelState]       = useState<PanelState>('idle')
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent }: Props) {
+  const [response, setResponse]           = useState(initialContent ?? '')
+  const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
   const [pushback, setPushback]           = useState('')
   const [showPushback, setShowPushback]   = useState(false)
@@ -83,7 +85,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
   const [examinerUpdateState, setExaminerUpdateState] = useState<'idle' | 'streaming' | 'done'>('idle')
 
-  const responseRef   = useRef('')
+  const responseRef   = useRef(initialContent ?? '')
   const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
 
@@ -146,7 +148,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     }
   }, [sessionId, persona.key, decisionText, contextText, registerMode])
 
-  useEffect(() => { streamResponse([], true) }, [streamResponse])
+  useEffect(() => {
+    if (initialContent) return   // already hydrated from DB — no re-fetch
+    streamResponse([], true)
+  }, [streamResponse, initialContent])
 
   // ── Examiner supplemental update ────────────────────────────────────────
   // Fires when examinerContext is set (non-empty) after the initial analysis is done
@@ -297,7 +302,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
         {/* Original response — never mutated */}
         {response && (
           <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>

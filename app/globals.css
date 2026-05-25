@@ -156,7 +156,6 @@ html, body {
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
-  height: 100%;
   position: relative;
   overflow: hidden;
 }

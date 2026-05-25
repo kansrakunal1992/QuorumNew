@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase'
 
 interface Props {
   session: Session
+  initialMessages?: Record<string, string>   // personaKey → full content, pre-loaded from DB
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -55,7 +56,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {} }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -82,7 +83,7 @@ export default function SessionView({ session: initialSession }: Props) {
 
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
-  const [completedResponses, setCompletedResponses] = useState<Record<string, string>>({})
+  const [completedResponses, setCompletedResponses] = useState<Record<string, string>>(initialMessages)
   const [decisionExpanded, setDecisionExpanded] = useState(false)
   const [contextExpanded,  setContextExpanded]  = useState(false)
 
@@ -645,6 +646,7 @@ export default function SessionView({ session: initialSession }: Props) {
                 structuralContext={structuralContext ?? undefined}
                 onShareContext={(text) => handleShareContext(key, text)}
                 onExaminerUpdateComplete={handleExaminerUpdateComplete}
+                initialContent={initialMessages[key]}
               />
             </div>
           ))}
