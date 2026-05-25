@@ -283,7 +283,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
             }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 10, lineHeight: 1.3 }}>
                 {redirectRule === 'R7'
-                  ? 'Specific information would change this decision — the Council's read is provisional until you have it'
+                  ? 'Specific information would change this decision — the Council&apos;s read is provisional until you have it'
                   : 'This decision has an unresolved upstream dependency'}
               </p>
               {/* upstreamRationale is only populated for R1 — never shown for R7 to avoid
