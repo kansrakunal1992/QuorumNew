@@ -81,10 +81,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
   const [contextShared, setContextShared] = useState(false)
 
-  // Header block — parsed from <lens>, <position>, <tradeoff> tags in streamed output
+  // Header block — parsed from <lens>, <position>, <realcost> tags in streamed output
   const [lensText,     setLensText]     = useState('')
   const [positionText, setPositionText] = useState('')
-  const [tradeoffText, setTradeoffText] = useState('')
+  const [realCostText, setRealCostText] = useState('')
 
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
@@ -101,7 +101,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const icon = ICONS[persona.key]
 
   // ── Header tag extractor ───────────────────────────────────────────────────
-  // Strips <lens>, <position>, <tradeoff> tags from streamed output and returns clean prose
+  // Strips <lens>, <position>, <realcost> tags from streamed output and returns clean prose
   const extractHeaderTags = useCallback((raw: string): string => {
     const get = (tag: string) => {
       const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
@@ -109,15 +109,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     }
     const lens     = get('lens')
     const position = get('position')
-    const tradeoff = get('tradeoff')
+    const realcost = get('realcost')
     if (lens)     setLensText(lens)
     if (position) setPositionText(position)
-    if (tradeoff) setTradeoffText(tradeoff)
+    if (realcost) setRealCostText(realcost)
     // Strip all three tag blocks + any leading blank line from prose
     return raw
       .replace(/<lens>[\s\S]*?<\/lens>/g, '')
       .replace(/<position>[\s\S]*?<\/position>/g, '')
-      .replace(/<tradeoff>[\s\S]*?<\/tradeoff>/g, '')
+      .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/^\s+/, '')
   }, [])
 
@@ -338,30 +338,34 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         </div>  {/* close justify-between */}
       </div>
 
-      {/* Lens / Position / Trade-off — shown once header tags arrive */}
-      {(lensText || positionText || tradeoffText) && (
-        <div style={{ padding: '8px 16px 10px', background: `${accentColor}cc`, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          {lensText && (
-            <p style={{ fontSize: 10.5, color: 'rgba(240,244,255,0.55)', lineHeight: 1.5, margin: 0 }}>
-              <span style={{ fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: 9.5 }}>Lens </span>
-              {lensText}
-            </p>
-          )}
-          {positionText && (
-            <p style={{ fontSize: 11.5, color: '#f0f4ff', fontWeight: 600, lineHeight: 1.45, margin: lensText ? '5px 0 0' : '0' }}>
-              {positionText}
-            </p>
-          )}
-          {tradeoffText && (
-            <p style={{ fontSize: 10.5, color: 'rgba(240,244,255,0.50)', lineHeight: 1.55, margin: positionText ? '5px 0 0' : lensText ? '5px 0 0' : '0', fontStyle: 'italic' }}>
-              {tradeoffText}
-            </p>
-          )}
-        </div>
-      )}
-
       {/* Body */}
       <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
+
+        {/* Lens / Position / The real cost — italic labeled lines at top of prose */}
+        {(lensText || positionText || realCostText) && (
+          <div style={{ marginBottom: 14 }}>
+            {lensText && (
+              <p style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
+                <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>Lens: </span>
+                {lensText}
+              </p>
+            )}
+            {positionText && (
+              <p style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
+                <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>Position: </span>
+                {positionText}
+              </p>
+            )}
+            {realCostText && (
+              <p style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--text-3)', lineHeight: 1.6, margin: '0' }}>
+                <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>The real cost: </span>
+                {realCostText}
+              </p>
+            )}
+            <div style={{ marginTop: 12, borderTop: '1px solid var(--border-dim)' }} />
+          </div>
+        )}
+
         {/* Original response — never mutated */}
         {response && (
           <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>

@@ -62,7 +62,7 @@ export default function SynthesisCard({
   const [accessCode,   setAccessCode]  = useState('')
 
   // ── TTS ───────────────────────────────────────────────────────────────────
-  const { speak, stop, isSpeaking, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
+  const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === 'synthesis'
 
   const completedCount = Object.keys(personaResponses).length
@@ -377,62 +377,89 @@ export default function SynthesisCard({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* ── Read aloud — Sprint 23b ── */}
+          {/* ── Read aloud / Pause / Resume — Sprint 25 ── */}
           {state === 'done' && synthesis && (
-            <button
-              onClick={() => {
-                if (isThisSpeaking) {
-                  stop()
-                } else {
+            <>
+              <button
+                onClick={() => {
+                  if (isThisSpeaking && isPaused) { resume(); return }
+                  if (isThisSpeaking) { pause(); return }
                   speak(synthesis, 'synthesis')
-                }
-              }}
-              title={isThisSpeaking ? 'Stop' : 'Read aloud'}
-              style={{
-                display:       'flex',
-                alignItems:    'center',
-                gap:           5,
-                padding:       '5px 11px',
-                borderRadius:  6,
-                border:        isThisSpeaking
-                                 ? '1px solid var(--gold-dim)'
-                                 : '1px solid var(--synthesis-btn-border)',
-                background:    isThisSpeaking
-                                 ? 'rgba(201,168,76,0.12)'
-                                 : 'transparent',
-                color:         isThisSpeaking
-                                 ? 'var(--gold)'
-                                 : 'var(--synthesis-btn-text)',
-                fontSize:      11.5,
-                fontWeight:    500,
-                cursor:        'pointer',
-                fontFamily:    'inherit',
-                transition:    'all 0.18s',
-                letterSpacing: '0.01em',
-              }}
-            >
-              {isThisSpeaking && isLoading ? (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
-                  style={{ animation: 'spin 0.9s linear infinite' }}>
-                  <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
-                </svg>
-              ) : isThisSpeaking ? (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="4" y="4" width="16" height="16" rx="2"/>
-                </svg>
-              ) : (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
+                }}
+                title={isThisSpeaking && isPaused ? 'Resume' : isThisSpeaking ? 'Pause' : 'Read aloud'}
+                style={{
+                  display:       'flex',
+                  alignItems:    'center',
+                  gap:           5,
+                  padding:       '5px 11px',
+                  borderRadius:  6,
+                  border:        isThisSpeaking
+                                   ? '1px solid var(--gold-dim)'
+                                   : '1px solid var(--synthesis-btn-border)',
+                  background:    isThisSpeaking
+                                   ? 'rgba(201,168,76,0.12)'
+                                   : 'transparent',
+                  color:         isThisSpeaking
+                                   ? 'var(--gold)'
+                                   : 'var(--synthesis-btn-text)',
+                  fontSize:      11.5,
+                  fontWeight:    500,
+                  cursor:        'pointer',
+                  fontFamily:    'inherit',
+                  transition:    'all 0.18s',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                {isThisSpeaking && isLoading ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                    style={{ animation: 'spin 0.9s linear infinite' }}>
+                    <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
+                  </svg>
+                ) : isThisSpeaking && isPaused ? (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                ) : isThisSpeaking ? (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="5" y="4" width="4" height="16" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/>
+                  </svg>
+                ) : (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                )}
+                <span>
+                  {isThisSpeaking && isLoading
+                    ? (countdown !== null && countdown > 0 ? `~${countdown}s` : 'Starting…')
+                    : isThisSpeaking && isPaused
+                    ? 'Resume'
+                    : isThisSpeaking
+                    ? 'Pause'
+                    : 'Read aloud'}
+                </span>
+              </button>
+
+              {isThisSpeaking && (
+                <button
+                  onClick={() => stop()}
+                  title="Stop"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '5px 9px', borderRadius: 6,
+                    border: '1px solid var(--synthesis-btn-border)',
+                    background: 'transparent',
+                    color: 'var(--synthesis-btn-text)',
+                    fontSize: 11.5, fontWeight: 500, cursor: 'pointer',
+                    fontFamily: 'inherit', transition: 'all 0.18s',
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="4" y="4" width="16" height="16" rx="2"/>
+                  </svg>
+                  Stop
+                </button>
               )}
-              <span>
-                {isThisSpeaking && isLoading
-                  ? (countdown !== null && countdown > 0 ? `~${countdown}s` : 'Starting…')
-                  : isThisSpeaking
-                  ? 'Stop'
-                  : 'Read aloud'}
-              </span>
-            </button>
+            </>
           )}
 
 

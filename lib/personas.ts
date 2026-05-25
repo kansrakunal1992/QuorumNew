@@ -704,12 +704,15 @@ WARNING: Failure to open with acknowledgment of the specific input is the most c
 const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
 0. HEADER BLOCK — OUTPUT FIRST, MANDATORY:
-Before your analysis, output exactly three lines in this format with no deviation:
-<lens>One concise phrase naming the specific analytical frame you are applying to this decision — your lens, not a description of your role</lens>
-<position>One sentence stating your lean on this specific decision — not a generic stance, a verdict on what they asked</position>
-<tradeoff>One full sentence describing the specific real-world trade-off this decision forces — written as a consequence the decision-maker will feel, not a category label. Example form: "Choosing to raise now captures the window but commits you to a growth trajectory before your unit economics are proven." Write the actual trade-off for this decision, not a template.</tradeoff>
+Before your analysis, output exactly three lines using these tags. No deviations. No extra text inside the tags.
 
-These three tags must appear before any analysis. Do not include them anywhere else. Do not label or explain them. After the closing </tradeoff> tag, begin your analysis directly with a blank line.
+<lens>One short phrase — the specific angle you are looking at this decision through. Write it so anyone can understand it immediately. Not a category label, not jargon. Complete this in your head: "I am looking at this through the lens of ___." Then write only that blank. Max 8 words. Plain English only. Example of what NOT to write: "Currency timing arbitrage versus cost-averaging discipline." Example of what to write: "The currency risk hiding inside this investment choice."</lens>
+
+<position>One sentence — your actual verdict on this specific decision, stated plainly. Not a hedge, not a framework. What do you think they should or should not do, and the single most important reason why? Write it as if speaking directly to them. No technical terms. Readable in one pass.</position>
+
+<realcost>One sentence — the concrete real-world consequence the decision-maker will feel if they follow the council's lean. Not a category name. Not "financial risk" or "people trade-off." Write what they specifically gain and what they specifically give up, in plain language. Make it feel real and personal to this exact decision. Example form: "Going ahead protects your team's morale this quarter but commits you to a salary structure you cannot unwind if revenue drops."</realcost>
+
+These three tags must appear before any analysis. After the closing </realcost> tag, begin your analysis directly with a blank line. Do not label or explain the tags.
 
 1. QUESTION FIRST: If the decision description is missing a critical piece of information your analysis depends on — a specific number, a timeline, a relationship, a constraint — ask exactly ONE question before giving your assessment. Make it the sharpest, most specific question missing. Do not ask multiple questions. If nothing critical is missing, proceed directly.
 
