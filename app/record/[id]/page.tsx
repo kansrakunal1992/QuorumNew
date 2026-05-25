@@ -61,14 +61,21 @@ export default async function RecordPage({ params }: Props) {
               label="← Back to Council"
               style={{ padding: 0, fontSize: 12, background: 'none', border: 'none', color: 'var(--text-4)', cursor: 'pointer', marginBottom: 12, display: 'block', fontFamily: 'inherit' }}
             />
-            <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--gold)', textTransform: 'uppercase' }}>
-              Quorum
-            </span>
+            <Link href="/" style={{ textDecoration: 'none' }}>
+              <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--gold)', textTransform: 'uppercase', cursor: 'pointer' }}>
+                Quorum
+              </span>
+            </Link>
             <p style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 4 }}>
               Decision Record · {dateStr}
             </p>
           </div>
 
+          <Link href="/">
+            <button className="btn-ghost" style={{ padding: '9px 18px', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>+</span> New Decision
+            </button>
+          </Link>
         </div>
 
         {/* Decision */}
