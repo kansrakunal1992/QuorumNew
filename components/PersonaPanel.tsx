@@ -304,7 +304,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               <p style={{ fontSize: 11, color: 'rgba(240,244,255,0.60)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
             </div>
           </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && !showPushback && (
             <button
               title="Disagree with this analysis, add new information, or ask a follow-up"
@@ -334,7 +334,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             </button>
           )}
           <StatusBadge />
-        </div>
+          </div>  {/* close buttons row */}
+        </div>  {/* close justify-between */}
       </div>
 
       {/* Lens / Position / Trade-off — shown once header tags arrive */}
