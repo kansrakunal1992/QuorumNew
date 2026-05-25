@@ -8,6 +8,16 @@ import BackButton from '@/components/BackButton'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
 
+// Strip <lens>, <position>, <realcost> tags stored in DB — rendered separately in PersonaPanel
+// but never cleaned before persistence, so record page must strip them before display
+function stripHeaderTags(raw: string): string {
+  return raw
+    .replace(/<lens>[\s\S]*?<\/lens>/g, '')
+    .replace(/<position>[\s\S]*?<\/position>/g, '')
+    .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+    .replace(/^\s+/, '')
+}
+
 interface Props {
   params: Promise<{ id: string }>
 }
@@ -43,11 +53,24 @@ export default async function RecordPage({ params }: Props) {
     day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 
-  // Group by persona
-  const byPersona: Record<string, { role: string; content: string }[]> = {}
+  // Group by persona, deduplicated.
+  // If a session was re-run (e.g. pre-Sprint 24b or via examiner update), multiple assistant
+  // rows exist per persona key. Keep only the LAST initial assistant message per persona —
+  // that is, the last assistant message before any user (pushback) message in that group.
+  // Pushback exchanges (user + following assistant) are preserved in full.
+  const raw: Record<string, { role: string; content: string }[]> = {}
   for (const msg of messages) {
-    if (!byPersona[msg.persona]) byPersona[msg.persona] = []
-    byPersona[msg.persona].push({ role: msg.role, content: msg.content })
+    if (!raw[msg.persona]) raw[msg.persona] = []
+    raw[msg.persona].push({ role: msg.role, content: msg.content })
+  }
+  const byPersona: Record<string, { role: string; content: string }[]> = {}
+  for (const [key, msgs] of Object.entries(raw)) {
+    const firstUserIdx = msgs.findIndex(m => m.role === 'user')
+    const initialBlock  = firstUserIdx === -1 ? msgs : msgs.slice(0, firstUserIdx)
+    const exchanges     = firstUserIdx === -1 ? []   : msgs.slice(firstUserIdx)
+    // Of potentially multiple initial assistant messages, keep only the last
+    const latestInitial = initialBlock.filter(m => m.role === 'assistant').slice(-1)
+    byPersona[key] = [...latestInitial, ...exchanges]
   }
 
   return (
@@ -154,7 +177,7 @@ export default async function RecordPage({ params }: Props) {
                         </div>
                       ) : (
                         <p style={{ fontSize: 13.5, lineHeight: 1.8, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
-                          {msg.content}
+                          {stripHeaderTags(msg.content)}
                         </p>
                       )}
                     </div>
