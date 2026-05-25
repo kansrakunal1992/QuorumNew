@@ -232,6 +232,7 @@ decision_discriminating_info
   1 = no additional information would change this decision
   3 = some information would be useful but not decisive
   5 = specific obtainable information would completely change what to do; acting now may be premature
+  NOTE: Score 4–5 ONLY when the missing information is (a) external and concretely obtainable — e.g. a salary figure, a market rate, a medical result, counterparty terms, a regulatory ruling — AND (b) would change the structural framing of the decision, not just its parameters. Do NOT score 4–5 when: the decision-maker has full situational awareness but faces inherent outcome uncertainty (career outcomes, relationship outcomes, and life-direction questions are inherently uncertain regardless of how much research is done); the decision is primarily values-driven or identity-driven; the person is choosing between known paths with unknown futures. Career decisions where the person understands their situation score 1–2 even when future outcomes are uncertain. Inherent uncertainty ≠ missing information.
 
 time_pressure
   1 = no real deadline; decision can wait without cost

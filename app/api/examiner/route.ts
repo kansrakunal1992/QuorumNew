@@ -118,8 +118,17 @@ export async function GET(req: Request) {
       flag_rules:      Array<{ rule_id: string; mode: string; question: string }>
     }
 
+    // Only expose upstream_dependency rationale when R1 specifically fires.
+    // R7 (information-first redirect) also sets mode='REDIRECT' but is unrelated
+    // to upstream dependency — surfacing upstream_dependency.rationale for R7
+    // produces contradictory copy ("no external blocking element" inside a block).
+    const redirectRule: string | null =
+      ruleResult.mode === 'REDIRECT'
+        ? (ruleResult.triggered_rules ?? []).find(r => r.mode === 'REDIRECT')?.rule_id ?? null
+        : null
+
     const upstreamRationale: string | null =
-      ruleResult.mode === 'REDIRECT' && data.ontology_vector
+      redirectRule === 'R1' && data.ontology_vector
         ? (data.ontology_vector as Record<string, { rationale?: string }>)
             ?.upstream_dependency?.rationale ?? null
         : null
@@ -156,7 +165,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       questions,
       rule_mode:          ruleResult.mode,
-      upstream_rationale: upstreamRationale,
+      redirect_rule:      redirectRule,       // 'R1' | 'R7' | null — used by UI to select correct banner copy
+      upstream_rationale: upstreamRationale,  // only populated for R1; null for R7
       status:             'ready',
     })
   }

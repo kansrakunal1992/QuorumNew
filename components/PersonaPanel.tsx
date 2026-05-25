@@ -301,7 +301,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             </div>
             <div>
               <p style={{ fontSize: 12.5, fontWeight: 600, color: '#f0f4ff', lineHeight: 1.2 }}>{persona.label}</p>
-              <p style={{ fontSize: 11, color: 'rgba(240,244,255,0.60)', lineHeight: 1.2, marginTop: 1 }}>{persona.tagline}</p>
+              {/* Show lens caption when available (replaces static tagline) — keeps header compact */}
+              <p style={{ fontSize: 11, color: 'rgba(240,244,255,0.60)', lineHeight: 1.35, marginTop: 2, maxWidth: 220 }}>
+                {lensText || persona.tagline}
+              </p>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -341,27 +344,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       {/* Body */}
       <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
 
-        {/* Lens / Position / The real cost — italic labeled lines at top of prose */}
-        {(lensText || positionText || realCostText) && (
+        {/* Position — unlabeled opening verdict, no prefix chrome.
+            Lens moves to header caption; real cost moves to card close. */}
+        {positionText && (
           <div style={{ marginBottom: 14 }}>
-            {lensText && (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
-                <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>Lens: </span>
-                {lensText}
-              </p>
-            )}
-            {positionText && (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 4px' }}>
-                <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>Position: </span>
-                {positionText}
-              </p>
-            )}
-            {realCostText && (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6, margin: '0' }}>
-                <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-2)' }}>The real cost: </span>
-                {realCostText}
-              </p>
-            )}
+            <p style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--text-1)',
+              lineHeight: 1.65,
+              margin: '0',
+            }}>
+              {positionText}
+            </p>
             <div style={{ marginTop: 12, borderTop: '1px solid var(--border-dim)' }} />
           </div>
         )}
@@ -371,6 +366,23 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>
             {response}
           </p>
+        )}
+
+        {/* Real cost — closing beat, shown once prose is complete.
+            Sits below the analysis so it lands as a consequence, not a prefix. */}
+        {realCostText && panelState === 'done' && exchanges.length === 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ borderTop: '1px solid var(--border-dim)', marginBottom: 10 }} />
+            <p style={{
+              fontSize: 12,
+              fontStyle: 'italic',
+              color: 'var(--text-4)',
+              lineHeight: 1.7,
+              margin: 0,
+            }}>
+              {realCostText}
+            </p>
+          </div>
         )}
 
         {/* Pushback exchanges */}

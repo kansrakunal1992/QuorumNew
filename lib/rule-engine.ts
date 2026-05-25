@@ -105,7 +105,10 @@ function evaluateR7(sv: ScoredVector): TriggeredRule | null {
   const uncert    = sv.outcome_uncertainty
   const identity  = sv.identity_alignment
 
-  if (info.score < 4 || uncert.score < 3 || identity.score > 3) return null
+  // identity gate raised from >3 to >2: identity_alignment of 3 (moderate) is enough
+  // to suppress R7. The gap between R7's old gate (>3) and R2's trigger (>=5) was
+  // swallowing career/life-direction decisions where identity is present but not maximal.
+  if (info.score < 4 || uncert.score < 3 || identity.score > 2) return null
 
   const lowConf = info.confidence < LOW_CONFIDENCE_THRESHOLD
     || uncert.confidence < LOW_CONFIDENCE_THRESHOLD
@@ -117,7 +120,7 @@ function evaluateR7(sv: ScoredVector): TriggeredRule | null {
     dimension:  'decision_discriminating_info',
     score:      info.score,
     confidence: Math.min(info.confidence, uncert.confidence, identity.confidence),
-    question:   'There is specific information that would change this decision, and you don\'t have it yet. What would it take to gather it in the next week?',
+    question:   'There is specific information that would change this decision, and you don\'t have it yet. What is that information — and what would it take to get it?',
     low_confidence: lowConf,
   }
 }

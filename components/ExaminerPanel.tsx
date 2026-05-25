@@ -50,7 +50,8 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
   const [fetchStatus,       setFetchStatus]        = useState<FetchStatus>('idle')
   const [submitStatus,      setSubmitStatus]       = useState<SubmitStatus>('idle')
   const [ruleMode,          setRuleMode]           = useState<RuleMode>(null)
-  const [upstreamRationale, setUpstreamRationale] = useState<string | null>(null)   // specific reason R1 fired
+  const [redirectRule,      setRedirectRule]       = useState<string | null>(null)   // 'R1' | 'R7' | null
+  const [upstreamRationale, setUpstreamRationale] = useState<string | null>(null)   // populated for R1 only
   const [dismissed,         setDismissed]          = useState(false)                // local dismiss state for REDIRECT banner
   const [glowing,           setGlowing]            = useState(false)               // one-time entry glow
 
@@ -81,6 +82,9 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
       const mode: RuleMode = data.rule_mode ?? null
       setRuleMode(mode)
 
+      if (data.redirect_rule) {
+        setRedirectRule(data.redirect_rule)
+      }
       if (data.upstream_rationale) {
         setUpstreamRationale(data.upstream_rationale)
       }
@@ -226,6 +230,8 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
             <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
               {isLoading
                 ? 'Identifying the gaps the council didn\'t have data on…'
+                : isRedirect && redirectRule === 'R7'
+                ? 'Synthesis held — specific information needed first'
                 : isRedirect
                 ? 'Upstream decision unresolved — synthesis blocked'
                 : 'Three questions the council couldn\'t answer without you'}
@@ -276,10 +282,13 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
               marginBottom: 16,
             }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)', marginBottom: 10, lineHeight: 1.3 }}>
-                This decision has an unresolved upstream dependency
+                {redirectRule === 'R7'
+                  ? 'Specific information would change this decision — the Council's read is provisional until you have it'
+                  : 'This decision has an unresolved upstream dependency'}
               </p>
-              {/* Specific rationale from ontology scorer — what exactly is blocking */}
-              {upstreamRationale && (
+              {/* upstreamRationale is only populated for R1 — never shown for R7 to avoid
+                  contradictory copy ("no external blocking element" inside a blocking banner) */}
+              {upstreamRationale && redirectRule === 'R1' && (
                 <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.75, margin: '0 0 12px', fontStyle: 'italic' }}>
                   {upstreamRationale}
                 </p>
@@ -291,9 +300,9 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                 </p>
               )}
               <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.7, margin: 0 }}>
-                The Council has run — their perspectives are visible below, marked as provisional.
-                Synthesis is blocked until the upstream question is resolved.
-                Use <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> once it is.
+                {redirectRule === 'R7'
+                  ? <>The Council has run — their perspectives are visible below as provisional context. Once you have the information, return and use <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> for a clean read.</>
+                  : <>The Council has run — their perspectives are visible below, marked as provisional. Synthesis is blocked until the upstream question is resolved. Use <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> once it is.</>}
               </p>
             </div>
             {/* Dismiss — only collapses panel locally. onComplete already fired on detection. */}
