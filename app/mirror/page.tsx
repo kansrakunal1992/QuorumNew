@@ -678,7 +678,7 @@ function TeaserView({
           </h3>
           {lockedBadge}
         </div>
-        <div style={{
+        <div className="mirror-score-row" style={{
           background:   'var(--bg-card)',
           border:       '1px solid var(--border-dim)',
           borderRadius: 10,
@@ -719,7 +719,7 @@ function TeaserView({
       </div>
 
       {/* CTA card */}
-      <div style={{
+      <div className="mirror-cta-card" style={{
         background:   'var(--bg-card)',
         border:       '1px solid var(--gold-dim)',
         borderRadius: 14,
@@ -737,6 +737,7 @@ function TeaserView({
         </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a
+            className="mirror-cta-btn"
             href={PRICING_URL}
             target="_blank"
             rel="noopener noreferrer"
@@ -901,6 +902,22 @@ function UnlockedView({
         />
       )}
 
+      {/* Decision Timeline */}
+      <div style={{ marginBottom: 40 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Decision Timeline
+          </h3>
+          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
+            {status.sessionCount} session{status.sessionCount !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <MirrorTimeline sessions={sessions} />
+      </div>
+
+      {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
       {/* Bias Fingerprint — live (Sprint 7b) */}
       <div style={{ marginBottom: 28 }}>
         <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
@@ -973,7 +990,7 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Contradiction Detector — Sprint 9 */}
-      <div style={{ marginBottom: 28 }}>
+      <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Contradiction Detector
@@ -994,7 +1011,7 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Calibration Trend — Sprint 15 */}
-      <div style={{ marginBottom: 28 }}>
+      <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Confidence Calibration
@@ -1004,22 +1021,6 @@ function UnlockedView({
           How the confidence you entered a decision with compares to how certain it felt in hindsight — and whether that gap is closing over time.
         </p>
         <CalibrationSparkline authToken={authToken} />
-      </div>
-
-      {/* Divider */}
-      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
-
-      {/* Decision Timeline — archival record of all sessions */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Decision Timeline
-          </h3>
-          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
-            {status.sessionCount} session{status.sessionCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <MirrorTimeline sessions={sessions} />
       </div>
 
       {/* Others in Similar Decisions — Sprint 20 */}
@@ -1113,6 +1114,11 @@ export default function MirrorPage() {
           .mirror-content-pad  { padding: 0 16px !important; }
           .mirror-page-header  { padding: 24px 16px 20px !important; }
           .mirror-stats-grid   { grid-template-columns: 1fr !important; }
+          .mirror-rules-card   { padding: 18px 16px 14px !important; }
+          .mirror-rules-btn    { padding: 12px !important; }
+          .mirror-score-row    { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
+          .mirror-cta-card     { padding: 20px 16px !important; }
+          .mirror-cta-btn      { min-height: 44px; display: inline-flex !important; align-items: center !important; }
         }
       `}</style>
 

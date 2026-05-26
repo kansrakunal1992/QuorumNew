@@ -71,7 +71,7 @@ function RulesDisplay({ rules, basedOnDecisions }: { rules: string[]; basedOnDec
   const hiddenCount  = Math.max(0, rules.length - RULES_INITIAL)
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderRadius: 12, padding: '22px 22px 18px', position: 'relative', overflow: 'hidden' }}>
+    <div className="mirror-rules-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderRadius: 12, padding: '22px 22px 18px', position: 'relative', overflow: 'hidden' }}>
       {/* Top accent */}
       <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 2, background: 'linear-gradient(90deg, var(--gold-dim) 0%, transparent 60%)' }} />
 
@@ -87,6 +87,7 @@ function RulesDisplay({ rules, basedOnDecisions }: { rules: string[]; basedOnDec
       {/* Expand / collapse */}
       {hiddenCount > 0 && (
         <button
+          className="mirror-rules-btn"
           onClick={() => setExpanded(e => !e)}
           style={{
             display: 'flex', alignItems: 'center', gap: 7, marginTop: 12,
