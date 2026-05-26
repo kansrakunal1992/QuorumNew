@@ -610,7 +610,7 @@ function TeaserView({
 
       {/* Section: Mirror stats summary (teaser numbers) */}
       {teaser && (
-        <div style={{
+        <div className="mirror-stats-grid" style={{
           display:             'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
           gap:                 12,
@@ -1109,6 +1109,11 @@ export default function MirrorPage() {
       <style>{`
         @keyframes seg-pulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.5; } }
         @keyframes blink      { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+        @media (max-width: 600px) {
+          .mirror-content-pad  { padding: 0 16px !important; }
+          .mirror-page-header  { padding: 24px 16px 20px !important; }
+          .mirror-stats-grid   { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
       <div style={{
@@ -1143,7 +1148,7 @@ export default function MirrorPage() {
               fontSize:       13,
               fontFamily:     'inherit',
               cursor:         'pointer',
-              padding:        '4px 0',
+              padding:        '12px 0',
               transition:     'color 0.2s',
             }}
             onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
@@ -1182,7 +1187,7 @@ export default function MirrorPage() {
 
         {/* ── Page header (teaser/unlocked only) ──────────────────────────── */}
         {(status?.gateState === 'teaser' || status?.gateState === 'unlocked') && (
-          <div style={{
+          <div className="mirror-page-header" style={{
             padding:      '32px 24px 24px',
             maxWidth:     680,
             margin:       '0 auto',
@@ -1199,7 +1204,7 @@ export default function MirrorPage() {
         )}
 
         {/* ── Main content ─────────────────────────────────────────────────── */}
-        <div style={{ padding: '0 24px' }}>
+        <div className="mirror-content-pad" style={{ padding: '0 24px' }}>
           {/* Loading */}
           {loading && (
             <div style={{
