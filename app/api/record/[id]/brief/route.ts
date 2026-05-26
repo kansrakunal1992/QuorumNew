@@ -103,9 +103,12 @@ const PERSONA_ACCENT: Record<string, [number, number, number]> = {
 //      numbered lists, ## headings all parsed and rendered correctly
 //   C) Decision block rendered line-by-line (no pre-calc box height)
 
+interface ExaminerQA { question_text: string; response_text: string | null; question_order: number }
+
 async function buildPdf(
   session: { decision_text: string; context_text?: string | null; created_at: string; id: string },
   messages: { persona: string; role: string; content: string }[],
+  examinerQAs: ExaminerQA[] = [],
 ): Promise<Buffer> {
   const { jsPDF } = await import('jspdf')
 
@@ -430,6 +433,77 @@ async function buildPdf(
     Y += 4
   }
 
+  // ── Examiner Q&A renderer ────────────────────────────────────────────────────
+  const renderExaminerQA = (qas: ExaminerQA[]) => {
+    if (!qas.length) return
+    ensure(24)
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...C.gold)
+    doc.setCharSpace(1.2)
+    doc.text('EXAMINER -- QUESTIONS & ANSWERS', ML, Y)
+    doc.setCharSpace(0)
+    Y += 8
+    doc.setDrawColor(...C.ruleGold)
+    doc.setLineWidth(0.3)
+    doc.line(ML, Y, PW - MR, Y)
+    Y += 14
+
+    const sorted = [...qas].sort((a, b) => a.question_order - b.question_order)
+    for (const qa of sorted) {
+      const SIZE_Q = 9.5
+      const SIZE_A = 9.5
+      const LH_Q   = SIZE_Q * 1.5
+      const LH_A   = SIZE_A * 1.5
+      const qLabel = `Q${qa.question_order}  `
+
+      // Question — gold label + body text
+      ensure(LH_Q + 4)
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(SIZE_Q)
+      doc.setTextColor(...C.gold)
+      doc.text(qLabel, ML, Y)
+      const qLabelW = doc.getTextWidth(qLabel)
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(SIZE_Q)
+      doc.setTextColor(...C.bodyText)
+      const qLines = doc.splitTextToSize(sanitise(qa.question_text), TW - qLabelW) as string[]
+      for (let qi = 0; qi < qLines.length; qi++) {
+        if (qi > 0) ensure(LH_Q)
+        doc.setFont('Helvetica', qi === 0 ? 'bold' : 'normal')
+        doc.setFontSize(SIZE_Q)
+        doc.setTextColor(...C.bodyText)
+        doc.text(qLines[qi], qi === 0 ? ML + qLabelW : ML + qLabelW, Y)
+        Y += LH_Q
+      }
+      Y += 4
+
+      // Answer — italicised, indented, muted colour
+      const answerText = qa.response_text?.trim() || '(no answer provided)'
+      ensure(LH_A + 4)
+      doc.setFont('Helvetica', 'italic')
+      doc.setFontSize(SIZE_A)
+      doc.setTextColor(...C.mutedText)
+      const aLines = doc.splitTextToSize(sanitise(answerText), TW - 12) as string[]
+      for (const al of aLines) {
+        ensure(LH_A)
+        doc.setFont('Helvetica', 'italic')
+        doc.setFontSize(SIZE_A)
+        doc.setTextColor(...C.mutedText)
+        doc.text(al, ML + 12, Y)
+        Y += LH_A
+      }
+      Y += 10
+
+      // Thin separator between questions
+      doc.setDrawColor(...C.ruleMid)
+      doc.setLineWidth(0.2)
+      doc.line(ML + 12, Y, PW - MR, Y)
+      Y += 8
+    }
+    Y += 6
+  }
+
   // ── Thin rule ─────────────────────────────────────────────────────────────────
   const rule = (color = C.ruleGold, weight = 0.3) => {
     ensure(16)
@@ -549,13 +623,37 @@ async function buildPdf(
   Y += 14
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // SECTION 0 — Examiner Q&A (before Decision Brief, if answers exist)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  if (examinerQAs.length > 0) {
+    doc.addPage()
+    fillPageDark()
+    page++
+    Y = 52
+    drawFooter()
+    renderExaminerQA(examinerQAs)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // SECTION 1 — Decision Brief
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  const byPersona: Record<string, Array<{ role: string; content: string }>> = {}
+  // Deduplicate: if synthesis (or any persona) was re-run multiple times,
+  // multiple initial assistant messages exist. Keep only the LAST initial assistant
+  // per persona (before any user/pushback message), then all pushback exchanges.
+  const rawByPersona: Record<string, Array<{ role: string; content: string }>> = {}
   for (const msg of messages) {
-    if (!byPersona[msg.persona]) byPersona[msg.persona] = []
-    byPersona[msg.persona].push({ role: msg.role, content: msg.content })
+    if (!rawByPersona[msg.persona]) rawByPersona[msg.persona] = []
+    rawByPersona[msg.persona].push({ role: msg.role, content: msg.content })
+  }
+  const byPersona: Record<string, Array<{ role: string; content: string }>> = {}
+  for (const [key, msgs] of Object.entries(rawByPersona)) {
+    const firstUserIdx = msgs.findIndex(m => m.role === 'user')
+    const initialBlock = firstUserIdx === -1 ? msgs : msgs.slice(0, firstUserIdx)
+    const exchanges    = firstUserIdx === -1 ? []   : msgs.slice(firstUserIdx)
+    const latestInitial = initialBlock.filter(m => m.role === 'assistant').slice(-1)
+    byPersona[key] = [...latestInitial, ...exchanges]
   }
 
   const briefMsgs = byPersona['decision_brief']
@@ -648,6 +746,34 @@ async function buildPdf(
     doc.setDrawColor(...C.ruleMid)
     doc.setLineWidth(0.4)
     doc.line(ML, midY + 44, PW - MR, midY + 44)
+
+    // ── Appendix: Examiner Q&A page ──────────────────────────────────────────
+    if (examinerQAs.length > 0) {
+      doc.addPage()
+      fillPageDark()
+      page++
+      Y = 52
+      drawFooter()
+
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.setTextColor(...C.gold)
+      doc.setCharSpace(2)
+      doc.text('EXAMINER', ML, Y)
+      doc.setCharSpace(0)
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(...C.mutedText)
+      doc.text('Questions posed and answers provided before the Council ran', ML, Y + 14)
+      Y += 30
+
+      doc.setDrawColor(...C.ruleGold)
+      doc.setLineWidth(0.3)
+      doc.line(ML, Y, PW - MR, Y)
+      Y += 16
+
+      renderExaminerQA(examinerQAs)
+    }
 
     // ── One page per appendix persona ─────────────────────────────────────────
     for (const key of APPENDIX_ORDER) {
@@ -745,13 +871,18 @@ export async function GET(req: Request, { params }: Params) {
 
   const supabase = createServiceClient()
 
-  const [sessionResult, messagesResult] = await Promise.all([
+  const [sessionResult, messagesResult, examinerResult] = await Promise.all([
     supabase.from('sessions').select('*').eq('id', id).single(),
     supabase
       .from('messages')
       .select('persona, role, content, created_at')
       .eq('session_id', id)
       .order('created_at', { ascending: true }),
+    supabase
+      .from('examiner_responses')
+      .select('question_text, response_text, question_order')
+      .eq('session_id', id)
+      .order('question_order', { ascending: true }),
   ])
 
   if (sessionResult.error || !sessionResult.data) {
@@ -810,9 +941,15 @@ Generate the Decision Brief now.`
     }
   }
 
+  const examinerQAs = (examinerResult.data ?? []).map(r => ({
+    question_text: r.question_text,
+    response_text: r.response_text,
+    question_order: r.question_order,
+  }))
+
   let pdfBuffer: Buffer
   try {
-    pdfBuffer = await buildPdf(session, messages)
+    pdfBuffer = await buildPdf(session, messages, examinerQAs)
   } catch (err) {
     console.error('[brief/route] PDF build error:', err)
     return NextResponse.json({ error: 'PDF generation failed' }, { status: 500 })

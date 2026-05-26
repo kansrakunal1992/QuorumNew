@@ -125,6 +125,16 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/^\s+/, '')
   }, [])
 
+  // Strips header tags from pushback replies WITHOUT updating header state
+  // (we keep the original lens/position/realcost from the first analysis)
+  const stripHeaderTags = useCallback((raw: string): string => {
+    return raw
+      .replace(/<lens>[\s\S]*?<\/lens>/g, '')
+      .replace(/<position>[\s\S]*?<\/position>/g, '')
+      .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+      .replace(/^\s+/, '')
+  }, [])
+
   // ── TTS ────────────────────────────────────────────────────────────────────────────────
   const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === persona.key
@@ -167,7 +177,9 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         onCompleteRef.current?.(persona.key, acc)
       } else {
         const userText = msgs[msgs.length - 1]?.content ?? ''
-        const newExchanges = [...exchangesRef.current, { user: userText, reply: acc }]
+        // Strip lens/position/realcost tags from pushback reply (keep original header state)
+        const cleanReply = stripHeaderTags(acc)
+        const newExchanges = [...exchangesRef.current, { user: userText, reply: cleanReply }]
         setExchanges(newExchanges)
         setIsPushingBack(false)
         const fullContent = [responseRef.current, ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)].join('\n\n')
@@ -177,7 +189,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       setPanelState('error')
       setResponse('Connection error.')
     }
-  }, [sessionId, persona.key, decisionText, contextText, registerMode])
+  }, [sessionId, persona.key, decisionText, contextText, registerMode, extractHeaderTags, stripHeaderTags])
 
   // Parse header tags from initialContent so Lens/Position/Trade-off render on Back to Council
   useEffect(() => {
@@ -375,7 +387,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
 
         {/* Real cost — closing beat, shown once prose is complete.
-            Sits below the analysis so it lands as a consequence, not a prefix. */}
+            Sits below exchanges (or below analysis if no pushback) as a persistent conclusion. */}
         {realCostText && panelState === 'done' && exchanges.length === 0 && (
           <div style={{ marginTop: 16 }}>
             <div style={{ borderTop: '1px solid var(--border-dim)', marginBottom: 10 }} />
@@ -404,6 +416,22 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             <p className="persona-response">{ex.reply}</p>
           </div>
         ))}
+
+        {/* Real cost — persists below pushback exchanges too */}
+        {realCostText && panelState === 'done' && exchanges.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ borderTop: '1px solid var(--border-dim)', marginBottom: 10 }} />
+            <p style={{
+              fontSize: 12,
+              fontStyle: 'italic',
+              color: 'var(--text-4)',
+              lineHeight: 1.7,
+              margin: 0,
+            }}>
+              {realCostText}
+            </p>
+          </div>
+        )}
 
         {isPushingBack && (
           <p style={{ fontSize: 12, color: 'var(--gold)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>

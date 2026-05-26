@@ -184,9 +184,47 @@ export async function POST(req: Request) {
 
     // ── Resolve system prompt (council context for synthesis) ─────────────────
     const councilContext = await councilContextPromise
-    const systemPrompt   = councilContext
+
+    // ── Pushback acknowledgment protocol ──────────────────────────────────────
+    // When responding to a challenge, the model must open by naming what the
+    // user introduced — not restate its position, not open with a transition.
+    // We inject the exact pushback text into the system prompt so the model
+    // knows precisely what to acknowledge. This mirrors why "share to all
+    // advisors" always gets acknowledged: that path prepends a structured
+    // framing message. Here we achieve the same via system prompt injection.
+    const isPushbackCall = !rawMessages && messages.length > 0
+    const lastMsg = messages[messages.length - 1]
+    const pushbackText = isPushbackCall && lastMsg?.role === 'user'
+      ? lastMsg.content.trim()
+      : null
+
+    const pushbackProtocol = pushbackText
+      ? `
+
+MANDATORY PUSHBACK PROTOCOL — NON-NEGOTIABLE:
+The decision-maker has just submitted the following challenge or new information:
+"${pushbackText}"
+
+Your FIRST sentence must name exactly what they introduced. Not your position. Not a restatement of your prior analysis. Not a transition phrase. One sentence that identifies what they brought — the specific argument, fact, or objection — before anything else.
+
+Correct opening forms:
+  "You've introduced [X]."
+  "Your pushback adds [X] — [your response]."
+  "The new information here is [X]."
+
+Forbidden openings:
+  Starting with your position ("Two cities is still the right answer…")
+  Starting with a transition ("I hear you, but…" / "That said…")
+  Starting with a restatement of the decision
+  Any form of "I" as the first word
+
+Violation of this rule renders the entire response invalid. Follow it without exception.`
+      : ''
+
+    const basePrompt = councilContext
       ? `${persona.prompt}\n\n${councilContext}`
       : persona.prompt
+    const systemPrompt = `${basePrompt}${pushbackProtocol}`
 
     if (councilContext) {
       console.log(`[Persona] Council context injected for ${personaKey} (${isInitialPersona ? 'initial' : 'synthesis'}) | session ${sessionId}`)

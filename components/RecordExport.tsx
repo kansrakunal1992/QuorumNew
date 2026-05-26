@@ -4,8 +4,15 @@ import { useState } from 'react'
 import type { DecisionRecord } from '@/lib/types'
 import { PERSONAS } from '@/lib/personas'
 
+export interface ExaminerQA {
+  question_text: string
+  response_text: string | null
+  question_order: number
+}
+
 interface Props {
   record: DecisionRecord
+  examinerResponses?: ExaminerQA[]
 }
 
 // ── Segment type for inline bold rendering ─────────────────────
@@ -43,7 +50,7 @@ function extractHeader(line: string): string | null {
   return m ? m[1] : null
 }
 
-export default function RecordExport({ record }: Props) {
+export default function RecordExport({ record, examinerResponses = [] }: Props) {
   const [exporting, setExporting] = useState(false)
 
   const handleExport = async () => {
@@ -274,11 +281,71 @@ export default function RecordExport({ record }: Props) {
         y += 5
       }
 
-      // ── Group messages by persona ──────────────────────────────
-      const byPersona: Record<string, { assistant: string[]; user: string[] }> = {}
+      // ── Group messages by persona, deduplicating re-runs ────────
+      // If synthesis was re-run multiple times, multiple initial assistant messages exist.
+      // Keep only the LAST initial assistant per persona, then all pushback exchanges.
+      // This mirrors the deduplication logic in the record page.
+      const rawByPersona: Record<string, { role: string; content: string }[]> = {}
       for (const msg of record.messages) {
-        if (!byPersona[msg.persona]) byPersona[msg.persona] = { assistant: [], user: [] }
-        byPersona[msg.persona][msg.role as 'assistant' | 'user'].push(msg.content)
+        if (!rawByPersona[msg.persona]) rawByPersona[msg.persona] = []
+        rawByPersona[msg.persona].push({ role: msg.role, content: msg.content })
+      }
+      const byPersona: Record<string, { assistant: string[]; user: string[] }> = {}
+      for (const [key, msgs] of Object.entries(rawByPersona)) {
+        const firstUserIdx = msgs.findIndex(m => m.role === 'user')
+        const initialBlock = firstUserIdx === -1 ? msgs : msgs.slice(0, firstUserIdx)
+        const exchanges    = firstUserIdx === -1 ? []   : msgs.slice(firstUserIdx)
+        // Of potentially multiple initial assistant rows, keep only the last
+        const latestInitial = initialBlock.filter(m => m.role === 'assistant').slice(-1)
+        const dedupedMsgs = [...latestInitial, ...exchanges]
+        byPersona[key] = { assistant: [], user: [] }
+        for (const msg of dedupedMsgs) {
+          byPersona[key][msg.role as 'assistant' | 'user'].push(msg.content)
+        }
+      }
+
+      // ── EXAMINER Q&A helper ──────────────────────────────────────
+      const renderExaminerQA = (qas: ExaminerQA[]) => {
+        if (!qas.length) return
+        checkBreak(14)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        doc.setTextColor(201, 168, 76)
+        doc.text('EXAMINER — QUESTIONS & ANSWERS', ML, y)
+        y += 6
+        doc.setDrawColor(42, 38, 18)
+        doc.setLineWidth(0.3)
+        doc.line(ML, y, ML + CW, y)
+        y += 5
+
+        for (const qa of qas.sort((a, b) => a.question_order - b.question_order)) {
+          checkBreak(16)
+          // Question
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(8.5)
+          doc.setTextColor(180, 188, 212)
+          const qLines: string[] = doc.splitTextToSize(`Q${qa.question_order}  ${qa.question_text}`, CW) as string[]
+          for (const ql of qLines) { checkBreak(4); doc.text(ql, ML, y); y += 4 }
+          y += 2
+          // Answer
+          doc.setFont('helvetica', 'italic')
+          doc.setFontSize(8.5)
+          doc.setTextColor(120, 130, 155)
+          const answerText = qa.response_text?.trim() || '(skipped)'
+          const aLines: string[] = doc.splitTextToSize(answerText, CW - 4) as string[]
+          for (const al of aLines) { checkBreak(4); doc.text(al, ML + 4, y); y += 4 }
+          y += 4
+        }
+        y += 4
+      }
+
+      // ── SECTION 0: Examiner Q&A (brief main page) ───────────────
+      if (examinerResponses.length > 0) {
+        doc.addPage()
+        doc.setFillColor(4, 6, 15)
+        doc.rect(0, 0, pageW, pageH, 'F')
+        y = ML
+        renderExaminerQA(examinerResponses)
       }
 
       // ── SECTION 1: Decision Brief (main document body) ─────────
@@ -358,6 +425,15 @@ export default function RecordExport({ record }: Props) {
 
         doc.setLineWidth(0.4)
         doc.line(ML, y + 16, pageW - MR, y + 16)
+
+        // ── Appendix: Examiner Q&A page ───────────────────────
+        if (examinerResponses.length > 0) {
+          doc.addPage()
+          doc.setFillColor(4, 6, 15)
+          doc.rect(0, 0, pageW, pageH, 'F')
+          y = ML
+          renderExaminerQA(examinerResponses)
+        }
 
         // ── Appendix persona pages ─────────────────────────────
         for (const key of appendixPersonaOrder) {
