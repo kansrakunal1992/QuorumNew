@@ -902,22 +902,6 @@ function UnlockedView({
         />
       )}
 
-      {/* Decision Timeline */}
-      <div style={{ marginBottom: 40 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Decision Timeline
-          </h3>
-          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
-            {status.sessionCount} session{status.sessionCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <MirrorTimeline sessions={sessions} />
-      </div>
-
-      {/* Divider */}
-      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
-
       {/* Bias Fingerprint — live (Sprint 7b) */}
       <div style={{ marginBottom: 28 }}>
         <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
@@ -990,7 +974,7 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Contradiction Detector — Sprint 9 */}
-      <div>
+      <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Contradiction Detector
@@ -1011,7 +995,7 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Calibration Trend — Sprint 15 */}
-      <div>
+      <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Confidence Calibration
@@ -1021,6 +1005,22 @@ function UnlockedView({
           How the confidence you entered a decision with compares to how certain it felt in hindsight — and whether that gap is closing over time.
         </p>
         <CalibrationSparkline authToken={authToken} />
+      </div>
+
+      {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* Decision Timeline — archival record, moved to bottom */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Decision Timeline
+          </h3>
+          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
+            {status.sessionCount} session{status.sessionCount !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <MirrorTimeline sessions={sessions} />
       </div>
 
       {/* Others in Similar Decisions — Sprint 20 */}

@@ -255,6 +255,9 @@ function ScoreDisplay({ data }: { data: ScoreData }) {
         </div>
       )}
 
+      {/* Coaching tip — what to do differently to raise the score */}
+      <CoachingTip band={data.band} />
+
       {/* Session count */}
       <div style={{ fontSize: 10, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
         Based on {data.sessionCount} session{data.sessionCount !== 1 ? 's' : ''}
@@ -262,6 +265,55 @@ function ScoreDisplay({ data }: { data: ScoreData }) {
           <> · Last updated {new Date(data.calculatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Coaching tip (shown inside the card, below examiner quote) ───────────────
+// Static per band — abstracts the signal logic into plain language.
+// Not shown for 'Judgment compounding' (score ≥ 75).
+
+const COACHING: Record<string, { tip: string; example: string }> = {
+  'Using Quorum as a report generator': {
+    tip:     'Name one thing that could go wrong, and one person this decision affects beyond yourself. Even a sentence on each shifts how your thinking is read.',
+    example: 'e.g. "If this doesn\'t land, my co-founder carries the reputational cost too — and I haven\'t thought through what walking it back would look like."',
+  },
+  'Frameworks starting to appear': {
+    tip:     'Question whether the timeline is real. Ask what you\'d regret looking back in two years. These patterns — when they appear in your Examiner answers — move the score.',
+    example: 'e.g. "I\'m not sure the Q3 deadline is a hard constraint — it was set internally. If it\'s flexible, the whole framing changes."',
+  },
+  'Reasoning visibly shifting': {
+    tip:     'Connect this decision to a past one. Name a pattern you\'ve noticed in your own thinking before. Cross-session awareness is what pushes the score above 75.',
+    example: 'e.g. "This feels like the expansion decision last year — I notice I anchor on upside and underweight operational drag. Same pull here."',
+  },
+}
+
+function CoachingTip({ band }: { band: string | null }) {
+  if (!band || !COACHING[band]) return null
+  const { tip, example } = COACHING[band]
+  return (
+    <div style={{
+      borderLeft:   '2px solid var(--border-mid)',
+      paddingLeft:  12,
+      marginBottom: 14,
+      textAlign:    'left',
+    }}>
+      <p style={{
+        fontSize:      9.5,
+        fontWeight:    700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color:         'var(--text-4)',
+        margin:        '0 0 5px',
+      }}>
+        What raises your score
+      </p>
+      <p style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 6px' }}>
+        {tip}
+      </p>
+      <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.55, margin: 0, fontStyle: 'italic' }}>
+        {example}
+      </p>
     </div>
   )
 }
