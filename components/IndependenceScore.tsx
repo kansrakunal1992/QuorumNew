@@ -30,6 +30,7 @@ interface ScoreData {
   interpretation: string | null
   sessionCount:   number
   calculatedAt:   string | null
+  examinerQuote:  string | null
 }
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -220,6 +221,37 @@ function ScoreDisplay({ data }: { data: ScoreData }) {
           marginBottom:   14,
         }}>
           {data.band}
+        </div>
+      )}
+
+      {/* Examiner quote — from the most recent scored session */}
+      {data.examinerQuote && (
+        <div style={{
+          borderLeft:   '2px solid var(--gold-dim)',
+          paddingLeft:  12,
+          marginBottom: 14,
+          textAlign:    'left',
+        }}>
+          <p style={{
+            fontSize:   11.5,
+            color:      'var(--text-3)',
+            lineHeight: 1.6,
+            margin:     0,
+            fontStyle:  'italic',
+          }}>
+            "{data.examinerQuote}"
+          </p>
+          <span style={{
+            fontSize:      10,
+            color:         'var(--text-4)',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            fontStyle:     'normal',
+            marginTop:     4,
+            display:       'block',
+          }}>
+            From your last Examiner session
+          </span>
         </div>
       )}
 

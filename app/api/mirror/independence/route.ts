@@ -59,7 +59,7 @@ export async function GET(req: Request) {
   // Fetch the most recent score entry for this user
   const { data: latestEntry } = await supabase
     .from('independence_score_log')
-    .select('score, delta, calculated_at, signals')
+    .select('score, delta, calculated_at, signals, session_id')
     .eq('user_id', userId)
     .order('calculated_at', { ascending: false })
     .limit(1)
@@ -84,6 +84,29 @@ export async function GET(req: Request) {
     ?? (latestEntry.signals as Record<string, unknown> | null)?.sessionCount as number
     ?? 0
 
+  // ── Fetch examiner quote from the most recent scored session ───────────────
+  // Pick the most substantive answer (longest response_text) from that session.
+  // Capped at 180 chars — used as a contextual anchor in the score display.
+  let examinerQuote: string | null = null
+  if (latestEntry.session_id) {
+    const { data: examinerRows } = await supabase
+      .from('examiner_responses')
+      .select('response_text, question_order')
+      .eq('session_id', latestEntry.session_id)
+      .not('response_text', 'is', null)
+      .order('question_order', { ascending: true })
+      .limit(6)
+
+    if (examinerRows && examinerRows.length > 0) {
+      const longest = examinerRows.reduce((best, row) =>
+        (row.response_text?.trim().length ?? 0) > (best.response_text?.trim().length ?? 0)
+          ? row : best
+      )
+      const raw = longest.response_text?.trim() ?? ''
+      examinerQuote = raw.length > 180 ? raw.slice(0, 177) + '…' : raw || null
+    }
+  }
+
   return NextResponse.json({
     score:          latestEntry.score,
     delta:          latestEntry.delta,
@@ -91,6 +114,7 @@ export async function GET(req: Request) {
     interpretation: band.interpretation,
     sessionCount,
     calculatedAt:   latestEntry.calculated_at,
+    examinerQuote,
   })
 }
 
