@@ -266,6 +266,16 @@ function ConfirmedTile({ tile, authToken }: { tile: FingerprintTile; authToken: 
             lineHeight: 1.5,
             fontWeight: isStrong ? 500 : 400,
           }}>
+            <span style={{
+              fontSize:      9.5,
+              fontWeight:    700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              opacity:       0.6,
+              marginRight:   5,
+            }}>
+              Activates when:
+            </span>
             {tile.activationSummary}
           </p>
         </div>
