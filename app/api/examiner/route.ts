@@ -147,7 +147,9 @@ export async function GET(req: Request) {
     // and all 6 initial persona calls as a framing input (not a diagnostic flag).
     // Suppressed on REDIRECT (R1/R7) — the redirect message is the whole point there.
     const C0_TEMPLATE = "What would this decision have to deliver for you to feel it was genuinely the right call — not just in outcome, but in how it unfolded?"
-    const shouldAddC0 = ruleResult.mode !== 'REDIRECT' && allRules.length < 3
+    const [shouldAddC0, c0Text] = ruleResult.mode !== 'REDIRECT' && allRules.length < 3
+     ? [true, await personaliseRuleQuestion('C0', C0_TEMPLATE, decisionText)]
+     : [false, C0_TEMPLATE]
 
     const personalisedTexts = decisionText
       ? await Promise.all(
@@ -169,7 +171,7 @@ export async function GET(req: Request) {
     if (shouldAddC0) {
       questions.push({
         order:   questions.length + 1,
-        text:    C0_TEMPLATE,
+        text:    c0Text,
         gap:     'C0 — CONTEXT',
         rule_id: 'C0',
       })
