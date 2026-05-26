@@ -153,13 +153,14 @@ function ScoreDisplay({ data }: { data: ScoreData }) {
   // Visual fill: arc or simple ring — keeping it just the number per design spec
   return (
     <div style={{
-      background:    'var(--bg-card)',
+      background:    'linear-gradient(160deg, rgba(201,168,76,0.03) 0%, var(--bg-card) 50%)',
       border:        '1px solid var(--border-mid)',
       borderRadius:  12,
       padding:       '28px 24px 20px',
       position:      'relative',
       overflow:      'hidden',
       textAlign:     'center',
+      boxShadow:     '0 2px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(201,168,76,0.06)',
     }}>
       {/* Subtle top accent */}
       <div style={{
@@ -170,18 +171,30 @@ function ScoreDisplay({ data }: { data: ScoreData }) {
         background:'linear-gradient(90deg, var(--gold-dim) 0%, transparent 60%)',
       }} />
 
-      {/* Score number */}
-      <div style={{
-        fontSize:   52,
-        fontWeight: 700,
-        color:      'var(--gold)',
-        lineHeight: 1,
-        marginBottom: 6,
-        fontVariantNumeric: 'tabular-nums',
-        letterSpacing: '-0.02em',
-      }}>
-        {score}
-        <span style={{ fontSize: 18, color: 'var(--text-4)', fontWeight: 400 }}>/100</span>
+      {/* Score number with radial glow */}
+      <div style={{ position: 'relative', display: 'inline-block', marginBottom: 6 }}>
+        <div style={{
+          position:   'absolute',
+          top: '50%', left: '50%',
+          transform:  'translate(-50%, -50%)',
+          width:      160,
+          height:     160,
+          background: 'radial-gradient(ellipse at center, rgba(201,168,76,0.11) 0%, transparent 70%)',
+          borderRadius: '50%',
+          pointerEvents: 'none',
+        }} />
+        <div style={{
+          fontSize:   52,
+          fontWeight: 700,
+          color:      'var(--gold)',
+          lineHeight: 1,
+          fontVariantNumeric: 'tabular-nums',
+          letterSpacing: '-0.02em',
+          position:   'relative',
+        }}>
+          {score}
+          <span style={{ fontSize: 18, color: 'var(--text-4)', fontWeight: 400 }}>/100</span>
+        </div>
       </div>
 
       {/* Delta */}

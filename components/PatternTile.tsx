@@ -217,16 +217,23 @@ function ConfirmedTile({ tile, authToken }: { tile: FingerprintTile; authToken: 
   return (
     <div
       style={{
-        background:   'var(--bg-card)',
+        background:   'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 40%), var(--bg-card)',
         border:       '1px solid var(--border-mid)',
         borderRadius: 10,
         padding:      '15px 16px',
         position:     'relative',
         overflow:     'hidden',
-        transition:   'border-color 0.2s',
+        transition:   'border-color 0.2s, box-shadow 0.2s',
+        boxShadow:    '0 1px 4px rgba(0,0,0,0.35)',
       }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-hi)')}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-mid)')}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = 'rgba(201,168,76,0.35)'
+        e.currentTarget.style.boxShadow   = '0 0 0 1px rgba(201,168,76,0.18), 0 2px 10px rgba(0,0,0,0.45)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'var(--border-mid)'
+        e.currentTarget.style.boxShadow   = '0 1px 4px rgba(0,0,0,0.35)'
+      }}
     >
       {/* Active indicator stripe */}
       <div style={{

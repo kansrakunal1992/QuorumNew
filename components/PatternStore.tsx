@@ -498,7 +498,7 @@ export default function PatternStore({ authToken }: { authToken: string }) {
   if (!data.threshold_met) {
     const needed = 3 - data.session_count
     return (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '18px 20px' }}>
+      <div style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
         <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 8px', fontWeight: 500 }}>
           {needed} more decision{needed !== 1 ? 's' : ''} needed before patterns appear.
         </p>
@@ -512,7 +512,7 @@ export default function PatternStore({ authToken }: { authToken: string }) {
 
   if (data.patterns.length === 0) {
     return (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '18px 20px' }}>
+      <div style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
         <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 8px', fontWeight: 500 }}>No repeating patterns yet.</p>
         <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
           Your decisions so far have each been structurally different — no single pattern has come up more than once. Keep running sessions.
@@ -531,12 +531,13 @@ export default function PatternStore({ authToken }: { authToken: string }) {
       {/* ── Computed headline ────────────────────────────────────────────── */}
       {headline && (
         <div style={{
-          background:   'var(--bg-card)',
+          background:   'linear-gradient(160deg, rgba(201,168,76,0.04) 0%, var(--bg-card) 60%)',
           border:       '1px solid var(--border-mid)',
           borderLeft:   '3px solid var(--gold)',
           borderRadius: 10,
           padding:      '16px 18px',
           marginBottom: 24,
+          boxShadow:    '0 1px 6px rgba(0,0,0,0.35), inset 0 1px 0 rgba(201,168,76,0.06)',
         }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', margin: '0 0 8px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             The pattern across your decisions
@@ -587,7 +588,7 @@ export default function PatternStore({ authToken }: { authToken: string }) {
 
       {/* ── Section 2: What your decisions are made of ───────────────────── */}
       {data.top_dimensions.length > 0 && (
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '18px 20px' }}>
+        <div style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>

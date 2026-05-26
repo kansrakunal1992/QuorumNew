@@ -220,10 +220,11 @@ export default function MirrorTimeline({ sessions, showPatternStripe = true }: P
               style={{
                 display:      'flex',
                 alignItems:   'stretch',
-                background:   'var(--bg-card)',
+                background:   'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 60%), var(--bg-card)',
                 borderTop:    '1px solid var(--border-dim)',
                 borderBottom: isLast && hiddenCount === 0 ? '1px solid var(--border-dim)' : 'none',
                 overflow:     'hidden',
+                transition:   'box-shadow 0.15s',
               }}
             >
               {/* Pattern stripe */}

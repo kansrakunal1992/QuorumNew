@@ -114,10 +114,11 @@ function BlurredTile({ index }: { index: number }) {
   const w = widths[index % widths.length]
   return (
     <div style={{
-      background:   'var(--bg-card)',
+      background:   'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)',
       border:       '1px solid var(--border-dim)',
       borderRadius: 12,
       padding:      '18px 20px',
+      boxShadow:    '0 1px 4px rgba(0,0,0,0.3)',
       marginBottom: 10,
       position:     'relative',
       overflow:     'hidden',
@@ -482,7 +483,7 @@ export default function ContradictionDetector({ authToken, sessionCount }: Props
   // ── Error ─────────────────────────────────────────────────────────────────
   if (error) {
     return (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
         <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
           Contradiction detection temporarily unavailable. Your data is intact.
         </p>
@@ -495,7 +496,7 @@ export default function ContradictionDetector({ authToken, sessionCount }: Props
   // ── No contradictions yet ─────────────────────────────────────────────────
   if (active.length === 0) {
     return (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '16px 18px' }}>
+      <div style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
         <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
           {data?.lastRanAt
             ? 'No structural contradictions detected yet. This updates as you add more decisions and deepen your Examiner responses.'

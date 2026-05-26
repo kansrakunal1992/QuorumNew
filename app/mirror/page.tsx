@@ -596,7 +596,7 @@ function TeaserView({
       {/* Section: Decision Timeline (always free) */}
       <div style={{ marginBottom: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Decision Timeline
           </h3>
           <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
@@ -647,7 +647,7 @@ function TeaserView({
       {/* Section: Bias Fingerprint (locked) */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Bias Fingerprint
           </h3>
           {lockedBadge}
@@ -673,7 +673,7 @@ function TeaserView({
       {/* Section: Independence Score (locked / blurred) */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Decision Independence Score
           </h3>
           {lockedBadge}
@@ -699,7 +699,7 @@ function TeaserView({
       {/* Section: Contradiction Detector (locked) */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Contradiction Detector
           </h3>
           {lockedBadge}
@@ -811,7 +811,7 @@ function BenchmarkModule({ authToken }: { authToken: string }) {
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Others in Similar Decisions
           </h3>
           <span style={{ fontSize: 10, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
@@ -933,7 +933,7 @@ function UnlockedView({
       {/* Decision Rules — Sprint 7d */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Your Implicit Rules
           </h3>
           {status.sessionCount >= 8 && (
@@ -954,7 +954,7 @@ function UnlockedView({
       {/* Pattern Store — Sprint 18b */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             What Keeps Coming Up
           </h3>
           {status.sessionCount >= 3 && (
@@ -976,7 +976,7 @@ function UnlockedView({
       {/* Contradiction Detector — Sprint 9 */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Contradiction Detector
           </h3>
           {status.sessionCount >= 40 && (
@@ -997,7 +997,7 @@ function UnlockedView({
       {/* Calibration Trend — Sprint 15 */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Confidence Calibration
           </h3>
         </div>
@@ -1013,7 +1013,7 @@ function UnlockedView({
       {/* Decision Timeline — archival record, moved to bottom */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Decision Timeline
           </h3>
           <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
@@ -1110,6 +1110,7 @@ export default function MirrorPage() {
       <style>{`
         @keyframes seg-pulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.5; } }
         @keyframes blink      { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+        .mirror-section-h3   { border-left: 2px solid rgba(201,168,76,0.35); padding-left: 8px; }
         @media (max-width: 600px) {
           .mirror-content-pad  { padding: 0 16px !important; }
           .mirror-page-header  { padding: 24px 16px 20px !important; }
@@ -1119,6 +1120,7 @@ export default function MirrorPage() {
           .mirror-score-row    { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
           .mirror-cta-card     { padding: 20px 16px !important; }
           .mirror-cta-btn      { min-height: 44px; display: inline-flex !important; align-items: center !important; }
+          .mirror-bias-grid    { grid-template-columns: 1fr !important; }
         }
       `}</style>
 

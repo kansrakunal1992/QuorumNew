@@ -23,7 +23,7 @@ function FingerprintSkeleton() {
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '20px 22px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {bar('95%', 9)}{bar('88%', 9)}{bar('72%', 9)}{bar('60%', 9)}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+      <div className="mirror-bias-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
         {[0, 1, 2].map(i => (
           <div key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '15px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {bar('50%', 7)}{bar('90%', 7)}{bar('75%', 7)}{bar('55%', 7)}
@@ -58,8 +58,8 @@ function NarrativeBlock({ narrative, sessionCount }: { narrative: string | null;
   }
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderRadius: 12, padding: '20px 22px', marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 2, background: 'linear-gradient(90deg, var(--gold-dim) 0%, transparent 60%)' }} />
+    <div style={{ background: 'linear-gradient(160deg, rgba(201,168,76,0.045) 0%, var(--bg-card) 55%)', border: '1px solid rgba(201,168,76,0.18)', borderRadius: 12, padding: '20px 22px', marginBottom: 20, position: 'relative', overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.45), inset 0 1px 0 rgba(201,168,76,0.08)', backdropFilter: 'blur(4px)' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 2, background: 'linear-gradient(90deg, var(--gold) 0%, var(--gold-dim) 40%, transparent 80%)' }} />
       <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.75, margin: 0, fontStyle: 'italic' }}>
         &ldquo;{narrative}&rdquo;
       </p>
@@ -164,7 +164,7 @@ export default function BiasFingerprint({ authToken }: Props) {
       {/* Confirmed tiles — authToken passed for source drawer */}
       {data.confirmedTiles.length > 0 && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+          <div className="mirror-bias-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
             {confirmedVisible.map(tile => (
               <PatternTile key={tile.biasKey} tile={tile} authToken={authToken} />
             ))}
@@ -203,7 +203,7 @@ export default function BiasFingerprint({ authToken }: Props) {
           </div>
 
           {formingExpanded && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+            <div className="mirror-bias-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
               {data.formingTiles.map(tile => (
                 <PatternTile key={tile.biasKey} tile={tile} authToken={authToken} />
               ))}

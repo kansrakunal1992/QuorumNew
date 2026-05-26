@@ -93,10 +93,11 @@ function InsufficientState({ pairedCount }: { pairedCount: number }) {
   const needed = 3 - pairedCount
   return (
     <div style={{
-      background:   'var(--bg-card)',
+      background:   'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)',
       border:       '1px solid var(--border-dim)',
       borderRadius: 12,
       padding:      '24px 22px',
+      boxShadow:    '0 1px 6px rgba(0,0,0,0.35)',
     }}>
       <p style={{
         fontSize:      11,
@@ -173,6 +174,7 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
         border:       '1px solid var(--border-dim)',
         borderRadius: 12,
         padding:      '24px 22px',
+        boxShadow:    '0 1px 6px rgba(0,0,0,0.35)',
         color:        'var(--text-4)',
         fontSize:     12.5,
       }}>
@@ -189,6 +191,7 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
         border:       '1px solid var(--border-dim)',
         borderRadius: 12,
         padding:      '24px 22px',
+        boxShadow:    '0 1px 6px rgba(0,0,0,0.35)',
         color:        'var(--text-4)',
         fontSize:     12.5,
       }}>
@@ -307,11 +310,12 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
 
       {/* ── Sparkline chart ──────────────────────────────────────────────────── */}
       <div style={{
-        background:   'var(--bg-card)',
+        background:   'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)',
         border:       '1px solid var(--border-dim)',
         borderRadius: 12,
         padding:      '16px 16px 8px',
         overflowX:    'auto',
+        boxShadow:    '0 1px 6px rgba(0,0,0,0.35)',
       }}>
 
         {/* Legend */}
