@@ -65,6 +65,31 @@ function sanitise(text: string): string {
     .replace(/[^\x00-\xFF]/g, '?')
 }
 
+// Strip the examiner-style wrapper that "share to all advisors" prepends to
+// user pushback messages before they are saved to the DB, leaving only the
+// raw pushback text the decision-maker actually typed.
+function cleanPushbackText(raw: string): string {
+  return raw
+    // Remove "The user submitted the following new information while
+    // challenging another advisor. Review it and update your position
+    // if it changes your assessment:" preamble
+    .replace(/^The user submitted the following[^"\n]*[:\n]+\s*/i, '')
+    // Remove the quoted wrapper if present: "..."
+    .replace(/^"([\s\S]*)"\s*$/, '$1')
+    // Remove the trailing instruction block
+    .replace(/\s*Provide a concise update[\s\S]*$/i, '')
+    .trim()
+}
+
+// Strip <lens>, <position>, <realcost> tags from advisor pushback reply text
+function stripAdvisorTags(raw: string): string {
+  return raw
+    .replace(/<lens>[\s\S]*?<\/lens>/gi, '')
+    .replace(/<position>[\s\S]*?<\/position>/gi, '')
+    .replace(/<realcost>[\s\S]*?<\/realcost>/gi, '')
+    .replace(/^\s+/, '')
+}
+
 // ── Colour palette (dark premium theme) ───────────────────────────────────────
 const C = {
   gold:        [201, 168, 76]  as [number, number, number],
@@ -82,6 +107,8 @@ const C = {
   ruleGold:    [42,  38,  18]  as [number, number, number],
   ruleMid:     [28,  43,  74]  as [number, number, number],
   white:       [232, 234, 240] as [number, number, number],
+  goldLight:   [180, 148, 60]  as [number, number, number],   // pushback label
+  pushbackText:[160, 172, 198] as [number, number, number],   // pushback body — readable on dark
 }
 
 // Persona accent colours (rgb)
@@ -693,12 +720,12 @@ async function buildPdf(
         ensure(32)
         doc.setFont('Helvetica', 'bold')
         doc.setFontSize(7.5)
-        doc.setTextColor(...C.mutedText)
+        doc.setTextColor(...C.goldLight)
         doc.setCharSpace(0.8)
         doc.text('YOUR PUSHBACK', ML, Y)
         doc.setCharSpace(0)
         Y += 12
-        bodyBlock(msg.content, 4, 9.5, C.mutedText)
+        bodyBlock(cleanPushbackText(msg.content), 4, 9.5, C.pushbackText)
       } else {
         // Strip any redundant "DECISION BRIEF" / "THE DECISION BRIEF" first line
         // the AI sometimes echoes it back; we already render it in the header band
@@ -826,17 +853,16 @@ async function buildPdf(
         if (msg.role === 'user') {
           ensure(28)
           Y += 4
-          doc.setFillColor(...C.pushbackBg)
           doc.setFont('Helvetica', 'bold')
           doc.setFontSize(7.5)
-          doc.setTextColor(...C.mutedText)
+          doc.setTextColor(...C.goldLight)
           doc.setCharSpace(0.8)
           doc.text('YOUR PUSHBACK', ML, Y)
           doc.setCharSpace(0)
           Y += 10
-          bodyBlock(msg.content, 0, 9.5, C.mutedText)
+          bodyBlock(cleanPushbackText(msg.content), 0, 9.5, C.pushbackText)
         } else {
-          bodyBlock(msg.content)
+          bodyBlock(stripAdvisorTags(msg.content))
         }
       }
     }
