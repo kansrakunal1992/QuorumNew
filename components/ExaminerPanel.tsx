@@ -25,6 +25,8 @@ const RULE_HINTS: Record<string, string> = {
   R9:  'One path may be genuinely irreversible. Your answer helps the Council assess whether that changes the calculus.',
   R10: 'The decision involves enough moving parts that clarity on structure helps before analysis begins.',
   R12: 'Misalignment between decision-makers is often the real risk. Your answer surfaces where that tension sits.',
+  // C0 — JTBD context question: not a diagnostic flag, a framing input
+  C0:  'This isn\'t about predicting the outcome — it captures what you\'re actually trying to achieve, so the Council reasons from your real intent, not assumed goals.',
 }
 
 interface Props {
@@ -339,6 +341,21 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                     lineHeight: 1.5,
                     marginBottom: 4,
                   }}>
+                  {q.rule_id === 'C0' ? (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 700,
+                      color: '#4ade80',
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      marginRight: 8,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      border: '1px solid rgba(74,222,128,0.3)',
+                      background: 'rgba(74,222,128,0.07)',
+                    }}>
+                      CONTEXT
+                    </span>
+                  ) : (
                     <span style={{
                       fontSize: 10, fontWeight: 700,
                       color: 'var(--gold)',
@@ -348,8 +365,9 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                     }}>
                       Q{q.order}
                     </span>
-                    {q.text}
-                  </label>
+                  )}
+                  {q.text}
+                </label>
                   {/* Sprint 16c Fix 6: subtext — shows why this question helps */}
                   <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic', margin: '0 0 8px', lineHeight: 1.5 }}>
                     {q.rule_id

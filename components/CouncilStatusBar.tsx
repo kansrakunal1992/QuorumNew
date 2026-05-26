@@ -17,6 +17,7 @@ type Phase =
   | 'done'        // synthesis complete — fade out then unmount
 
 // Determines the desired phase from current props (priority order — highest first)
+// New flow: examiner fires BEFORE personas, so council phase comes after examinerDone.
 function desiredPhase(
   synthesisDone:     boolean,
   synthesisStreaming: boolean,
@@ -25,12 +26,12 @@ function desiredPhase(
   personasComplete:  number,
   ontologyReady:     boolean,
 ): Phase {
-  if (synthesisDone)     return 'done'
-  if (synthesisStreaming) return 'synthesis'
-  if (examinerDone)      return 'synthesis'
-  if (examinerActive)    return 'examiner'
-  if (personasComplete > 0) return 'council'
-  if (ontologyReady)     return 'history'
+  if (synthesisDone)      return 'done'
+  if (synthesisStreaming)  return 'synthesis'
+  if (examinerDone)        return 'council'   // personas streaming after examiner submitted
+  if (personasComplete > 0) return 'council'  // edge-case guard (e.g. pre-loaded sessions)
+  if (examinerActive)      return 'examiner'  // examiner loaded, waiting for user answers
+  if (ontologyReady)       return 'history'
   return 'mapping'
 }
 
@@ -129,8 +130,10 @@ export default function CouncilStatusBar({
   let message = ''
   if (phase === 'mapping')   message = 'Reading the structural shape of your decision'
   if (phase === 'history')   message = 'Checking if you\'ve faced a structurally similar decision before'
-  if (phase === 'council')   message = `${personasComplete} of ${totalPersonas} advisor${personasComplete === 1 ? '' : 's'} ha${personasComplete === 1 ? 's' : 've'} reviewed the brief`
-  if (phase === 'examiner')  message = 'The Council has reviewed the brief — the Examiner is now surfacing what they may have missed'
+  if (phase === 'examiner')  message = 'The Examiner has questions for you — the Council will convene once you\'ve answered'
+  if (phase === 'council')   message = personasComplete > 0
+    ? `${personasComplete} of ${totalPersonas} advisor${personasComplete === 1 ? '' : 's'} ha${personasComplete === 1 ? 's' : 've'} reviewed the brief`
+    : 'Convening the Council — advisors are reviewing your decision'
   if (phase === 'synthesis') message = 'Synthesising across six analytical frames'
 
   if (!message) return null

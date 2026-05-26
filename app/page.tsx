@@ -341,7 +341,7 @@ export default function Home() {
           <div style={{ marginTop: 20, marginBottom: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.04em', margin: 0 }}>
-                HOW CONFIDENT ARE YOU IN YOUR CURRENT THINKING?
+                HOW WELL DO YOU UNDERSTAND THIS DECISION RIGHT NOW?
               </p>
               <span style={{
                 fontSize: 13,
@@ -357,7 +357,7 @@ export default function Home() {
               </span>
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '0 0 10px', lineHeight: 1.5 }}>
-              This is your baseline. After the decision plays out, we'll measure how your confidence shifted — and what that pattern reveals about your judgment over time.
+              Not whether your choice will work out — how clearly you feel you understand the situation, your framing, and what matters. The Council will test this. We track how your read compares to your own hindsight over time.
             </p>
             <input
               type="range"
@@ -376,8 +376,8 @@ export default function Home() {
               }}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
-              <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Uncertain</span>
-              <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Very confident</span>
+              <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Foggy</span>
+              <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Fully clear</span>
             </div>
           </div>
 

@@ -103,6 +103,7 @@ export async function POST(req: Request) {
       rawMessages,
       registerMode,
       structuralContext,
+      examinerContext,
     }: {
       sessionId:         string
       personaKey:        PersonaKey
@@ -112,6 +113,7 @@ export async function POST(req: Request) {
       rawMessages?:      boolean
       registerMode?:     'analytical' | 'clarification'
       structuralContext?: string
+      examinerContext?:  string   // C0 + rule answers baked into initial persona call (new flow)
     } = await req.json()
 
     const persona = PERSONAS[personaKey]
@@ -158,9 +160,16 @@ export async function POST(req: Request) {
         : ''
 
       if (messages.length === 0) {
+        // ── C0 + rule answers from Examiner — injected for initial persona calls only ──
+        // examinerContext is populated when personas fire AFTER examiner submission (new flow).
+        // For C0 (JTBD framing), this reaches all 6 personas.
+        // For rule answers, SessionView routes them to the relevant persona only.
+        const examinerBlock = examinerContext
+          ? `\n\nEXAMINER CONTEXT — captured before the Council ran:\n${examinerContext}\n`
+          : ''
         chatMessages = [{
           role:    'user',
-          content: `${registerBlock}${structuralBlock}DECISION: ${decisionText}${contextBlock}\nPlease give your full assessment as ${persona.label}.`,
+          content: `${registerBlock}${structuralBlock}DECISION: ${decisionText}${contextBlock}${examinerBlock}\nPlease give your full assessment as ${persona.label}.`,
         }]
       } else {
         chatMessages = [

@@ -32,6 +32,8 @@ interface Props {
   onSynthesisStart?: () => void
   /** Council status bar: fires when synthesis stream completes */
   onSynthesisComplete?: () => void
+  /** C0 + all examiner answers — injected into synthesis as USER STATED INTENT framing block */
+  examinerContext?: string
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -45,6 +47,7 @@ export default function SynthesisCard({
   onOverrideRedirect, // Sprint 16b Fix 1
   onSynthesisStart,   // Council status bar
   onSynthesisComplete,// Council status bar
+  examinerContext,    // C0 + rule answers → framing block in synthesis
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -74,8 +77,10 @@ export default function SynthesisCard({
   const contextRef     = useRef(contextText)
   const sessionIdRef   = useRef(sessionId)
   const registerRef    = useRef(registerMode)
+  const examinerContextRef = useRef(examinerContext)
 
-  useEffect(() => { responsesRef.current  = personaResponses }, [personaResponses])
+  useEffect(() => { responsesRef.current       = personaResponses }, [personaResponses])
+  useEffect(() => { examinerContextRef.current = examinerContext  }, [examinerContext])
 
   useEffect(() => {
     const stored = getStoredBriefCode()
@@ -105,7 +110,12 @@ export default function SynthesisCard({
         .map(([k, v]) => `[${k.toUpperCase().replace(/_/g, ' ')}]\n${v.slice(0, 800)}`)
         .join('\n\n---\n\n')
       const ctx = contextRef.current ? `\nCONTEXT:\n${contextRef.current}\n` : ''
-      const msg = `DECISION: ${decisionRef.current}${ctx}\n\nADVISOR RESPONSES:\n\n${personaBlock}\n\nNow produce the council synthesis.`
+      // C0 (JTBD intent) + rule answers from Examiner — lifted out as framing block
+      // so synthesis reasons from the user's stated intent, not assumed goals
+      const examinerBlock = examinerContextRef.current
+        ? `\n\nUSER STATED INTENT & EXAMINER CONTEXT (captured before the Council ran):\n${examinerContextRef.current}\n`
+        : ''
+      const msg = `DECISION: ${decisionRef.current}${ctx}${examinerBlock}\n\nADVISOR RESPONSES:\n\n${personaBlock}\n\nNow produce the council synthesis.`
 
       try {
         const res = await fetch('/api/persona', {

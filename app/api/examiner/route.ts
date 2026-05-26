@@ -142,6 +142,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ questions: [], rule_mode: 'OPEN', status: 'no_rules' })
     }
 
+    // ── C0: JTBD context question — injected when rule budget has room AND not REDIRECT ──
+    // Captures the "job" the user is hiring this decision to do. Feeds synthesis
+    // and all 6 initial persona calls as a framing input (not a diagnostic flag).
+    // Suppressed on REDIRECT (R1/R7) — the redirect message is the whole point there.
+    const C0_TEMPLATE = "What would this decision have to deliver for you to feel it was genuinely the right call — not just in outcome, but in how it unfolded?"
+    const shouldAddC0 = ruleResult.mode !== 'REDIRECT' && allRules.length < 3
+
     const personalisedTexts = decisionText
       ? await Promise.all(
           allRules.map(rule =>
@@ -150,12 +157,23 @@ export async function GET(req: Request) {
         )
       : allRules.map(r => r.question)
 
-    const questions = allRules.map((rule, i) => ({
-      order:   i + 1,
-      text:    personalisedTexts[i],
-      gap:     `${rule.rule_id} — ${rule.mode}`,
-      rule_id: rule.rule_id,
-    }))
+    const questions: Array<{ order: number; text: string; gap: string; rule_id: string | null }> =
+      allRules.map((rule, i) => ({
+        order:   i + 1,
+        text:    personalisedTexts[i],
+        gap:     `${rule.rule_id} — ${rule.mode}`,
+        rule_id: rule.rule_id,
+      }))
+
+    // Append C0 at the end of the question list (lower order than rule questions)
+    if (shouldAddC0) {
+      questions.push({
+        order:   questions.length + 1,
+        text:    C0_TEMPLATE,
+        gap:     'C0 — CONTEXT',
+        rule_id: 'C0',
+      })
+    }
 
     console.log(
       `[Examiner GET] v2.0 | session ${sessionId} | mode: ${ruleResult.mode} | ` +

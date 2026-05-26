@@ -67,11 +67,15 @@ interface Props {
   onExaminerUpdateComplete?: (personaKey: string, content: string) => void
   /** Pre-loaded content from DB — skips the AI call entirely (used on Back to Council navigation) */
   initialContent?: string
+  /** Gate: personas don't stream until examiner has been submitted or skipped (new flow) */
+  canStream?: boolean
+  /** C0 + rule answers baked into the initial persona call — set by SessionView after examiner submit */
+  initialExaminerContext?: string
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -125,7 +129,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === persona.key
 
-  const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean) => {
+  const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean, examinerCtx?: string) => {
     setPanelState('streaming')
     if (isFirst) setResponse('')
 
@@ -133,7 +137,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       const res = await fetch('/api/persona', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText, registerMode: registerMode ?? 'analytical', structuralContext }),
+        body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText, registerMode: registerMode ?? 'analytical', structuralContext, examinerContext: isFirst ? examinerCtx : undefined }),
       })
       if (!res.ok || !res.body) {
         setPanelState('error')
@@ -185,8 +189,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
   useEffect(() => {
     if (initialContent) return   // already hydrated from DB — no re-fetch
-    streamResponse([], true)
-  }, [streamResponse, initialContent])
+    if (canStream === false) return  // wait for examiner to submit/skip
+    if (panelState !== 'idle') return // guard: only fire once (canStream or initialExaminerContext re-rendering)
+    streamResponse([], true, initialExaminerContext)
+  }, [streamResponse, initialContent, canStream, initialExaminerContext]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Examiner supplemental update ────────────────────────────────────────
   // Fires when examinerContext is set (non-empty) after the initial analysis is done

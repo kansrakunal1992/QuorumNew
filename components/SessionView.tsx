@@ -92,6 +92,14 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [synthesisVersion,         setSynthesisVersion]         = useState(0)
   const [examinerContextByPersona, setExaminerContextByPersona] = useState<Record<string, string>>({})
 
+  // New flow: personas fire AFTER examiner, not before.
+  // examinerSubmitted gates canStream on all PersonaPanels.
+  // examinerInitialContext carries C0 + rule answers into each persona's initial API call.
+  // synthExaminerContext carries all answers into the synthesis message.
+  const [examinerSubmitted,      setExaminerSubmitted]      = useState(false)
+  const [examinerInitialContext, setExaminerInitialContext] = useState<Record<string, string>>({})
+  const [synthExaminerContext,   setSynthExaminerContext]   = useState<string | undefined>(undefined)
+
   // Sprint 11b: rule engine state
   const [ruleMode,          setRuleMode]          = useState<RuleMode>(null)
   const [redirectBlocked,   setRedirectBlocked]   = useState(false)
@@ -299,16 +307,19 @@ export default function SessionView({ session: initialSession, initialMessages =
     ) => {
       setRuleMode(mode)
 
-      // REDIRECT — synthesis must never fire; block immediately
+      // REDIRECT — synthesis must never fire; allow personas to stream as dim provisional content
       if (mode === 'REDIRECT') {
         setRedirectBlocked(true)
         if (redirectQuestion) setRedirectQuestion(redirectQuestion)
-        setExaminerReady(false)   // synthesis gate stays closed
-        return                    // skip persona context mapping entirely
+        setExaminerReady(false)     // synthesis gate stays closed
+        setExaminerSubmitted(true)  // allow personas to fire (shown dim at 55% opacity)
+        examinerSubmittedRef.current = true
+        return
       }
 
       // GATE or OPEN — normal path (includes skip: OPEN with empty responses)
       examinerSubmittedRef.current = true
+      setExaminerSubmitted(true)
       setExaminerReady(true)
 
       // Trigger card shuffle now that user has submitted / skipped the examiner
@@ -327,20 +338,48 @@ export default function SessionView({ session: initialSession, initialMessages =
 
       if (!responses.length) return
 
-      const seen       = new Set<string>()
-      const contextMap: Record<string, string> = {}
-      for (const r of responses) {
-        if (!r.response_text?.trim()) continue
-        const pk = mapGapToPersona(r.gap)
-        if (pk && !seen.has(pk) && seen.size < 2) seen.add(pk)
+      // ── Build synthesis examiner context (all answered questions) ──────────
+      const allAnswered = responses.filter(r => r.response_text?.trim())
+      if (allAnswered.length > 0) {
+        setSynthExaminerContext(
+          allAnswered.map(r => `Q: ${r.question_text}\nA: ${r.response_text}`).join('\n\n')
+        )
       }
-      for (const pk of seen) {
-        const ctx = buildExaminerContextForPersona(pk, responses)
-        if (ctx) contextMap[pk] = ctx
+
+      // ── Build per-persona initial context ──────────────────────────────────
+      // C0 (JTBD intent) → injected into ALL 6 personas as a framing block.
+      // Rule answers → routed to the most relevant persona only.
+      // This replaces the old supplemental-update path for initial answers.
+      const c0Responses = responses.filter(r => r.gap === 'C0 — CONTEXT' && r.response_text?.trim())
+      const c0Block = c0Responses.length > 0
+        ? `USER STATED INTENT:\nQ: ${c0Responses[0].question_text}\nA: ${c0Responses[0].response_text}\n\n`
+        : ''
+
+      const initialCtx: Record<string, string> = {}
+      for (const pk of PERSONA_ORDER) {
+        const ruleAnswers = responses.filter(r =>
+          r.gap !== 'C0 — CONTEXT' &&
+          mapGapToPersona(r.gap) === pk &&
+          r.response_text?.trim()
+        )
+        const ruleBlock = ruleAnswers.length > 0
+          ? `ADDITIONAL CONTEXT FROM EXAMINER:\n${ruleAnswers.map(r => `Q: ${r.question_text}\nA: ${r.response_text}`).join('\n\n')}`
+          : ''
+        const combined = (c0Block + ruleBlock).trim()
+        if (combined) initialCtx[pk] = combined
       }
-      if (Object.keys(contextMap).length > 0) {
-        setExaminerContextByPersona(contextMap)
+      // If we have only C0 (no rule routing), make sure all personas still get it
+      if (c0Block.trim() && Object.keys(initialCtx).length < PERSONA_ORDER.length) {
+        for (const pk of PERSONA_ORDER) {
+          if (!initialCtx[pk]) initialCtx[pk] = c0Block.trim()
+        }
       }
+      if (Object.keys(initialCtx).length > 0) {
+        setExaminerInitialContext(initialCtx)
+      }
+
+      // Note: examinerContextByPersona is still used for pushback fanout (handleShareContext).
+      // Rule answers no longer trigger supplemental updates — they're baked into the initial call.
     },
     []
   )
@@ -390,6 +429,7 @@ export default function SessionView({ session: initialSession, initialMessages =
     // Sprint 21 fix: mark examiner as submitted so persona reorder can fire.
     // handleExaminerComplete returned early on REDIRECT without setting this ref.
     examinerSubmittedRef.current = true
+    setExaminerSubmitted(true)   // ensure state is consistent with ref
     const pending = pendingOrderRef.current
     if (pending && allPersonasDoneRef.current) {
       const isDifferent = pending.some((k, i) => k !== PERSONA_ORDER[i])
@@ -463,6 +503,9 @@ export default function SessionView({ session: initialSession, initialMessages =
       setCompletedResponses({})
       setExaminerReady(false)
       setExaminerContextByPersona({})
+      setExaminerSubmitted(false)
+      setExaminerInitialContext({})
+      setSynthExaminerContext(undefined)
       setRegisterMode(reRegisterMode)
       setSynthesisVersion(0)
       setSaved(false)
@@ -574,8 +617,8 @@ export default function SessionView({ session: initialSession, initialMessages =
           personasComplete={Object.keys(completedResponses).length}
           totalPersonas={PERSONA_ORDER.length}
           ontologyReady={ontologyReady}
-          examinerActive={allPersonasDone && !examinerReady}
-          examinerDone={examinerReady}
+          examinerActive={ontologyReady && !examinerReady && !redirectBlocked}
+          examinerDone={examinerReady || (redirectBlocked && examinerSubmitted)}
           synthesisStreaming={synthesisStreaming}
           synthesisDone={synthesisDone}
         />
@@ -596,13 +639,14 @@ export default function SessionView({ session: initialSession, initialMessages =
           onOverrideRedirect={handleOverrideRedirect}
           onSynthesisStart={() => setSynthesisStreaming(true)}
           onSynthesisComplete={() => { setSynthesisStreaming(false); setSynthesisDone(true) }}
+          examinerContext={synthExaminerContext}
         />
 
-        {/* ── 2. Examiner — appears once all 6 personas done, glows on entry ── */}
+        {/* ── 2. Examiner — appears immediately on session load, gates persona firing ── */}
         <ExaminerPanel
           key={`examiner-${sessionKey}`}
           sessionId={session.id}
-          visible={allPersonasDone}
+          visible={true}
           onComplete={handleExaminerComplete}
           forceDismissed={examinerDismissed}
         />
@@ -647,6 +691,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                 onShareContext={(text) => handleShareContext(key, text)}
                 onExaminerUpdateComplete={handleExaminerUpdateComplete}
                 initialContent={initialMessages[key]}
+                canStream={examinerSubmitted || !!initialMessages[key]}
+                initialExaminerContext={examinerInitialContext[key]}
               />
             </div>
           ))}
