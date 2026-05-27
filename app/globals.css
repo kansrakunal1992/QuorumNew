@@ -334,3 +334,65 @@ textarea::placeholder { color: var(--text-4); }
   color: #f5e9c0;
   border: 1px solid rgba(201, 168, 76, 0.30);
 }
+
+/* ── Home page navbar tagline ────────────────────────────── */
+.nav-tagline {
+  font-size: 10px;
+  color: var(--text-4);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  /* Right margin leaves space for the fixed ThemeToggle button */
+  margin-right: 128px;
+}
+
+/* ── Home page two-column responsive grid ────────────────── */
+/* Used for: register-mode selector, tips cards */
+.home-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+/* ── Mobile ──────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  /* Hide navbar tagline — not enough room next to ThemeToggle */
+  .nav-tagline {
+    display: none;
+  }
+
+  /* Stack two-column grids to single column */
+  .home-two-col {
+    grid-template-columns: 1fr;
+  }
+
+  /* Input card: tighter padding on small screens */
+  /* (handled by paddingLeft/Right: 16px on main already) */
+
+  /* Ensure textarea placeholder wraps gracefully */
+  .decision-input {
+    font-size: 14px !important;
+  }
+
+  /* Larger tap targets for all buttons on mobile */
+  .btn-ghost,
+  .btn-primary,
+  .btn-pushback {
+    min-height: 44px;
+  }
+
+  /* Theme toggle repositioning handled by existing fixed CSS */
+  /* Ensure it doesn't overlap the nav wordmark on very small screens */
+  .theme-toggle {
+    top: 12px;
+    right: 12px;
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 400px) {
+  /* Extra-small: slightly reduce wordmark size */
+  .nav-tagline {
+    display: none;
+  }
+}
