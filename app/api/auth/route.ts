@@ -6,6 +6,15 @@
 // NOTE: Uses signInWithOtp via the anon client so Supabase's email
 // delivery actually fires. admin.generateLink() only returns the URL
 // without sending the email — that's why mail was never arriving.
+//
+// Cross-browser session recovery (Sprint 6b fix):
+// The magic link's emailRedirectTo URL now carries the device_id and
+// up to 40 session IDs from the originating browser as query params.
+// When the user clicks the link in a different browser (email client,
+// mobile WebView, etc.), the callback page reads these from the URL
+// rather than from localStorage — which is empty in the new browser.
+// This allows link-sessions to reunite all prior anonymous decisions
+// with the newly authenticated account even across browser boundaries.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
@@ -13,7 +22,11 @@ import { createClient } from '@supabase/supabase-js'
 
 export async function POST(req: Request) {
   try {
-    const { email } = await req.json() as { email?: string }
+    const { email, deviceId, sessionIds } = await req.json() as {
+      email?:      string
+      deviceId?:   string       // quorum_device_id from the originating browser
+      sessionIds?: string[]     // up to 40 most-recent session IDs from localStorage
+    }
 
     if (!email || !email.includes('@')) {
       return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
@@ -33,10 +46,22 @@ export async function POST(req: Request) {
       ?? process.env.NEXT_PUBLIC_APP_URL
       ?? 'http://localhost:3000'
 
+    // ── Embed cross-browser recovery payload in the redirect URL ─────────────
+    // Supabase passes these params through to the callback URL intact.
+    // The callback page reads them and passes them to link-sessions, so
+    // the authenticated user's prior anonymous sessions are linked even
+    // when the link is clicked in a different browser (no localStorage).
+    const callbackUrl = new URL(`${origin}/auth/callback`)
+    if (deviceId)               callbackUrl.searchParams.set('xd', deviceId)
+    if (sessionIds?.length) {
+      // Send up to 40 IDs — URL length stays well under 2KB
+      callbackUrl.searchParams.set('xs', sessionIds.slice(0, 40).join(','))
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email: email.toLowerCase().trim(),
       options: {
-        emailRedirectTo: `${origin}/auth/callback`,
+        emailRedirectTo: callbackUrl.toString(),
         shouldCreateUser: true,
       },
     })
@@ -46,7 +71,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to send magic link' }, { status: 500 })
     }
 
-    console.log(`[Auth] Magic link sent to ${email}`)
+    console.log(`[Auth] Magic link sent to ${email} with ${sessionIds?.length ?? 0} session IDs and deviceId=${deviceId ?? 'none'}`)
     return NextResponse.json({ status: 'ok', message: 'Magic link sent' })
 
   } catch (err) {
