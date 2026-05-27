@@ -30,11 +30,22 @@ export default function RootLayout({
             `,
           }}
         />
-        {/* ── Typography: Cormorant Garamond (display) · DM Mono (labels) · Inter (body) ── */}
+        {/*
+          ── Typography stack ──────────────────────────────────────
+          Display  : Cormorant Garamond — editorial serif, counsel gravitas
+          Body     : DM Sans — humanist geometric, optical-size axis,
+                     warmer than Inter on dark backgrounds, same DM family
+                     as DM Mono → cohesive type system
+          Mono     : DM Mono — labels, tags, nav, data
+          ─────────────────────────────────────────────────────────
+          DM Sans loaded as a variable font (opsz 9–40, wght 300–700)
+          covering regular + italic in a single file — faster than
+          the 8 static Inter files previously used.
+        */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=DM+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&display=swap"
           rel="stylesheet"
         />
       </head>
