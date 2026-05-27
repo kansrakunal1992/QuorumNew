@@ -93,9 +93,6 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [examinerContextByPersona, setExaminerContextByPersona] = useState<Record<string, string>>({})
 
   // New flow: personas fire AFTER examiner, not before.
-  // examinerSubmitted gates canStream on all PersonaPanels.
-  // examinerInitialContext carries C0 + rule answers into each persona's initial API call.
-  // synthExaminerContext carries all answers into the synthesis message.
   const [examinerSubmitted,      setExaminerSubmitted]      = useState(false)
   const [examinerInitialContext, setExaminerInitialContext] = useState<Record<string, string>>({})
   const [synthExaminerContext,   setSynthExaminerContext]   = useState<string | undefined>(undefined)
@@ -103,8 +100,8 @@ export default function SessionView({ session: initialSession, initialMessages =
   // Sprint 11b: rule engine state
   const [ruleMode,          setRuleMode]          = useState<RuleMode>(null)
   const [redirectBlocked,   setRedirectBlocked]   = useState(false)
-  const [redirectQuestion,  setRedirectQuestion]  = useState<string | undefined>(undefined) // Sprint 16b: R1 question for banner
-  const [examinerDismissed, setExaminerDismissed] = useState(false)                         // auto-closes ExaminerPanel on override
+  const [redirectQuestion,  setRedirectQuestion]  = useState<string | undefined>(undefined)
+  const [examinerDismissed, setExaminerDismissed] = useState(false)
 
   // Sprint 5: structural context
   const [structuralContext, setStructuralContext] = useState<string | null>(null)
@@ -114,21 +111,20 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [synthesisStreaming,  setSynthesisStreaming]  = useState(false)
   const [synthesisDone,       setSynthesisDone]       = useState(false)
 
-  // Dynamic grid order — computed from ontology, applied after all 6 personas complete (no animation)
+  // Dynamic grid order
   const [orderedPersonaKeys, setOrderedPersonaKeys] = useState<PersonaKey[]>([...PERSONA_ORDER])
-  const [gridReordered,      setGridReordered]      = useState(false)  // shows "Ranked by relevance" label
-  const [labelText,          setLabelText]          = useState('')     // typewriter text for relevance label
-  const pendingOrderRef      = useRef<PersonaKey[] | null>(null)  // holds computed order until all 6 done
+  const [gridReordered,      setGridReordered]      = useState(false)
+  const [labelText,          setLabelText]          = useState('')
+  const pendingOrderRef      = useRef<PersonaKey[] | null>(null)
   const allPersonasDoneRef   = useRef(false)
-  const examinerSubmittedRef = useRef(false)  // true once user skips or submits examiner
-  // Sprint 21: user style cue — fetched once on mount, used to seed persona order baseline
+  const examinerSubmittedRef = useRef(false)
   const styleCueRef          = useRef<string | null>(null)
 
   // ── FLIP animation refs ──────────────────────────────────────────────────
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const snapRef  = useRef<Record<string, DOMRect>>({})
 
-  // FLIP — Play step: fires after React commits the new DOM order
+  // FLIP — Play step
   useLayoutEffect(() => {
     const snap = snapRef.current
     if (Object.keys(snap).length === 0) return
@@ -142,13 +138,11 @@ export default function SessionView({ session: initialSession, initialMessages =
       const oldRect = snap[key]
       const dx = oldRect.left - newRect.left
       const dy = oldRect.top  - newRect.top
-      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue   // didn't actually move
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue
 
-      // Invert: jump card back to old visual position (no transition)
       el.style.transition = 'none'
       el.style.transform  = `translate(${dx}px, ${dy}px)`
 
-      // Play: next frame → clear transform with transition → card glides to real position
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           el.style.transition = `transform ${DURATION}ms ${EASING}`
@@ -157,7 +151,6 @@ export default function SessionView({ session: initialSession, initialMessages =
       })
     }
 
-    // Cleanup transforms after animation finishes
     const cleanup = setTimeout(() => {
       for (const el of Object.values(cardRefs.current)) {
         if (el) { el.style.transition = ''; el.style.transform = '' }
@@ -168,20 +161,16 @@ export default function SessionView({ session: initialSession, initialMessages =
     return () => clearTimeout(cleanup)
   }, [orderedPersonaKeys])
 
-  // applyOrderWithFlip — snapshot first, then update state
   const applyOrderWithFlip = useCallback((newOrder: PersonaKey[]) => {
-    // FIRST: snapshot current card positions before React re-renders
     const snap: Record<string, DOMRect> = {}
     for (const [key, el] of Object.entries(cardRefs.current)) {
       if (el) snap[key] = el.getBoundingClientRect()
     }
     snapRef.current = snap
-    // State update → React re-renders → useLayoutEffect fires (Play step)
     setOrderedPersonaKeys(newOrder)
     setGridReordered(true)
   }, [])
 
-  // Typewriter effect for "Ranked by relevance" label — fires once when gridReordered flips true
   const LABEL_FULL = 'Ranked by relevance to your decision \u2192'
   useEffect(() => {
     if (!gridReordered) return
@@ -196,9 +185,6 @@ export default function SessionView({ session: initialSession, initialMessages =
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridReordered])
 
-  // Sprint 21: Fetch style_cue once on mount — populates styleCueRef for computePersonaOrder.
-  // Fast DB read; always resolves before ontology is ready (ontology can take up to 24s).
-  // Silent on failure — style calibration is non-critical to session flow.
   useEffect(() => {
     async function fetchStyleCue() {
       try {
@@ -212,7 +198,7 @@ export default function SessionView({ session: initialSession, initialMessages =
         const { style_cue } = await res.json()
         if (style_cue) styleCueRef.current = style_cue
       } catch {
-        // Non-critical — persona order falls back to rule/dim signals only
+        // Non-critical
       }
     }
     fetchStyleCue()
@@ -232,17 +218,14 @@ export default function SessionView({ session: initialSession, initialMessages =
       })
         .then(r => r.json())
         .then(data => {
-          // Store computed order — applied after all 6 personas complete (no animation)
           if (data.ontology_ready && !pendingOrderRef.current) {
             setOntologyReady(true)
             const ordered = computePersonaOrder(
               data.rule_engine_result ?? null,
               data.ontology_vector    ?? null,
-              styleCueRef.current,       // Sprint 21: user style baseline
+              styleCueRef.current,
             )
             pendingOrderRef.current = ordered as PersonaKey[]
-            // If all personas done AND examiner already submitted, animate immediately
-            // (ontology arrived late — slow network). Otherwise wait for examiner submit.
             if (allPersonasDoneRef.current && examinerSubmittedRef.current) {
               const isDifferent = ordered.some((k: string, i: number) => k !== PERSONA_ORDER[i])
               if (isDifferent) {
@@ -273,12 +256,10 @@ export default function SessionView({ session: initialSession, initialMessages =
       if (isUpdate) setSynthesisVersion(v => v + 1)
       const next = { ...prev, [personaKey]: content }
 
-      // If this is the 6th persona completing and we already have a pending order, apply it now
       if (!isUpdate && Object.keys(next).length >= PERSONA_ORDER.length) {
         allPersonasDoneRef.current = true
         const pending = pendingOrderRef.current
         if (pending && examinerSubmittedRef.current) {
-          // Examiner already submitted — animate now
           const isDifferent = pending.some((k, i) => k !== PERSONA_ORDER[i])
           if (isDifferent) {
             setTimeout(() => {
@@ -289,8 +270,6 @@ export default function SessionView({ session: initialSession, initialMessages =
             pendingOrderRef.current = null
           }
         }
-        // If examiner not yet submitted, leave pendingOrderRef in place —
-        // handleExaminerComplete will pick it up and animate then
       }
       return next
     })
@@ -298,31 +277,27 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   const allPersonasDone = Object.keys(completedResponses).length >= PERSONA_ORDER.length
 
-  // Sprint 11b: receives rule_mode from ExaminerPanel
   const handleExaminerComplete = useCallback(
     (
       responses:       Array<{ question_text: string; response_text: string | null; gap: string }>,
       mode:            RuleMode,
-      redirectQuestion?: string   // Sprint 16b: R1 question text for SynthesisCard banner
+      redirectQuestion?: string
     ) => {
       setRuleMode(mode)
 
-      // REDIRECT — synthesis must never fire; allow personas to stream as dim provisional content
       if (mode === 'REDIRECT') {
         setRedirectBlocked(true)
         if (redirectQuestion) setRedirectQuestion(redirectQuestion)
-        setExaminerReady(false)     // synthesis gate stays closed
-        setExaminerSubmitted(true)  // allow personas to fire (shown dim at 55% opacity)
+        setExaminerReady(false)
+        setExaminerSubmitted(true)
         examinerSubmittedRef.current = true
         return
       }
 
-      // GATE or OPEN — normal path (includes skip: OPEN with empty responses)
       examinerSubmittedRef.current = true
       setExaminerSubmitted(true)
       setExaminerReady(true)
 
-      // Trigger card shuffle now that user has submitted / skipped the examiner
       const pending = pendingOrderRef.current
       if (pending && allPersonasDoneRef.current) {
         const isDifferent = pending.some((k, i) => k !== PERSONA_ORDER[i])
@@ -338,7 +313,6 @@ export default function SessionView({ session: initialSession, initialMessages =
 
       if (!responses.length) return
 
-      // ── Build synthesis examiner context (all answered questions) ──────────
       const allAnswered = responses.filter(r => r.response_text?.trim())
       if (allAnswered.length > 0) {
         setSynthExaminerContext(
@@ -346,10 +320,6 @@ export default function SessionView({ session: initialSession, initialMessages =
         )
       }
 
-      // ── Build per-persona initial context ──────────────────────────────────
-      // C0 (JTBD intent) → injected into ALL 6 personas as a framing block.
-      // Rule answers → routed to the most relevant persona only.
-      // This replaces the old supplemental-update path for initial answers.
       const c0Responses = responses.filter(r => r.gap === 'C0 — CONTEXT' && r.response_text?.trim())
       const c0Block = c0Responses.length > 0
         ? `USER STATED INTENT:\nQ: ${c0Responses[0].question_text}\nA: ${c0Responses[0].response_text}\n\n`
@@ -368,7 +338,6 @@ export default function SessionView({ session: initialSession, initialMessages =
         const combined = (c0Block + ruleBlock).trim()
         if (combined) initialCtx[pk] = combined
       }
-      // If we have only C0 (no rule routing), make sure all personas still get it
       if (c0Block.trim() && Object.keys(initialCtx).length < PERSONA_ORDER.length) {
         for (const pk of PERSONA_ORDER) {
           if (!initialCtx[pk]) initialCtx[pk] = c0Block.trim()
@@ -377,34 +346,24 @@ export default function SessionView({ session: initialSession, initialMessages =
       if (Object.keys(initialCtx).length > 0) {
         setExaminerInitialContext(initialCtx)
       }
-
-      // Note: examinerContextByPersona is still used for pushback fanout (handleShareContext).
-      // Rule answers no longer trigger supplemental updates — they're baked into the initial call.
     },
     []
   )
 
-  // Sprint 16b Fix 4b: track which personas still have a share-context update in flight
-  // When the set empties, all 5 updated responses are in completedResponses — fire synthesis re-run
   const shareContextPendingRef = useRef<Set<string>>(new Set())
 
   const handleExaminerUpdateComplete = useCallback((personaKey: string) => {
-    if (!shareContextPendingRef.current.has(personaKey)) return   // not a share-context update
+    if (!shareContextPendingRef.current.has(personaKey)) return
     shareContextPendingRef.current.delete(personaKey)
     if (shareContextPendingRef.current.size === 0) {
-      // All 5 updates done — bump synthesisVersion to re-run Council synthesis
       setSynthesisVersion(v => v + 1)
     }
   }, [])
 
-  // Sprint 16b Fix 4: fan pushback context out to all other personas via examinerContext
   const handleShareContext = useCallback((originPersonaKey: string, text: string) => {
     const examinerMsg = `The user submitted the following new information while challenging another advisor. Review it and update your position if it changes your assessment:\n\n"${text}"\n\nProvide a concise update (under 200 words). If this materially changes your view, say so directly. If it confirms your original analysis, say that — and why.`
-
-    // Mark all non-origin personas as pending — synthesis re-runs when all 5 complete
     const pendingKeys = PERSONA_ORDER.filter(k => k !== originPersonaKey)
     shareContextPendingRef.current = new Set(pendingKeys)
-
     setExaminerContextByPersona(prev => {
       const next = { ...prev }
       for (const key of pendingKeys) {
@@ -415,7 +374,6 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [])
 
   const handleOverrideRedirect = useCallback(async () => {
-    // Non-blocking log — writes user_overrode_redirect: true into raw_ontology_json
     fetch('/api/ontology', {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -424,12 +382,10 @@ export default function SessionView({ session: initialSession, initialMessages =
 
     setRedirectBlocked(false)
     setRuleMode(null)
-    setExaminerReady(true)   // synthesis gate opens — personas are already done
-    setExaminerDismissed(true) // auto-closes ExaminerPanel — no need to click "Understood — dismiss"
-    // Sprint 21 fix: mark examiner as submitted so persona reorder can fire.
-    // handleExaminerComplete returned early on REDIRECT without setting this ref.
+    setExaminerReady(true)
+    setExaminerDismissed(true)
     examinerSubmittedRef.current = true
-    setExaminerSubmitted(true)   // ensure state is consistent with ref
+    setExaminerSubmitted(true)
     const pending = pendingOrderRef.current
     if (pending && allPersonasDoneRef.current) {
       const isDifferent = pending.some((k, i) => k !== PERSONA_ORDER[i])
@@ -489,8 +445,8 @@ export default function SessionView({ session: initialSession, initialMessages =
           decision_text: reDecision.trim(),
           context_text:  reContext.trim() || null,
           register_mode: reRegisterMode,
-          user_id:       session.user_id   ?? null,  // ← carry auth across reanalyze
-          device_id:     getOrCreateDeviceId(),       // ← device fallback, same as home page
+          user_id:       session.user_id   ?? null,
+          device_id:     getOrCreateDeviceId(),
         }),
       })
       if (!res.ok) throw new Error()
@@ -511,19 +467,16 @@ export default function SessionView({ session: initialSession, initialMessages =
       setSaved(false)
       setDrawerOpen(false)
       setReanalyzing(false)
-      // Sprint 11b: reset rule engine state on reanalyze
       setRuleMode(null)
       setRedirectBlocked(false)
       setRedirectQuestion(undefined)
       setExaminerDismissed(false)
-      // Reset grid order for fresh ontology signals on new session
       setOrderedPersonaKeys([...PERSONA_ORDER])
       setGridReordered(false)
       setLabelText('')
       allPersonasDoneRef.current = false
       pendingOrderRef.current = null
       examinerSubmittedRef.current = false
-      // Reset council status bar
       setOntologyReady(false)
       setSynthesisStreaming(false)
       setSynthesisDone(false)
@@ -534,247 +487,634 @@ export default function SessionView({ session: initialSession, initialMessages =
     }
   }, [reDecision, reContext, reRegisterMode])
 
+  // ── Scroll state for navbar shadow ───────────────────────────────────────
+  const [navScrolled, setNavScrolled] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setNavScrolled(window.scrollY > 32)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   return (
-    <div className="min-h-screen px-4 py-8" style={{ background: 'var(--bg-void)' }}>
+    <>
+      {/* ── Entrance animation keyframes (CSS-only, no logic) ── */}
+      <style>{`
+        @keyframes sessionFadeIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .sv-fade { animation: sessionFadeIn 400ms ease-out both; }
+        .sv-fade-1 { animation-delay: 0ms; }
+        .sv-fade-2 { animation-delay: 120ms; }
+        .sv-fade-3 { animation-delay: 240ms; }
+        .sv-fade-4 { animation-delay: 360ms; }
 
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto mb-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <div className="flex items-center gap-3 mb-2">
-              <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--gold)', textTransform: 'uppercase' }}>
-                Quorum
-              </span>
-              <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'var(--bg-inset)', color: 'var(--text-4)', border: '1px solid var(--border-dim)' }}>
-                Session active
-              </span>
-            </div>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-              The Decision
-            </p>
-            <p style={{ fontSize: 13.5, lineHeight: 1.65, color: 'var(--text-2)', maxWidth: 640, ...(decisionExpanded ? {} : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
-              {session.decision_text}
-            </p>
-            {session.decision_text.length > 220 && (
-              <button
-                onClick={() => setDecisionExpanded(v => !v)}
-                style={{ marginTop: 4, fontSize: 11.5, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, letterSpacing: '0.02em' }}
-              >
-                {decisionExpanded ? '↑ See less' : '↓ See more'}
-              </button>
-            )}
-          </div>
+        /* Drawer slide-up */
+        @keyframes drawerSlideUp {
+          from { transform: translateY(100%); opacity: 0; }
+          to   { transform: translateY(0);    opacity: 1; }
+        }
+        .sv-drawer { animation: drawerSlideUp 280ms cubic-bezier(0.32, 0.72, 0, 1) both; }
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexShrink: 0, flexWrap: 'wrap' }}>
-            <button className="btn-ghost" style={{ fontSize: 13, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={handleNewDecision}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              New Decision
-            </button>
-            <button className="btn-ghost" style={{ fontSize: 13, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        /* Session navbar */
+        .sv-navbar {
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          z-index: 8500;
+          display: flex;
+          align-items: center;
+          height: 56px;
+          padding: 0 20px;
+          background: var(--bg-deep);
+          border-bottom: 1px solid var(--border-dim);
+          transition: box-shadow 0.3s ease, border-color 0.3s ease;
+          gap: 16px;
+        }
+        .sv-navbar.scrolled {
+          box-shadow: 0 2px 20px rgba(0,0,0,0.35);
+          border-bottom-color: var(--border-mid);
+        }
+        [data-theme="light"] .sv-navbar.scrolled {
+          box-shadow: 0 2px 12px rgba(6,13,28,0.10);
+        }
+        .sv-navbar-wordmark {
+          flex-shrink: 0;
+          font-family: var(--font-mono);
+          font-size: 13px;
+          font-weight: 600;
+          letter-spacing: 0.22em;
+          text-transform: uppercase;
+          color: var(--gold);
+          text-decoration: none;
+        }
+        .sv-navbar-divider {
+          width: 1px;
+          height: 18px;
+          background: var(--border-dim);
+          flex-shrink: 0;
+        }
+        .sv-navbar-decision {
+          flex: 1;
+          min-width: 0;
+          font-size: 12px;
+          color: var(--text-3);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          font-family: var(--font-body);
+          letter-spacing: -0.005em;
+        }
+        .sv-navbar-badge {
+          flex-shrink: 0;
+          font-size: 10px;
+          font-family: var(--font-mono);
+          letter-spacing: 0.09em;
+          text-transform: uppercase;
+          color: var(--text-4);
+          padding: 3px 9px;
+          border-radius: 20px;
+          background: var(--bg-inset);
+          border: 1px solid var(--border-dim);
+          white-space: nowrap;
+        }
+        .sv-navbar-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+          /* Clear ThemeToggle on the right — it's at right: 20px, ~120px wide */
+          margin-right: 136px;
+        }
+        /* Hide decision text in navbar on small screens */
+        @media (max-width: 600px) {
+          .sv-navbar-decision { display: none; }
+          .sv-navbar-divider  { display: none; }
+          .sv-navbar-actions  { margin-right: 108px; }
+          .sv-navbar { padding: 0 12px; }
+        }
+
+        /* Decision hero card */
+        .sv-hero {
+          background: var(--bg-card);
+          border: 1px solid var(--border-mid);
+          border-radius: 18px;
+          box-shadow: var(--shadow-card);
+          padding: 24px 28px 20px;
+          position: relative;
+          overflow: hidden;
+        }
+        .sv-hero::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+          pointer-events: none;
+        }
+        @media (max-width: 600px) {
+          .sv-hero { padding: 18px 16px 16px; }
+        }
+        .sv-hero-decision {
+          font-family: var(--font-display);
+          font-size: clamp(17px, 2.2vw, 22px);
+          font-weight: 500;
+          line-height: 1.45;
+          letter-spacing: -0.015em;
+          color: var(--text-1);
+        }
+        .sv-hero-context {
+          font-size: 12.5px;
+          line-height: 1.65;
+          color: var(--text-3);
+        }
+
+        /* Bottom action tray */
+        .sv-tray {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .sv-tray-left { display: flex; gap: 8px; flex-wrap: wrap; }
+        @media (max-width: 480px) {
+          .sv-tray { flex-direction: column; align-items: stretch; }
+          .sv-tray-left { justify-content: stretch; }
+          .sv-tray-left .btn-ghost { flex: 1; justify-content: center; }
+        }
+
+        /* Register mode option buttons (reanalyze drawer) */
+        .sv-mode-btn {
+          padding: 11px 14px;
+          border-radius: 10px;
+          text-align: left;
+          cursor: pointer;
+          font-family: var(--font-body);
+          transition: border-color 0.15s, background 0.15s;
+          border: 1px solid var(--border-dim);
+          background: transparent;
+        }
+        .sv-mode-btn.active-analytical {
+          border-color: var(--gold);
+          background: var(--gold-glow);
+        }
+        .sv-mode-btn.active-clarification {
+          border-color: var(--green-text);
+          background: rgba(74,222,128,0.07);
+        }
+        [data-theme="light"] .sv-mode-btn.active-clarification {
+          background: var(--green-soft);
+        }
+      `}</style>
+
+      <div style={{ minHeight: '100vh', background: 'var(--bg-void)' }}>
+
+        {/* ── Fixed Session Navbar ──────────────────────────────────── */}
+        <nav className={`sv-navbar${navScrolled ? ' scrolled' : ''}`}>
+          <span className="sv-navbar-wordmark">Quorum</span>
+          <div className="sv-navbar-divider" />
+          <span className="sv-navbar-decision">{session.decision_text}</span>
+          <span className="sv-navbar-badge">Session active</span>
+          <div className="sv-navbar-actions">
+            <button
+              className="btn-ghost"
+              style={{ fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
                 <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
               </svg>
-              Reanalyze
+              <span className="nav-tagline" style={{ display: 'inline', margin: 0, fontSize: 12, letterSpacing: '0.04em', textTransform: 'none', color: 'inherit' }}>Reanalyze</span>
             </button>
-            <button className="btn-primary" style={{ fontSize: 13, padding: '10px 18px' }} onClick={handleSaveRecord} disabled={saving}>
-              {saving ? 'Saving…' : 'Save to Record'}
-            </button>
-          </div>
-        </div>
-
-        {session.context_text && (
-          <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)' }}>
-            <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, ...(contextExpanded ? {} : { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
-              <span style={{ color: 'var(--text-3)' }}>Context · </span>{session.context_text}
-            </p>
-            {session.context_text.length > 120 && (
-              <button
-                onClick={() => setContextExpanded(v => !v)}
-                style={{ marginTop: 3, fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, letterSpacing: '0.02em' }}
-              >
-                {contextExpanded ? '↑ See less' : '↓ See more'}
-              </button>
-            )}
-          </div>
-        )}
-        <p style={{ marginTop: 8, fontSize: 11, color: 'var(--text-4)' }}>
-          {session.user_id
-            ? 'This session is linked to your account and included in your decision memory.'
-            : 'Sessions are private by URL. No account or identity is linked to this decision.'
-          }
-        </p>
-      </div>
-
-      <TTSProvider>
-      <div className="max-w-7xl mx-auto">
-
-        {/* ── Council Status Bar ── */}
-        <CouncilStatusBar
-          key={`statusbar-${sessionKey}`}
-          personasComplete={Object.keys(completedResponses).length}
-          totalPersonas={PERSONA_ORDER.length}
-          ontologyReady={ontologyReady}
-          examinerActive={ontologyReady && !examinerReady && !redirectBlocked}
-          examinerDone={examinerReady || (redirectBlocked && examinerSubmitted)}
-          synthesisStreaming={synthesisStreaming}
-          synthesisDone={synthesisDone}
-        />
-
-        {/* ── 1. Council Synthesis — top, locked until examiner submitted ── */}
-        <SynthesisCard
-          key={`synthesis-${sessionKey}`}
-          sessionId={session.id}
-          decisionText={session.decision_text}
-          contextText={session.context_text ?? undefined}
-          personaResponses={completedResponses}
-          totalPersonas={PERSONA_ORDER.length}
-          version={synthesisVersion}
-          registerMode={registerMode}
-          examinerReady={examinerReady}
-          redirectBlocked={redirectBlocked}
-          redirectQuestion={redirectQuestion}
-          onOverrideRedirect={handleOverrideRedirect}
-          onSynthesisStart={() => setSynthesisStreaming(true)}
-          onSynthesisComplete={() => { setSynthesisStreaming(false); setSynthesisDone(true) }}
-          examinerContext={synthExaminerContext}
-        />
-
-        {/* ── 2. Examiner — appears immediately on session load, gates persona firing ── */}
-        <ExaminerPanel
-          key={`examiner-${sessionKey}`}
-          sessionId={session.id}
-          visible={true}
-          onComplete={handleExaminerComplete}
-          forceDismissed={examinerDismissed}
-        />
-
-        {/* ── 3. "Ranked by relevance" label — typewriter, above persona cards ── */}
-        {gridReordered && !redirectBlocked && (
-          <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0 10px' }}>
-            <span className="relevance-label">
-              {labelText}
-              {/* blinking cursor while typing */}
-              {labelText.length < LABEL_FULL.length && (
-                <span style={{ opacity: 1, animation: 'blink 0.7s step-end infinite', marginLeft: 1 }}>|</span>
-              )}
-            </span>
-          </div>
-        )}
-
-        {/* ── 4. Six persona panels ── */}
-        {/* Sprint 11b: dim at 55% opacity on REDIRECT — still stream, visually provisional */}
-        <div
-          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-          style={{
-            opacity:       redirectBlocked ? 0.55 : 1,
-            pointerEvents: redirectBlocked ? 'none' : 'auto',
-          }}
-        >
-          {orderedPersonaKeys.map((key) => (
-            <div
-              key={`${key}-${sessionKey}`}
-              ref={el => { cardRefs.current[key] = el }}
-              style={{ willChange: 'transform' }}
+            <button
+              className="btn-primary"
+              style={{ fontSize: 12, padding: '9px 16px' }}
+              onClick={handleSaveRecord}
+              disabled={saving}
             >
-              <PersonaPanel
-                persona={PERSONAS[key]}
-                sessionId={session.id}
-                decisionText={session.decision_text}
-                contextText={session.context_text ?? undefined}
-                registerMode={registerMode}
-                onComplete={handlePersonaComplete}
-                examinerContext={examinerContextByPersona[key]}
-                structuralContext={structuralContext ?? undefined}
-                onShareContext={(text) => handleShareContext(key, text)}
-                onExaminerUpdateComplete={handleExaminerUpdateComplete}
-                initialContent={initialMessages[key]}
-                canStream={examinerSubmitted || !!initialMessages[key]}
-                initialExaminerContext={examinerInitialContext[key]}
-              />
-            </div>
-          ))}
-        </div>
-        </div>
-      </TTSProvider>
+              {saving ? 'Saving…' : 'Save Record'}
+            </button>
+          </div>
+        </nav>
 
-      {/* ── Bottom bar ── */}
-      <div style={{ maxWidth: '80rem', margin: '28px auto 0', display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button className="btn-ghost" style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={handleNewDecision}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          New Decision
-        </button>
-        <button className="btn-ghost" style={{ fontSize: 13, padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 7 }} onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
-            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-          </svg>
-          Reanalyze
-        </button>
-        <button className="btn-primary" style={{ fontSize: 13, padding: '11px 28px' }} onClick={handleSaveRecord} disabled={saving}>
-          {saving ? 'Saving…' : 'Save to Record'}
-        </button>
-      </div>
+        {/* ── Main content — padded below fixed navbar ──────────────── */}
+        <div style={{ paddingTop: 72, paddingBottom: 60, paddingLeft: 16, paddingRight: 16 }}>
+          <div style={{ maxWidth: '80rem', margin: '0 auto' }}>
 
-      {/* ── Reanalyze drawer ── */}
-      {drawerOpen && (
-        <>
-          <div onClick={() => setDrawerOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(2,4,10,0.78)', zIndex: 40 }} />
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50, background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderBottom: 'none', borderRadius: '18px 18px 0 0', padding: '28px 28px 40px', maxWidth: 760, margin: '0 auto' }}>
-            <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--border-mid)', margin: '0 auto 22px' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-              <div>
-                <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)', margin: 0 }}>Reanalyze</h2>
-                <p style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 3 }}>Edit your decision or add context — all six advisors re-run</p>
-              </div>
-              <button className="btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => setDrawerOpen(false)}>✕ Close</button>
-            </div>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6, fontWeight: 500 }}>Decision</label>
-            <textarea rows={5} value={reDecision} onChange={(e) => setReDecision(e.target.value)} style={{ fontSize: 13.5, marginBottom: 14 }} placeholder="Describe your decision…" />
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6, fontWeight: 500 }}>
-              Additional context <span style={{ color: 'var(--text-4)', fontWeight: 400 }}>(optional)</span>
-            </label>
-            <textarea rows={3} value={reContext} onChange={(e) => setReContext(e.target.value)} style={{ fontSize: 13, marginBottom: 18 }} placeholder="Add new information that has emerged…" />
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 8, fontWeight: 500 }}>
-              What are you looking for this time?
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
-              {([
-                { value: 'analytical',   icon: '⚔',  label: 'Challenge my thinking',        sub: 'Stress-test the decision' },
-                { value: 'clarification', icon: '🪞', label: 'Help me understand what I want', sub: 'Values and identity' },
-              ] as const).map(opt => (
+            {/* ── Decision Hero Card ────────────────────────────────── */}
+            <div className="sv-hero sv-fade sv-fade-1" style={{ marginBottom: 20 }}>
+              {/* Section label */}
+              <p style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color: 'var(--text-4)',
+                marginBottom: 10,
+              }}>
+                The Decision
+              </p>
+
+              {/* Decision text — display serif, prominent */}
+              <p
+                className="sv-hero-decision"
+                style={decisionExpanded ? {} : {
+                  display: '-webkit-box',
+                  WebkitLineClamp: 4,
+                  WebkitBoxOrient: 'vertical' as const,
+                  overflow: 'hidden',
+                }}
+              >
+                {session.decision_text}
+              </p>
+              {session.decision_text.length > 220 && (
                 <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setReRegisterMode(opt.value)}
+                  onClick={() => setDecisionExpanded(v => !v)}
                   style={{
-                    padding: '10px 12px', borderRadius: 9, textAlign: 'left',
-                    cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-                    border: `1px solid ${reRegisterMode === opt.value ? (opt.value === 'analytical' ? 'var(--gold)' : '#4ade80') : 'var(--border-dim)'}`,
-                    background: reRegisterMode === opt.value ? (opt.value === 'analytical' ? 'rgba(201,168,76,0.1)' : 'rgba(74,222,128,0.08)') : 'transparent',
+                    marginTop: 6,
+                    fontSize: 11,
+                    color: 'var(--text-4)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontFamily: 'var(--font-mono)',
+                    letterSpacing: '0.05em',
                   }}
                 >
-                  <p style={{ fontSize: 12, fontWeight: 600, color: reRegisterMode === opt.value ? (opt.value === 'analytical' ? 'var(--gold)' : '#4ade80') : 'var(--text-2)', marginBottom: 2 }}>
-                    {opt.icon} {opt.label}
-                  </p>
-                  <p style={{ fontSize: 11, color: 'var(--text-4)' }}>{opt.sub}</p>
+                  {decisionExpanded ? '↑ Show less' : '↓ Show more'}
                 </button>
-              ))}
+              )}
+
+              {/* Context — below gold divider */}
+              {session.context_text && (
+                <>
+                  <div className="gold-rule" style={{ margin: '14px 0' }} />
+                  <p
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9.5,
+                      letterSpacing: '0.13em',
+                      textTransform: 'uppercase',
+                      color: 'var(--text-4)',
+                      marginBottom: 6,
+                    }}
+                  >
+                    Context
+                  </p>
+                  <p
+                    className="sv-hero-context"
+                    style={contextExpanded ? {} : {
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical' as const,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {session.context_text}
+                  </p>
+                  {session.context_text.length > 120 && (
+                    <button
+                      onClick={() => setContextExpanded(v => !v)}
+                      style={{
+                        marginTop: 4,
+                        fontSize: 11,
+                        color: 'var(--text-4)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontFamily: 'var(--font-mono)',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      {contextExpanded ? '↑ Show less' : '↓ Show more'}
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Privacy notice — footer inside hero card */}
+              <p style={{
+                marginTop: 14,
+                paddingTop: 12,
+                borderTop: '1px solid var(--border-dim)',
+                fontSize: 11,
+                color: 'var(--text-4)',
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: '0.04em',
+              }}>
+                {session.user_id
+                  ? 'Linked to your account · included in decision memory'
+                  : 'Private by URL · no account or identity linked'
+                }
+              </p>
             </div>
-            {reanalyzeError && <p style={{ fontSize: 12, color: '#e05050', marginBottom: 12 }}>{reanalyzeError}</p>}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button className="btn-primary" style={{ flex: 1, fontSize: 14, padding: '13px' }} onClick={handleReanalyze} disabled={reanalyzing || !reDecision.trim()}>
-                {reanalyzing ? 'Convening new Council…' : 'Convene New Council'}
-              </button>
-              <button className="btn-ghost" style={{ padding: '13px 20px', fontSize: 13 }} onClick={() => setDrawerOpen(false)}>Cancel</button>
+
+            <TTSProvider>
+              {/* ── Council Status Bar ── */}
+              <div className="sv-fade sv-fade-1">
+                <CouncilStatusBar
+                  key={`statusbar-${sessionKey}`}
+                  personasComplete={Object.keys(completedResponses).length}
+                  totalPersonas={PERSONA_ORDER.length}
+                  ontologyReady={ontologyReady}
+                  examinerActive={ontologyReady && !examinerReady && !redirectBlocked}
+                  examinerDone={examinerReady || (redirectBlocked && examinerSubmitted)}
+                  synthesisStreaming={synthesisStreaming}
+                  synthesisDone={synthesisDone}
+                />
+              </div>
+
+              {/* ── 1. Council Synthesis ── */}
+              <div className="sv-fade sv-fade-2">
+                <SynthesisCard
+                  key={`synthesis-${sessionKey}`}
+                  sessionId={session.id}
+                  decisionText={session.decision_text}
+                  contextText={session.context_text ?? undefined}
+                  personaResponses={completedResponses}
+                  totalPersonas={PERSONA_ORDER.length}
+                  version={synthesisVersion}
+                  registerMode={registerMode}
+                  examinerReady={examinerReady}
+                  redirectBlocked={redirectBlocked}
+                  redirectQuestion={redirectQuestion}
+                  onOverrideRedirect={handleOverrideRedirect}
+                  onSynthesisStart={() => setSynthesisStreaming(true)}
+                  onSynthesisComplete={() => { setSynthesisStreaming(false); setSynthesisDone(true) }}
+                  examinerContext={synthExaminerContext}
+                />
+              </div>
+
+              {/* ── 2. Examiner ── */}
+              <div className="sv-fade sv-fade-2">
+                <ExaminerPanel
+                  key={`examiner-${sessionKey}`}
+                  sessionId={session.id}
+                  visible={true}
+                  onComplete={handleExaminerComplete}
+                  forceDismissed={examinerDismissed}
+                />
+              </div>
+
+              {/* ── 3. Relevance label ── */}
+              {gridReordered && !redirectBlocked && (
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0 12px' }}>
+                  <span className="relevance-label">
+                    {labelText}
+                    {labelText.length < LABEL_FULL.length && (
+                      <span style={{ opacity: 1, animation: 'blink 0.7s step-end infinite', marginLeft: 1 }}>|</span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* ── 4. Six persona panels ── */}
+              <div
+                className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sv-fade sv-fade-3"
+                style={{
+                  paddingTop:    12,
+                  opacity:       redirectBlocked ? 0.55 : 1,
+                  pointerEvents: redirectBlocked ? 'none' : 'auto',
+                }}
+              >
+                {orderedPersonaKeys.map((key) => (
+                  <div
+                    key={`${key}-${sessionKey}`}
+                    ref={el => { cardRefs.current[key] = el }}
+                    style={{ willChange: 'transform' }}
+                  >
+                    <PersonaPanel
+                      persona={PERSONAS[key]}
+                      sessionId={session.id}
+                      decisionText={session.decision_text}
+                      contextText={session.context_text ?? undefined}
+                      registerMode={registerMode}
+                      onComplete={handlePersonaComplete}
+                      examinerContext={examinerContextByPersona[key]}
+                      structuralContext={structuralContext ?? undefined}
+                      onShareContext={(text) => handleShareContext(key, text)}
+                      onExaminerUpdateComplete={handleExaminerUpdateComplete}
+                      initialContent={initialMessages[key]}
+                      canStream={examinerSubmitted || !!initialMessages[key]}
+                      initialExaminerContext={examinerInitialContext[key]}
+                    />
+                  </div>
+                ))}
+              </div>
+            </TTSProvider>
+
+            {/* ── Bottom Action Tray ── */}
+            <div className="sv-fade sv-fade-4" style={{ marginTop: 44 }}>
+              <div className="gold-rule" style={{ marginBottom: 20 }} />
+              <div className="sv-tray">
+                <div className="sv-tray-left">
+                  <button
+                    className="btn-ghost"
+                    style={{ fontSize: 13, padding: '11px 18px', display: 'flex', alignItems: 'center', gap: 7, minHeight: 44 }}
+                    onClick={handleNewDecision}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    New Decision
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    style={{ fontSize: 13, padding: '11px 18px', display: 'flex', alignItems: 'center', gap: 7, minHeight: 44 }}
+                    onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                    </svg>
+                    Reanalyze
+                  </button>
+                </div>
+                <button
+                  className="btn-primary"
+                  style={{ fontSize: 13, padding: '12px 28px', minHeight: 44 }}
+                  onClick={handleSaveRecord}
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : 'Save to Record'}
+                </button>
+              </div>
             </div>
+
           </div>
-        </>
-      )}
-    </div>
+        </div>
+
+        {/* ── Reanalyze Drawer ── */}
+        {drawerOpen && (
+          <>
+            <div
+              onClick={() => setDrawerOpen(false)}
+              style={{
+                position: 'fixed', inset: 0,
+                background: 'rgba(2,4,10,0.72)',
+                zIndex: 9100,
+                backdropFilter: 'blur(2px)',
+                WebkitBackdropFilter: 'blur(2px)',
+              }}
+            />
+            <div
+              className="sv-drawer"
+              style={{
+                position: 'fixed', bottom: 0, left: 0, right: 0,
+                zIndex: 9200,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-mid)',
+                borderBottom: 'none',
+                borderRadius: '18px 18px 0 0',
+                padding: '28px 28px 44px',
+                maxWidth: 760,
+                margin: '0 auto',
+                boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
+              }}
+            >
+              {/* Drag handle */}
+              <div style={{
+                width: 36, height: 4, borderRadius: 2,
+                background: 'var(--border-mid)',
+                margin: '0 auto 24px',
+              }} />
+
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22, gap: 12 }}>
+                <div>
+                  <h2 style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: 20,
+                    fontWeight: 500,
+                    color: 'var(--text-1)',
+                    margin: 0,
+                    letterSpacing: '-0.015em',
+                  }}>
+                    Reanalyze
+                  </h2>
+                  <p style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 4, fontStyle: 'italic' }}>
+                    Edit the decision or add new context — all six advisors re-run
+                  </p>
+                </div>
+                <button
+                  className="btn-ghost"
+                  style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0, minHeight: 36 }}
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  ✕ Close
+                </button>
+              </div>
+
+              {/* Decision textarea */}
+              <label style={{
+                display: 'block',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.13em',
+                textTransform: 'uppercase',
+                color: 'var(--text-4)',
+                marginBottom: 7,
+              }}>
+                Decision
+              </label>
+              <textarea
+                rows={5}
+                value={reDecision}
+                onChange={(e) => setReDecision(e.target.value)}
+                style={{ fontSize: 13.5, marginBottom: 16 }}
+                placeholder="Describe your decision…"
+              />
+
+              {/* Context textarea */}
+              <label style={{
+                display: 'block',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.13em',
+                textTransform: 'uppercase',
+                color: 'var(--text-4)',
+                marginBottom: 7,
+              }}>
+                Additional context{' '}
+                <span style={{ color: 'var(--text-4)', textTransform: 'none', letterSpacing: '0.02em', opacity: 0.7 }}>(optional)</span>
+              </label>
+              <textarea
+                rows={3}
+                value={reContext}
+                onChange={(e) => setReContext(e.target.value)}
+                style={{ fontSize: 13, marginBottom: 20 }}
+                placeholder="Add new information that has emerged…"
+              />
+
+              {/* Register mode */}
+              <label style={{
+                display: 'block',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.13em',
+                textTransform: 'uppercase',
+                color: 'var(--text-4)',
+                marginBottom: 10,
+              }}>
+                What are you looking for this time?
+              </label>
+              <div className="home-two-col" style={{ gap: 8, marginBottom: 20 }}>
+                {([
+                  { value: 'analytical',    icon: '⚔',  label: 'Challenge my thinking',        sub: 'Stress-test the decision' },
+                  { value: 'clarification', icon: '🪞', label: 'Help me understand what I want', sub: 'Values and identity' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setReRegisterMode(opt.value)}
+                    className={`sv-mode-btn${reRegisterMode === opt.value ? ` active-${opt.value}` : ''}`}
+                    style={{ minHeight: 44 }}
+                  >
+                    <p style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: reRegisterMode === opt.value
+                        ? (opt.value === 'analytical' ? 'var(--gold)' : 'var(--green-text)')
+                        : 'var(--text-2)',
+                      marginBottom: 3,
+                    }}>
+                      {opt.icon} {opt.label}
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic' }}>{opt.sub}</p>
+                  </button>
+                ))}
+              </div>
+
+              {reanalyzeError && (
+                <p style={{ fontSize: 12, color: 'var(--error)', marginBottom: 12 }}>
+                  {reanalyzeError}
+                </p>
+              )}
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="btn-primary"
+                  style={{ flex: 1, fontSize: 14, padding: '13px', minHeight: 48 }}
+                  onClick={handleReanalyze}
+                  disabled={reanalyzing || !reDecision.trim()}
+                >
+                  {reanalyzing ? 'Convening new Council…' : 'Convene New Council'}
+                </button>
+                <button
+                  className="btn-ghost"
+                  style={{ padding: '13px 20px', fontSize: 13, minHeight: 48 }}
+                  onClick={() => setDrawerOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </>
   )
 }
