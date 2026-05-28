@@ -102,8 +102,9 @@ export default function Home() {
   const [sessions,    setSessions]    = useState<SessionSummary[]>([])
   const [loadingHist, setLoadingHist] = useState(false)
   const [activeTab,   setActiveTab]   = useState<'all'|'pending'|'decided'>('all')
-  const [authToken,   setAuthToken]   = useState<string | null>(null)
-  const [inputGlowing,setInputGlowing]= useState(false)
+  const [authToken,    setAuthToken]    = useState<string | null>(null)
+  const [inputGlowing, setInputGlowing] = useState(false)
+  const [mirrorUnlocked, setMirrorUnlocked] = useState(false)
 
   // ── UI state (new) ────────────────────────────────────────
   // Tips open: true on first visit, persisted thereafter
@@ -115,7 +116,8 @@ export default function Home() {
     } catch { return false }
   })
   const [navScrolled,    setNavScrolled]    = useState(false)
-  const [historyShowAll, setHistoryShowAll] = useState(false)
+  const [historyShowAll,   setHistoryShowAll]   = useState(false)
+  const [inputRevealed,    setInputRevealed]    = useState(false)
   const HISTORY_PREVIEW = 5
 
   // ── Effects (all original effects preserved) ─────────────
@@ -146,6 +148,12 @@ export default function Home() {
         const { data: { session: authSession } } = await supabase.auth.getSession()
         const token = authSession?.access_token ?? null
         setAuthToken(token)
+        if (token) {
+          fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(d => { if (d?.gateState === 'unlocked') setMirrorUnlocked(true) })
+            .catch(() => {})
+        }
         if (authSession?.user?.email) {
           setUserEmail(authSession.user.email)
           try { localStorage.setItem('user_email', authSession.user.email) } catch { /* ignore */ }
@@ -316,7 +324,7 @@ export default function Home() {
               </p>
             </div>
             <button
-              onClick={() => textareaRef.current?.focus()}
+              onClick={() => { setInputRevealed(true); setTimeout(() => textareaRef.current?.focus(), 420) }}
               style={{
                 display:       'flex',
                 alignItems:    'center',
@@ -346,13 +354,48 @@ export default function Home() {
 
           {/* ── Input Card ──────────────────────────────── */}
           <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-mid)',
-            borderRadius: 18,
-            padding: '28px 24px 24px',
+            perspective: '1200px',
             marginBottom: 14,
-            boxShadow: 'var(--shadow-card)',
           }}>
+          <div style={{
+            position:      'relative',
+          }}>
+          {/* Back face — visible before flip */}
+          <div style={{
+            background:        'var(--bg-card)',
+            border:            '1px solid var(--border-mid)',
+            borderRadius:      18,
+            padding:           '28px 24px 24px',
+            boxShadow:         'var(--shadow-card)',
+            position:          inputRevealed ? 'absolute' : 'relative',
+            top: 0, left: 0, right: 0,
+            display:           'flex',
+            alignItems:        'center',
+            justifyContent:    'center',
+            minHeight:         220,
+            opacity:           inputRevealed ? 0 : 1,
+            transform:         inputRevealed ? 'scale(0.97)' : 'scale(1)',
+            transition:        'opacity 0.3s ease, transform 0.35s ease',
+            pointerEvents:     inputRevealed ? 'none' : 'auto',
+            zIndex:            inputRevealed ? 0 : 1,
+          }}>
+            <p style={{ fontSize: 15, color: 'var(--text-3)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', textAlign: 'center' }}>
+              Add a decision to your record
+            </p>
+          </div>
+          {/* Front face — revealed after click */}
+          <div style={{
+            background:        'var(--bg-card)',
+            border:            '1px solid var(--border-mid)',
+            borderRadius:      18,
+            padding:           '28px 24px 24px',
+            boxShadow:         'var(--shadow-card)',
+            opacity:           inputRevealed ? 1 : 0,
+            transform:         inputRevealed ? 'scale(1)' : 'scale(0.97)',
+            transition:        'opacity 0.35s ease 0.15s, transform 0.35s ease 0.15s',
+            pointerEvents:     inputRevealed ? 'auto' : 'none',
+          }}>
+          </div>
             <h1 style={{
               fontSize: 21,
               fontWeight: 400,
@@ -520,9 +563,11 @@ export default function Home() {
             </button>
           </div>
 
+          </div>{/* close perspective wrapper */}
+
           {/* ── Advisor caption + Persona pill strip ────── */}
           <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 8, padding: '0 2px', fontStyle: 'italic' }}>
-            Six private advisors · each from a distinct angle
+            Six advisors · stress-test, surface gaps, and challenge assumptions across every decision
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 14, padding: '0 2px' }}>
             {PERSONAS_GRID.map(p => (
@@ -621,6 +666,7 @@ export default function Home() {
               pendingOutcomes={pending.length}
               decidedCount={decided.length}
               hasIdentity={!!userEmail}
+              mirrorUnlocked={mirrorUnlocked}
               onScrollToHistory={() => {
                 historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 setActiveTab('pending')

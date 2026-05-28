@@ -16,7 +16,8 @@ import RecordReceipt from './RecordReceipt'
 
 interface Props {
   session: Session
-  initialMessages?: Record<string, string>   // personaKey → full content, pre-loaded from DB
+  initialMessages?: Record<string, string>
+  totalSessionCount?: number   // real DB count for RecordReceipt, passed from server
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -57,7 +58,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {} }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -861,7 +862,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               {synthesisDone && (
                 <div className="sv-fade sv-fade-2" style={{ marginTop: 0 }}>
                   <RecordReceipt
-                    sessionCount={typeof window !== 'undefined' ? getStoredSessionIds().length : 1}
+                    sessionCount={totalSessionCount ?? getStoredSessionIds().length}
                     decisionType={session.decision_type_primary ?? undefined}
                     irreversibility={(() => {
                       const s = (session.stakes_reversibility ?? '').toLowerCase()

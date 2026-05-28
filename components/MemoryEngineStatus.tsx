@@ -17,7 +17,8 @@ interface Props {
   sessionCount: number
   pendingOutcomes: number
   decidedCount: number
-  hasIdentity: boolean          // true if user_email or user_id is present
+  hasIdentity: boolean
+  mirrorUnlocked?: boolean      // true if user has active Mirror subscription
   onScrollToHistory: () => void
 }
 
@@ -59,6 +60,7 @@ export default function MemoryEngineStatus({
   pendingOutcomes,
   decidedCount,
   hasIdentity,
+  mirrorUnlocked = false,
   onScrollToHistory,
 }: Props) {
   if (sessionCount === 0) return null
@@ -123,7 +125,10 @@ export default function MemoryEngineStatus({
 
   let statusLabel: string
   let statusColor: string
-  if (mirrorReady) {
+  if (mirrorUnlocked) {
+    statusLabel = 'Pattern Memory active · Mirror active'
+    statusColor = 'var(--green-text)'
+  } else if (mirrorReady) {
     statusLabel = 'Pattern Memory active · Mirror ready to activate'
     statusColor = 'var(--green-text)'
   } else if (patternActive) {
@@ -217,9 +222,9 @@ export default function MemoryEngineStatus({
             <p style={{ fontSize: 11, color: statusColor, margin: 0, lineHeight: 1.4 }}>
               {statusLabel}
             </p>
-            {mirrorTeaserReady && (
+            {(mirrorTeaserReady && !mirrorUnlocked) && (
               <p style={{ fontSize: 11, color: 'var(--green-text)', margin: '3px 0 0', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 0 }}>
-                Mirror preview active
+                {mirrorUnlocked ? 'Mirror active' : 'Mirror preview active'}
                 <a
                   href="/mirror"
                   style={{

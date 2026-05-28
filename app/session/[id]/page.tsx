@@ -10,9 +10,15 @@ export default async function SessionPage({ params }: Props) {
   const { id } = await params
   const supabase = createServiceClient()
 
-  const [{ data: session, error }, { data: messages }] = await Promise.all([
-    supabase.from('sessions').select('*').eq('id', id).single(),
+  const { data: session, error } = await supabase.from('sessions').select('*').eq('id', id).single()
+
+  if (error || !session) { notFound() }
+
+  const [{ data: messages }, { count: totalSessionCount }] = await Promise.all([
     supabase.from('messages').select('persona, role, content').eq('session_id', id).order('created_at', { ascending: true }),
+    session.user_id
+      ? supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', session.user_id)
+      : Promise.resolve({ count: null }),
   ])
 
   if (error || !session) {
@@ -28,5 +34,5 @@ export default async function SessionPage({ params }: Props) {
     }
   }
 
-  return <SessionView session={session} initialMessages={initialMessages} />
+  return <SessionView session={session} initialMessages={initialMessages} totalSessionCount={totalSessionCount ?? undefined} />
 }
