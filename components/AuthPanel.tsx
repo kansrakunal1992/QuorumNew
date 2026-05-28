@@ -1,16 +1,15 @@
 'use client'
 // components/AuthPanel.tsx
-// ── Sprint 6: Magic Link Auth Panel ──────────────────────────────────────────
+// ── Sprint 6 + 6b: Magic Link Auth Panel ─────────────────────────────────────
 //
-// Rendered in home page in the decision history section.
-// Shows if the user has no user_email stored (i.e. never authenticated).
-// Compact — doesn't dominate the page. Positioned after history.
-//
-// UX intent: not a gate — a gentle upgrade prompt.
-// "Your sessions live on this device only. Add an email to access them anywhere."
+// Sprint 6b change: handleSend now passes deviceId + sessionIds to /api/auth.
+// The auth route embeds them into the magic link's emailRedirectTo URL so the
+// callback can recover them even when clicked in a different browser where
+// localStorage is empty.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
+import { getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
 
 interface Props {
   userEmail: string | null
@@ -55,19 +54,28 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
     setAuthState('sending')
 
     try {
-      const res  = await fetch('/api/auth', {
+      // ── Sprint 6b: embed device identity in the magic link ────────────────
+      // getOrCreateDeviceId() reads quorum_device_id from localStorage (creating it if missing).
+      // getStoredSessionIds() reads quorum_session_ids array.
+      // These are passed to /api/auth which embeds them as ?xd=…&xs=… params in
+      // the emailRedirectTo URL. The callback page reads them from the URL, so
+      // link-sessions works even when clicked in a different browser with empty localStorage.
+      const deviceId   = getOrCreateDeviceId()
+      const sessionIds = getStoredSessionIds()
+
+      const res = await fetch('/api/auth', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email: email.trim().toLowerCase() }),
+        body:    JSON.stringify({
+          email:      email.trim().toLowerCase(),
+          deviceId,                    // ← NEW: quorum_device_id from this browser
+          sessionIds,                  // ← NEW: all session IDs from this browser
+        }),
       })
       if (!res.ok) throw new Error()
       setAuthState('sent')
       // NOTE: Do NOT call onAuthenticated here — the user has not clicked the link yet.
-      // Calling it here immediately sets userEmail in page.tsx → renders the green
-      // "Sessions linked" pill → the waiting-room sent state is never seen.
-      // onAuthenticated fires correctly on its own: after the user clicks the magic link,
-      // /auth/callback runs exchangeCodeForSession → storeUserEmail → redirects to /.
-      // page.tsx reads quorum_user_email from localStorage on init → userEmail is set.
+      // onAuthenticated fires after /auth/callback completes and storeUserEmail runs.
     } catch {
       setAuthState('error')
       setErrMsg('Failed to send link. Try again.')

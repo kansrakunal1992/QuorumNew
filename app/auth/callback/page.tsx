@@ -1,20 +1,22 @@
 'use client'
 // app/auth/callback/page.tsx
-// ── Sprint 6: Magic Link Callback ────────────────────────────────────────────
+// ── Sprint 6 + 6b: Magic Link Callback ───────────────────────────────────────
 //
 // Supabase redirects here after the user clicks the magic link.
-// We:
-//   1. Exchange the PKCE code from ?code= query param for a session
-//   2. Link any localStorage session IDs to the authenticated user
-//   3. Redirect back to home
 //
-// FIX (Sprint 6 bug): Supabase v2 uses PKCE by default. The magic link
-// redirects to /auth/callback?code=PKCE_CODE. getSession() alone returns null
-// because the code hasn't been exchanged yet. Must call
-// exchangeCodeForSession(code) first, then getSession().
+// Sprint 6b: Cross-browser session recovery.
+// The magic link URL now carries ?xd=<deviceId>&xs=<sessionIds> params embedded
+// by /api/auth at send time. When the link is clicked in a different browser
+// (email client, mobile WebView, etc.), localStorage is empty — but these URL
+// params carry the originating browser's identity. The callback merges both
+// sources and passes the combined payload to link-sessions so ALL prior anonymous
+// sessions are linked regardless of which browser the link is opened in.
 //
-// Also: useSearchParams() requires a Suspense boundary in Next.js 15 — the
-// inner component reads params; the default export wraps it.
+// Identity merge priority:
+//   1. Explicit session IDs from URL params (?xs=...)  ← cross-browser recovery
+//   2. Session IDs from localStorage                   ← same-browser, most common
+//   3. Device ID from URL params (?xd=...)             ← cross-browser recovery
+//   4. Device ID from localStorage                     ← same-browser fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Suspense, useEffect, useState } from 'react'
@@ -34,8 +36,6 @@ function CallbackHandler() {
         const supabase = createClient()
 
         // ── Step 1: Exchange PKCE code for a session ──────────────────────────
-        // Supabase PKCE flow delivers ?code=... (not a hash token).
-        // exchangeCodeForSession() must be called before getSession() has anything.
         const code  = searchParams.get('code')
         const error = searchParams.get('error')
 
@@ -71,21 +71,41 @@ function CallbackHandler() {
         // Persist email for bias library pre-auth context
         storeUserEmail(user.email ?? '')
 
-        // ── Step 3: Link any pre-auth session IDs from localStorage ──────────
-        const storedIds = getStoredSessionIds()
-        const deviceId  = getStoredDeviceId()   // ← needed to retro-link device_id bias rows
+        // ── Step 3: Build merged identity payload ─────────────────────────────
+        // Source A: localStorage (populated when magic link opened in SAME browser)
+        const localSessionIds = getStoredSessionIds()
+        const localDeviceId   = getStoredDeviceId()
 
-        // Always call link-sessions after auth — even if storedIds is empty.
-        // The deviceId retro-link in link-sessions upgrades anonymous bias rows
-        // (device_id-keyed, no email) to the authenticated user_id lane.
+        // Source B: URL params embedded by /api/auth at send time
+        // These are present when the link is opened in a DIFFERENT browser
+        // (email client, mobile WebView) where localStorage is empty.
+        const urlDeviceId      = searchParams.get('xd') ?? null
+        const urlSessionIdsRaw = searchParams.get('xs') ?? ''
+        const urlSessionIds    = urlSessionIdsRaw
+          ? urlSessionIdsRaw.split(',').filter(s => s.length > 10) // basic sanity check
+          : []
+
+        // Merge: deduplicated union of both sources
+        const allSessionIds = [...new Set([...localSessionIds, ...urlSessionIds])]
+
+        // For device_id: URL param is the originating browser's device — use it
+        // even if localStorage has a different (or no) device ID.
+        // Pass both so link-sessions can update sessions rows for either device.
+        const deviceIds = [...new Set([localDeviceId, urlDeviceId].filter(Boolean))] as string[]
+
+        console.log(`[AuthCallback] Linking: ${allSessionIds.length} sessions, deviceIds=[${deviceIds.join(',')}]`)
+        console.log(`[AuthCallback]   local: ${localSessionIds.length} sessions, device=${localDeviceId}`)
+        console.log(`[AuthCallback]   url:   ${urlSessionIds.length} sessions, device=${urlDeviceId}`)
+
+        // ── Step 4: Link all recovered sessions to the authenticated user ─────
         await fetch('/api/auth/link-sessions', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sessionIds: storedIds,
+            sessionIds: allSessionIds,   // explicit IDs to link via RPC
             userId:     user.id,
             userEmail:  user.email,
-            deviceId:   deviceId,   // ← new: triggers device_id bias retro-link
+            deviceIds,                   // device IDs for DB-level session lookup
           }),
         })
 

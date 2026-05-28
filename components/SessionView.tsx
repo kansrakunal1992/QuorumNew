@@ -583,14 +583,20 @@ export default function SessionView({ session: initialSession, initialMessages =
           gap: 8px;
           flex-shrink: 0;
           /* Clear ThemeToggle on the right — it's at right: 20px, ~120px wide */
-          margin-right: 136px;
+          margin-right: 116px;
         }
-        /* Hide decision text in navbar on small screens */
+        .sv-save-short { display: none; }
+        .sv-save-full  { display: inline; }
+
         @media (max-width: 600px) {
-          .sv-navbar-decision { display: none; }
-          .sv-navbar-divider  { display: none; }
-          .sv-navbar-actions  { margin-right: 108px; }
-          .sv-navbar { padding: 0 12px; }
+          .sv-navbar            { padding: 0 10px; }
+          .sv-navbar-decision   { display: none; }
+          .sv-navbar-divider    { display: none; }
+          .sv-navbar-badge      { display: none; }
+          .sv-navbar-reanalyze  { display: none; }
+          .sv-navbar-actions    { margin-right: 100px; gap: 0; }
+          .sv-save-short        { display: inline; }
+          .sv-save-full         { display: none; }
         }
 
         /* Decision hero card */
@@ -671,11 +677,12 @@ export default function SessionView({ session: initialSession, initialMessages =
 
         {/* ── Fixed Session Navbar ──────────────────────────────────── */}
         <nav className={`sv-navbar${navScrolled ? ' scrolled' : ''}`}>
-          <span className="sv-navbar-wordmark">Quorum</span>
+          <button className="sv-navbar-wordmark" onClick={handleNewDecision} style={{background:'none',border:'none',cursor:'pointer',padding:0}}>Quorum</button>
           <div className="sv-navbar-divider" />
           <span className="sv-navbar-decision">{session.decision_text}</span>
           <span className="sv-navbar-badge">Session active</span>
           <div className="sv-navbar-actions">
+            <div className="sv-navbar-reanalyze" style={{display:'flex'}}>
             <button
               className="btn-ghost"
               style={{ fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
@@ -687,13 +694,14 @@ export default function SessionView({ session: initialSession, initialMessages =
               </svg>
               <span className="nav-tagline" style={{ display: 'inline', margin: 0, fontSize: 12, letterSpacing: '0.04em', textTransform: 'none', color: 'inherit' }}>Reanalyze</span>
             </button>
+            </div>
             <button
               className="btn-primary"
               style={{ fontSize: 12, padding: '9px 16px' }}
               onClick={handleSaveRecord}
               disabled={saving}
             >
-              {saving ? 'Saving…' : 'Save Record'}
+              {saving ? 'Saving…' : <><span className="sv-save-full">Save Record</span><span className="sv-save-short">Save</span></>}
             </button>
           </div>
         </nav>
