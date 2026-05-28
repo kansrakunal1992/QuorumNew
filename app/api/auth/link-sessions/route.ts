@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     // created by reanalyze AFTER the link was sent (those wouldn't be in ?xs=...).
     let linkedByDevice = 0
     for (const did of allDeviceIds) {
-      const { count, error } = await supabase
+      const { error } = await supabase
         .from('sessions')
         .update({
           user_id:    userId,
@@ -70,14 +70,12 @@ export async function POST(req: Request) {
         })
         .eq('device_id', did)
         .is('user_id', null)
-        .select('id', { count: 'exact', head: true })
 
       if (error) {
         console.warn(`[LinkSessions] Device sweep failed for ${did} (non-fatal):`, error.message)
       } else {
-        const n = count ?? 0
-        linkedByDevice += n
-        if (n > 0) console.log(`[LinkSessions] device_id=${did}: linked ${n} sessions`)
+        linkedByDevice++
+        console.log(`[LinkSessions] device_id=${did}: sweep complete`)
       }
     }
 
@@ -86,18 +84,17 @@ export async function POST(req: Request) {
     // (Sessions where user_email was set but user_id was still null.)
     let linkedByEmail = 0
     if (userEmail) {
-      const { count, error } = await supabase
+      const { error } = await supabase
         .from('sessions')
         .update({ user_id: userId })
         .eq('user_email', userEmail)
         .is('user_id', null)
-        .select('id', { count: 'exact', head: true })
 
       if (error) {
         console.warn('[LinkSessions] Email sweep failed (non-fatal):', error.message)
       } else {
-        linkedByEmail = count ?? 0
-        if (linkedByEmail > 0) console.log(`[LinkSessions] email sweep: linked ${linkedByEmail} sessions`)
+        linkedByEmail = 1
+        console.log('[LinkSessions] email sweep complete')
       }
     }
 
