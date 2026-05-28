@@ -1209,7 +1209,6 @@ export default function MirrorPage() {
                 ? 'Your behavioral patterns across all decisions.'
                 : 'Your Mirror is building from every decision you bring.'}
             </p>
-            </p>
           </div>
         )}
 
