@@ -39,12 +39,13 @@ export async function POST(req: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     )
 
-    // Derive redirect URL from the request origin — works on Railway without needing
-    // NEXT_PUBLIC_APP_URL to be set. Falls back to env var if origin unavailable.
-    const origin = req.headers.get('origin')
-      ?? req.headers.get('referer')?.replace(/\/[^/]*$/, '')
-      ?? process.env.NEXT_PUBLIC_APP_URL
-      ?? 'http://localhost:3000'
+    // Always use NEXT_PUBLIC_APP_URL (the Railway URL) to build the callback.
+    // Using the request Origin header would produce app.quorumvault.org which is
+    // NOT in Supabase's redirect allowlist → Supabase silently falls back to Site URL,
+    // dropping /auth/callback and all ?xd= ?xs= params entirely.
+    const origin = process.env.NEXT_PUBLIC_APP_URL
+      ?? req.headers.get('origin')
+      ?? 'https://invigorating-manifestation-production-ecd2.up.railway.app'
 
     // ── Embed cross-browser recovery payload in the redirect URL ─────────────
     // Supabase passes these params through to the callback URL intact.
