@@ -34,6 +34,8 @@ export interface Session {
   context_text?: string
   status: 'active' | 'completed'
   register_mode?: RegisterMode
+  decision_type_primary?: string | null
+  stakes_reversibility?: string | null
 }
 
 export interface DecisionRecord {
