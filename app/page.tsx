@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId } from '@/lib/storage'
+import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
@@ -76,6 +76,22 @@ export default function Home() {
   const [error,       setError]       = useState('')
   const [registerMode,          setRegisterMode]          = useState<'analytical'|'clarification'>('analytical')
   const [preDecisionConfidence, setPreDecisionConfidence] = useState<number>(5)
+  // Sprint 6b: read ?em= param written by auth callback so cross-browser
+  // magic link clicks still land with correct identity (Custom Tab → Chrome main)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const em = params.get('em')
+      if (em && em.includes('@')) {
+        storeUserEmail(em)
+        setUserEmail(em)
+        // Clean the URL so it doesn't persist across refreshes
+        window.history.replaceState({}, '', '/')
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [userEmail,   setUserEmail]   = useState<string | null>(() => {
     if (typeof window === 'undefined') return null
     try { return localStorage.getItem('quorum_user_email') } catch { return null }

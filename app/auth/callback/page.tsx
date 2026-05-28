@@ -110,7 +110,13 @@ function CallbackHandler() {
         })
 
         setStatus('done')
-        router.replace('/')
+        // Encode email into the redirect URL so any browser (Chrome main, Custom Tab,
+        // Safari, etc.) can pick up the identity — localStorage is isolated per browser
+        // context on mobile, so we cannot rely on storeUserEmail reaching the right one.
+        const homeUrl = user.email
+          ? `/?linked=1&em=${encodeURIComponent(user.email)}`
+          : '/?linked=1'
+        router.replace(homeUrl)
 
       } catch (err) {
         console.error('[AuthCallback] Error:', err)
