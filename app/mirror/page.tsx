@@ -161,9 +161,12 @@ function AuthGate() {
       </div>
 
       <div>
-        <h2 style={{ fontSize: 22, fontWeight: 400, fontFamily: 'var(--font-display)', color: 'var(--text-1)', margin: '0 0 10px' }}>
+        <h2 style={{ fontSize: 22, fontWeight: 400, fontFamily: 'var(--font-display)', color: 'var(--text-1)', margin: '0 0 4px' }}>
           Your behavioral mirror
         </h2>
+        <p style={{ fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', margin: '0 0 10px' }}>
+          A private operating system for your judgment
+        </p>
         <p style={{ fontSize: 15, color: 'var(--text-3)', lineHeight: 1.65, margin: 0 }}>
           Mirror surfaces how you actually make decisions — recurring patterns,
           activated biases, and whether your judgment is evolving across time.
@@ -289,8 +292,8 @@ function LockedView({ sessionCount }: { sessionCount: number }) {
         </h2>
         <p style={{ fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.65, margin: 0 }}>
           {remaining === 1
-            ? 'One more session to go.'
-            : `${remaining} more decisions to unlock your Mirror preview.`
+            ? 'One more decision and your Mirror preview activates.'
+            : `${remaining} more decisions and your Mirror preview activates.`
           }
         </p>
       </div>
@@ -366,7 +369,7 @@ function LockedView({ sessionCount }: { sessionCount: number }) {
   )
 }
 
-// ── Locked teaser tile ────────────────────────────────────────────────────────
+// ── Teaser tile (paywall state) ───────────────────────────────────────────────
 function TeaserTile({ biasKey }: { biasKey: string }) {
   const label = getBiasLabel(biasKey)
   return (
@@ -378,7 +381,7 @@ function TeaserTile({ biasKey }: { biasKey: string }) {
       position:     'relative',
       overflow:     'hidden',
     }}>
-      {/* Header row */}
+      {/* Header row — no lock icon */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <span style={{
           fontSize:      10,
@@ -388,9 +391,6 @@ function TeaserTile({ biasKey }: { biasKey: string }) {
           color:         'var(--text-3)',
         }}>
           {label}
-        </span>
-        <span style={{ color: 'var(--text-4)', display: 'flex', alignItems: 'center' }}>
-          <IconLock size={12} />
         </span>
       </div>
 
@@ -584,9 +584,10 @@ function TeaserView({
       border:         '1px solid var(--border-dim)',
       borderRadius:   6,
       padding:        '3px 9px',
+      fontFamily:     'var(--font-mono)',
+      letterSpacing:  '0.06em',
     }}>
-      <IconLock size={10} />
-      Locked
+      building
     </span>
   )
 
@@ -655,7 +656,7 @@ function TeaserView({
         {status.teaserBiases.length > 0 ? (
           <>
             <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-              {status.teaserBiases.length} pattern{status.teaserBiases.length !== 1 ? 's' : ''} detected across your decisions. Subscribe to read your full profile.
+              {status.teaserBiases.length} pattern{status.teaserBiases.length !== 1 ? 's' : ''} detected across your decisions. Activate Mirror to read your full profile.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
               {status.teaserBiases.map(key => (
@@ -691,7 +692,7 @@ function TeaserView({
             {teaser?.independenceScore != null ? Math.round(teaser.independenceScore) : 72}
           </div>
           <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
-            Your independence score measures how much your judgment compounds over time versus deferring to external validation. Visible after subscribing.
+            Your independence score measures how much your judgment compounds over time versus deferring to external validation. Visible after activating Mirror.
           </p>
         </div>
       </div>
@@ -712,7 +713,7 @@ function TeaserView({
         }}>
           <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
             {teaser && teaser.contradictionCount > 0
-              ? `${teaser.contradictionCount} active contradiction${teaser.contradictionCount !== 1 ? 's' : ''} detected across your decisions. Subscribe to see where your stated principles conflict with your actual choices.`
+              ? `${teaser.contradictionCount} active contradiction${teaser.contradictionCount !== 1 ? 's' : ''} detected across your decisions. Activate Mirror to see where your stated principles conflict with your actual choices.`
               : 'Scans your decisions for inconsistencies between your stated principles and actual choices. Visible after subscribing.'}
           </p>
         </div>
@@ -727,13 +728,13 @@ function TeaserView({
         marginTop:    36,
       }}>
         <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>
-          Subscribe to unlock
+          Activate Mirror — complete your Judgment OS
         </p>
         <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 6px' }}>
           Your behavioral mirror is already building.
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 20px' }}>
-          From ₹1,499/month. Cancel anytime. The same quality of insight advisors charge ₹50,000 for — derived from your actual decisions, not a questionnaire.
+          From ₹9,999/year · ₹1,499/month. The same quality of insight advisors charge ₹50,000 for — derived from your actual decisions, not a questionnaire.
         </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a
@@ -1206,7 +1207,8 @@ export default function MirrorPage() {
             <p style={{ fontSize: 13.5, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
               {status.gateState === 'unlocked'
                 ? 'Your behavioral patterns across all decisions.'
-                : 'Your Mirror is building. Subscribe to unlock the full profile.'}
+                : 'Your Mirror is building from every decision you bring.'}
+            </p>
             </p>
           </div>
         )}

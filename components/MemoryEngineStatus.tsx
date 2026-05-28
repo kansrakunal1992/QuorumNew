@@ -103,9 +103,9 @@ export default function MemoryEngineStatus({
               Memory Engine
             </p>
             <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5 }}>
-              Add your email below to build pattern memory across sessions.{' '}
+              Add your email below to build your judgment record across sessions.{' '}
               <span style={{ color: 'var(--text-3)' }}>
-                {sessionCount} session{sessionCount !== 1 ? 's' : ''} on this device
+                {sessionCount} decision{sessionCount !== 1 ? 's' : ''} on this device
               </span>
               {' '}— not yet linked to your profile.
             </p>
@@ -124,18 +124,18 @@ export default function MemoryEngineStatus({
   let statusLabel: string
   let statusColor: string
   if (mirrorReady) {
-    statusLabel = 'Pattern Memory active · Mirror available'
+    statusLabel = 'Pattern Memory active · Mirror ready to activate'
     statusColor = 'var(--green-text)'
   } else if (patternActive) {
     statusLabel = 'Pattern Memory active'
     statusColor = 'var(--green-text)'
   } else if (mirrorTeaserReady) {
     const remaining = PATTERN_MEMORY_THRESHOLD - sessionCount
-    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} for Pattern Memory`
+    statusLabel = `${remaining} more decision${remaining !== 1 ? 's' : ''} — Pattern Memory activates`
     statusColor = 'var(--gold)'
   } else {
     const remaining = MIRROR_TEASER_THRESHOLD - sessionCount
-    statusLabel = `${remaining} more session${remaining !== 1 ? 's' : ''} to unlock Mirror preview`
+    statusLabel = `${remaining} more decision${remaining !== 1 ? 's' : ''} — Mirror preview activates`
     statusColor = 'var(--gold)'
   }
 
@@ -219,7 +219,7 @@ export default function MemoryEngineStatus({
             </p>
             {mirrorTeaserReady && (
               <p style={{ fontSize: 11, color: 'var(--green-text)', margin: '3px 0 0', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 0 }}>
-                Mirror preview ready
+                Mirror preview active
                 <a
                   href="/mirror"
                   style={{
@@ -292,9 +292,9 @@ export default function MemoryEngineStatus({
             <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5 }}>
               Pattern Memory surfaces structural matches between your current decision and past sessions —&nbsp;
               <span style={{ color: 'var(--text-3)' }}>
-                "you faced this structure before."
+                &quot;you faced this structure before.&quot;
               </span>
-              {' '}Each session logged builds toward it.
+              {' '}Each decision logged builds toward it. Mirror activates at {MIRROR_THRESHOLD} decisions.
             </p>
           </div>
         )}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { pushSessionId, getOrCreateDeviceId } from '@/lib/storage'
+import { pushSessionId, getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
@@ -12,6 +12,7 @@ import { PERSONAS, PERSONA_ORDER, computePersonaOrder } from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
+import RecordReceipt from './RecordReceipt'
 
 interface Props {
   session: Session
@@ -855,6 +856,24 @@ export default function SessionView({ session: initialSession, initialMessages =
                   examinerContext={synthExaminerContext}
                 />
               </div>
+
+              {/* ── 1b. Record Receipt (appears after synthesis completes) ── */}
+              {synthesisDone && (
+                <div className="sv-fade sv-fade-2" style={{ marginTop: 0 }}>
+                  <RecordReceipt
+                    sessionCount={typeof window !== 'undefined' ? getStoredSessionIds().length : 1}
+                    decisionType={session.decision_type_primary ?? undefined}
+                    irreversibility={(() => {
+                      const s = (session.stakes_reversibility ?? '').toLowerCase()
+                      if (s.includes('high') || s.includes('irrevers')) return 'high'
+                      if (s.includes('medium') || s.includes('partial')) return 'medium'
+                      if (s.includes('low') || s.includes('revers')) return 'low'
+                      return undefined
+                    })()}
+                    mirrorActive={false}
+                  />
+                </div>
+              )}
 
               {/* ── 2. Examiner ── */}
               <div className="sv-fade sv-fade-2">

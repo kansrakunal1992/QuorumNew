@@ -64,8 +64,9 @@ interface SessionSummary {
 }
 
 export default function Home() {
-  const router     = useRouter()
-  const historyRef = useRef<HTMLDivElement>(null)
+  const router      = useRouter()
+  const historyRef  = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Core form state (unchanged) ──────────────────────────
   const [decision,    setDecision]    = useState('')
@@ -107,13 +108,15 @@ export default function Home() {
   // ── UI state (new) ────────────────────────────────────────
   // Tips open: true on first visit, persisted thereafter
   const [tipsOpen, setTipsOpen] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true
+    if (typeof window === 'undefined') return false
     try {
       const v = localStorage.getItem('quorum_tips_open')
-      return v === null ? true : v === 'true'
-    } catch { return true }
+      return v === null ? false : v === 'true'
+    } catch { return false }
   })
-  const [navScrolled, setNavScrolled] = useState(false)
+  const [navScrolled,    setNavScrolled]    = useState(false)
+  const [historyShowAll, setHistoryShowAll] = useState(false)
+  const HISTORY_PREVIEW = 5
 
   // ── Effects (all original effects preserved) ─────────────
   useEffect(() => {
@@ -265,9 +268,9 @@ export default function Home() {
           </span>
         </div>
 
-        {/* Tagline — hidden on mobile, leaves gap for ThemeToggle on desktop */}
+        {/* Tagline — hidden on mobile */}
         <span className="nav-tagline">
-          Private Decision Intelligence
+          Judgment Operating System
         </span>
       </nav>
 
@@ -281,6 +284,65 @@ export default function Home() {
         background: 'var(--bg-void)',
       }}>
         <div style={{ maxWidth: 680, margin: '0 auto' }}>
+
+          {/* ── Judgment Profile Card ───────────────────── */}
+          <div style={{
+            background:    'var(--bg-card)',
+            border:        '1px solid var(--border-mid)',
+            borderRadius:  14,
+            padding:       '16px 20px',
+            marginBottom:  12,
+            display:       'flex',
+            alignItems:    'center',
+            justifyContent:'space-between',
+            gap:           12,
+          }}>
+            <div>
+              <p style={{
+                fontSize:      10.5,
+                fontWeight:    700,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color:         'var(--text-4)',
+                fontFamily:    'var(--font-mono)',
+                margin:        '0 0 3px',
+              }}>
+                Your judgment record
+              </p>
+              <p style={{ fontSize: 20, fontWeight: 400, color: 'var(--text-1)', margin: 0, fontFamily: 'var(--font-display)', letterSpacing: '-0.01em' }}>
+                {sessions.length === 0
+                  ? 'No decisions yet'
+                  : `${sessions.length} decision${sessions.length !== 1 ? 's' : ''}`}
+              </p>
+            </div>
+            <button
+              onClick={() => textareaRef.current?.focus()}
+              style={{
+                display:       'flex',
+                alignItems:    'center',
+                gap:           7,
+                padding:       '9px 18px',
+                borderRadius:  8,
+                border:        '1px solid var(--gold-dim)',
+                background:    'rgba(201,168,76,0.08)',
+                color:         'var(--gold)',
+                fontSize:      12.5,
+                fontWeight:    600,
+                cursor:        'pointer',
+                fontFamily:    'inherit',
+                whiteSpace:    'nowrap',
+                transition:    'all 0.15s',
+                flexShrink:    0,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(201,168,76,0.14)'; e.currentTarget.style.borderColor = 'var(--gold)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(201,168,76,0.08)'; e.currentTarget.style.borderColor = 'var(--gold-dim)' }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add decision to your record
+            </button>
+          </div>
 
           {/* ── Input Card ──────────────────────────────── */}
           <div style={{
@@ -300,14 +362,15 @@ export default function Home() {
               lineHeight: 1.2,
               letterSpacing: '-0.01em',
             }}>
-              What decision is occupying your mind?
+              What decision are you bringing to your record?
             </h1>
             <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 16, lineHeight: 1.6, fontStyle: 'italic' }}>
-              Six private advisors will review it simultaneously — each from a distinct angle.
+              Add it to your judgment record. The Council runs on every decision you bring.
             </p>
 
             {/* Main decision textarea */}
             <textarea
+              ref={textareaRef}
               key={formKey}
               className="decision-input"
               rows={5}
@@ -457,7 +520,10 @@ export default function Home() {
             </button>
           </div>
 
-          {/* ── Persona pill strip ───────────────────────── */}
+          {/* ── Advisor caption + Persona pill strip ────── */}
+          <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 8, padding: '0 2px', fontStyle: 'italic' }}>
+            Six private advisors · each from a distinct angle
+          </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 14, padding: '0 2px' }}>
             {PERSONAS_GRID.map(p => (
               <div
@@ -574,13 +640,13 @@ export default function Home() {
               {/* Section header + tab filters */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
                 <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)', margin: 0 }}>
-                  Your Decisions
+                  Your judgment record
                 </p>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {(['all', 'pending', 'decided'] as const).map(tab => (
                     <button
                       key={tab}
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => { setActiveTab(tab); setHistoryShowAll(false) }}
                       style={{
                         fontSize: 11, padding: '4px 12px', borderRadius: 20,
                         border: '1px solid',
@@ -592,8 +658,8 @@ export default function Home() {
                       }}
                     >
                       {tab === 'all'     ? `All ${sessions.length}`    : ''}
-                      {tab === 'pending' ? `Pending ${pending.length}` : ''}
-                      {tab === 'decided' ? `Decided ${decided.length}` : ''}
+                      {tab === 'pending' ? `Open ${pending.length}`    : ''}
+                      {tab === 'decided' ? `Logged ${decided.length}`  : ''}
                     </button>
                   ))}
                 </div>
@@ -629,7 +695,7 @@ export default function Home() {
 
               {/* Session list */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {filtered.map(s => {
+                {(historyShowAll ? filtered : filtered.slice(0, HISTORY_PREVIEW)).map(s => {
                   const date    = new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
                   const snippet = s.decision_text.length > 120 ? s.decision_text.slice(0, 120) + '…' : s.decision_text
                   return (
@@ -715,10 +781,29 @@ export default function Home() {
 
                 {filtered.length === 0 && !loadingHist && (
                   <p style={{ fontSize: 13, color: 'var(--text-4)', textAlign: 'center', padding: '20px 0', fontStyle: 'italic' }}>
-                    {activeTab === 'pending' ? 'No pending outcomes — all decisions logged.' : 'No decisions in this category yet.'}
+                    {activeTab === 'pending' ? 'No open outcomes — all decisions logged.' : 'No decisions in this category yet.'}
                   </p>
                 )}
               </div>
+
+              {/* Show More */}
+              {filtered.length > HISTORY_PREVIEW && !historyShowAll && (
+                <button
+                  onClick={() => setHistoryShowAll(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: '100%', marginTop: 10,
+                    background: 'transparent', border: '1px solid var(--border-dim)',
+                    borderRadius: 10, padding: '10px 0',
+                    fontSize: 12, color: 'var(--text-4)', cursor: 'pointer',
+                    fontFamily: 'inherit', transition: 'border-color 0.2s, color 0.2s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-mid)'; e.currentTarget.style.color = 'var(--text-3)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-dim)'; e.currentTarget.style.color = 'var(--text-4)' }}
+                >
+                  Show {filtered.length - HISTORY_PREVIEW} more decisions
+                </button>
+              )}
             </div>
           )}
 
