@@ -345,7 +345,7 @@ export default function Home() {
                 background:    'var(--bg-card)',
                 border:        '1px solid var(--gold-dim)',
                 borderRadius:  20,
-                minHeight:     inputRevealed ? 0 : 'calc(100vh - 120px)',
+                minHeight:     inputRevealed ? 0 : 'clamp(460px, 78svh, calc(100vh - 120px))',
                 display:       'flex',
                 flexDirection: 'column',
                 alignItems:    'center',
