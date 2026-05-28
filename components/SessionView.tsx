@@ -527,8 +527,8 @@ export default function SessionView({ session: initialSession, initialMessages =
           align-items: center;
           height: 56px;
           padding: 0 20px;
-          background: var(--bg-deep);
-          border-bottom: 1px solid var(--border-dim);
+          background: var(--bg-card);
+          border-bottom: 1px solid var(--border-mid);
           transition: box-shadow 0.3s ease, border-color 0.3s ease;
           gap: 16px;
         }

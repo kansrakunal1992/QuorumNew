@@ -222,9 +222,31 @@ export default function MemoryEngineStatus({
             <p style={{ fontSize: 11, color: statusColor, margin: 0, lineHeight: 1.4 }}>
               {statusLabel}
             </p>
+            {mirrorUnlocked && (
+              <p style={{ fontSize: 11, color: 'var(--green-text)', margin: '3px 0 0', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 0 }}>
+                Mirror active
+                <a
+                  href="/mirror"
+                  style={{
+                    display:        'inline-flex',
+                    alignItems:     'center',
+                    gap:            4,
+                    marginLeft:     10,
+                    color:          'var(--green-text)',
+                    fontSize:       10.5,
+                    fontWeight:     600,
+                    textDecoration: 'none',
+                    letterSpacing:  '0.06em',
+                    opacity:        0.85,
+                  }}
+                >
+                  View Mirror →
+                </a>
+              </p>
+            )}
             {(mirrorTeaserReady && !mirrorUnlocked) && (
               <p style={{ fontSize: 11, color: 'var(--green-text)', margin: '3px 0 0', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 0 }}>
-                {mirrorUnlocked ? 'Mirror active' : 'Mirror preview active'}
+                Mirror preview active
                 <a
                   href="/mirror"
                   style={{

@@ -21,10 +21,6 @@ export default async function SessionPage({ params }: Props) {
       : Promise.resolve({ count: null }),
   ])
 
-  if (error || !session) {
-    notFound()
-  }
-
   // Build personaKey → full assistant content map from stored messages
   // Only assistant messages; concatenate in order in case of multiple per persona
   const initialMessages: Record<string, string> = {}

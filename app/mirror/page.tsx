@@ -1153,15 +1153,18 @@ export default function MirrorPage() {
               gap:            6,
               background:     'none',
               border:         'none',
-              color:          'var(--text-3)',
+              color:          'var(--gold)',
               fontSize:       13,
               fontFamily:     'inherit',
               cursor:         'pointer',
               padding:        '12px 0',
-              transition:     'color 0.2s',
+              transition:     'opacity 0.2s',
+              opacity:        0.85,
+              fontWeight:     500,
+              letterSpacing:  '0.04em',
             }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '0.85')}
           >
             <IconArrowLeft />
             Quorum
