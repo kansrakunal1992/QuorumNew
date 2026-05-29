@@ -121,7 +121,7 @@ export default function SessionView({ session: initialSession, initialMessages =
     violationText: string
     violationSessionId: string | null
     violationDecision: string | null
-    severity: string
+    severity: 'sharp' | 'notable' | 'forming'
     category: string
   } | null>(null)
   const [authTokenSV,         setAuthTokenSV]         = useState<string | null>(null)
