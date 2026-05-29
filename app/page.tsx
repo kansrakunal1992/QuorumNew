@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
-import { formatDate } from '@/lib/dates'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
@@ -108,6 +107,8 @@ export default function Home() {
   // ── UI state ──────────────────────────────────────────
   const [inputRevealed,  setInputRevealed]  = useState(false)
   const [cardHovered,    setCardHovered]    = useState(false)
+  const [onboardingPanel, setOnboardingPanel] = useState(0)   // 0 | 1 | 2; panel 2 = QUORUM face
+  const [isOnboarding,    setIsOnboarding]    = useState(false)
   const [tipsOpen,       setTipsOpen]       = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     try {
@@ -126,6 +127,12 @@ export default function Home() {
     setShowContext(false)
     setPreDecisionConfidence(5)
     setFormKey(k => k + 1)
+    // Onboarding: show panels only for genuinely new users
+    try {
+      const alreadyOnboarded = localStorage.getItem('quorum_onboarded') === 'true'
+      const hasDecisions     = getStoredSessionIds().length > 0
+      if (!alreadyOnboarded && !hasDecisions) setIsOnboarding(true)
+    } catch {}
   }, [])
 
   useEffect(() => {
@@ -152,7 +159,7 @@ export default function Home() {
         }
         if (authSession?.user?.email) {
           setUserEmail(authSession.user.email)
-          storeUserEmail(authSession.user.email)
+          try { localStorage.setItem('user_email', authSession.user.email) } catch {}
         }
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
@@ -166,9 +173,33 @@ export default function Home() {
   }, [])
 
   // ── Handlers ──────────────────────────────────────────
+  const markOnboarded = () => {
+    try { localStorage.setItem('quorum_onboarded', 'true') } catch {}
+    setIsOnboarding(false)
+  }
+
   const handleReveal = () => {
     setInputRevealed(true)
     setTimeout(() => textareaRef.current?.focus(), 380)
+  }
+
+  const handleCardClick = () => {
+    if (isOnboarding) {
+      if (onboardingPanel < 2) {
+        setOnboardingPanel(p => p + 1)
+      } else {
+        markOnboarded()
+        handleReveal()
+      }
+    } else {
+      handleReveal()
+    }
+  }
+
+  const handleSkipOnboarding = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    markOnboarded()
+    handleReveal()
   }
 
   const handleSubmit = async () => {
@@ -334,10 +365,10 @@ export default function Home() {
           {/* ── Flip card wrapper ─────────────────────────── */}
           <div style={{ position: 'relative', marginBottom: 0 }}>
 
-            {/* ── BACK FACE — QUORUM entry point ─────────── */}
+            {/* ── BACK FACE — QUORUM entry point / onboarding ─ */}
             <div
               className="card-back-inner"
-              onClick={handleReveal}
+              onClick={handleCardClick}
               onMouseEnter={() => setCardHovered(true)}
               onMouseLeave={() => setCardHovered(false)}
               style={{
@@ -364,58 +395,210 @@ export default function Home() {
                 userSelect:    'none',
               }}
             >
-              {/* Horizontal rule above */}
-              <div style={{
-                width:      56,
-                height:     1,
-                background: 'var(--gold-dim)',
-                marginBottom: 28,
-                opacity:    cardHovered ? 0.9 : 0.7,
-                transition: 'opacity 0.3s ease, width 0.35s ease',
-              }} />
+              {/* Skip — only shown during onboarding panels 0 & 1 */}
+              {isOnboarding && onboardingPanel < 2 && (
+                <button
+                  onClick={handleSkipOnboarding}
+                  style={{
+                    position:      'absolute',
+                    top:           20,
+                    right:         24,
+                    background:    'none',
+                    border:        'none',
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9.5,
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase',
+                    color:         'var(--text-4)',
+                    cursor:        'pointer',
+                    padding:       '6px 4px',
+                    opacity:       0.6,
+                    transition:    'opacity 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
+                >
+                  Skip →
+                </button>
+              )}
 
-              {/* QUORUM wordmark */}
-              <p style={{
-                fontFamily:    'var(--font-display)',
-                fontSize:      'clamp(52px, 9vw, 80px)',
-                fontWeight:    400,
-                color:         'var(--gold)',
-                letterSpacing: '0.38em',
-                margin:        0,
-                lineHeight:    1,
-                textTransform: 'uppercase',
-                textAlign:     'center',
-                transition:    'letter-spacing 0.35s ease',
+              {/* ── Panel 0 — THE COUNCIL ──────────────────── */}
+              {isOnboarding && onboardingPanel === 0 && (
+                <>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9.5,
+                    letterSpacing: '0.22em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold-dim)',
+                    margin:        '0 0 28px',
+                    opacity:       0.8,
+                  }}>
+                    01 · The Council
+                  </p>
+                  <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(22px, 4.5vw, 30px)',
+                    fontWeight:    400,
+                    color:         'var(--text-1)',
+                    letterSpacing: '-0.01em',
+                    lineHeight:    1.35,
+                    textAlign:     'center',
+                    margin:        0,
+                    maxWidth:      340,
+                  }}>
+                    Six advisors analyse every decision you bring
+                  </p>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    color:         'var(--text-4)',
+                    lineHeight:    1.65,
+                    textAlign:     'center',
+                    margin:        '18px 0 0',
+                    maxWidth:      300,
+                    letterSpacing: '0.02em',
+                  }}>
+                    Each from a structurally distinct angle — stress-testing, risk mapping, pattern matching, and more.
+                  </p>
+                </>
+              )}
+
+              {/* ── Panel 1 — YOUR MIRROR ─────────────────── */}
+              {isOnboarding && onboardingPanel === 1 && (
+                <>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9.5,
+                    letterSpacing: '0.22em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold-dim)',
+                    margin:        '0 0 28px',
+                    opacity:       0.8,
+                  }}>
+                    02 · Your Mirror
+                  </p>
+                  <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(22px, 4.5vw, 30px)',
+                    fontWeight:    400,
+                    color:         'var(--text-1)',
+                    letterSpacing: '-0.01em',
+                    lineHeight:    1.35,
+                    textAlign:     'center',
+                    margin:        0,
+                    maxWidth:      340,
+                  }}>
+                    Every decision is recorded and remembered
+                  </p>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    color:         'var(--text-4)',
+                    lineHeight:    1.65,
+                    textAlign:     'center',
+                    margin:        '18px 0 0',
+                    maxWidth:      300,
+                    letterSpacing: '0.02em',
+                  }}>
+                    Over time, Mirror builds a precise model of how you actually make decisions — not how you think you do.
+                  </p>
+                </>
+              )}
+
+              {/* ── Panel 2 / Default — QUORUM face ────────── */}
+              {(!isOnboarding || onboardingPanel === 2) && (
+                <>
+                  <div style={{
+                    width:      56, height: 1,
+                    background: 'var(--gold-dim)',
+                    marginBottom: 28,
+                    opacity:    cardHovered ? 0.9 : 0.7,
+                    transition: 'opacity 0.3s ease',
+                  }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(52px, 9vw, 80px)',
+                    fontWeight:    400,
+                    color:         'var(--gold)',
+                    letterSpacing: '0.38em',
+                    margin:        0,
+                    lineHeight:    1,
+                    textTransform: 'uppercase',
+                    textAlign:     'center',
+                  }}>
+                    Quorum
+                  </p>
+                  <div style={{
+                    width:      56, height: 1,
+                    background: 'var(--gold-dim)',
+                    marginTop:  28, marginBottom: 36,
+                    opacity:    cardHovered ? 0.9 : 0.7,
+                    transition: 'opacity 0.3s ease',
+                  }} />
+                  <p className="card-cta" style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      10.5,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color:         'var(--text-4)',
+                    margin:        0,
+                    transition:    'color 0.3s ease, letter-spacing 0.35s ease',
+                  }}>
+                    Add to your judgment record
+                  </p>
+                </>
+              )}
+
+              {/* ── Bottom strip: dots + tap prompt ────────── */}
+              <div style={{
+                position:       'absolute',
+                bottom:         28,
+                left:           0, right: 0,
+                display:        'flex',
+                flexDirection:  'column',
+                alignItems:     'center',
+                gap:            10,
               }}>
-                Quorum
-              </p>
+                {/* Dot indicators — only during onboarding */}
+                {isOnboarding && (
+                  <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{
+                        width:        i === onboardingPanel ? 18 : 6,
+                        height:       6,
+                        borderRadius: 3,
+                        background:   i === onboardingPanel ? 'var(--gold)' : 'var(--border-mid)',
+                        opacity:      i === onboardingPanel ? 1 : 0.5,
+                        transition:   'width 0.3s ease, background 0.3s ease',
+                      }} />
+                    ))}
+                  </div>
+                )}
 
-              {/* Horizontal rule below */}
-              <div style={{
-                width:      56,
-                height:     1,
-                background: 'var(--gold-dim)',
-                marginTop:  28,
-                marginBottom: 36,
-                opacity:    cardHovered ? 0.9 : 0.7,
-                transition: 'opacity 0.3s ease',
-              }} />
-
-              {/* CTA text */}
-              <p
-                className="card-cta"
-                style={{
-                  fontFamily:    'var(--font-mono)',
-                  fontSize:      10.5,
-                  letterSpacing: '0.18em',
-                  textTransform: 'uppercase',
-                  color:         'var(--text-4)',
-                  margin:        0,
-                  transition:    'color 0.3s ease, letter-spacing 0.35s ease',
-                }}
-              >
-                Add to your judgment record
-              </p>
+                {/* Tap prompt — panels 0 & 1 only */}
+                {isOnboarding && onboardingPanel < 2 && (
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold-dim)',
+                    margin:        0,
+                    opacity:       0.75,
+                    display:       'flex',
+                    alignItems:    'center',
+                    gap:           6,
+                  }}>
+                    Tap to continue
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--gold-dim)' }}>
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* ── FRONT FACE — Decision form ──────────────── */}
@@ -754,7 +937,7 @@ export default function Home() {
               {/* Session list */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(historyShowAll ? filtered : filtered.slice(0, HISTORY_PREVIEW)).map(s => {
-                  const date    = formatDate(s.created_at)
+                  const date    = new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
                   const snippet = s.decision_text.length > 120 ? s.decision_text.slice(0, 120) + '…' : s.decision_text
                   return (
                     <div
