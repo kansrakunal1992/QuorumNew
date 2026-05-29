@@ -7,6 +7,8 @@ import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
 import BehaviorAlerts from '@/components/BehaviorAlerts'
 import VoiceInput from '@/components/VoiceInput'
+import PatternSurfaceCard from '@/components/PatternSurfaceCard'
+import RecurringConditionCard from '@/components/RecurringConditionCard'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -103,6 +105,7 @@ export default function Home() {
   const [activeTab,      setActiveTab]      = useState<'all'|'pending'|'decided'>('all')
   const [authToken,      setAuthToken]      = useState<string | null>(null)
   const [mirrorUnlocked, setMirrorUnlocked] = useState(false)
+  const [patternDimensions, setPatternDimensions] = useState<Array<{dim:string;label:string;avg_score:number;high_count:number}> >([])
 
   // ── UI state ──────────────────────────────────────────
   const [inputRevealed,  setInputRevealed]  = useState(false)
@@ -154,7 +157,16 @@ export default function Home() {
         if (token) {
           fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
             .then(r => r.json())
-            .then(d => { if (d?.gateState === 'unlocked') setMirrorUnlocked(true) })
+            .then(d => {
+              if (d?.gateState === 'unlocked') {
+                setMirrorUnlocked(true)
+                // Also fetch pattern dimensions for 4c (RecurringConditionCard)
+                fetch('/api/mirror/patterns', { headers: { Authorization: `Bearer ${token}` } })
+                  .then(r => r.json())
+                  .then(pd => { if (pd?.top_dimensions) setPatternDimensions(pd.top_dimensions) })
+                  .catch(() => {})
+              }
+            })
             .catch(() => {})
         }
         if (authSession?.user?.email) {
@@ -858,6 +870,22 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* ── Chunk 4a — Proactive Pattern Card ─────────── */}
+          {mirrorUnlocked && sessions.length >= 5 && (
+            <PatternSurfaceCard
+              authToken={authToken}
+              sessionCount={sessions.length}
+            />
+          )}
+
+          {/* ── Chunk 4c — Recurring Condition Card ───────── */}
+          {mirrorUnlocked && patternDimensions.length > 0 && (
+            <RecurringConditionCard
+              dimensions={patternDimensions}
+              sessionCount={sessions.length}
+            />
+          )}
 
           {/* ── Memory Engine (returning users only) ──────── */}
           {sessions.length > 0 && (

@@ -13,6 +13,7 @@ import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
 import RecordReceipt from './RecordReceipt'
+import ContradictionBanner from './ContradictionBanner'
 
 interface Props {
   session: Session
@@ -112,6 +113,8 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [ontologyReady,      setOntologyReady]      = useState(false)
   const [synthesisStreaming,  setSynthesisStreaming]  = useState(false)
   const [synthesisDone,       setSynthesisDone]       = useState(false)
+  const [contradiction,       setContradiction]       = useState<{id:string;principleText:string;principleDecision:string|null;violationText:string;severity:string;category:string} | null>(null)
+  const [authTokenSV,         setAuthTokenSV]         = useState<string | null>(null)
 
   // Dynamic grid order
   const [orderedPersonaKeys, setOrderedPersonaKeys] = useState<PersonaKey[]>([...PERSONA_ORDER])
@@ -206,6 +209,40 @@ export default function SessionView({ session: initialSession, initialMessages =
     fetchStyleCue()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Fetch auth token once for ContradictionBanner
+  useEffect(() => {
+    createClient().auth.getSession().then(({ data: { session: s } }) => {
+      if (s?.access_token) setAuthTokenSV(s.access_token)
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Fetch contradiction for this session once synthesis is done
+  useEffect(() => {
+    if (!synthesisDone || !authTokenSV || !session.user_id) return
+    fetch('/api/mirror/contradictions', {
+      headers: { Authorization: `Bearer ${authTokenSV}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.contradictions?.length) return
+        // Show the most recent contradiction that implicates THIS session as the violation
+        const match = data.contradictions.find(
+          (c: { violationSessionId: string }) => c.violationSessionId === session.id
+        )
+        if (match) setContradiction({
+          id:                match.id,
+          principleText:     match.principleText,
+          principleDecision: match.principleDecision ?? null,
+          violationText:     match.violationText,
+          severity:          match.severity ?? 'moderate',
+          category:          match.category ?? 'process',
+        })
+      })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [synthesisDone, authTokenSV])
 
   useEffect(() => {
     let attempt = 0
@@ -527,8 +564,8 @@ export default function SessionView({ session: initialSession, initialMessages =
           align-items: center;
           height: 56px;
           padding: 0 20px;
-          background: var(--bg-card);
-          border-bottom: 1px solid var(--border-mid);
+          background: var(--bg-deep);
+          border-bottom: 1px solid var(--border-dim);
           transition: box-shadow 0.3s ease, border-color 0.3s ease;
           gap: 16px;
         }
@@ -872,6 +909,17 @@ export default function SessionView({ session: initialSession, initialMessages =
                       return undefined
                     })()}
                     mirrorActive={false}
+                  />
+                </div>
+              )}
+
+              {/* ── 1c. Contradiction Banner (Chunk 4b) ──────────────────── */}
+              {synthesisDone && contradiction && (
+                <div className="sv-fade sv-fade-2">
+                  <ContradictionBanner
+                    contradiction={contradiction}
+                    authToken={authTokenSV}
+                    onDismiss={() => setContradiction(null)}
                   />
                 </div>
               )}
