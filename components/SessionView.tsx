@@ -237,12 +237,10 @@ export default function SessionView({ session: initialSession, initialMessages =
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.contradictions?.length) return
-        // Prefer a contradiction where this session is the violation
-        const exact = data.contradictions.find(
+        // Only show if this session is the violation — no fallback to avoid false context
+        const pick = data.contradictions.find(
           (c: { violationSessionId: string | null }) => c.violationSessionId === session.id
         )
-        // Fallback: show the most recent contradiction if none matches exactly
-        const pick = exact ?? data.contradictions[0]
         if (pick) setContradiction({
           id:                 pick.id,
           principleText:      pick.principleText,

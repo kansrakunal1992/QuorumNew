@@ -7,7 +7,7 @@
 // Includes one actionable line per pattern.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface RulePattern {
   rule_id:     string
@@ -68,6 +68,7 @@ export default function PatternSurfaceCard({ authToken, sessionCount }: Props) {
   const [loading,        setLoading]        = useState(true)
   const [expanded,       setExpanded]       = useState(false)
   const [showAll,        setShowAll]        = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!authToken || sessionCount < PATTERN_THRESHOLD) { setLoading(false); return }
@@ -83,7 +84,7 @@ export default function PatternSurfaceCard({ authToken, sessionCount }: Props) {
 
         // Fetch decision text for source sessions
         if (p.session_ids?.length > 0) {
-          const ids = p.session_ids.slice(0, 6)
+          const ids = p.session_ids.slice(0, p.fire_count)
           const res = await fetch('/api/history', {
             method:  'POST',
             headers: { ...headers, 'Content-Type': 'application/json' },
@@ -101,6 +102,18 @@ export default function PatternSurfaceCard({ authToken, sessionCount }: Props) {
       .finally(() => setLoading(false))
   }, [authToken, sessionCount])
 
+  useEffect(() => {
+    if (!expanded) return
+    const handler = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setExpanded(false)
+        setShowAll(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expanded])
+
   if (loading || !pattern) return null
 
   const narrative   = RULE_NARRATIVE[pattern.rule_id]?.(pattern.fire_count, total)
@@ -114,11 +127,12 @@ export default function PatternSurfaceCard({ authToken, sessionCount }: Props) {
   }
   const color = typeColor[pattern.type] ?? 'var(--gold)'
 
-  const visiblePreviews = showAll ? sessionPreviews : sessionPreviews.slice(0, DECISIONS_PREVIEW)
-  const hiddenCount     = sessionPreviews.length - DECISIONS_PREVIEW
+  const allPreviews     = sessionPreviews.slice(0, pattern.fire_count)
+  const visiblePreviews = showAll ? allPreviews : allPreviews.slice(0, DECISIONS_PREVIEW)
+  const hiddenCount     = allPreviews.length - DECISIONS_PREVIEW
 
   return (
-    <div style={{
+    <div ref={cardRef} style={{
       background:   'var(--bg-card)',
       border:       '1px solid var(--border-mid)',
       borderLeft:   `2px solid ${color}`,

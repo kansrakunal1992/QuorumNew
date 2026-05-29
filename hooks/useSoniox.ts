@@ -302,8 +302,11 @@ export function useSoniox(): UseSonioxReturn {
       audioCtxRef.current = null
       try { _ctx?.close() } catch { /* ignore */ }
       amplitudeRef.current = 0
-      // Send finalize — flushes remaining non-final tokens from Soniox
-      postChunk(new Blob([], { type: mimeType || 'audio/webm' }), true)
+      // Small delay before finalize — ensures SSE connection is stable before
+      // the empty chunk signals Soniox to flush remaining tokens
+      setTimeout(() => {
+        postChunk(new Blob([], { type: mimeType || 'audio/webm' }), true)
+      }, 300)
     }
 
     recorder.onerror = () => {
@@ -320,8 +323,21 @@ export function useSoniox(): UseSonioxReturn {
     if (mediaRecorderRef.current?.state === 'recording') {
       setState('finalizing')
       mediaRecorderRef.current.stop()
+      // Safety net: if SSE never delivers 'finished', recover after 8s
+      setTimeout(() => {
+        if (!mountedRef.current) return
+        if (!finishedRef.current) {
+          if (finalTextRef.current.trim()) {
+            setState('done')
+          } else {
+            setState('error')
+            setErrorCode('EMPTY_TRANSCRIPT')
+          }
+          teardown()
+        }
+      }, 8000)
     }
-  }, [])
+  }, [teardown])
 
   // ── reset() ─────────────────────────────────────────────────────────────
   const reset = useCallback(() => {

@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
 import BehaviorAlerts from '@/components/BehaviorAlerts'
-import VoiceInput from '@/components/VoiceInput'
+import dynamic from 'next/dynamic'
+const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
 import PatternSurfaceCard from '@/components/PatternSurfaceCard'
 import RecurringConditionCard from '@/components/RecurringConditionCard'
 
