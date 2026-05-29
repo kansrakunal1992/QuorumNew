@@ -677,7 +677,7 @@ export default function Home() {
 
           {/* ── Memory Engine (returning users only) ──────── */}
           {sessions.length > 0 && (
-            <div style={{ marginTop: 40 }}>
+            <div style={{ marginTop: 'clamp(20px, 4vw, 28px)' }}>
               <MemoryEngineStatus
                 sessionCount={sessions.length}
                 pendingOutcomes={pending.length}
