@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react'
+import { formatDate } from '@/lib/dates'
 import type { FingerprintTile, SessionPreview, BiasSignalType } from '@/lib/types'
 
 // ── Confidence dot row ────────────────────────────────────────────────────────
@@ -155,7 +156,7 @@ function SourceDrawer({ sessionIds, authToken, onClose }: DrawerProps) {
                 {s.decision_preview}
               </p>
               <p style={{ fontSize: 10, color: 'var(--text-4)', margin: 0 }}>
-                {new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                {formatDate(s.created_at)}
               </p>
             </div>
           ))}

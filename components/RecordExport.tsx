@@ -232,7 +232,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
 
       // Date + session ID
       const dateStr = new Date(record.session.created_at).toLocaleDateString('en-IN', {
-        day: 'numeric', month: 'long', year: 'numeric',
+        day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata',
       })
       doc.setFontSize(8)
       doc.setTextColor(74, 85, 104)

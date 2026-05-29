@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { formatDateTime } from '@/lib/dates'
 import { createServiceClient } from '@/lib/supabase'
 import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
@@ -49,9 +50,7 @@ export default async function RecordPage({ params }: Props) {
   const messages = messagesResult.data ?? []
   const outcome  = outcomeResult.data ?? null
 
-  const dateStr = new Date(session.created_at).toLocaleDateString('en-IN', {
-    day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
+  const dateStr = formatDateTime(session.created_at)
 
   // Group by persona, deduplicated.
   // If a session was re-run (e.g. pre-Sprint 24b or via examiner update), multiple assistant

@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react'
+import { formatShortDate } from '@/lib/dates'
 
 interface ScoreData {
   score:          number | null
@@ -275,7 +276,7 @@ function ScoreDisplay({ data }: { data: ScoreData }) {
       <div style={{ fontSize: 10, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
         Based on {data.sessionCount} session{data.sessionCount !== 1 ? 's' : ''}
         {data.calculatedAt && (
-          <> · Last updated {new Date(data.calculatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</>
+          <> · Last updated {formatShortDate(data.calculatedAt)}</>
         )}
       </div>
     </div>

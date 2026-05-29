@@ -25,6 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react'
+import { formatDate } from '@/lib/dates'
 import type { PatternStoreData, RulePattern, DimPattern, RuleType, SessionPreview } from '@/lib/types'
 
 // ── Type badges ───────────────────────────────────────────────────────────────
@@ -263,7 +264,7 @@ function RuleSourceDrawer({
                 {s.decision_preview}
               </p>
               <p style={{ fontSize: 10, color: 'var(--text-4)', margin: 0 }}>
-                {new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                {formatDate(s.created_at)}
               </p>
             </div>
           ))}

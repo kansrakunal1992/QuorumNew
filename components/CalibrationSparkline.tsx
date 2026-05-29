@@ -78,7 +78,7 @@ function trendColor(trend: CalibrationSummary['trend']): string {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })
 }
 
 // ── Tooltip state ─────────────────────────────────────────────────────────────

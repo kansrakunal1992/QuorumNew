@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react'
+import { formatShortDate } from '@/lib/dates'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -514,7 +515,7 @@ export default function ContradictionDetector({ authToken, sessionCount }: Props
       ))}
       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.5 }}>
         Extracted from your Examiner responses and pushbacks — your own words, not an assessment.
-        {data?.lastRanAt && ` Last updated ${new Date(data.lastRanAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}.`}
+        {data?.lastRanAt && ` Last updated ${formatShortDate(data.lastRanAt)}.`}
       </p>
     </div>
   )

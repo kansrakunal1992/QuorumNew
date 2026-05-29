@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
+import { formatDate } from '@/lib/dates'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import AuthPanel from '@/components/AuthPanel'
@@ -151,7 +152,7 @@ export default function Home() {
         }
         if (authSession?.user?.email) {
           setUserEmail(authSession.user.email)
-          try { localStorage.setItem('user_email', authSession.user.email) } catch {}
+          storeUserEmail(authSession.user.email)
         }
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
@@ -753,7 +754,7 @@ export default function Home() {
               {/* Session list */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(historyShowAll ? filtered : filtered.slice(0, HISTORY_PREVIEW)).map(s => {
-                  const date    = new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  const date    = formatDate(s.created_at)
                   const snippet = s.decision_text.length > 120 ? s.decision_text.slice(0, 120) + '…' : s.decision_text
                   return (
                     <div

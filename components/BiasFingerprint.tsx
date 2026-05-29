@@ -8,6 +8,7 @@
 // (populated by mirror-fingerprint.ts) and flow through automatically.
 
 import { useState, useEffect } from 'react'
+import { formatShortDate } from '@/lib/dates'
 import PatternTile              from '@/components/PatternTile'
 import type { FingerprintData } from '@/lib/types'
 
@@ -216,7 +217,7 @@ export default function BiasFingerprint({ authToken }: Props) {
       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '14px 0 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
         Analysis from {data.sessionCount} session{data.sessionCount !== 1 ? 's' : ''}
         {' · '}
-        {new Date(data.generatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+        {formatShortDate(data.generatedAt)}
       </p>
     </div>
   )

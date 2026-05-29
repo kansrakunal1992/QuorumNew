@@ -585,7 +585,7 @@ async function buildPdf(
 
   // Date + session ID
   const dateStr = new Date(session.created_at).toLocaleDateString('en-IN', {
-    day: 'numeric', month: 'long', year: 'numeric',
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata',
   })
   doc.setFont('Helvetica', 'normal')
   doc.setFontSize(8.5)
