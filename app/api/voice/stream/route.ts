@@ -72,8 +72,7 @@ export async function GET(req: NextRequest) {
           api_key:                   apiKey,
           model:                     'stt-rt-v4',
           audio_format:              'auto',
-          enable_endpoint_detection: true,
-          max_endpoint_delay_ms: 3000,
+          enable_endpoint_detection: false,
           language_hints:            ['en'],
         }))
         sendSSE(session!, { type: 'ready' })
@@ -122,13 +121,7 @@ export async function GET(req: NextRequest) {
               hasEndpoint,
             })
           }
-          // All tokens are already final when endpoint is detected —
-          // close proactively instead of waiting for Soniox to time out
-          if (hasEndpoint) {
-            sendSSE(session!, { type: 'finished' })
-            cleanup(sessionId, ws, controller)
-            return
-          }
+          // Endpoint detection disabled — client controls stop manually
         }
 
         // ── Session finished ────────────────────────────────────────────────

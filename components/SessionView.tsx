@@ -113,7 +113,17 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [ontologyReady,      setOntologyReady]      = useState(false)
   const [synthesisStreaming,  setSynthesisStreaming]  = useState(false)
   const [synthesisDone,       setSynthesisDone]       = useState(false)
-  const [contradiction,       setContradiction]       = useState<{id:string;principleText:string;principleDecision:string|null;violationText:string;severity:string;category:string} | null>(null)
+  const [contradiction,       setContradiction]       = useState<{
+    id: string
+    principleText: string
+    principleSessionId: string | null
+    principleDecision: string | null
+    violationText: string
+    violationSessionId: string | null
+    violationDecision: string | null
+    severity: string
+    category: string
+  } | null>(null)
   const [authTokenSV,         setAuthTokenSV]         = useState<string | null>(null)
 
   // Dynamic grid order
@@ -220,24 +230,29 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   // Fetch contradiction for this session once synthesis is done
   useEffect(() => {
-    if (!synthesisDone || !authTokenSV || !session.user_id) return
+    if (!synthesisDone || !authTokenSV) return
     fetch('/api/mirror/contradictions', {
       headers: { Authorization: `Bearer ${authTokenSV}` },
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.contradictions?.length) return
-        // Show the most recent contradiction that implicates THIS session as the violation
-        const match = data.contradictions.find(
-          (c: { violationSessionId: string }) => c.violationSessionId === session.id
+        // Prefer a contradiction where this session is the violation
+        const exact = data.contradictions.find(
+          (c: { violationSessionId: string | null }) => c.violationSessionId === session.id
         )
-        if (match) setContradiction({
-          id:                match.id,
-          principleText:     match.principleText,
-          principleDecision: match.principleDecision ?? null,
-          violationText:     match.violationText,
-          severity:          match.severity ?? 'moderate',
-          category:          match.category ?? 'process',
+        // Fallback: show the most recent contradiction if none matches exactly
+        const pick = exact ?? data.contradictions[0]
+        if (pick) setContradiction({
+          id:                 pick.id,
+          principleText:      pick.principleText,
+          principleSessionId: pick.principleSessionId ?? null,
+          principleDecision:  pick.principleDecision ?? null,
+          violationText:      pick.violationText,
+          violationSessionId: pick.violationSessionId ?? null,
+          violationDecision:  pick.violationDecision ?? null,
+          severity:           pick.severity ?? 'forming',
+          category:           pick.category ?? '',
         })
       })
       .catch(() => {})

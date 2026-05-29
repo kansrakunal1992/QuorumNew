@@ -16,15 +16,15 @@
 
 /* ── DARK theme (default) ────────────────────────────────── */
 [data-theme="dark"] {
-  --bg-void:     #010306;
-  --bg-deep:     #050810;
+  --bg-void:     #060c1a;
+  --bg-deep:     #0a1222;
   --bg-card:     #0c1226;
   --bg-card-alt: #101628;
   --bg-inset:    #060b18;
   --border-dim:  #1a2640;
   --border-mid:  #253660;
   --border-hi:   #344d80;
-  --gold:        #c9a84c;
+  --gold:        #d4a843;
   --gold-bright: #eaca78;
   --gold-dim:    #5a3f1a;
   --gold-glow:   rgba(201,168,76,0.14);

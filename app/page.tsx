@@ -439,19 +439,19 @@ export default function Home() {
                 <>
                   <p style={{
                     fontFamily:    'var(--font-mono)',
-                    fontSize:      9.5,
-                    letterSpacing: '0.22em',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
                     textTransform: 'uppercase',
-                    color:         'var(--gold-dim)',
+                    color:         'var(--gold)',
                     margin:        '0 0 28px',
-                    opacity:       0.8,
+                    opacity:       0.75,
                   }}>
                     01 · The Council
                   </p>
                   <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
                   <p style={{
                     fontFamily:    'var(--font-display)',
-                    fontSize:      'clamp(22px, 4.5vw, 30px)',
+                    fontSize:      'clamp(28px, 5vw, 38px)',
                     fontWeight:    400,
                     color:         'var(--text-1)',
                     letterSpacing: '-0.01em',
@@ -464,12 +464,12 @@ export default function Home() {
                   </p>
                   <p style={{
                     fontFamily:    'var(--font-mono)',
-                    fontSize:      11,
+                    fontSize:      13,
                     color:         'var(--text-4)',
                     lineHeight:    1.65,
                     textAlign:     'center',
-                    margin:        '18px 0 0',
-                    maxWidth:      300,
+                    margin:        '20px 0 0',
+                    maxWidth:      320,
                     letterSpacing: '0.02em',
                   }}>
                     Each from a structurally distinct angle — stress-testing, risk mapping, pattern matching, and more.
@@ -482,19 +482,19 @@ export default function Home() {
                 <>
                   <p style={{
                     fontFamily:    'var(--font-mono)',
-                    fontSize:      9.5,
-                    letterSpacing: '0.22em',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
                     textTransform: 'uppercase',
-                    color:         'var(--gold-dim)',
+                    color:         'var(--gold)',
                     margin:        '0 0 28px',
-                    opacity:       0.8,
+                    opacity:       0.75,
                   }}>
                     02 · Your Mirror
                   </p>
                   <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
                   <p style={{
                     fontFamily:    'var(--font-display)',
-                    fontSize:      'clamp(22px, 4.5vw, 30px)',
+                    fontSize:      'clamp(28px, 5vw, 38px)',
                     fontWeight:    400,
                     color:         'var(--text-1)',
                     letterSpacing: '-0.01em',
@@ -507,12 +507,12 @@ export default function Home() {
                   </p>
                   <p style={{
                     fontFamily:    'var(--font-mono)',
-                    fontSize:      11,
+                    fontSize:      13,
                     color:         'var(--text-4)',
                     lineHeight:    1.65,
                     textAlign:     'center',
-                    margin:        '18px 0 0',
-                    maxWidth:      300,
+                    margin:        '20px 0 0',
+                    maxWidth:      320,
                     letterSpacing: '0.02em',
                   }}>
                     Over time, Mirror builds a precise model of how you actually make decisions — not how you think you do.
@@ -873,10 +873,12 @@ export default function Home() {
 
           {/* ── Chunk 4a — Proactive Pattern Card ─────────── */}
           {mirrorUnlocked && sessions.length >= 5 && (
-            <PatternSurfaceCard
-              authToken={authToken}
-              sessionCount={sessions.length}
-            />
+            <div style={{ marginTop: 28 }}>
+              <PatternSurfaceCard
+                authToken={authToken}
+                sessionCount={sessions.length}
+              />
+            </div>
           )}
 
           {/* ── Chunk 4c — Recurring Condition Card ───────── */}
