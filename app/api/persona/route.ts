@@ -1,5 +1,5 @@
 /**
- * QUORUM — Persona Route (Sprint 19 update)
+ * QUORUM — Persona Route (Sprint 19 / R2 update)
  *
  * Sprint 19 additions:
  *
@@ -16,6 +16,46 @@
  *     they are user-reactive and don't need structural re-injection.
  *
  *     Gracefully no-ops for v1.0 sessions or missing data. Non-blocking.
+ *
+ * Sprint R2 additions:
+ *
+ *   Longitudinal Bias Injection — all initial personas + synthesis
+ *
+ *     fetchUserBiasContext() queries bias_library for the user's bias profile
+ *     (detection_count >= 1, so early users with 1–3 sessions are included)
+ *     and injects two differentiated blocks:
+ *
+ *       personaAlert    → appended to each initial persona's system prompt.
+ *                         Single sentence. Only fires for CONFIRMED + DISTORTING
+ *                         biases (detection_count >= 2 + signal = distorting).
+ *                         Keeps the 6 parallel persona calls lean.
+ *
+ *       synthesisBlock  → appended to synthesis system prompt. Full block with
+ *                         all bias rows (confirmed + forming), all scores, and
+ *                         a MANDATORY assessment directive. Language is calibrated
+ *                         per tier: "is present" for confirmed, "may be active"
+ *                         for forming.
+ *
+ *     userId is resolved server-side from the sessions table using sessionId —
+ *     no client-side change required (PersonaPanel/SynthesisCard unchanged).
+ *
+ *     Single DB path: userId fetch is reused by councilContext + biasContext.
+ *     Both run in parallel — no added latency on the critical path.
+ *
+ *     Excluded from pushback calls — bias profile does not change mid-session
+ *     and re-injection on pushback would distort the user-reactive dynamic.
+ *
+ *     Gracefully no-ops (empty blocks) when:
+ *       - Session is anonymous (no user_id)
+ *       - User has no bias rows at all
+ *       - fetchUserBiasContext() throws (non-fatal)
+ *
+ *   System prompt layer order (after R2):
+ *     1. persona.prompt            — core identity and mandate
+ *     2. councilContext            — ontology + rule engine signals
+ *     3. synthesisBlock            — longitudinal bias record (synthesis only)
+ *     4. pushbackProtocol          — pushback acknowledgment (pushback calls only)
+ *     5. personaAlertBlock         — top distorting bias alert (initial personas only)
  */
 
 import { PERSONAS }                            from '@/lib/personas'
@@ -23,39 +63,57 @@ import { createServiceClient }                 from '@/lib/supabase'
 import { createStream }                        from '@/lib/ai-client'
 import { PERSONAS_WITH_STRUCTURAL_CONTEXT }    from '@/lib/structural-retrieval'
 import { buildCouncilContext }                 from '@/lib/rule-engine'
+import { fetchUserBiasContext }                from '@/lib/bias-scorer'
+import type { OntologyScoreMap }               from '@/lib/bias-scorer'
 import type { ScoredVector }                   from '@/lib/ontology-tagger'
 import type { RuleEngineResult }               from '@/lib/rule-engine'
 import type { PersonaKey, Message }            from '@/lib/types'
 
-// ── Council context fetch (Sprint 12) ─────────────────────────────────────────
+// ── Council context fetch (Sprint 12 / R2 update) ────────────────────────────
+//
+// Sprint R2: return shape changed from `string | null` to an object so we can
+// pass ontologyVector to fetchUserBiasContext() without a second DB round-trip.
 
-/**
- * Fetches the stored ontology_vector and rule_engine_result for a session,
- * then returns a buildCouncilContext block.
- *
- * Returns null if the session is v1.0, data is unavailable, or any fetch fails.
- */
-async function fetchCouncilContext(sessionId: string): Promise<string | null> {
+async function fetchCouncilContext(sessionId: string): Promise<{
+  councilContextStr: string | null
+  ontologyVector:    OntologyScoreMap | null
+  userId:            string | null
+}> {
   try {
     const supabase = createServiceClient()
-    const { data, error } = await supabase
-      .from('sessions_ontology')
-      .select('tagger_version, ontology_vector, rule_engine_result')
-      .eq('session_id', sessionId)
-      .single()
 
-    if (error || !data) return null
-    if (data.tagger_version !== 'v2.0') return null
-    if (!data.ontology_vector || !data.rule_engine_result) return null
+    // Fetch ontology data + user_id in a single parallel pair
+    const [ontologyResult, sessionResult] = await Promise.all([
+      supabase
+        .from('sessions_ontology')
+        .select('tagger_version, ontology_vector, rule_engine_result')
+        .eq('session_id', sessionId)
+        .single(),
+      supabase
+        .from('sessions')
+        .select('user_id')
+        .eq('id', sessionId)
+        .single(),
+    ])
 
-    return buildCouncilContext(
-      data.ontology_vector  as ScoredVector,
-      data.rule_engine_result as RuleEngineResult,
-    )
+    const userId = sessionResult.data?.user_id ?? null
+
+    const { data, error } = ontologyResult
+    if (error || !data) return { councilContextStr: null, ontologyVector: null, userId }
+    if (data.tagger_version !== 'v2.0') return { councilContextStr: null, ontologyVector: null, userId }
+    if (!data.ontology_vector || !data.rule_engine_result) return { councilContextStr: null, ontologyVector: null, userId }
+
+    return {
+      councilContextStr: buildCouncilContext(
+        data.ontology_vector  as ScoredVector,
+        data.rule_engine_result as RuleEngineResult,
+      ),
+      ontologyVector: data.ontology_vector as OntologyScoreMap,
+      userId,
+    }
   } catch (err) {
-    // Non-fatal — synthesis falls back to standard system prompt
     console.error('[Persona] fetchCouncilContext failed:', err)
-    return null
+    return { councilContextStr: null, ontologyVector: null, userId: null }
   }
 }
 
@@ -72,18 +130,19 @@ async function fetchCouncilContext(sessionId: string): Promise<string | null> {
  * given personas take 5–15s to complete.
  *
  * Synthesis calls do NOT use this — ontology is always written by then.
+ * userId is still returned even when ontology is not yet ready (from sessions table).
  */
 async function fetchCouncilContextWithRetry(
   sessionId: string,
-  maxWaitMs = 3000,
+  maxWaitMs  = 3000,
   intervalMs = 400,
-): Promise<string | null> {
+): Promise<{ councilContextStr: string | null; ontologyVector: OntologyScoreMap | null; userId: string | null }> {
   const start = Date.now()
   while (true) {
     const result = await fetchCouncilContext(sessionId)
-    if (result !== null) return result
+    if (result.councilContextStr !== null) return result
     const elapsed = Date.now() - start
-    if (elapsed + intervalMs >= maxWaitMs) return null
+    if (elapsed + intervalMs >= maxWaitMs) return result  // return userId even on timeout
     await new Promise(r => setTimeout(r, intervalMs))
   }
 }
@@ -105,34 +164,44 @@ export async function POST(req: Request) {
       structuralContext,
       examinerContext,
     }: {
-      sessionId:         string
-      personaKey:        PersonaKey
-      messages:          Message[]
-      decisionText:      string
-      contextText?:      string
-      rawMessages?:      boolean
-      registerMode?:     'analytical' | 'clarification'
+      sessionId:          string
+      personaKey:         PersonaKey
+      messages:           Message[]
+      decisionText:       string
+      contextText?:       string
+      rawMessages?:       boolean
+      registerMode?:      'analytical' | 'clarification'
       structuralContext?: string
-      examinerContext?:  string   // C0 + rule answers baked into initial persona call (new flow)
+      examinerContext?:   string
     } = await req.json()
 
     const persona = PERSONAS[personaKey]
     if (!persona) return new Response('Unknown persona', { status: 400 })
 
-    // ── Sprint 19: council context for all initial personas + synthesis ───────
-    // Fetched in parallel with message construction to avoid blocking.
-    // Fires for:
-    //   - All 6 initial Council personas (messages.length === 0, !rawMessages)
-    //   - synthesis / decision_brief (rawMessages path — unchanged from Sprint 12)
-    // Excluded: pushback calls (messages.length > 0, !rawMessages) — user-reactive,
-    //   structural re-injection would distort the pushback dynamic.
+    // ── Determine call type ───────────────────────────────────────────────────
     const isSynthesisCall  = rawMessages && (personaKey === 'synthesis' || personaKey === 'decision_brief')
     const isInitialPersona = !rawMessages && messages.length === 0
+
+    // ── Fetch council context + userId in one shot ────────────────────────────
+    // Sprint R2: fetchCouncilContext now also returns userId (from sessions table)
+    // so we can pass it to fetchUserBiasContext without a second DB call.
+    // Both councilContext and biasContext resolve in parallel via Promise.all.
     const councilContextPromise = (isSynthesisCall || isInitialPersona) && sessionId
       ? isInitialPersona
-        ? fetchCouncilContextWithRetry(sessionId)  // retry — ontology may not be written yet
-        : fetchCouncilContext(sessionId)            // synthesis always fires after ontology
-      : Promise.resolve(null)
+        ? fetchCouncilContextWithRetry(sessionId)
+        : fetchCouncilContext(sessionId)
+      : Promise.resolve({ councilContextStr: null, ontologyVector: null, userId: null })
+
+    // ── Sprint R2: bias context — chained off councilContextPromise ───────────
+    // Chains (not races) so biasContext uses the ontologyVector already fetched.
+    // Net latency: 0ms extra (runs within the same await window as councilContext).
+    const biasContextPromise = (isSynthesisCall || isInitialPersona)
+      ? councilContextPromise.then(({ ontologyVector, userId }) =>
+          userId
+            ? fetchUserBiasContext(userId, ontologyVector)
+            : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false })
+        )
+      : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false })
 
     // ── Build chat messages ───────────────────────────────────────────────────
     let chatMessages: { role: 'user' | 'assistant'; content: string }[]
@@ -160,10 +229,6 @@ export async function POST(req: Request) {
         : ''
 
       if (messages.length === 0) {
-        // ── C0 + rule answers from Examiner — injected for initial persona calls only ──
-        // examinerContext is populated when personas fire AFTER examiner submission (new flow).
-        // For C0 (JTBD framing), this reaches all 6 personas.
-        // For rule answers, SessionView routes them to the relevant persona only.
         const examinerBlock = examinerContext
           ? `\n\nEXAMINER CONTEXT — captured before the Council ran:\n${examinerContext}\n`
           : ''
@@ -182,16 +247,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── Resolve system prompt (council context for synthesis) ─────────────────
-    const councilContext = await councilContextPromise
+    // ── Resolve council context + bias context in parallel ────────────────────
+    const [{ councilContextStr: councilContext }, biasContext] = await Promise.all([
+      councilContextPromise,
+      biasContextPromise,
+    ])
 
     // ── Pushback acknowledgment protocol ──────────────────────────────────────
-    // When responding to a challenge, the model must open by naming what the
-    // user introduced — not restate its position, not open with a transition.
-    // We inject the exact pushback text into the system prompt so the model
-    // knows precisely what to acknowledge. This mirrors why "share to all
-    // advisors" always gets acknowledged: that path prepends a structured
-    // framing message. Here we achieve the same via system prompt injection.
     const isPushbackCall = !rawMessages && messages.length > 0
     const lastMsg = messages[messages.length - 1]
     const pushbackText = isPushbackCall && lastMsg?.role === 'user'
@@ -221,13 +283,37 @@ Forbidden openings:
 Violation of this rule renders the entire response invalid. Follow it without exception.`
       : ''
 
-    const basePrompt = councilContext
+    // ── Assemble system prompt ────────────────────────────────────────────────
+    // Layer order:
+    //   1. persona.prompt         — core identity and mandate (always)
+    //   2. councilContext         — ontology + rule engine signals (initial + synthesis)
+    //   3. synthesisBlock         — full longitudinal bias record (synthesis only)
+    //   4. pushbackProtocol       — pushback acknowledgment enforcement (pushback only)
+    //   5. personaAlertBlock      — top confirmed+distorting bias (initial personas only)
+
+    let basePrompt = councilContext
       ? `${persona.prompt}\n\n${councilContext}`
       : persona.prompt
-    const systemPrompt = `${basePrompt}${pushbackProtocol}`
+
+    // Layer 3: full bias block for synthesis — MANDATORY directive included
+    if (isSynthesisCall && biasContext.synthesisBlock) {
+      basePrompt = `${basePrompt}\n\n${biasContext.synthesisBlock}`
+      console.log(`[Persona] Longitudinal bias block injected for synthesis | session ${sessionId}`)
+    }
+
+    // Layer 4: pushback protocol
+    // Layer 5: one-sentence bias alert for initial personas (confirmed + distorting only)
+    const personaAlertBlock = (isInitialPersona && biasContext.personaAlert)
+      ? `\n\n${biasContext.personaAlert}`
+      : ''
+
+    const systemPrompt = `${basePrompt}${pushbackProtocol}${personaAlertBlock}`
 
     if (councilContext) {
       console.log(`[Persona] Council context injected for ${personaKey} (${isInitialPersona ? 'initial' : 'synthesis'}) | session ${sessionId}`)
+    }
+    if (isInitialPersona && biasContext.personaAlert) {
+      console.log(`[Persona] Bias alert injected for ${personaKey} | session ${sessionId}`)
     }
 
     // ── Stream ────────────────────────────────────────────────────────────────
@@ -236,7 +322,6 @@ Violation of this rule renders the entire response invalid. Follow it without ex
     const passthrough = new ReadableStream<Uint8Array>({
       async start(controller) {
         const reader  = readable.getReader()
-        const encoder = new TextEncoder()
         try {
           while (true) {
             const { done, value } = await reader.read()

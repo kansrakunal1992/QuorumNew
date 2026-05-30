@@ -10,10 +10,33 @@
 //   asymmetry        = prosecutor_score - defense_score
 //   confidence_weight += 0.30 per detection (capped at 1.0)
 //
+// Sprint R2 changes:
+//   scoreBiasesForSession()
+//     — param renamed: personaResponses → pushbackTexts (string[])
+//     — bias scoring now grounded in human inputs only: decision text, context,
+//       examiner Q&A, and the user's own pushback messages.
+//     — LLM persona outputs fully excluded to prevent circular contamination
+//       (persona mentions FOMO → fingerprint records FOMO → next persona is
+//       calibrated to a bias it seeded, not one the user exhibited).
+//
+//   fetchUserBiasContext()
+//     — new export. Queries bias_library for a user's confirmed longitudinal bias
+//       profile and returns two injection-ready blocks for persona/route.ts:
+//         synthesisBlock : full block for synthesis system prompt (~150 tokens)
+//         personaAlert   : one-sentence alert for initial persona system prompts
+//     — Threshold: detection_count >= 1 (even single-session detections are
+//       included so early users experience the bias-aware reasoning). The block
+//       language is hedged for forming patterns vs confirmed ones.
+//
+//   classifyBiasSignal()
+//     — recency_bias: now correctly returns 'distorting' when ddInfo >= 4
+//       (was always 'neutral' — bug fix).
+//
 // Requires: ANTHROPIC_API_KEY env var
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createCompletion, getProviderInfo } from '@/lib/ai-client'
+import { createServiceClient }               from '@/lib/supabase'
 
 // ── 15 Bias Parameters ───────────────────────────────────────────────────────
 export const BIAS_PARAMETERS = [
@@ -119,24 +142,32 @@ export interface BiasScoreResult {
 }
 
 // ── Scoring prompt ─────────────────────────────────────────────────────────
+// Sprint R2: personaResponses replaced by pushbackTexts.
+// Scores exclusively on human-authored content:
+//   1. decisionText   — the user's own framing (primary)
+//   2. contextText    — user-supplied background (primary)
+//   3. examinerQA     — user's answers to diagnostic questions (primary)
+//   4. pushbackTexts  — user's own challenge messages typed during the session (secondary)
 function buildScoringPrompt(
   decisionText: string,
   contextText: string | null,
-  personaResponses: Record<string, string>,
+  pushbackTexts: string[],
   examinerQA: Array<{ question: string; answer: string }>,
   ontologyJson: Record<string, unknown> | null,
 ): string {
-  const personaBlock = Object.entries(personaResponses)
-    .map(([k, v]) => `[${k.toUpperCase().replace(/_/g, ' ')}]\n${v.slice(0, 600)}`)
-    .join('\n\n---\n\n')
-
   const ontologyBlock = ontologyJson
     ? `DECISION ONTOLOGY:\n${JSON.stringify(ontologyJson, null, 2)}`
     : ''
 
   const examinerBlock = examinerQA.length > 0
-    ? `EXAMINER Q&A (user answered these diagnostic questions — treat as primary evidence):\n${
+    ? `EXAMINER Q&A (user answered these diagnostic questions — treat as primary evidence for bias detection):\n${
         examinerQA.map((qa, i) => `Q${i + 1}: ${qa.question}\nA${i + 1}: ${qa.answer}`).join('\n\n')
+      }\n`
+    : ''
+
+  const pushbackBlock = pushbackTexts.length > 0
+    ? `USER PUSHBACK MESSAGES (the decision-maker's own responses when challenged — secondary evidence):\n${
+        pushbackTexts.map((t, i) => `[Pushback ${i + 1}]: ${t.slice(0, 400)}`).join('\n\n')
       }\n`
     : ''
 
@@ -144,7 +175,9 @@ function buildScoringPrompt(
     `"${b.key}": "${b.label}" — ${b.definition}`
   ).join('\n')
 
-  return `You are the Quorum Bias Scoring Engine. Your job is to evaluate a high-stakes decision for the presence of 15 cognitive bias patterns. You will produce a structured JSON response ONLY — no preamble, no explanation, no markdown backticks.
+  return `You are the Quorum Bias Scoring Engine. Your job is to evaluate a high-stakes decision for the presence of 15 cognitive bias patterns using ONLY what the decision-maker themselves said. You will produce a structured JSON response ONLY — no preamble, no explanation, no markdown backticks.
+
+IMPORTANT: Score based on the decision-maker's OWN WORDS only — their decision description, context, examiner answers, and pushback messages. Do not infer bias from anything an advisor might say about them.
 
 DECISION:
 ${decisionText}
@@ -152,18 +185,16 @@ ${decisionText}
 ${contextText ? `CONTEXT:\n${contextText}\n` : ''}
 ${ontologyBlock}
 ${examinerBlock}
-ADVISOR RESPONSES (condensed):
-${personaBlock}
-
+${pushbackBlock}
 BIAS PARAMETERS TO SCORE:
 ${biasBlock}
 
 SCORING METHOD — ADVERSARIAL PASS:
 For each bias parameter, run two arguments:
-  PROSECUTOR: What evidence in the decision description and context SUPPORTS this bias being active? Score 0–10 (0 = no evidence, 10 = strong clear evidence).
-  DEFENSE: What evidence ARGUES AGAINST this bias? Score 0–10 (0 = no defense, 10 = strong counter-evidence).
+  PROSECUTOR: What evidence in the decision-maker's own words SUPPORTS this bias being active? Score 0–10 (0 = no evidence, 10 = strong clear evidence).
+  DEFENSE: What evidence in their own words ARGUES AGAINST this bias? Score 0–10 (0 = no defense, 10 = strong counter-evidence).
   ASYMMETRY: prosecutor_score minus defense_score. Positive = bias likely active. If asymmetry >= 2.5, set detected: true.
-  REASONING: ≤40 words. What specific phrasing or pattern in the decision description triggered this score?
+  REASONING: ≤40 words. What specific phrasing or pattern in the decision-maker's own words triggered this score?
 
 ACTIVATION CONTEXT: For each bias, note which of these conditions are present in the decision:
   - decision_type: the primary decision category (e.g. "financial_allocation", "partnership", "transition", "acquisition")
@@ -195,18 +226,19 @@ Score all 15 bias parameters. Return the array in the same order as the paramete
 }
 
 // ── Main scorer function ──────────────────────────────────────────────────
+// Sprint R2: param renamed from personaResponses → pushbackTexts.
 export async function scoreBiasesForSession(params: {
   sessionId: string
   decisionText: string
   contextText: string | null
-  personaResponses: Record<string, string>
+  pushbackTexts: string[]           // user's own pushback messages (may be empty array)
   examinerQA?: Array<{ question: string; answer: string }>
   ontologyJson: Record<string, unknown> | null
 }): Promise<BiasScoreResult> {
   const prompt = buildScoringPrompt(
     params.decisionText,
     params.contextText,
-    params.personaResponses,
+    params.pushbackTexts,
     params.examinerQA ?? [],
     params.ontologyJson,
   )
@@ -236,6 +268,10 @@ export async function scoreBiasesForSession(params: {
 // OntologyScoreMap: { dim_name: { score: number, confidence: number } }
 // Only time_pressure, reversibility, and decision_discriminating_info are
 // used for classification — all other dims are irrelevant to signal type.
+//
+// Sprint R2 fix: recency_bias — was always returning 'neutral'. Now returns
+// 'distorting' when ddInfo >= 4 (high ambiguity = conditions have shifted,
+// pattern-matching from memory is actively misleading).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type BiasSignalType = 'distorting' | 'neutral' | 'adaptive'
@@ -249,8 +285,8 @@ export function classifyBiasSignal(
 ): BiasSignalType {
   // Extract the three dimensions relevant to signal classification.
   // Default to mid-range (3) when the ontology isn't available — produces 'neutral'.
-  const ddInfo       = ontologyVector?.decision_discriminating_info?.score ?? 3
-  const timePressure = ontologyVector?.time_pressure?.score ?? 3
+  const ddInfo        = ontologyVector?.decision_discriminating_info?.score ?? 3
+  const timePressure  = ontologyVector?.time_pressure?.score ?? 3
   const reversibility = ontologyVector?.reversibility?.score ?? 3
 
   switch (biasKey) {
@@ -271,7 +307,6 @@ export function classifyBiasSignal(
     // Neutral or adaptive when a genuine deadline exists.
     case 'speed_bias':
       if (timePressure <= 2) return 'distorting'
-      if (timePressure >= 4) return 'neutral'
       return 'neutral'
 
     // loss_aversion_reversal: distorting when it pushes excess risk-taking.
@@ -286,10 +321,13 @@ export function classifyBiasSignal(
       if (reversibility >= 4) return 'distorting'
       return 'neutral'
 
-    // recency_bias: neutral when the recent reference is genuinely analogous (same conditions).
-    // Distorting when conditions have shifted (high ambiguity is a proxy for changed context).
+    // recency_bias: Sprint R2 fix — distorting when high ambiguity exists (ddInfo >= 4).
+    // High DDI means there is knowable information the user isn't gathering — they're
+    // pattern-matching from memory in a context where conditions have materially shifted.
+    // Neutral when the decision environment is stable.
     case 'recency_bias':
-      return 'neutral'   // ambiguity not in top-3 dims; default neutral for this bias
+      if (ddInfo >= 4) return 'distorting'
+      return 'neutral'
 
     // social_proof: distorting when ample discriminating info exists — you should form
     // your own view rather than defer to peers.
@@ -335,4 +373,139 @@ export function getPredominantSignal(
   const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])
   if (entries.length === 0) return null
   return entries[0][0] as BiasSignalType
+}
+
+// ── fetchUserBiasContext (Sprint R2) ─────────────────────────────────────────
+//
+// Queries bias_library for a user's confirmed + forming longitudinal bias profile
+// and returns two injection-ready blocks for persona/route.ts:
+//
+//   synthesisBlock  — full block injected into the synthesis system prompt.
+//                     Includes all bias rows (detection_count >= 1) with all
+//                     scores: bias_key, detection_count, severity (asymmetry avg),
+//                     confidence_weight, and current signal classification
+//                     re-run against this session's ontology vector.
+//                     Ends with a MANDATORY assessment directive.
+//
+//   personaAlert    — single sentence injected into each initial persona's
+//                     system prompt. Only fires when ≥1 bias is DISTORTING.
+//                     Kept terse to avoid overloading 6 parallel persona calls.
+//
+//   hasAnyBiases    — true if user has any bias row at all (detection_count >= 1).
+//
+// Early-user threshold design:
+//   Detection count >= 1 is included (not >= 2) so that users with 1–3 sessions
+//   still experience bias-aware reasoning. Language in the blocks is calibrated:
+//   - detection_count = 1 → labelled "FORMING (1 detection)" — signals provisional
+//   - detection_count >= 2 → labelled "CONFIRMED (N detections)" — full authority
+//   The synthesis directive uses "may be active" for forming vs "is present" for confirmed.
+//
+// Signal re-classification:
+//   Each bias signal is re-classified against the CURRENT session's ontology vector,
+//   not the historical average. This ensures "DISTORTING" reflects whether the bias
+//   is actively harmful in THIS decision's structural context.
+//
+// Non-fatal: always returns empty blocks on error — never throws to caller.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface UserBiasContext {
+  synthesisBlock:  string        // full block for synthesis system prompt
+  personaAlert:    string | null // one-sentence alert for initial persona system prompts
+  hasAnyBiases:    boolean
+}
+
+export async function fetchUserBiasContext(
+  userId: string,
+  ontologyVector: OntologyScoreMap | null,
+): Promise<UserBiasContext> {
+  const empty: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false }
+  if (!userId) return empty
+
+  try {
+    const supabase = createServiceClient()
+
+    // Fetch all bias rows with at least 1 detection, ordered by severity descending.
+    // Limit 6 — beyond the top 6 patterns, marginal prompt value drops sharply.
+    const { data: biases, error } = await supabase
+      .from('bias_library')
+      .select('bias_parameter, detection_count, confidence_weight, asymmetry_score_avg, activation_contexts')
+      .eq('user_id', userId)
+      .gte('detection_count', 1)
+      .order('asymmetry_score_avg', { ascending: false })
+      .limit(6)
+
+    if (error || !biases || biases.length === 0) return empty
+
+    // Re-classify each bias signal against the current session's ontology vector.
+    // A minimal BiasScore is constructed — only asymmetry is used by the default
+    // branch; specific cases read only from ontologyVector.
+    const classified = biases.map(b => {
+      const minimalScore: BiasScore = {
+        bias_key:           b.bias_parameter as BiasParameterKey,
+        prosecutor_score:   0,
+        defense_score:      0,
+        asymmetry:          b.asymmetry_score_avg as number,
+        detected:           true,
+        activation_context: {},
+        reasoning:          '',
+      }
+      const signal = classifyBiasSignal(
+        b.bias_parameter as BiasParameterKey,
+        minimalScore,
+        ontologyVector,
+      )
+      const isConfirmed = (b.detection_count as number) >= 2
+      return {
+        biasKey:          b.bias_parameter as string,
+        detectionCount:   b.detection_count as number,
+        confidenceWeight: b.confidence_weight as number,
+        asymmetryAvg:     b.asymmetry_score_avg as number,
+        isConfirmed,
+        signal,
+      }
+    })
+
+    // ── Build synthesisBlock ──────────────────────────────────────────────
+    // All scores included: detection_count + status label, severity (asymmetry avg),
+    // confidence_weight, and current signal classification for this decision.
+    const biasLines = classified.map(b => {
+      const statusLabel = b.isConfirmed
+        ? `CONFIRMED (${b.detectionCount} detections)`
+        : `FORMING (${b.detectionCount} detection)`
+      return `— ${b.biasKey} | ${statusLabel} | severity: ${b.asymmetryAvg.toFixed(1)} | confidence: ${Math.round(b.confidenceWeight * 100)}% | signal: ${b.signal.toUpperCase()}`
+    }).join('\n')
+
+    const hasDistorting  = classified.some(b => b.signal === 'distorting' && b.isConfirmed)
+    const hasForming     = classified.some(b => !b.isConfirmed)
+
+    const directiveBody = hasDistorting
+      ? 'Your synthesis MUST explicitly assess whether any DISTORTING confirmed pattern from this record appears active in the current decision, based on the Council outputs and the decision\'s structural profile. Name it directly if detected. If none are active, state that explicitly — omission is not acceptable.'
+      : hasForming
+        ? 'Your synthesis should note whether any of these emerging patterns — even the FORMING ones — may be influencing the framing of this decision. Use hedged language ("there may be an early pattern of...") for FORMING entries. Silence on this record is not acceptable.'
+        : 'Your synthesis should assess whether any of these patterns appears active in the current decision based on the Council outputs.'
+
+    const synthesisBlock =
+`LONGITUDINAL BIAS RECORD — patterns from this user's prior sessions:
+${biasLines}
+
+Columns: bias_key | status (CONFIRMED = 2+ detections, FORMING = 1 detection) | severity (avg prosecutor–defense asymmetry, 0–10 scale) | confidence (evidence weight: 30% per detection, capped at 100%) | signal (re-classified against THIS decision's structural profile: DISTORTING / NEUTRAL / ADAPTIVE).
+
+MANDATORY SYNTHESIS REQUIREMENT — NON-NEGOTIABLE:
+${directiveBody}`
+
+    // ── Build personaAlert ────────────────────────────────────────────────
+    // Only the single highest-severity DISTORTING bias fires here, and only if confirmed.
+    // Forming patterns are excluded from persona alerts — insufficient evidence to
+    // direct advisor reasoning.
+    const topDistorting = classified.find(b => b.signal === 'distorting' && b.isConfirmed)
+    const personaAlert = topDistorting
+      ? `DOCUMENTED BIAS ALERT: This user has a confirmed longitudinal pattern of ${topDistorting.biasKey} (${topDistorting.detectionCount} prior detections, severity ${topDistorting.asymmetryAvg.toFixed(1)}/10, currently DISTORTING for this decision's structural profile). Factor this into your analysis where the evidence supports it.`
+      : null
+
+    return { synthesisBlock, personaAlert, hasAnyBiases: true }
+
+  } catch (err) {
+    console.error('[BiasContext] fetchUserBiasContext failed:', err)
+    return empty
+  }
 }

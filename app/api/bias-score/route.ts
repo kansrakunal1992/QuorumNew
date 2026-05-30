@@ -1,6 +1,7 @@
 // app/api/bias-score/route.ts
 // ── Sprint 4 / 4b: Bias Library — Background Scoring Endpoint ────────────────
 // ── Sprint 20: Added signal_type classification per detection ─────────────────
+// ── Sprint R2: Human-inputs-only scoring ─────────────────────────────────────
 //
 // Called server-side from /api/examiner POST after examiner submit/skip.
 //
@@ -8,6 +9,21 @@
 // is classified via classifyBiasSignal() against the session's ontology_vector.
 // The signal_type ('distorting' | 'neutral' | 'adaptive') is stored inside
 // activation_contexts per session — no new DB column required.
+//
+// Sprint R2 change: bias scoring now reads ONLY human-authored inputs.
+//
+//   REMOVED: reading assistant-role (LLM) persona messages as scoring evidence.
+//   ADDED:   reading user-role messages (pushback typed by the decision-maker)
+//            as secondary evidence.
+//
+//   Why this matters: if a persona mentions FOMO in its analysis, the old scorer
+//   would record FOMO in the user's fingerprint — but that's the LLM's observation,
+//   not a pattern the user exhibited. The fingerprint must reflect the decision-
+//   maker's own cognitive patterns, not echoes of what advisors said about them.
+//
+//   Guard change: abort condition updated from "no persona messages" to
+//   "no decision_text" — decision_text is always present; the session is always
+//   scoreable even without examiner answers or pushback (early sessions).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
@@ -54,6 +70,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
+    if (!session.decision_text?.trim()) {
+      console.warn(`[BiasScore] No decision_text for session ${sessionId} — aborting`)
+      return NextResponse.json({ status: 'ok', skipped: true, reason: 'no_decision_text' })
+    }
+
     const resolvedUserId    = session.user_id    ?? null
     const resolvedUserEmail = session.user_email ?? null
     const resolvedDeviceId  = session.device_id  ?? null
@@ -65,28 +86,22 @@ export async function POST(req: Request) {
 
     console.log(`[BiasScore] Scoring session ${sessionId} (identity: ${identityTier})`)
 
-    // ── 3. Read persona responses ──────────────────────────────────────────
-    const { data: messages } = await supabase
+    // ── 3. Read user pushback messages (human inputs only) ─────────────────
+    // Sprint R2: reads ONLY role='user' messages — the decision-maker's own
+    // pushback messages typed during advisor conversations.
+    // Excludes all role='assistant' persona outputs to prevent contamination.
+    const { data: userMessages } = await supabase
       .from('messages')
-      .select('persona, content, role')
+      .select('content, role')
       .eq('session_id', sessionId)
-      .eq('role', 'assistant')
-      .not('persona', 'in', '(synthesis,decision_brief)')
+      .eq('role', 'user')
       .order('created_at', { ascending: true })
 
-    if (!messages || messages.length === 0) {
-      console.warn(`[BiasScore] No persona messages found for session ${sessionId} — aborting`)
-      return NextResponse.json({ status: 'ok', skipped: true, reason: 'no_messages' })
-    }
+    const pushbackTexts: string[] = (userMessages ?? [])
+      .map(m => m.content?.trim())
+      .filter((t): t is string => Boolean(t) && t.length > 0)
 
-    const personaResponses: Record<string, string> = {}
-    for (const msg of messages) {
-      if (!personaResponses[msg.persona]) {
-        personaResponses[msg.persona] = msg.content
-      } else {
-        personaResponses[msg.persona] += '\n\n' + msg.content
-      }
-    }
+    console.log(`[BiasScore] ${pushbackTexts.length} user pushback message(s) for session ${sessionId}`)
 
     // ── 4. Fetch examiner Q&A ─────────────────────────────────────────────
     const { data: examinerRows } = await supabase
@@ -101,8 +116,11 @@ export async function POST(req: Request) {
         .filter(r => r.response_text?.trim())
         .map(r => ({ question: r.question_text, answer: r.response_text! }))
 
+    if (examinerQA.length === 0 && pushbackTexts.length === 0) {
+      console.log(`[BiasScore] Scoring from decision_text only for session ${sessionId} — no examiner or pushback data yet`)
+    }
+
     // ── 5. Fetch ontology tag + vector ────────────────────────────────────
-    // Sprint 20: also fetch ontology_vector for signal classification
     const { data: ontology } = await supabase
       .from('sessions_ontology')
       .select('raw_ontology_json, ontology_vector, decision_type_primary, instrumental_weight, constitutive_weight, dominant_emotion, has_stated_deadline, counterparty_present')
@@ -111,17 +129,15 @@ export async function POST(req: Request) {
 
     const ontologyJson = ontology?.raw_ontology_json as Record<string, unknown> | null ?? null
 
-    // Build the OntologyScoreMap for signal classification.
-    // ontology_vector is stored as { dim_name: { score, confidence } }
     const ontologyVector: OntologyScoreMap | null =
       (ontology?.ontology_vector as OntologyScoreMap | null) ?? null
 
-    // ── 6. Score biases ───────────────────────────────────────────────────
+    // ── 6. Score biases (human inputs only) ───────────────────────────────
     const result = await scoreBiasesForSession({
       sessionId,
-      decisionText:     session.decision_text,
-      contextText:      session.context_text ?? null,
-      personaResponses,
+      decisionText:  session.decision_text,
+      contextText:   session.context_text ?? null,
+      pushbackTexts,   // Sprint R2: user's own pushback messages (replaces personaResponses)
       examinerQA,
       ontologyJson,
     })

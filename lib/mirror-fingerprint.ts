@@ -1,5 +1,5 @@
 // lib/mirror-fingerprint.ts
-// ── Mirror Module: Fingerprint Data Layer (Sprint 7b, updated Sprint 20) ───────
+// ── Mirror Module: Fingerprint Data Layer (Sprint 7b, updated Sprint 20 / R2) ──
 //
 // Sprint 20 additions:
 //   - signalType: BiasSignalType | null  — predominant signal across all sessions
@@ -8,6 +8,16 @@
 //     Uses getPredominantSignal() from bias-scorer.ts — no new DB column.
 //   - sessionIds: string[]  — passed through from bias_library.session_ids
 //     for the source-decision drawer in BiasFingerprint.tsx / PatternTile.tsx.
+//
+// Sprint R2 additions:
+//   - Forming tiles (detection_count = 1) now receive AI-generated content.
+//     Previously they returned activationSummary: null and a static fallback
+//     interpretation. Early users (1–3 sessions) would see empty tiles.
+//     Fix: generateFingerprintContent() now runs for both confirmed AND forming
+//     rows, using appropriately hedged language for single-detection entries.
+//   - generateFingerprintContent() receives a new `formingBiasRows` param.
+//     The prompt distinguishes forming from confirmed so the AI uses hedged
+//     language ("may reflect an emerging tendency") for 1-detection patterns.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServiceClient } from '@/lib/supabase'
@@ -114,6 +124,14 @@ function humanizeActivationSummary(
 }
 
 // ── AI narrative + interpretation generation ──────────────────────────────────
+//
+// Sprint R2: generateFingerprintContent() now accepts both confirmed and forming
+// bias rows. The prompt template distinguishes them so the AI uses appropriately
+// hedged language for 1-detection entries.
+//
+// This ensures users with 1–3 sessions (where all or most biases are "forming")
+// still receive AI-generated activation summaries and interpretations rather
+// than empty tiles with null summaries.
 
 interface AIFingerprintResponse {
   narrative: string | null
@@ -132,23 +150,59 @@ async function generateFingerprintContent(
     asymmetryAvg: number
     activationContexts: Record<string, unknown>
   }>,
+  formingBiasRows: Array<{
+    biasKey: string
+    biasLabel: string
+    detectionCount: number
+    asymmetryAvg: number
+    activationContexts: Record<string, unknown>
+  }>,
   decisionTypeDistribution: string,
   sessionCount: number,
   emotionPatterns: string,
 ): Promise<AIFingerprintResponse> {
   const confirmedBiasesJson = confirmedBiasRows.map(b => ({
-    bias_key:      b.biasKey,
-    label:         b.biasLabel,
-    detections:    b.detectionCount,
-    asymmetry_avg: b.asymmetryAvg,
+    bias_key:        b.biasKey,
+    label:           b.biasLabel,
+    detections:      b.detectionCount,
+    asymmetry_avg:   b.asymmetryAvg,
+    status:          'confirmed',
     sample_contexts: Object.values(b.activationContexts).slice(0, 3),
   }))
 
-  const prompt = MIRROR_FINGERPRINT_NARRATIVE
-    .replace('{{CONFIRMED_BIASES}}',  JSON.stringify(confirmedBiasesJson, null, 2))
+  // Sprint R2: forming biases included with 'forming' status so AI generates
+  // hedged content ("may reflect an emerging tendency") instead of silence.
+  const formingBiasesJson = formingBiasRows.map(b => ({
+    bias_key:        b.biasKey,
+    label:           b.biasLabel,
+    detections:      b.detectionCount,
+    asymmetry_avg:   b.asymmetryAvg,
+    status:          'forming',
+    sample_contexts: Object.values(b.activationContexts).slice(0, 1),
+  }))
+
+  const allBiasesJson = [...confirmedBiasesJson, ...formingBiasesJson]
+
+  // Build the prompt from the existing MIRROR_FINGERPRINT_NARRATIVE template,
+  // then append the forming-tile instruction so the AI knows how to handle them.
+  const basePrompt = MIRROR_FINGERPRINT_NARRATIVE
+    .replace('{{CONFIRMED_BIASES}}',  JSON.stringify(allBiasesJson, null, 2))
     .replace('{{DECISION_TYPES}}',    decisionTypeDistribution)
     .replace('{{SESSION_COUNT}}',     String(sessionCount))
     .replace('{{EMOTION_PATTERNS}}',  emotionPatterns)
+
+  // Append forming-tile guidance after the base prompt.
+  // This supplements the existing template without altering the stored prompt.
+  const formingGuidance = formingBiasesJson.length > 0
+    ? `\n\nADDITIONAL INSTRUCTION FOR FORMING PATTERNS (status: "forming"):
+Entries marked status: "forming" have been detected only once. For these entries:
+- interpretation: use hedged, provisional language — "This may reflect an emerging tendency to..." or "An early signal suggests..." (25–35 words, second person, specific to the activation context)
+- activation_summary: same format as confirmed ("Most active when...") but derived from the single available activation context. Keep it honest and specific — do not fabricate conditions not present in the data.
+- narrative: if ALL entries are forming (no confirmed patterns), set narrative to null — a portrait requires more than one data point.
+- If some entries are confirmed and some forming, include only confirmed patterns in the narrative paragraph.`
+    : ''
+
+  const prompt = basePrompt + formingGuidance
 
   const raw   = await createCompletion(prompt, 2000)
   const clean = raw.replace(/```json|```/g, '').trim()
@@ -224,11 +278,28 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
   const confirmedRows = biasRows.filter(b => b.detection_count >= 2)
   const formingRows   = biasRows.filter(b => b.detection_count === 1)
 
-  // ── 5. Generate AI content if we have confirmed patterns ──────────────────
+  // ── 5. Generate AI content ────────────────────────────────────────────────
+  // Sprint R2: generateFingerprintContent() now always runs when there are ANY
+  // bias rows — confirmed or forming. Previously it only ran for confirmedRows.
+  // This ensures early users (1–3 sessions, mostly forming patterns) receive
+  // AI-generated activation_summary and interpretation for their tiles.
   let aiContent: AIFingerprintResponse = { narrative: null, tile_interpretations: [] }
 
-  if (confirmedRows.length >= 1) {
-    const allConfirmed = confirmedRows.slice(0, 6).map(b => ({
+  const hasBiasesToGenerate = confirmedRows.length >= 1 || formingRows.length >= 1
+
+  if (hasBiasesToGenerate) {
+    const confirmedForAI = confirmedRows.slice(0, 6).map(b => ({
+      biasKey:            b.bias_parameter as string,
+      biasLabel:          getBiasLabel(b.bias_parameter as string),
+      detectionCount:     b.detection_count as number,
+      asymmetryAvg:       b.asymmetry_score_avg as number,
+      activationContexts: (b.activation_contexts as Record<string, unknown>) ?? {},
+    }))
+
+    // Sprint R2: pass forming rows to AI as well, capped at 4 to manage token budget.
+    // Forming rows are already ordered by detection_count desc (all = 1) so we take
+    // highest asymmetry entries first by virtue of the outer query ordering.
+    const formingForAI = formingRows.slice(0, 4).map(b => ({
       biasKey:            b.bias_parameter as string,
       biasLabel:          getBiasLabel(b.bias_parameter as string),
       detectionCount:     b.detection_count as number,
@@ -237,7 +308,8 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     }))
 
     aiContent = await generateFingerprintContent(
-      allConfirmed,
+      confirmedForAI,
+      formingForAI,
       decisionTypeDistribution,
       sessionCount ?? 0,
       emotionPatterns,
@@ -263,8 +335,6 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     const activationSummary =
       aiTile?.activation_summary || humanizeActivationSummary(activCtx, detections)
 
-    // Sprint 20: derive predominant signal type from per-session signal_type
-    // values stored in activation_contexts. Returns null for pre-Sprint-20 rows.
     const signalType = getPredominantSignal(activCtx)
 
     return {
@@ -285,10 +355,17 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     }
   })
 
-  // ── 7. Build forming tiles (teasers) ─────────────────────────────────────
+  // ── 7. Build forming tiles ────────────────────────────────────────────────
+  // Sprint R2: forming tiles now use AI-generated content when available.
+  // interpLookup is populated for forming entries by generateFingerprintContent()
+  // when called above. Falls back to static copy only when AI call fails or
+  // this bias wasn't included in the capped formingForAI slice (rows 5+).
   const formingTiles: FingerprintTile[] = formingRows.map(b => {
     const biasKey    = b.bias_parameter as string
+    const aiTile     = interpLookup[biasKey]   // populated by R2 AI call
+    const activCtx   = (b.activation_contexts as Record<string, unknown>) ?? {}
     const sessionIds = (b.session_ids as string[] | null) ?? []
+
     return {
       biasKey,
       biasLabel:         getBiasLabel(biasKey),
@@ -296,8 +373,10 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       confidenceWeight:  0.30,
       confidenceDots:    1,
       asymmetryAvg:      b.asymmetry_score_avg as number,
-      activationSummary: null,
-      interpretation:    'Pattern forming — one more session to confirm.',
+      // Sprint R2: use AI summary when available; null fallback kept for overflow rows
+      activationSummary: aiTile?.activation_summary ?? null,
+      // Sprint R2: use AI interpretation when available; static fallback otherwise
+      interpretation:    aiTile?.interpretation ?? 'Pattern forming — one more session to confirm.',
       isTeaser:          true,
       signalType:        null,   // Sprint 20
       sessionIds,                // Sprint 20
