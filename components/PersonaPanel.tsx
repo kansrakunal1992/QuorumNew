@@ -551,13 +551,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               borderRadius:  5,
               border:        isThisSpeaking
                                ? '1px solid rgba(201,168,76,0.5)'
-                               : '1px solid rgba(255,255,255,0.18)',
+                               : '1px solid var(--tts-btn-border)',
               background:    isThisSpeaking
                                ? 'rgba(201,168,76,0.15)'
-                               : 'rgba(255,255,255,0.08)',
+                               : 'var(--tts-btn-bg)',
               color:         isThisSpeaking
                                ? 'var(--gold)'
-                               : 'rgba(255,255,255,0.70)',
+                               : 'var(--tts-btn-color)',
               fontSize:      11,
               fontWeight:    500,
               cursor:        'pointer',
@@ -595,9 +595,9 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 padding: '4px 8px', borderRadius: 5,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: 'rgba(255,255,255,0.08)',
-                color: 'rgba(255,255,255,0.55)',
+                border: '1px solid var(--tts-btn-border)',
+                background: 'var(--tts-btn-bg)',
+                color: 'var(--tts-stop-color)',
                 fontSize: 11, fontWeight: 500, cursor: 'pointer',
                 fontFamily: 'inherit', transition: 'all 0.18s',
               }}
@@ -622,13 +622,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               borderRadius:  5,
               border:        rate !== 1
                                ? '1px solid rgba(201,168,76,0.5)'
-                               : '1px solid rgba(255,255,255,0.18)',
+                               : '1px solid var(--tts-btn-border)',
               background:    rate !== 1
                                ? 'rgba(201,168,76,0.15)'
-                               : 'rgba(255,255,255,0.08)',
+                               : 'var(--tts-btn-bg)',
               color:         rate !== 1
                                ? 'var(--gold)'
-                               : 'rgba(255,255,255,0.60)',
+                               : 'var(--tts-btn-color)',
               fontSize:      11,
               fontWeight:    600,
               cursor:        'pointer',

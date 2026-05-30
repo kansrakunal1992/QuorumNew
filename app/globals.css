@@ -46,6 +46,12 @@
   --accent-elder:             #a86a20;
   --accent-competitor:        #5e6830;
 
+  /* TTS strip button colours */
+  --tts-btn-color:   rgba(255,255,255,0.70);
+  --tts-btn-border:  rgba(255,255,255,0.18);
+  --tts-btn-bg:      rgba(255,255,255,0.08);
+  --tts-stop-color:  rgba(255,255,255,0.55);
+
   /* Synthesis card header state backgrounds */
   --synthesis-done:      #162a1c;
   --synthesis-streaming: #181408;
@@ -79,6 +85,12 @@
   --error:       #c03030;
   --scrollbar-thumb: #b0bece;
   --shadow-card: 0 1px 8px rgba(6,13,28,0.08), 0 4px 24px rgba(6,13,28,0.06);
+
+  /* TTS strip button colours — dark text on cream bg */
+  --tts-btn-color:   var(--text-2);
+  --tts-btn-border:  var(--border-mid);
+  --tts-btn-bg:      rgba(0,0,0,0.05);
+  --tts-stop-color:  var(--text-3);
 
   /* Synthesis card header state backgrounds — light-mode safe */
   --synthesis-done:      var(--green-soft);
@@ -114,12 +126,25 @@ html[data-theme="dark"] body {
     #080f1c;
 }
 
+/* Light mode: very subtle warm vignette — cream parchment depth */
+html[data-theme="light"],
+html[data-theme="light"] body {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(200, 180, 130, 0.18) 0%, transparent 60%),
+    #f4f1eb;
+}
+
 /* Hero card: dark glass in dark mode, pristine white in light mode */
 [data-theme="dark"] .hero-card {
   background: linear-gradient(160deg, rgba(16, 24, 44, 0.82) 0%, rgba(9, 13, 26, 0.94) 100%);
 }
 [data-theme="light"] .hero-card {
   background: var(--bg-card);
+}
+
+/* Card bloom: dark-mode only — hide on light (cream bg needs no extra depth) */
+[data-theme="light"] .card-bloom {
+  display: none;
 }
 
 /* ── Typography utilities ────────────────────────────────── */

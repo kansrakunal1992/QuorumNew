@@ -376,11 +376,11 @@ export default function Home() {
           </div>
 
           {/* ── Flip card wrapper ─────────────────────────── */}
-          <div style={{ position: 'relative', marginBottom: 0, overflowX: 'clip' }}>
+          <div style={{ position: 'relative', marginBottom: 0 }}>
 
-            {/* ── Radial bloom behind card — no horizontal overflow to avoid centering shift ── */}
+            {/* ── Radial bloom behind card — dark mode only (hidden via .card-bloom in light) ── */}
             {!inputRevealed && (
-              <div style={{
+              <div className="card-bloom" style={{
                 position:     'absolute',
                 top:          '-80px',
                 left:         0,
@@ -403,7 +403,7 @@ export default function Home() {
                 top: 0, left: 0, right: 0,
                 backdropFilter:'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
-                border:        '1px solid var(--gold-dim)',
+                border:        '1.5px solid var(--gold-dim)',
                 borderRadius:  20,
                 minHeight:     inputRevealed ? 0 : 'clamp(460px, 78svh, calc(100vh - 120px))',
                 display:       'flex',
