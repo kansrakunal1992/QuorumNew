@@ -378,6 +378,17 @@ export default function Home() {
           {/* ── Flip card wrapper ─────────────────────────── */}
           <div style={{ position: 'relative', marginBottom: 0 }}>
 
+            {/* ── Radial bloom behind card — dark navy glow, not visible decoration ── */}
+            {!inputRevealed && (
+              <div style={{
+                position:     'absolute',
+                inset:        '-80px -100px',
+                background:   'radial-gradient(ellipse at 50% 48%, rgba(22, 42, 88, 0.72) 0%, rgba(10, 20, 48, 0.38) 42%, transparent 68%)',
+                pointerEvents:'none',
+                zIndex:       0,
+              }} />
+            )}
+
             {/* ── BACK FACE — QUORUM entry point / onboarding ─ */}
             <div
               className="card-back-inner"
@@ -387,7 +398,9 @@ export default function Home() {
               style={{
                 position:      inputRevealed ? 'absolute' : 'relative',
                 top: 0, left: 0, right: 0,
-                background:    'var(--bg-card)',
+                background:    'linear-gradient(160deg, rgba(16, 24, 44, 0.82) 0%, rgba(9, 13, 26, 0.94) 100%)',
+                backdropFilter:'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
                 border:        '1px solid var(--gold-dim)',
                 borderRadius:  20,
                 minHeight:     inputRevealed ? 0 : 'clamp(460px, 78svh, calc(100vh - 120px))',
@@ -402,8 +415,8 @@ export default function Home() {
                 pointerEvents: inputRevealed ? 'none' : 'auto',
                 zIndex:        inputRevealed ? 0 : 1,
                 boxShadow:     cardHovered
-                  ? '0 0 0 1px var(--gold-dim), inset 0 0 100px var(--gold-glow), 0 32px 100px rgba(0,0,0,0.45)'
-                  : '0 0 0 1px var(--gold-dim), inset 0 0 60px var(--gold-glow), 0 24px 80px rgba(0,0,0,0.35)',
+                  ? '0 0 0 1px var(--gold-dim), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 100px var(--gold-glow), 0 40px 120px rgba(0,0,0,0.60)'
+                  : '0 0 0 1px var(--gold-dim), inset 0 1px 0 rgba(255,255,255,0.05), inset 0 0 70px var(--gold-glow), 0 28px 90px rgba(0,0,0,0.50)',
                 padding:       '60px 40px',
                 userSelect:    'none',
               }}

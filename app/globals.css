@@ -17,26 +17,34 @@
 /* ── DARK theme (default) ────────────────────────────────── */
 [data-theme="dark"] {
   --bg-void:     #060c1a;
-  --bg-deep:     #0a1222;
-  --bg-card:     #0c1226;
-  --bg-card-alt: #101628;
-  --bg-inset:    #060b18;
-  --border-dim:  #1a2640;
-  --border-mid:  #253660;
-  --border-hi:   #344d80;
+  --bg-deep:     #0b1220;
+  --bg-card:     #101827;
+  --bg-card-alt: #151e2f;
+  --bg-inset:    #080e19;
+  --border-dim:  #202b40;
+  --border-mid:  #2b3a55;
+  --border-hi:   #3a4a68;
   --gold:        #d4a843;
   --gold-bright: #eaca78;
   --gold-dim:    #5a3f1a;
   --gold-glow:   rgba(201,168,76,0.14);
   --text-1:      #f5f7fb;
   --text-2:      #c8d6f0;
-  --text-3:      #8fa0c4;
-  --text-4:      #4e6080;
+  --text-3:      #8d9aaf;
+  --text-4:      #66738a;
   --green-soft:  #1a3d2a;
   --green-text:  #4ade80;
   --error:       #e05050;
-  --scrollbar-thumb: #253660;
-  --shadow-card: 0 2px 12px rgba(0,0,0,0.5);
+  --scrollbar-thumb: #2b3a55;
+  --shadow-card: 0 2px 16px rgba(0,0,0,0.55);
+
+  /* Semantic persona accent rails */
+  --accent-contrarian:        #b03535;
+  --accent-risk:              #3268b0;
+  --accent-pattern:           #2e8a58;
+  --accent-stakeholder:       #7230a8;
+  --accent-elder:             #a86a20;
+  --accent-competitor:        #5e6830;
 
   /* Synthesis card header state backgrounds */
   --synthesis-done:      #162a1c;
@@ -96,6 +104,14 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background 0.32s ease, color 0.32s ease;
+}
+
+/* Dark mode: subtle radial navy emergence — replaces flat void */
+[data-theme="dark"] html,
+[data-theme="dark"] body {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(22, 38, 74, 0.42) 0%, transparent 58%),
+    #060c1a;
 }
 
 /* ── Typography utilities ────────────────────────────────── */
@@ -220,7 +236,7 @@ textarea {
 .decision-input:focus,
 textarea:focus {
   border-color: var(--border-hi);
-  box-shadow: 0 0 0 3px rgba(52,77,128,0.22);
+  box-shadow: 0 0 0 3px rgba(122, 162, 216, 0.14);
 }
 [data-theme="light"] .decision-input:focus,
 [data-theme="light"] textarea:focus {
@@ -231,21 +247,22 @@ textarea::placeholder { color: var(--text-4); }
 
 /* ── Buttons ─────────────────────────────────────────────────── */
 .btn-primary {
-  background: var(--gold);
-  color: #ffffff;
+  background: linear-gradient(180deg, #D2B66B 0%, #B89445 100%);
+  color: #101318;
   font-weight: 700;
-  border: none;
+  border: 1px solid rgba(255, 220, 140, 0.28);
   border-radius: 8px;
   padding: 12px 28px;
   font-size: 15px;
   cursor: pointer;
-  transition: background 0.2s, transform 0.1s;
+  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
   letter-spacing: 0.045em;
   font-family: var(--font-body);
+  box-shadow: 0 6px 20px rgba(191, 164, 106, 0.16);
 }
-.btn-primary:hover  { background: var(--gold-bright); }
+.btn-primary:hover  { background: linear-gradient(180deg, #DCC477 0%, #C8A75A 100%); box-shadow: 0 8px 24px rgba(191, 164, 106, 0.26); }
 .btn-primary:active { transform: scale(0.98); }
-.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 
 .btn-ghost {
   background: transparent;

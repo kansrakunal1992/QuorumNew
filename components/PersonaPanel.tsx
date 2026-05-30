@@ -42,12 +42,12 @@ const ICONS: Record<string, React.ReactNode> = {
 }
 
 const ACCENT_COLORS: Record<string, string> = {
-  contrarian:        '#7c2020',
-  risk_architect:    '#1e3a6e',
-  pattern_analyst:   '#1a4a36',
-  stakeholder_mirror:'#4a2070',
-  elder:             '#5c3a10',
-  competitor:        '#3a2a10',
+  contrarian:        '#b03535',
+  risk_architect:    '#3268b0',
+  pattern_analyst:   '#2e8a58',
+  stakeholder_mirror:'#7230a8',
+  elder:             '#a86a20',
+  competitor:        '#5e6830',
 }
 
 interface Props {
@@ -309,18 +309,18 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   }
 
   return (
-    <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280 }}>
+    <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280, borderLeft: `3px solid ${accentColor}` }}>
       {/* Header */}
-      <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.10)', background: accentColor, borderRadius: '14px 14px 0 0' }}>
+      <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-card-alt)', borderRadius: '14px 14px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.9)', flexShrink: 0 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 7, background: `${accentColor}22`, border: `1px solid ${accentColor}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accentColor, flexShrink: 0 }}>
               {icon}
             </div>
             <div>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#f0f4ff', lineHeight: 1.2 }}>{persona.label}</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.2 }}>{persona.label}</p>
               {/* Show lens caption when available (replaces static tagline) — keeps header compact */}
-              <p style={{ fontSize: 11, color: 'rgba(240,244,255,0.60)', lineHeight: 1.35, marginTop: 2, maxWidth: 220 }}>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.35, marginTop: 2, maxWidth: 220 }}>
                 {lensText || persona.tagline}
               </p>
             </div>
@@ -527,12 +527,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       {/* ── TTS strip — Sprint 23c — bottom of card, accent bg matches header ── */}
       {panelState === 'done' && !showPushback && (
         <div style={{
-          borderTop:    '1px solid rgba(255,255,255,0.10)',
+          borderTop:    '1px solid var(--border-dim)',
           padding:      '7px 14px',
           display:      'flex',
           alignItems:   'center',
           justifyContent: 'space-between',
-          background:   accentColor,
+          background:   'var(--bg-card-alt)',
           borderRadius: '0 0 14px 14px',
         }}>
           {/* Read aloud / Stop */}
