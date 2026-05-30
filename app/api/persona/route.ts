@@ -72,6 +72,34 @@
  *
  *   structuralBlock layer (user turn, initial personas only):
  *     shared context block + persona-specific directive suffix
+ *
+ * Sprint R5 additions:
+ *
+ *   Structural output traceability (conditional)
+ *     A lightweight output requirement appended to the structuralBlock — inside
+ *     the user turn, after the existing persona-specific structural mandate.
+ *
+ *     Design: conditional, not mandatory. If the structural record genuinely
+ *     shaped the persona's angle, they close with one sentence beginning
+ *     "Structurally, this decision [observation]." If the record did not apply
+ *     to their specific analytical angle, the sentence is omitted entirely.
+ *
+ *     Rationale for conditional design: weak or borderline structural matches
+ *     (45–59/100) may not apply to every persona's specific lens. Forcing a
+ *     closing sentence on every structural-context response risks fabricated
+ *     citations that undermine the analytical integrity of the output. The
+ *     "if you engaged with it" gate preserves multi-perspective depth while
+ *     creating traceability where structural memory genuinely influenced reasoning.
+ *
+ *     Tech debt note: The conditional creates an audit gap — a persona that
+ *     omitted the sentence cannot be distinguished from one that ignored the
+ *     mandate. Full traceability (requiring either a closing citation or an
+ *     explicit non-applicability statement) is deferred until corpus scale
+ *     makes the distinction analytically meaningful.
+ *
+ *     Scope: only fires when structuralBlock is assembled (structural context
+ *     present + persona in PERSONAS_WITH_STRUCTURAL_CONTEXT + initial call).
+ *     No system prompt change. No personas.ts change. No new imports.
  */
 
 import { PERSONAS }                            from '@/lib/personas'
@@ -243,12 +271,17 @@ export async function POST(req: Request) {
       // getPersonaStructuralDirective() returns '' for non-structural personas —
       // no existence check needed; the PERSONAS_WITH_STRUCTURAL_CONTEXT guard
       // already prevents the block from being assembled for excluded personas.
+      //
+      // Sprint R5: OUTPUT TRACEABILITY appended after the mandate — conditional,
+      // not mandatory. The "if you engaged with it" gate prevents forced citations
+      // on weak matches and preserves multi-perspective analytical integrity.
+      // See header comment for tech debt note on the resulting audit gap.
       const structuralBlock = (
         structuralContext &&
         PERSONAS_WITH_STRUCTURAL_CONTEXT.has(personaKey) &&
         messages.length === 0
       )
-        ? `\n${structuralContext}\n\nYOUR STRUCTURAL MANDATE: ${getPersonaStructuralDirective(personaKey)}\n`
+        ? `\n${structuralContext}\n\nYOUR STRUCTURAL MANDATE: ${getPersonaStructuralDirective(personaKey)}\n\nOUTPUT TRACEABILITY (conditional): If the structural record above has genuinely shaped your angle — if you can draw a specific parallel or contrast — close your response with exactly one sentence in this form: "Structurally, this decision [your specific observation about the single most relevant signal from the record above]." If the structural memory did not apply to your specific analytical angle, omit this sentence entirely. Do not fabricate a citation.\n`
         : ''
 
       if (messages.length === 0) {
