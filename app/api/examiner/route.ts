@@ -11,6 +11,13 @@
  *   - Removed scoreBiasesForSession import (no longer needed here)
  *
  * GET handler — unchanged from Sprint 12 (contextual rule question personalisation)
+ *
+ * Additional Risk B fix (audit):
+ *   - C0 (JTBD question) now fires on ALL decisions regardless of rule count.
+ *     Previously suppressed when allRules.length >= 3 — i.e. exactly the complex
+ *     decisions where knowing the user's success definition matters most.
+ *     Only suppression retained: REDIRECT mode (R1/R7).
+ *     Max question count on complex decisions: 3 rules + 1 C0 = 4 questions.
  */
 
 import { NextResponse }        from 'next/server'
@@ -142,12 +149,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ questions: [], rule_mode: 'OPEN', status: 'no_rules' })
     }
 
-    // ── C0: JTBD context question — injected when rule budget has room AND not REDIRECT ──
+    // ── C0: JTBD context question — always injected, never suppressed by rule count ──
     // Captures the "job" the user is hiring this decision to do. Feeds synthesis
     // and all 6 initial persona calls as a framing input (not a diagnostic flag).
-    // Suppressed on REDIRECT (R1/R7) — the redirect message is the whole point there.
+    // Previously suppressed when allRules.length >= 3 — removed: C0 is most valuable
+    // on complex decisions (3+ rules) where success definition anchors synthesis.
+    // Only suppression retained: REDIRECT mode (R1/R7) — redirect is the whole point there.
     const C0_TEMPLATE = "What would this decision have to deliver for you to feel it was genuinely the right call — not just in outcome, but in how it unfolded?"
-    const [shouldAddC0, c0Text] = ruleResult.mode !== 'REDIRECT' && allRules.length < 3
+    const [shouldAddC0, c0Text] = ruleResult.mode !== 'REDIRECT'
      ? [true, await personaliseRuleQuestion('C0', C0_TEMPLATE, decisionText)]
      : [false, C0_TEMPLATE]
 
