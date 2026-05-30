@@ -244,12 +244,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           const { done, value } = await reader.read()
           if (done) break
           acc += decoder.decode(value, { stream: true })
-          setExaminerUpdate(acc)
+          setExaminerUpdate(stripHeaderTags(acc))
         }
         setExaminerUpdateState('done')
         // Update completedResponses in SessionView with the full combined content
         if (acc) {
-          const fullContent = [responseRef.current, `[Updated after Examiner answers]\n${acc}`,
+          const cleanAcc = stripHeaderTags(acc)
+          const fullContent = [responseRef.current, `[Updated after Examiner answers]\n${cleanAcc}`,
             ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
           ].join('\n\n')
           onCompleteRef.current?.(persona.key, fullContent)
@@ -262,7 +263,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     }
 
     runExaminerUpdate()
-  }, [examinerContext, sessionId, persona.key, decisionText, contextText, registerMode])
+  }, [examinerContext, sessionId, persona.key, decisionText, contextText, registerMode, stripHeaderTags])
 
   const handlePushback = async () => {
     if (!pushback.trim()) return

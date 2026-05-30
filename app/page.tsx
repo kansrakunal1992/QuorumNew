@@ -403,7 +403,7 @@ export default function Home() {
                 top: 0, left: 0, right: 0,
                 backdropFilter:'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
-                border:        '1.5px solid var(--gold-dim)',
+                border:        '2px solid var(--gold-dim)',
                 borderRadius:  20,
                 minHeight:     inputRevealed ? 0 : 'clamp(460px, 78svh, calc(100vh - 120px))',
                 display:       'flex',

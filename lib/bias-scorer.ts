@@ -479,10 +479,10 @@ export async function fetchUserBiasContext(
     const hasForming     = classified.some(b => !b.isConfirmed)
 
     const directiveBody = hasDistorting
-      ? 'Your synthesis MUST explicitly assess whether any DISTORTING confirmed pattern from this record appears active in the current decision, based on the Council outputs and the decision\'s structural profile. Name it directly if detected. If none are active, state that explicitly — omission is not acceptable.'
+      ? 'Your synthesis MUST assess whether any DISTORTING confirmed pattern from this record appears active in this decision, based on the Council outputs and the decision\'s structural profile. If one is active, name it — but in plain user-facing language only. Do NOT use the bias key name (e.g. "loss_aversion_reversal") verbatim — translate it into a human description the user would immediately understand, such as "a tendency to weigh the regret of missing out more heavily than the risk of a concrete loss." Weave this observation into your existing prose naturally — do NOT create a separate section header like "LONGITUDINAL BIAS ASSESSMENT:" or any similar label. If none are active, say so in a single plain sentence. Omission without acknowledgment is not acceptable.'
       : hasForming
-        ? 'Your synthesis should note whether any of these emerging patterns — even the FORMING ones — may be influencing the framing of this decision. Use hedged language ("there may be an early pattern of...") for FORMING entries. Silence on this record is not acceptable.'
-        : 'Your synthesis should assess whether any of these patterns appears active in the current decision based on the Council outputs.'
+        ? 'Your synthesis should note whether any of these emerging patterns — even the FORMING ones — may be influencing the framing of this decision. Use hedged language ("there may be an early pattern of...") for FORMING entries, translated into plain language — never use the raw bias key name. Weave this into your existing prose; do NOT create a separate section header. Silence on this record is not acceptable.'
+        : 'Your synthesis should assess whether any of these patterns appears active in the current decision based on the Council outputs. Describe any pattern in plain language — do not reproduce the bias key names.'
 
     const synthesisBlock =
 `LONGITUDINAL BIAS RECORD — patterns from this user's prior sessions:

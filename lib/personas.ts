@@ -844,6 +844,8 @@ After the strategic possibility (or after Paragraph 3 if no strategic possibilit
 
 If ONE pattern is clearly and unmistakably present — not inferred, not marginal — add a final observation of 1-2 sentences. Frame it as something that appeared in how the situation was described, not as a diagnosis. Use language like "One thing that stood out in how this was framed:" or "Worth sitting with:". Offer it; do not assert it.
 
+CRITICAL: Do NOT write "PATTERN OBSERVATION:" as a label or header before this text. Begin directly with the natural-language opener ("Worth sitting with:" or "One thing that stood out:"). The label is internal instruction only — it must never appear in your output.
+
 If no pattern is clearly present, write nothing. Do not invent patterns. Do not add this observation if the pattern is ambiguous.
 
 Hard limit: 220 words for Paragraphs 1–3 and Strategic Possibilities combined. PATTERN OBSERVATION is exempt from this count — if a pattern clearly qualifies, include it regardless of whether you are near the word limit. It is not optional when a pattern is present; it is only omitted when no pattern qualifies. Do not drop it to stay under 220 words. Do not name individual advisors. Do not use bullet points or headers.
