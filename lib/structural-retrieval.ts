@@ -1,6 +1,7 @@
 // lib/structural-retrieval.ts
 // ── Sprint 5: Structural Retrieval Engine ────────────────────────────────────
 // ── Sprint 15c: Upgraded to 14-dim ontology vector scoring ───────────────────
+// ── Sprint R1: Tiered scoring · full sub-scores · 5-persona injection ────────
 //
 // SCORING MODES
 // ─────────────
@@ -45,6 +46,46 @@
 //   scored vector." — This implementation unblocks that research validation.
 //
 // MINIMUM SESSIONS: 5 past complete-tagged sessions required to activate.
+//
+// Sprint R1 changes:
+//
+//   getMatchTier(score, pastSessionCount)
+//     Corpus-adaptive tiering. Below 250 past sessions → 3 tiers. At 250+ → 5 tiers.
+//     3 tiers: HIGH-CONFIDENCE ≥80 · MODERATE 60–79 · BORDERLINE 45–59
+//     5 tiers: STRONG ≥88 · HIGH 75–87 · MODERATE 60–74 · BORDERLINE 50–59 · WEAK 45–49
+//     Each tier carries a label + LLM directive calibrated to match quality.
+//     Rationale for 250 threshold: below it, cosine-to-100 mapping lacks
+//     distributional resolution to distinguish a 63 from a 71. Above it,
+//     five boundary points map to roughly equal expected population per tier.
+//     A 6th tier would add a MARGINAL band (45–49) with identical advisory
+//     treatment to WEAK — no differentiated instruction is possible.
+//
+//   buildContextBlock(matches, pastSessionCount)
+//     New pastSessionCount param drives getMatchTier() tier selection.
+//     Injects ALL structural sub-scores per match:
+//       Vector path: top_matching_dims mapped to DIM_LABELS (human-readable)
+//                    + raw cosine percentage.
+//       Categorical: all 5 sub-scores with their max values.
+//     Appends NON-NEGOTIABLE enforcement block when max score ≥ 80.
+//     Falls back to soft instruction for lower scores.
+//
+//   getPersonaStructuralDirective(personaKey)
+//     New export. Returns a persona-specific 1-sentence instruction for
+//     each of the 5 personas receiving structural context. Called from
+//     persona/route.ts at structuralBlock assembly — appended after the
+//     shared context block so each persona gets a tailored usage mandate.
+//     Returns '' for personas not in PERSONAS_WITH_STRUCTURAL_CONTEXT.
+//
+//   PERSONAS_WITH_STRUCTURAL_CONTEXT
+//     Expanded from 3 → 5: contrarian + stakeholder_mirror added.
+//     contrarian:       past failures under same structure = strongest attack surface.
+//     stakeholder_mirror: recurring relationship patterns visible in structural record.
+//     competitor excluded: mandate is external market landscape; personal history
+//     adds noise. synthesis/decision_brief excluded: receive council outputs, not
+//     structural pre-briefing.
+//
+//   retrieveStructuralMatches()
+//     Passes pastSnapshots.length to buildContextBlock(). No other changes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createCompletion } from '@/lib/ai-client'
@@ -89,7 +130,7 @@ const DIM_WEIGHTS: Record<VectorDimName, number> = {
   upstream_dependency:         1.5,  // ⭐
 }
 
-// Human-readable labels for annotation prompt
+// Human-readable labels for annotation prompt and context block injection
 const DIM_LABELS: Record<VectorDimName, string> = {
   reversibility:               'reversibility of outcomes',
   time_horizon:                'time horizon of consequences',
@@ -394,6 +435,70 @@ Write 2-3 sentences that explain what is structurally similar about these two de
   }
 }
 
+// ── Match Tier System (Sprint R1) ─────────────────────────────────────────────
+//
+// Corpus-adaptive: 3 tiers below 250 past sessions, 5 tiers at 250+.
+//
+// 3-tier mode (< 250 sessions):
+//   At small corpus, cosine-to-100 lacks distributional resolution to
+//   meaningfully distinguish a 63 from a 71. Three authority levels
+//   (near-certain / reference / cautious) map cleanly onto how an advisor
+//   should weight the historical data point.
+//
+// 5-tier mode (≥ 250 sessions):
+//   At corpus maturity, scores span the full 45–100 range empirically.
+//   A 91/100 match (near-identical across all 14 dims) is qualitatively
+//   different from a 76/100 (same class, different sub-structure).
+//   Five tiers provide actionable precision without false granularity.
+//   Boundary points calibrated to ~equal expected population per tier.
+//   A 6th tier at 45–49 would carry identical advisory treatment to WEAK
+//   — no differentiated instruction is possible at that resolution.
+
+interface MatchTier {
+  label:     string  // injected into the context block header
+  directive: string  // tells the LLM how to weight this match
+}
+
+function getMatchTier(score: number, pastSessionCount: number): MatchTier {
+  if (pastSessionCount >= 250) {
+    // ── 5-tier mode ──────────────────────────────────────────────────────────
+    if (score >= 88) return {
+      label:     'STRONG MATCH',
+      directive: 'Exceptionally close structural architecture — the closest analogue in this user\'s record. Treat as the primary comparable for your analysis. Weight it heavily.',
+    }
+    if (score >= 75) return {
+      label:     'HIGH MATCH',
+      directive: 'Strong structural overlap with meaningful alignment across multiple dimensions. Weight as a near-direct comparable, noting any specific divergences.',
+    }
+    if (score >= 60) return {
+      label:     'MODERATE MATCH',
+      directive: 'Meaningful structural similarity with partial dimensional overlap. Use as a reference point — explicitly note where the current decision diverges before drawing parallels.',
+    }
+    if (score >= 50) return {
+      label:     'BORDERLINE MATCH',
+      directive: 'Partial structural overlap — some architecture shared, not the same configuration. Reference with caution. Name what is similar and what differs before drawing any parallel.',
+    }
+    return {
+      label:     'WEAK MATCH',
+      directive: 'Faint structural echo only. Use only if no stronger match exists and the specific overlap is directly relevant to your analytical angle. Do not force the parallel.',
+    }
+  }
+
+  // ── 3-tier mode (default, < 250 sessions) ────────────────────────────────
+  if (score >= 80) return {
+    label:     'HIGH-CONFIDENCE MATCH',
+    directive: 'Near-identical structural architecture. Weight this historical pattern heavily — treat it as a direct comparable, not merely a reference.',
+  }
+  if (score >= 60) return {
+    label:     'MODERATE MATCH',
+    directive: 'Structurally similar with meaningful overlap. Use as a reference point — note where the current situation diverges before drawing the parallel.',
+  }
+  return {
+    label:     'BORDERLINE MATCH',
+    directive: 'Loose structural echo — some architecture in common, not identical. Reference cautiously, and explicitly name what differs before drawing any conclusion.',
+  }
+}
+
 // ── Main retrieval function ───────────────────────────────────────────────────
 
 export async function retrieveStructuralMatches(
@@ -454,17 +559,29 @@ export async function retrieveStructuralMatches(
 
   return {
     matches:            annotated,
-    context_block:      buildContextBlock(annotated),
+    // Sprint R1: pastSnapshots.length passed so buildContextBlock selects tier mode
+    context_block:      buildContextBlock(annotated, pastSnapshots.length),
     session_count_used: pastSnapshots.length,
     threshold_met:      true,
   }
 }
 
-// ── Context block builder ─────────────────────────────────────────────────────
-// Injected into Pattern Analyst, Risk Architect, and Elder only.
+// ── Context block builder (Sprint R1) ────────────────────────────────────────
+//
+// Changes from original buildContextBlock():
+//   1. pastSessionCount param → drives getMatchTier() tier mode selection.
+//   2. Tier label + per-match directive replace the generic modeLabel string.
+//   3. ALL structural sub-scores injected per match:
+//        Vector: top_matching_dims → DIM_LABELS (human-readable) + cosine %.
+//        Categorical: all 5 sub-scores with max values.
+//   4. NON-NEGOTIABLE enforcement block when max score ≥ 80.
+//      Mirrors the pushback protocol pattern — named, consequence-framed.
+//      Soft instruction retained for scores < 80.
 
-function buildContextBlock(matches: StructuralMatch[]): string {
+function buildContextBlock(matches: StructuralMatch[], pastSessionCount: number): string {
   if (matches.length === 0) return ''
+
+  const maxScore = Math.max(...matches.map(m => m.structural_score))
 
   const blocks = matches.map((m, i) => {
     const dateLabel = new Date(m.created_at).toLocaleDateString('en-IN', {
@@ -473,34 +590,99 @@ function buildContextBlock(matches: StructuralMatch[]): string {
     const snippet = m.decision_text.length > 250
       ? m.decision_text.slice(0, 250) + '…'
       : m.decision_text
+
     const outcomeBlock = m.outcome?.what_decided
       ? `\nWhat was decided: "${m.outcome.what_decided}"`
       : '\nOutcome: Not yet logged.'
-    const modeLabel = m.score_breakdown.scoring_mode === 'vector'
-      ? `${m.structural_score}/100 vector match — ${dateLabel}`
-      : `${m.structural_score}/100 — ${dateLabel}`
 
-    return `STRUCTURAL MATCH ${i + 1} (${modeLabel}):
+    // Sprint R1: corpus-adaptive tier label + per-match directive
+    const tier = getMatchTier(m.structural_score, pastSessionCount)
+
+    // Sprint R1: full sub-score block — all scores always fed in
+    let subScoreBlock: string
+    if (m.score_breakdown.scoring_mode === 'vector') {
+      const dimLines = (m.score_breakdown.top_matching_dims ?? [])
+        .map(d => DIM_LABELS[d as VectorDimName] ?? d)
+        .join(' · ')
+      const cosSim = m.score_breakdown.vector_similarity != null
+        ? ` (cosine ${(m.score_breakdown.vector_similarity * 100).toFixed(1)}%)`
+        : ''
+      subScoreBlock = dimLines
+        ? `\nTop matching dimensions${cosSim}: ${dimLines}`
+        : ''
+    } else {
+      const b = m.score_breakdown
+      subScoreBlock = `\nSub-scores: decision type ${b.decision_type}/30 · register ${b.register}/25 · stakes ${b.stakes}/20 · counterparty ${b.counterparty}/15 · time pressure ${b.time_pressure}/10`
+    }
+
+    return `STRUCTURAL MATCH ${i + 1} — ${tier.label} (${m.structural_score}/100 · ${dateLabel}):
+${tier.directive}
+
 "${snippet}"
-${outcomeBlock}
+${outcomeBlock}${subScoreBlock}
 Why this is structurally relevant: ${m.annotation}`
   }).join('\n\n---\n\n')
+
+  // Sprint R1: non-negotiable enforcement for HIGH-CONFIDENCE / STRONG / HIGH (≥ 80)
+  const enforcementBlock = maxScore >= 80
+    ? `\n\nNON-NEGOTIABLE — STRUCTURAL ENGAGEMENT REQUIRED:
+The match above is scored ≥80/100. Your response must explicitly engage with this structural record. Acceptable: confirm the parallel and its implication for this decision, name specifically where the current decision diverges from the historical pattern, or draw the direct consequence for your analytical angle. Producing a response that could have been written without this record is a protocol violation.`
+    : `\n\nINSTRUCTION: Use this structural memory if it genuinely illuminates your analysis. Reference it as "you have faced a structurally similar decision before" rather than repeating the past decision's details verbatim. Do not force the parallel if it does not apply to your angle. If it does apply, use it as one specific data point — not the entire frame.`
 
   return `STRUCTURAL MEMORY — PATTERN CONTEXT:
 The Quorum system has identified ${matches.length === 1 ? 'a past decision' : 'past decisions'} by this user that share structural architecture with the current decision. This is not surface similarity — it is the same underlying decision type, register, and stakes pattern.
 
 ${blocks}
-
-INSTRUCTION: Use this structural memory if it genuinely illuminates your analysis. Reference it as "you have faced a structurally similar decision before" rather than repeating the past decision's details verbatim. Do not force the parallel if it does not apply to your angle. If it does apply, use it as one specific data point — not the entire frame.`
+${enforcementBlock}`
 }
 
-// ── Personas that receive structural context ──────────────────────────────────
-// Pattern Analyst: directly in their mandate (analogues + historical patterns)
-// Risk Architect: past failure modes of same structure are pre-mortem fuel
-// Elder: temporal perspective benefits from knowing this structure recurs
+// ── Persona-specific structural directive (Sprint R1) ─────────────────────────
+//
+// Returns a one-sentence instruction telling each persona HOW to use the
+// structural memory block relative to their specific analytical mandate.
+//
+// Design: buildContextBlock() produces one shared block reused across personas.
+// Persona-specific directives are appended at injection time in persona/route.ts
+// — after the shared block is received, before it hits the system prompt.
+// This avoids building N separate blocks and keeps structural-retrieval.ts clean.
+//
+// Returns '' for any persona not in PERSONAS_WITH_STRUCTURAL_CONTEXT — safe to
+// call for any personaKey without an existence check at the call site.
+
+export function getPersonaStructuralDirective(personaKey: string): string {
+  const directives: Record<string, string> = {
+    pattern_analyst:
+      'Use this structural memory to identify the recurring pattern architecture — what configuration repeats across these decisions, and what does its recurrence reveal about this person\'s decision-making?',
+    risk_architect:
+      'If this structural record contains a prior failure, near-failure, or regret under this configuration, treat it as your primary pre-mortem input — the most specific failure data available for this structural type.',
+    elder:
+      'Use this structural recurrence to ground your temporal framing — this configuration has appeared before in this person\'s arc, and that repetition is itself the signal worth naming.',
+    contrarian:
+      'If this record shows a prior decision that went wrong or produced regret under structurally similar conditions, make it your sharpest line of challenge — past failure under the same structure is your strongest adversarial evidence.',
+    stakeholder_mirror:
+      'If this record shows a recurring stakeholder dynamic, relationship pattern, or interpersonal architecture, use it to sharpen your analysis — recurring relational structures often indicate a deeper pattern the decision-maker hasn\'t yet named.',
+  }
+  return directives[personaKey] ?? ''
+}
+
+// ── Personas that receive structural context (Sprint R1 expansion) ────────────
+//
+// Original (Sprint 5): pattern_analyst, risk_architect, elder
+//
+// Sprint R1 additions:
+//   contrarian        — past failures under same structure = strongest attack surface.
+//   stakeholder_mirror — recurring relationship patterns visible in structural record.
+//
+// Intentionally excluded:
+//   competitor        — mandate is external market landscape; personal decision
+//                       history adds noise, not signal.
+//   synthesis         — receives council outputs, not structural pre-briefing.
+//   decision_brief    — summary format; structural context would distort brevity.
 
 export const PERSONAS_WITH_STRUCTURAL_CONTEXT = new Set([
   'pattern_analyst',
   'risk_architect',
   'elder',
+  'contrarian',         // Sprint R1
+  'stakeholder_mirror', // Sprint R1
 ])

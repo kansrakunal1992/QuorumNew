@@ -1,5 +1,5 @@
 /**
- * QUORUM — Persona Route (Sprint 19 / R2 update)
+ * QUORUM — Persona Route (Sprint 19 / R2 / R1 update)
  *
  * Sprint 19 additions:
  *
@@ -50,24 +50,43 @@
  *       - User has no bias rows at all
  *       - fetchUserBiasContext() throws (non-fatal)
  *
- *   System prompt layer order (after R2):
+ * Sprint R1 additions:
+ *
+ *   Persona-specific structural directives
+ *     getPersonaStructuralDirective(personaKey) is now imported and appended
+ *     to the structuralBlock at injection time. Each of the 5 personas that
+ *     receive structural context gets a one-sentence usage mandate tailored to
+ *     their analytical role — rather than a single generic instruction.
+ *
+ *     contrarian and stakeholder_mirror added to PERSONAS_WITH_STRUCTURAL_CONTEXT
+ *     in structural-retrieval.ts — no change needed here; the Set expansion is
+ *     picked up automatically by the existing PERSONAS_WITH_STRUCTURAL_CONTEXT.has()
+ *     guard below.
+ *
+ *   System prompt layer order (after R1):
  *     1. persona.prompt            — core identity and mandate
  *     2. councilContext            — ontology + rule engine signals
  *     3. synthesisBlock            — longitudinal bias record (synthesis only)
  *     4. pushbackProtocol          — pushback acknowledgment (pushback calls only)
  *     5. personaAlertBlock         — top distorting bias alert (initial personas only)
+ *
+ *   structuralBlock layer (user turn, initial personas only):
+ *     shared context block + persona-specific directive suffix
  */
 
 import { PERSONAS }                            from '@/lib/personas'
 import { createServiceClient }                 from '@/lib/supabase'
 import { createStream }                        from '@/lib/ai-client'
-import { PERSONAS_WITH_STRUCTURAL_CONTEXT }    from '@/lib/structural-retrieval'
-import { buildCouncilContext }                 from '@/lib/rule-engine'
-import { fetchUserBiasContext }                from '@/lib/bias-scorer'
-import type { OntologyScoreMap }               from '@/lib/bias-scorer'
-import type { ScoredVector }                   from '@/lib/ontology-tagger'
-import type { RuleEngineResult }               from '@/lib/rule-engine'
-import type { PersonaKey, Message }            from '@/lib/types'
+import {
+  PERSONAS_WITH_STRUCTURAL_CONTEXT,
+  getPersonaStructuralDirective,             // Sprint R1
+}                                            from '@/lib/structural-retrieval'
+import { buildCouncilContext }               from '@/lib/rule-engine'
+import { fetchUserBiasContext }              from '@/lib/bias-scorer'
+import type { OntologyScoreMap }             from '@/lib/bias-scorer'
+import type { ScoredVector }                 from '@/lib/ontology-tagger'
+import type { RuleEngineResult }             from '@/lib/rule-engine'
+import type { PersonaKey, Message }          from '@/lib/types'
 
 // ── Council context fetch (Sprint 12 / R2 update) ────────────────────────────
 //
@@ -220,12 +239,16 @@ export async function POST(req: Request) {
         ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n`
         : ''
 
+      // Sprint R1: append persona-specific structural directive after shared block.
+      // getPersonaStructuralDirective() returns '' for non-structural personas —
+      // no existence check needed; the PERSONAS_WITH_STRUCTURAL_CONTEXT guard
+      // already prevents the block from being assembled for excluded personas.
       const structuralBlock = (
         structuralContext &&
         PERSONAS_WITH_STRUCTURAL_CONTEXT.has(personaKey) &&
         messages.length === 0
       )
-        ? `\n${structuralContext}\n`
+        ? `\n${structuralContext}\n\nYOUR STRUCTURAL MANDATE: ${getPersonaStructuralDirective(personaKey)}\n`
         : ''
 
       if (messages.length === 0) {
