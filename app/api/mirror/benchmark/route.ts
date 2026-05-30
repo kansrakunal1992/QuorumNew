@@ -21,12 +21,28 @@
 // Returns: BenchmarkData
 //   { insufficient: boolean, cluster_size: number,
 //     top_dimensions: BenchmarkDimension[], top_biases: string[] }
+//
+// Additional Risk C fix:
+//   extractVector() previously used raw scores only (no dimension weighting).
+//   structural-retrieval.ts applied 1.5× multipliers to the three ⭐ starred
+//   dimensions (identity_alignment, regret_asymmetry, upstream_dependency).
+//   Both used SIMILARITY_THRESHOLD = 0.808 against different distributions.
+//
+//   Fix: extractVector() now applies DIM_WEIGHTS imported from lib/similarity.ts
+//   — the same weights used in structural-retrieval.ts. Starred dimensions
+//   now carry 1.5× weight in both personal retrieval and peer benchmark,
+//   making "structurally similar" mean the same thing across both surfaces.
+//
+//   Confidence is intentionally NOT applied cross-user: confidence is a
+//   per-session tagger signal that is not portable between users. See
+//   lib/similarity.ts for the full design note.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { DIM_WEIGHTS }          from '@/lib/similarity'   // Additional Risk C
 import type { BenchmarkData }  from '@/lib/types'
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -69,11 +85,17 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB))
 }
 
-// Extract ordered numeric vector from ontology_vector JSONB
+// Extract ordered numeric vector from ontology_vector JSONB.
+// Additional Risk C: multiply each dimension score by DIM_WEIGHTS[dim] so that
+// starred dimensions (identity_alignment, regret_asymmetry, upstream_dependency)
+// carry the same 1.5× emphasis used in structural-retrieval.ts scoreVectorSimilarity().
+// Confidence is NOT applied here — it is a per-session personal signal and is
+// not portable across users for cross-user comparison. See lib/similarity.ts.
 function extractVector(vec: Record<string, unknown>): number[] {
   return DIMS.map(dim => {
-    const d = vec[dim] as { score?: number } | undefined
-    return d?.score ?? 3   // default to mid-range when dimension is missing
+    const d     = vec[dim] as { score?: number } | undefined
+    const score = d?.score ?? 3   // default to mid-range when dimension is missing
+    return score * (DIM_WEIGHTS[dim] ?? 1.0)
   })
 }
 

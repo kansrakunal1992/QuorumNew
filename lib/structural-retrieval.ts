@@ -89,6 +89,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createCompletion } from '@/lib/ai-client'
+import { DIM_WEIGHTS }      from '@/lib/similarity'   // Additional Risk C: shared weight config
 
 // ── 14-dim vector — dimension order matches research doc D1–D14 ───────────────
 
@@ -111,24 +112,10 @@ export const VECTOR_DIMS = [
 
 export type VectorDimName = typeof VECTOR_DIMS[number]
 
-// ⭐ Research-priority dimensions get 1.5× weight (research doc v0.10)
-// All others: 1.0×
-const DIM_WEIGHTS: Record<VectorDimName, number> = {
-  reversibility:               1.0,
-  time_horizon:                1.0,
-  stakes_magnitude:            1.0,
-  outcome_uncertainty:         1.0,
-  ambiguity:                   1.0,
-  task_complexity:             1.0,
-  decision_discriminating_info:1.0,
-  time_pressure:               1.0,
-  decision_unit:               1.0,
-  value_conflict:              1.0,
-  emotional_intensity:         1.0,
-  identity_alignment:          1.5,  // ⭐
-  regret_asymmetry:            1.5,  // ⭐
-  upstream_dependency:         1.5,  // ⭐
-}
+// ⭐ Dimension weights imported from lib/similarity.ts (Additional Risk C).
+// DIM_WEIGHTS is the single source of truth shared with benchmark/route.ts.
+// Defining it locally here previously caused mathematical inconsistency between
+// structural retrieval (which used weights) and peer benchmark (which did not).
 
 // Human-readable labels for annotation prompt and context block injection
 const DIM_LABELS: Record<VectorDimName, string> = {
