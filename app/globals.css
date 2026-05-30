@@ -16,7 +16,7 @@
 
 /* ── DARK theme (default) ────────────────────────────────── */
 [data-theme="dark"] {
-  --bg-void:     #060c1a;
+  --bg-void:     #080f1c;
   --bg-deep:     #0b1220;
   --bg-card:     #101827;
   --bg-card-alt: #151e2f;
@@ -107,11 +107,19 @@ html, body {
 }
 
 /* Dark mode: subtle radial navy emergence — replaces flat void */
-[data-theme="dark"] html,
-[data-theme="dark"] body {
+html[data-theme="dark"],
+html[data-theme="dark"] body {
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(22, 38, 74, 0.42) 0%, transparent 58%),
-    #060c1a;
+    radial-gradient(ellipse at 50% 0%, rgba(28, 50, 104, 0.58) 0%, transparent 65%),
+    #080f1c;
+}
+
+/* Hero card: dark glass in dark mode, pristine white in light mode */
+[data-theme="dark"] .hero-card {
+  background: linear-gradient(160deg, rgba(16, 24, 44, 0.82) 0%, rgba(9, 13, 26, 0.94) 100%);
+}
+[data-theme="light"] .hero-card {
+  background: var(--bg-card);
 }
 
 /* ── Typography utilities ────────────────────────────────── */

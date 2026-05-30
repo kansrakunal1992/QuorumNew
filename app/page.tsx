@@ -376,13 +376,16 @@ export default function Home() {
           </div>
 
           {/* ── Flip card wrapper ─────────────────────────── */}
-          <div style={{ position: 'relative', marginBottom: 0 }}>
+          <div style={{ position: 'relative', marginBottom: 0, overflowX: 'clip' }}>
 
-            {/* ── Radial bloom behind card — dark navy glow, not visible decoration ── */}
+            {/* ── Radial bloom behind card — no horizontal overflow to avoid centering shift ── */}
             {!inputRevealed && (
               <div style={{
                 position:     'absolute',
-                inset:        '-80px -100px',
+                top:          '-80px',
+                left:         0,
+                right:        0,
+                bottom:       '-40px',
                 background:   'radial-gradient(ellipse at 50% 48%, rgba(22, 42, 88, 0.72) 0%, rgba(10, 20, 48, 0.38) 42%, transparent 68%)',
                 pointerEvents:'none',
                 zIndex:       0,
@@ -391,14 +394,13 @@ export default function Home() {
 
             {/* ── BACK FACE — QUORUM entry point / onboarding ─ */}
             <div
-              className="card-back-inner"
+              className="card-back-inner hero-card"
               onClick={handleCardClick}
               onMouseEnter={() => setCardHovered(true)}
               onMouseLeave={() => setCardHovered(false)}
               style={{
                 position:      inputRevealed ? 'absolute' : 'relative',
                 top: 0, left: 0, right: 0,
-                background:    'linear-gradient(160deg, rgba(16, 24, 44, 0.82) 0%, rgba(9, 13, 26, 0.94) 100%)',
                 backdropFilter:'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
                 border:        '1px solid var(--gold-dim)',
