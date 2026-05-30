@@ -1,5 +1,5 @@
 /**
- * QUORUM — Persona Route (Sprint 19 / R2 / R1 update)
+ * QUORUM — Persona Route (Sprint 19 / R2 / R1 / R3 / R5 update)
  *
  * Sprint 19 additions:
  *
@@ -28,40 +28,19 @@
  *       personaAlert    → appended to each initial persona's system prompt.
  *                         Single sentence. Only fires for CONFIRMED + DISTORTING
  *                         biases (detection_count >= 2 + signal = distorting).
- *                         Keeps the 6 parallel persona calls lean.
  *
  *       synthesisBlock  → appended to synthesis system prompt. Full block with
  *                         all bias rows (confirmed + forming), all scores, and
- *                         a MANDATORY assessment directive. Language is calibrated
- *                         per tier: "is present" for confirmed, "may be active"
- *                         for forming.
+ *                         a MANDATORY assessment directive.
  *
  *     userId is resolved server-side from the sessions table using sessionId —
  *     no client-side change required (PersonaPanel/SynthesisCard unchanged).
  *
- *     Single DB path: userId fetch is reused by councilContext + biasContext.
- *     Both run in parallel — no added latency on the critical path.
- *
- *     Excluded from pushback calls — bias profile does not change mid-session
- *     and re-injection on pushback would distort the user-reactive dynamic.
- *
- *     Gracefully no-ops (empty blocks) when:
- *       - Session is anonymous (no user_id)
- *       - User has no bias rows at all
- *       - fetchUserBiasContext() throws (non-fatal)
- *
  * Sprint R1 additions:
  *
  *   Persona-specific structural directives
- *     getPersonaStructuralDirective(personaKey) is now imported and appended
- *     to the structuralBlock at injection time. Each of the 5 personas that
- *     receive structural context gets a one-sentence usage mandate tailored to
- *     their analytical role — rather than a single generic instruction.
- *
- *     contrarian and stakeholder_mirror added to PERSONAS_WITH_STRUCTURAL_CONTEXT
- *     in structural-retrieval.ts — no change needed here; the Set expansion is
- *     picked up automatically by the existing PERSONAS_WITH_STRUCTURAL_CONTEXT.has()
- *     guard below.
+ *     getPersonaStructuralDirective(personaKey) appended to structuralBlock.
+ *     contrarian and stakeholder_mirror added to PERSONAS_WITH_STRUCTURAL_CONTEXT.
  *
  *   System prompt layer order (after R1):
  *     1. persona.prompt            — core identity and mandate
@@ -70,8 +49,35 @@
  *     4. pushbackProtocol          — pushback acknowledgment (pushback calls only)
  *     5. personaAlertBlock         — top distorting bias alert (initial personas only)
  *
- *   structuralBlock layer (user turn, initial personas only):
- *     shared context block + persona-specific directive suffix
+ * Sprint R3 additions:
+ *
+ *   Council Weighting Directive — synthesis only, non-negotiable
+ *
+ *     computePersonaRelevance() scores all 6 advisor personas against the
+ *     session's rule engine signals, ontology dimensions, and structural match
+ *     quality. buildRelevanceBlock() serialises the result as a MANDATORY
+ *     NON-NEGOTIABLE directive appended as the final layer in the synthesis
+ *     system prompt.
+ *
+ *     This prevents synthesis from applying flat equal weight to all 6
+ *     advisors regardless of which structural dimensions dominate the decision.
+ *     A high-irreversibility session where Risk Architect and Contrarian fired
+ *     should resolve Council divergence in their favour — not flatten the blend.
+ *
+ *     Position: appended LAST in the synthesis system prompt (after synthesisBlock)
+ *     so it is the final instruction seen before synthesis output begins.
+ *     LLM adherence is highest for terminal system prompt instructions.
+ *
+ *     fetchCouncilContext() extended to also return:
+ *       ruleEngineResult  — the full RuleEngineResult (already fetched, now returned)
+ *       maxStructuralScore — extracted from matches_json (already in sessions_ontology)
+ *     No new DB queries. No client-side changes.
+ *
+ *   Updated system prompt layer order (after R3, synthesis calls):
+ *     1. persona.prompt            — core identity and mandate
+ *     2. councilContext            — ontology + rule engine signals
+ *     3. synthesisBlock            — longitudinal bias record (synthesis only)
+ *     4. relevanceBlock            — MANDATORY council weighting directive (synthesis only) ← NEW
  *
  * Sprint R5 additions:
  *
@@ -81,25 +87,8 @@
  *
  *     Design: conditional, not mandatory. If the structural record genuinely
  *     shaped the persona's angle, they close with one sentence beginning
- *     "Structurally, this decision [observation]." If the record did not apply
+ *     \"Structurally, this decision [observation].\" If the record did not apply
  *     to their specific analytical angle, the sentence is omitted entirely.
- *
- *     Rationale for conditional design: weak or borderline structural matches
- *     (45–59/100) may not apply to every persona's specific lens. Forcing a
- *     closing sentence on every structural-context response risks fabricated
- *     citations that undermine the analytical integrity of the output. The
- *     "if you engaged with it" gate preserves multi-perspective depth while
- *     creating traceability where structural memory genuinely influenced reasoning.
- *
- *     Tech debt note: The conditional creates an audit gap — a persona that
- *     omitted the sentence cannot be distinguished from one that ignored the
- *     mandate. Full traceability (requiring either a closing citation or an
- *     explicit non-applicability statement) is deferred until corpus scale
- *     makes the distinction analytically meaningful.
- *
- *     Scope: only fires when structuralBlock is assembled (structural context
- *     present + persona in PERSONAS_WITH_STRUCTURAL_CONTEXT + initial call).
- *     No system prompt change. No personas.ts change. No new imports.
  */
 
 import { PERSONAS }                            from '@/lib/personas'
@@ -111,29 +100,34 @@ import {
 }                                            from '@/lib/structural-retrieval'
 import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext }              from '@/lib/bias-scorer'
+import { computePersonaRelevance, buildRelevanceBlock } from '@/lib/persona-relevance'  // Sprint R3
 import type { OntologyScoreMap }             from '@/lib/bias-scorer'
 import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
 import type { PersonaKey, Message }          from '@/lib/types'
 
-// ── Council context fetch (Sprint 12 / R2 update) ────────────────────────────
+// ── Council context fetch (Sprint 12 / R2 / R3 update) ───────────────────────
 //
-// Sprint R2: return shape changed from `string | null` to an object so we can
-// pass ontologyVector to fetchUserBiasContext() without a second DB round-trip.
+// Sprint R2: return shape extended with userId for fetchUserBiasContext().
+// Sprint R3: return shape further extended with ruleEngineResult and
+//   maxStructuralScore for computePersonaRelevance() at synthesis time.
+//   matches_json added to the select — already stored in sessions_ontology
+//   by the structural-match route. No new DB round-trip.
 
 async function fetchCouncilContext(sessionId: string): Promise<{
-  councilContextStr: string | null
-  ontologyVector:    OntologyScoreMap | null
-  userId:            string | null
+  councilContextStr:  string | null
+  ontologyVector:     OntologyScoreMap | null
+  userId:             string | null
+  ruleEngineResult:   RuleEngineResult | null   // Sprint R3
+  maxStructuralScore: number | null             // Sprint R3
 }> {
   try {
     const supabase = createServiceClient()
 
-    // Fetch ontology data + user_id in a single parallel pair
     const [ontologyResult, sessionResult] = await Promise.all([
       supabase
         .from('sessions_ontology')
-        .select('tagger_version, ontology_vector, rule_engine_result')
+        .select('tagger_version, ontology_vector, rule_engine_result, matches_json')  // Sprint R3: +matches_json
         .eq('session_id', sessionId)
         .single(),
       supabase
@@ -146,21 +140,39 @@ async function fetchCouncilContext(sessionId: string): Promise<{
     const userId = sessionResult.data?.user_id ?? null
 
     const { data, error } = ontologyResult
-    if (error || !data) return { councilContextStr: null, ontologyVector: null, userId }
-    if (data.tagger_version !== 'v2.0') return { councilContextStr: null, ontologyVector: null, userId }
-    if (!data.ontology_vector || !data.rule_engine_result) return { councilContextStr: null, ontologyVector: null, userId }
+    if (error || !data) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null }
+    if (data.tagger_version !== 'v2.0') return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null }
+    if (!data.ontology_vector || !data.rule_engine_result) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null }
+
+    // Sprint R3: extract max structural score from matches_json (JSONB array or null)
+    let maxStructuralScore: number | null = null
+    try {
+      const matches = Array.isArray(data.matches_json)
+        ? data.matches_json as Array<{ structural_score?: number }>
+        : null
+      if (matches && matches.length > 0) {
+        const scores = matches.map(m => m.structural_score ?? 0).filter(s => s > 0)
+        if (scores.length > 0) maxStructuralScore = Math.max(...scores)
+      }
+    } catch {
+      // matches_json absent or malformed — maxStructuralScore stays null
+    }
+
+    const ruleEngineResult = data.rule_engine_result as RuleEngineResult
 
     return {
       councilContextStr: buildCouncilContext(
-        data.ontology_vector  as ScoredVector,
-        data.rule_engine_result as RuleEngineResult,
+        data.ontology_vector as ScoredVector,
+        ruleEngineResult,
       ),
-      ontologyVector: data.ontology_vector as OntologyScoreMap,
+      ontologyVector:     data.ontology_vector as OntologyScoreMap,
       userId,
+      ruleEngineResult,                    // Sprint R3
+      maxStructuralScore,                  // Sprint R3
     }
   } catch (err) {
     console.error('[Persona] fetchCouncilContext failed:', err)
-    return { councilContextStr: null, ontologyVector: null, userId: null }
+    return { councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null }
   }
 }
 
@@ -183,13 +195,19 @@ async function fetchCouncilContextWithRetry(
   sessionId: string,
   maxWaitMs  = 3000,
   intervalMs = 400,
-): Promise<{ councilContextStr: string | null; ontologyVector: OntologyScoreMap | null; userId: string | null }> {
+): Promise<{
+  councilContextStr:  string | null
+  ontologyVector:     OntologyScoreMap | null
+  userId:             string | null
+  ruleEngineResult:   RuleEngineResult | null
+  maxStructuralScore: number | null
+}> {
   const start = Date.now()
   while (true) {
     const result = await fetchCouncilContext(sessionId)
     if (result.councilContextStr !== null) return result
     const elapsed = Date.now() - start
-    if (elapsed + intervalMs >= maxWaitMs) return result  // return userId even on timeout
+    if (elapsed + intervalMs >= maxWaitMs) return result
     await new Promise(r => setTimeout(r, intervalMs))
   }
 }
@@ -230,18 +248,15 @@ export async function POST(req: Request) {
     const isInitialPersona = !rawMessages && messages.length === 0
 
     // ── Fetch council context + userId in one shot ────────────────────────────
-    // Sprint R2: fetchCouncilContext now also returns userId (from sessions table)
-    // so we can pass it to fetchUserBiasContext without a second DB call.
-    // Both councilContext and biasContext resolve in parallel via Promise.all.
+    // Sprint R3: councilContextPromise now also resolves ruleEngineResult and
+    // maxStructuralScore so computePersonaRelevance() needs no extra DB call.
     const councilContextPromise = (isSynthesisCall || isInitialPersona) && sessionId
       ? isInitialPersona
         ? fetchCouncilContextWithRetry(sessionId)
         : fetchCouncilContext(sessionId)
-      : Promise.resolve({ councilContextStr: null, ontologyVector: null, userId: null })
+      : Promise.resolve({ councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null })
 
     // ── Sprint R2: bias context — chained off councilContextPromise ───────────
-    // Chains (not races) so biasContext uses the ontologyVector already fetched.
-    // Net latency: 0ms extra (runs within the same await window as councilContext).
     const biasContextPromise = (isSynthesisCall || isInitialPersona)
       ? councilContextPromise.then(({ ontologyVector, userId }) =>
           userId
@@ -268,14 +283,7 @@ export async function POST(req: Request) {
         : ''
 
       // Sprint R1: append persona-specific structural directive after shared block.
-      // getPersonaStructuralDirective() returns '' for non-structural personas —
-      // no existence check needed; the PERSONAS_WITH_STRUCTURAL_CONTEXT guard
-      // already prevents the block from being assembled for excluded personas.
-      //
-      // Sprint R5: OUTPUT TRACEABILITY appended after the mandate — conditional,
-      // not mandatory. The "if you engaged with it" gate prevents forced citations
-      // on weak matches and preserves multi-perspective analytical integrity.
-      // See header comment for tech debt note on the resulting audit gap.
+      // Sprint R5: OUTPUT TRACEABILITY appended after the mandate — conditional.
       const structuralBlock = (
         structuralContext &&
         PERSONAS_WITH_STRUCTURAL_CONTEXT.has(personaKey) &&
@@ -304,10 +312,11 @@ export async function POST(req: Request) {
     }
 
     // ── Resolve council context + bias context in parallel ────────────────────
-    const [{ councilContextStr: councilContext }, biasContext] = await Promise.all([
+    const [councilResult, biasContext] = await Promise.all([
       councilContextPromise,
       biasContextPromise,
     ])
+    const councilContext = councilResult.councilContextStr
 
     // ── Pushback acknowledgment protocol ──────────────────────────────────────
     const isPushbackCall = !rawMessages && messages.length > 0
@@ -340,10 +349,15 @@ Violation of this rule renders the entire response invalid. Follow it without ex
       : ''
 
     // ── Assemble system prompt ────────────────────────────────────────────────
-    // Layer order:
-    //   1. persona.prompt         — core identity and mandate (always)
-    //   2. councilContext         — ontology + rule engine signals (initial + synthesis)
-    //   3. synthesisBlock         — full longitudinal bias record (synthesis only)
+    // Layer order (synthesis):
+    //   1. persona.prompt         — core identity and mandate
+    //   2. councilContext         — ontology + rule engine signals
+    //   3. synthesisBlock         — longitudinal bias record (synthesis only)
+    //   4. relevanceBlock         — MANDATORY council weighting directive (synthesis only) ← R3
+    //
+    // Layer order (initial personas):
+    //   1. persona.prompt
+    //   2. councilContext
     //   4. pushbackProtocol       — pushback acknowledgment enforcement (pushback only)
     //   5. personaAlertBlock      — top confirmed+distorting bias (initial personas only)
 
@@ -357,7 +371,27 @@ Violation of this rule renders the entire response invalid. Follow it without ex
       console.log(`[Persona] Longitudinal bias block injected for synthesis | session ${sessionId}`)
     }
 
-    // Layer 4: pushback protocol
+    // Layer 4 (R3): council weighting directive — synthesis only, always last
+    // Fires even when councilContext is null (persona may still have useful
+    // baseline weights from ontology dimensions). No-ops gracefully if both
+    // ruleEngineResult and ontologyVector are null (returns baseline 0.50 map
+    // which produces a flat directive — still valid, just less informative).
+    if (isSynthesisCall) {
+      const relevanceMap = computePersonaRelevance(
+        councilResult.ruleEngineResult,
+        councilResult.ontologyVector,
+        councilResult.maxStructuralScore,
+      )
+      const relevanceBlock = buildRelevanceBlock(
+        relevanceMap,
+        councilResult.ruleEngineResult,
+        councilResult.ontologyVector,
+        councilResult.maxStructuralScore,
+      )
+      basePrompt = `${basePrompt}${relevanceBlock}`
+      console.log(`[Persona] Council weighting directive injected for synthesis | session ${sessionId}`)
+    }
+
     // Layer 5: one-sentence bias alert for initial personas (confirmed + distorting only)
     const personaAlertBlock = (isInitialPersona && biasContext.personaAlert)
       ? `\n\n${biasContext.personaAlert}`
