@@ -625,7 +625,9 @@ export async function fetchUserBiasContext(
         minimalScore,
         ontologyVector,
       )
-      const isConfirmed = (b.detection_count as number) >= 2
+      // R9 fix: confirmed raised to >= 3 (was >= 2). Aligns with mirror-fingerprint.ts.
+      // synthesis directive uses "may be active" for forming (<3) vs "is present" for confirmed (3+).
+      const isConfirmed = (b.detection_count as number) >= 3
       return {
         biasKey:          b.bias_parameter as string,
         detectionCount:   b.detection_count as number,
@@ -642,7 +644,7 @@ export async function fetchUserBiasContext(
     const biasLines = classified.map(b => {
       const statusLabel = b.isConfirmed
         ? `CONFIRMED (${b.detectionCount} detections)`
-        : `FORMING (${b.detectionCount} detection)`
+        : `FORMING (${b.detectionCount} detection${b.detectionCount !== 1 ? 's' : ''})`
       return `— ${b.biasKey} | ${statusLabel} | severity: ${b.asymmetryAvg.toFixed(1)} | confidence: ${Math.round(b.confidenceWeight * 100)}% | signal: ${b.signal.toUpperCase()}`
     }).join('\n')
 
@@ -684,7 +686,7 @@ export async function fetchUserBiasContext(
 `LONGITUDINAL BIAS RECORD — patterns from this user's prior sessions:
 ${biasLines}
 
-Columns: bias_key | status (CONFIRMED = 2+ detections, FORMING = 1 detection) | severity (avg prosecutor–defense asymmetry, 0–10 scale) | confidence (evidence weight: 30% per detection, capped at 100%) | signal (re-classified against THIS decision's structural profile: DISTORTING / NEUTRAL / ADAPTIVE).
+Columns: bias_key | status (CONFIRMED = 3+ detections, FORMING = 1–2 detections) | severity (avg prosecutor–defense asymmetry, 0–10 scale) | confidence (evidence weight: 30% per detection, capped at 100%) | signal (re-classified against THIS decision's structural profile: DISTORTING / NEUTRAL / ADAPTIVE).
 ${longitudinalContext ? `\n${longitudinalContext}\n` : ''}
 MANDATORY SYNTHESIS REQUIREMENT — NON-NEGOTIABLE:
 ${biasDirective}${calibrationDirective}${contradictionDirective}`

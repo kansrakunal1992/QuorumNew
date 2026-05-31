@@ -115,7 +115,7 @@ function humanizeActivationSummary(
     conditions.push('another party is setting the terms')
   }
 
-  if (detectionCount < 2 || conditions.length === 0) return null
+  if (detectionCount < 3 || conditions.length === 0) return null
 
   if (conditions.length === 1) {
     return `Most active ${conditions[0]}`
@@ -275,8 +275,12 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     .join(', ') || 'varied'
 
   // ── 4. Split into confirmed vs forming ────────────────────────────────────
-  const confirmedRows = biasRows.filter(b => b.detection_count >= 2)
-  const formingRows   = biasRows.filter(b => b.detection_count === 1)
+  // R9 fix: confirmed raised to >= 3 (was >= 2). Two detections is not enough
+  // to establish a reliable pattern — one unusual decision can produce two
+  // correlated signals. Three detections across distinct sessions is the minimum
+  // for a stable fingerprint. Forming = 1 or 2 detections.
+  const confirmedRows = biasRows.filter(b => b.detection_count >= 3)
+  const formingRows   = biasRows.filter(b => b.detection_count < 3)
 
   // ── 5. Generate AI content ────────────────────────────────────────────────
   // Sprint R2: generateFingerprintContent() now always runs when there are ANY
@@ -357,26 +361,34 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
 
   // ── 7. Build forming tiles ────────────────────────────────────────────────
   // Sprint R2: forming tiles now use AI-generated content when available.
-  // interpLookup is populated for forming entries by generateFingerprintContent()
-  // when called above. Falls back to static copy only when AI call fails or
-  // this bias wasn't included in the capped formingForAI slice (rows 5+).
+  // R9 fix: forming now covers detection_count 1–2. detectionCount,
+  // confidenceWeight, and confidenceDots are now dynamic (were hardcoded to 1 /
+  // 0.30 / 1 when forming = detection_count === 1 only). humanizeActivationSummary
+  // is added as a fallback for detection_count = 2 entries (returns null for 1).
   const formingTiles: FingerprintTile[] = formingRows.map(b => {
     const biasKey    = b.bias_parameter as string
     const aiTile     = interpLookup[biasKey]   // populated by R2 AI call
     const activCtx   = (b.activation_contexts as Record<string, unknown>) ?? {}
+    const detections = b.detection_count as number
     const sessionIds = (b.session_ids as string[] | null) ?? []
 
     return {
       biasKey,
       biasLabel:         getBiasLabel(biasKey),
-      detectionCount:    1,
-      confidenceWeight:  0.30,
-      confidenceDots:    1,
+      detectionCount:    detections,
+      confidenceWeight:  b.confidence_weight as number,
+      confidenceDots:    getConfidenceDots(detections),
       asymmetryAvg:      b.asymmetry_score_avg as number,
-      // Sprint R2: use AI summary when available; null fallback kept for overflow rows
-      activationSummary: aiTile?.activation_summary ?? null,
-      // Sprint R2: use AI interpretation when available; static fallback otherwise
-      interpretation:    aiTile?.interpretation ?? 'Pattern forming — one more session to confirm.',
+      // AI summary first; for detection_count = 2, humanize as fallback;
+      // for detection_count = 1, humanize returns null (insufficient data)
+      activationSummary: aiTile?.activation_summary
+        ?? humanizeActivationSummary(activCtx, detections)
+        ?? null,
+      // AI interpretation first; static fallback varies by detection count
+      interpretation:    aiTile?.interpretation
+        ?? (detections >= 2
+          ? `Pattern building — ${3 - detections} more session to confirm.`
+          : 'Pattern forming — one more session to confirm.'),
       isTeaser:          true,
       signalType:        null,   // Sprint 20
       sessionIds,                // Sprint 20

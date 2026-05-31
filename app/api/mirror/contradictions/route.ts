@@ -25,8 +25,9 @@ import { detectContradictions }  from '@/lib/contradiction-detector'
 import type { SessionEvidence }  from '@/lib/contradiction-detector'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 
-const MIN_SESSIONS          = 5    // minimum sessions with examiner data before running
-const RERUN_DAYS_THRESHOLD  = 7    // don't rerun within 7 days unless forced
+// R11 fix: configurable via Railway env vars. Defaults match original heuristics.
+const MIN_SESSIONS          = Number(process.env.MIN_SESSIONS         ?? '5')
+const RERUN_DAYS_THRESHOLD  = Number(process.env.RERUN_DAYS_THRESHOLD ?? '7')
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 

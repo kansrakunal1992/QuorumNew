@@ -46,7 +46,7 @@ function NarrativeBlock({ narrative, sessionCount }: { narrative: string | null;
           <span style={{ fontSize: 11.5, color: 'var(--text-3)', fontWeight: 600 }}>Profile forming</span>
         </div>
         <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 12px', lineHeight: 1.65 }}>
-          Your personal decision narrative compiles once two or more patterns are confirmed across your sessions.
+          Your personal decision narrative compiles once three or more patterns are confirmed across your sessions.
           {sessionCount > 0 && <> You have {sessionCount} session{sessionCount !== 1 ? 's' : ''} logged so far.</>}
         </p>
         <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, color: 'var(--gold)', fontWeight: 600, textDecoration: 'none' }}
@@ -187,7 +187,7 @@ export default function BiasFingerprint({ authToken }: Props) {
         <div style={{ marginTop: confirmedHidden > 0 && !confirmedExpanded ? 14 : 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
             <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, fontStyle: 'italic' }}>
-              {data.formingTiles.length} pattern{data.formingTiles.length !== 1 ? 's' : ''} forming — one more session to confirm
+              {data.formingTiles.length} pattern{data.formingTiles.length !== 1 ? 's' : ''} forming — building confidence
             </p>
             <button
               onClick={() => setFormingExpanded(e => !e)}

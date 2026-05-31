@@ -36,9 +36,11 @@ import type { OntologySnapshot }     from '@/lib/structural-retrieval'
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 
-const AVOIDANCE_DAYS_THRESHOLD  = 45   // days_open must be >= this (R11 spec)
-const UPSTREAM_DEP_THRESHOLD    = 4    // upstream_dependency.score >= this (R11 spec)
-const STRUCTURAL_ECHO_MIN_SCORE = 60   // min score to surface echo to user
+// R11 fix: configurable via Railway env vars (no deploy needed to tune).
+// Defaults match the R11 spec values. Re-evaluate at 100 + 250 sessions.
+const AVOIDANCE_DAYS_THRESHOLD  = Number(process.env.AVOIDANCE_DAYS_THRESHOLD  ?? '45')
+const UPSTREAM_DEP_THRESHOLD    = 4    // structural spec — not tunable independently
+const STRUCTURAL_ECHO_MIN_SCORE = Number(process.env.STRUCTURAL_ECHO_MIN_SCORE ?? '60')
 const USER_SESSION_FETCH_LIMIT  = 100  // max sessions loaded per user per pass
 
 // ── Types ─────────────────────────────────────────────────────────────────────

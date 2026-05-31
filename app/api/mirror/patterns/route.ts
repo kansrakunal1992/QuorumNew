@@ -11,7 +11,8 @@ import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 
-const PATTERNS_SESSION_THRESHOLD = 3
+// R11 fix: configurable via Railway env vars. Default matches original heuristic.
+const PATTERNS_SESSION_THRESHOLD = Number(process.env.PATTERNS_SESSION_THRESHOLD ?? '3')
 
 type RuleType = 'REDIRECT' | 'GATE' | 'FLAG'
 

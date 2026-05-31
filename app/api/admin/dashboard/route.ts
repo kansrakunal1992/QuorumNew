@@ -263,9 +263,70 @@ async function handleDashboard() {
     },
   ]
 
+  // ── R11: Effective Threshold Values + Avoidance Alert Stats ────────────────
+  // Shows which thresholds are using Railway env overrides vs hardcoded defaults,
+  // and surfaces avoidance_alerts table stats for R11 monitoring.
+
+  const THRESHOLD_DEFAULTS: Record<string, number> = {
+    MATCH_THRESHOLD:              45,
+    MIN_SESSIONS:                 5,
+    PATTERNS_SESSION_THRESHOLD:   3,
+    RULES_SESSION_THRESHOLD:      8,
+    RERUN_DAYS_THRESHOLD:         7,
+    AVOIDANCE_DAYS_THRESHOLD:     45,
+    STRUCTURAL_ECHO_MIN_SCORE:    60,
+  }
+
+  const effectiveThresholds = Object.entries(THRESHOLD_DEFAULTS).map(([name, defaultVal]) => {
+    const envVal = process.env[name]
+    const value  = envVal != null ? Number(envVal) : defaultVal
+    return {
+      name,
+      default_value:  defaultVal,
+      effective_value: value,
+      is_overridden:  envVal != null && value !== defaultVal,
+      env_raw:        envVal ?? null,
+    }
+  })
+
+  // Avoidance alerts stats — non-fatal if table doesn't exist yet
+  let avoidanceStats: {
+    total: number; open: number; dismissed: number; avg_days_open: number | null
+  } = { total: 0, open: 0, dismissed: 0, avg_days_open: null }
+
+  try {
+    const { data: avoidanceRows } = await supabase
+      .from('avoidance_alerts')
+      .select('days_open, dismissed_at')
+
+    if (avoidanceRows && avoidanceRows.length > 0) {
+      const open      = avoidanceRows.filter(a => !a.dismissed_at).length
+      const dismissed = avoidanceRows.filter(a =>  a.dismissed_at).length
+      const avgDays   = avoidanceRows.reduce((s, a) => s + (a.days_open ?? 0), 0) / avoidanceRows.length
+      avoidanceStats = {
+        total:         avoidanceRows.length,
+        open,
+        dismissed,
+        avg_days_open: +avgDays.toFixed(1),
+      }
+    }
+  } catch {
+    // avoidance_alerts table may not exist in all environments — non-fatal
+  }
+
+  const r11 = {
+    effective_thresholds: effectiveThresholds,
+    avoidance: {
+      ...avoidanceStats,
+      active_days_threshold:  Number(process.env.AVOIDANCE_DAYS_THRESHOLD  ?? '45'),
+      active_echo_threshold:  Number(process.env.STRUCTURAL_ECHO_MIN_SCORE ?? '60'),
+    },
+  }
+
   return NextResponse.json({
     r7,
     r8,
+    r11,
     meta: {
       generated_at:    new Date().toISOString(),
       window_days:     90,

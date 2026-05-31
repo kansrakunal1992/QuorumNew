@@ -492,8 +492,10 @@ export async function retrieveStructuralMatches(
   currentSnapshot: OntologySnapshot,
   pastSnapshots:   OntologySnapshot[],
 ): Promise<StructuralRetrievalResult> {
-  const MATCH_THRESHOLD = 45
-  const MIN_SESSIONS    = 5
+  // R11 fix: configurable via Railway env vars (no deploy needed to tune).
+  // Defaults match the original heuristic values. Re-evaluate at 100 + 250 sessions.
+  const MATCH_THRESHOLD = Number(process.env.MATCH_THRESHOLD ?? '45')
+  const MIN_SESSIONS    = Number(process.env.MIN_SESSIONS    ?? '5')
   const MAX_MATCHES     = 2
 
   if (pastSnapshots.length < MIN_SESSIONS) {

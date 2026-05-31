@@ -24,7 +24,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createCompletion }       from '@/lib/ai-client'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 
-const RULES_SESSION_THRESHOLD = 8
+// R11 fix: configurable via Railway env vars. Default matches original heuristic.
+const RULES_SESSION_THRESHOLD = Number(process.env.RULES_SESSION_THRESHOLD ?? '8')
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
