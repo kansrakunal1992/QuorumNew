@@ -218,7 +218,9 @@ export async function computeUserSessionScores(
   }
 
   // 4. Compute per session
-  const scored: SessionScoreData[] = sessions.map(session => {
+  type SessionScoreRow = Omit<SessionScoreData, 'actionPlan'>
+
+  const scored: SessionScoreRow[] = sessions.map(session => {
     const sid      = session.id as string
     const ontology = ontologyMap.get(sid)
     const calibDelta = calibrationMap.get(sid) ?? null
