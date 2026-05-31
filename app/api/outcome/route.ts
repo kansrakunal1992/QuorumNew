@@ -1,6 +1,12 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 
+// Sprint D1 (R11 Avoidance Detection — foundation):
+//   Filing an outcome = resolution signal. Stamp last_action_at so the D2
+//   avoidance detector does not flag sessions the user has already resolved.
+//   Also prevents a resolved session from re-triggering after dismissal.
+//   Stamped AFTER successful outcomes upsert — non-blocking, logged on failure.
+
 export async function POST(req: Request) {
   try {
     const {
@@ -53,6 +59,19 @@ export async function POST(req: Request) {
       console.error('Outcome upsert error:', error)
       return NextResponse.json({ error: 'Failed to save' }, { status: 500 })
     }
+
+    // Sprint D1: outcome filed = resolution signal for avoidance detector.
+    // Stamp last_action_at so D2 does not flag this session as avoided.
+    // Fire-and-forget — non-fatal; D2 uses COALESCE(last_action_at, created_at).
+    supabase
+      .from('sessions')
+      .update({ last_action_at: new Date().toISOString() })
+      .eq('id', sessionId)
+      .then(({ error: stampErr }) => {
+        if (stampErr) {
+          console.error(`[Outcome POST] last_action_at stamp failed for session ${sessionId}:`, stampErr)
+        }
+      })
 
     return NextResponse.json({ ok: true, calibration_delta: calibrationDelta })
   } catch (err) {

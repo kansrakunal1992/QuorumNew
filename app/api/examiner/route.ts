@@ -12,6 +12,13 @@
  *
  * GET handler — unchanged from Sprint 12 (contextual rule question personalisation)
  *
+ * Sprint D1 (R11 Avoidance Detection — foundation):
+ *   - POST handler (both normal + skipped paths) now stamps
+ *     sessions.last_action_at = now() after successful examiner
+ *     submit / skip. Primary activity signal for the D2 avoidance
+ *     detector: last_action_at = when the user last actively worked
+ *     this session, NOT when they created it. Fire-and-forget.
+ *
  * Additional Risk B fix (audit):
  *   - C0 (JTBD question) now fires on ALL decisions regardless of rule count.
  *     Previously suppressed when allRules.length >= 3 — i.e. exactly the complex
@@ -253,6 +260,11 @@ export async function POST(req: Request) {
         .update({ examiner_status: 'submitted' })
         .eq('session_id', sessionId)
 
+      // Sprint D1: stamp last_action_at — user engaged (even via skip)
+      stampLastActionAt(sessionId, supabase).catch(err =>
+        console.error('[Examiner POST] last_action_at stamp (skip) error:', err)
+      )
+
       // Still trigger bias scoring on skip — personas + ontology are enough
       fireBiasScore(sessionId, req).catch(err =>
         console.error('[Examiner POST] Bias trigger (skip) error:', err)
@@ -294,6 +306,13 @@ export async function POST(req: Request) {
       .update({ examiner_status: 'submitted' })
       .eq('session_id', sessionId)
 
+    // Sprint D1: stamp last_action_at — examiner submit is the primary
+    // activity signal for avoidance detection. NOT created_at: a session
+    // submitted 60 days ago but worked on 3 days ago is not avoidance.
+    stampLastActionAt(sessionId, supabase).catch(err =>
+      console.error('[Examiner POST] last_action_at stamp error:', err)
+    )
+
     // ── Trigger bias scoring via dedicated endpoint (non-blocking) ────────────
     fireBiasScore(sessionId, req).catch(err =>
       console.error('[Examiner POST] Bias trigger error:', err)
@@ -313,7 +332,25 @@ export async function POST(req: Request) {
 }
 
 /**
- * Fire-and-forget HTTP call to /api/bias-score.
+ * Sprint D1 — stamp sessions.last_action_at = now().
+ * Called fire-and-forget from examiner POST (submit + skip paths).
+ * Non-fatal: logs on error, never throws to caller.
+ * The D2 avoidance detector uses COALESCE(last_action_at, created_at)
+ * so a missed stamp degrades gracefully to created_at semantics.
+ */
+async function stampLastActionAt(
+  sessionId: string,
+  supabase:  ReturnType<typeof createServiceClient>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ last_action_at: new Date().toISOString() })
+    .eq('id', sessionId)
+
+  if (error) {
+    console.error(`[Examiner POST] last_action_at stamp failed for session ${sessionId}:`, error)
+  }
+}
  * /api/bias-score owns all bias_library accumulation logic — schema-correct,
  * handles identity resolution (user_id → user_email → device_id → anonymous).
  * Derives base URL from the incoming request so it works across envs.
