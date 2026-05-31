@@ -2,6 +2,7 @@
  * QUORUM — Rule Engine
  * Sprint 11a — R1–R5 deterministic logic evaluator
  * Sprint 13  — R6–R10, R12 implemented; R11 deferred (requires cron)
+ * Sprint D2  — R11 activated as BACKGROUND rule (lib/avoidance-detector.ts);
  *
  * INPUT:  ScoredVector (14-dim from ontology-tagger v2.0)
  * OUTPUT: RuleEngineResult { mode, triggered_rules, flag_rules }
@@ -24,7 +25,7 @@
  *   R8 — Irreconcilable Values       [FLAG,     P1]
  *   R9 — Irreversibility Warning     [FLAG,     P1]
  *   R12— Couple Misalignment         [FLAG,     P2]
- *   R11— Avoidance Detection         [BACKGROUND] — deferred, requires cron
+ *   R11— Avoidance Detection         [BACKGROUND] — Sprint D2: live (daily cron)
  *
  * IMPLEMENTATION NOTES:
  *   - All thresholds are deterministic. No ML. No probabilistic routing.
@@ -321,9 +322,15 @@ function evaluateR9(sv: ScoredVector): TriggeredRule | null {
 }
 
 // ── R11 — Avoidance Detection [BACKGROUND] ────────────────────────────────────
-// Deferred: requires cron job + days_open tracking.
-// Trigger: upstream_dependency >= 4 AND days_open >= 45 AND no_new_action
-// Sprint 13: not implemented. Stub retained as documentation.
+// Sprint D2: Live. Runs as a daily background job via Railway cron.
+// Cron endpoint:  app/api/cron/avoidance-detect/route.ts (CRON_SECRET auth)
+// Detection engine: lib/avoidance-detector.ts → runAvoidanceDetectionPass()
+// Trigger:        upstream_dependency >= 4 AND days_open >= 45 AND
+//                 no outcome filed (COALESCE(last_action_at, created_at))
+// Alert storage:  avoidance_alerts table (Sprint D1 migration)
+// User surface:   D3 Mirror AvoidanceAlertCard via alerts/route.ts
+// Not in evaluateRules() — fires outside the session flow; does not affect
+// REDIRECT / GATE / OPEN mode determination at session time.
 
 // ── R12 — Couple Misalignment Check [FLAG, P2] ────────────────────────────────
 // Fires when: decision_unit >= 2 AND decision_unit <= 3 AND value_conflict >= 4
