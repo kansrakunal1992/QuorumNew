@@ -32,6 +32,26 @@
 //     — recency_bias: now correctly returns 'distorting' when ddInfo >= 4
 //       (was always 'neutral' — bug fix).
 //
+// Sprint RE changes (Risk E — remaining longitudinal reasoning gap):
+//   fetchCalibrationContext()  [private]
+//     — queries sessions joined with outcomes for calibration_delta.
+//     — gate: >= 3 paired points AND |avgDelta| >= 0.3.
+//     — returns a 1-line synthesis-ready calibration summary, or ''.
+//     — well-calibrated users (|avgDelta| < 0.3) produce no injection.
+//
+//   fetchActiveContradictions()  [private]
+//     — queries contradictions table for active (non-dismissed) tensions.
+//     — limit 2 — top 2 by recency.
+//     — returns a synthesis-ready block with principle ↔ violation lines, or ''.
+//
+//   fetchUserBiasContext() — extended:
+//     — all three DB queries now run in parallel via Promise.all.
+//     — calibrationLine and contradictionBlock appended to synthesisBlock
+//       before the MANDATORY directive.
+//     — MANDATORY directive gains conditional addenda for calibration
+//       and contradiction data when present.
+//     — No changes to return shape or call signature.
+//
 // Requires: ANTHROPIC_API_KEY env var
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -375,7 +395,140 @@ export function getPredominantSignal(
   return entries[0][0] as BiasSignalType
 }
 
-// ── fetchUserBiasContext (Sprint R2) ─────────────────────────────────────────
+// ── fetchCalibrationContext (Sprint RE — private) ────────────────────────────
+//
+// Queries sessions joined with outcomes for calibration_delta values.
+// Returns a plain-English synthesis-ready description of the user's confidence
+// calibration pattern, or '' when insufficient data or pattern is negligible.
+//
+// Gate: >= 3 paired points (both pre_decision_confidence and
+// retrospective_confidence present) AND |avgDelta| >= 0.3.
+// Well-calibrated users (delta inside ±0.3) produce no injection — no noise
+// for users who don't have this pattern.
+//
+// calibration_delta = retrospective_confidence − pre_decision_confidence.
+//   Negative → overconfident at decision time (pre higher than retro).
+//   Positive → underconfident at decision time (retro higher than pre).
+//
+// Language design: the returned string is synthesis-facing context, not
+// user-facing text. It describes the pattern in human terms so that synthesis
+// can weave a natural observation into its prose without any technical framing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function fetchCalibrationContext(
+  userId: string,
+  supabase: ReturnType<typeof createServiceClient>,
+): Promise<string> {
+  const { data: rows, error } = await supabase
+    .from('sessions')
+    .select(`
+      id,
+      pre_decision_confidence,
+      outcomes (
+        retrospective_confidence,
+        calibration_delta
+      )
+    `)
+    .eq('user_id', userId)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  if (error || !rows || rows.length === 0) return ''
+
+  // Flatten to sessions with both confidence readings present.
+  type RawRow = { delta: number | null; retro: number | null; pre: number | null }
+
+  const paired = (rows as any[])
+    .map((r: any): RawRow => {
+      const outcome = Array.isArray(r.outcomes) ? r.outcomes[0] : r.outcomes
+      return {
+        delta: outcome?.calibration_delta        as number | null,
+        retro: outcome?.retrospective_confidence as number | null,
+        pre:   r.pre_decision_confidence         as number | null,
+      }
+    })
+    .filter((p: RawRow): p is { delta: number; retro: number; pre: number } =>
+      p.delta !== null && p.retro !== null && p.pre !== null,
+    )
+
+  // Gate 1: need >= 3 paired points for a meaningful pattern.
+  if (paired.length < 3) return ''
+
+  const avgDelta = paired.reduce((s: number, p: { delta: number }) => s + p.delta, 0) / paired.length
+
+  // Gate 2: pattern must be directionally meaningful (not noise).
+  if (Math.abs(avgDelta) < 0.3) return ''
+
+  const n        = paired.length
+  const absDelta = Math.abs(avgDelta).toFixed(1)
+
+  // Plain-English description for synthesis context.
+  // Written as a human observation, not a data readout, so synthesis can
+  // quote or paraphrase it naturally without any technical framing.
+  if (avgDelta < -0.3) {
+    // Overconfident at decision time: pre > retro on average.
+    const qualifier = Math.abs(avgDelta) >= 1.5 ? 'consistently' : 'tends to'
+    return (
+      `Confidence calibration across ${n} tracked decisions: this user ` +
+      `${qualifier} enters decisions with more certainty than their ` +
+      `retrospective assessment later supports — on average their confidence ` +
+      `at the moment of deciding has been ${absDelta} points higher than how ` +
+      `they rate that same judgment in hindsight. Worth considering whether ` +
+      `that pattern is present in how this decision is currently framed.`
+    )
+  } else {
+    // Underconfident at decision time: retro > pre on average.
+    const qualifier = avgDelta >= 1.5 ? 'consistently' : 'tends to'
+    return (
+      `Confidence calibration across ${n} tracked decisions: this user ` +
+      `${qualifier} understates their confidence when deciding — on average ` +
+      `their retrospective judgment of the same decision has been ${absDelta} ` +
+      `points higher than their stated confidence at the time. They may be ` +
+      `more capable of navigating this than their current certainty level suggests.`
+    )
+  }
+}
+
+// ── fetchActiveContradictions (Sprint RE — private) ──────────────────────────
+//
+// Queries the contradictions table for active (non-dismissed) principle–behaviour
+// tensions. Returns a synthesis-ready block describing them, or '' when none.
+//
+// Limit 2 — the top 2 most recent undismissed tensions. Beyond 2, marginal
+// synthesis value drops and prompt length grows.
+//
+// principle_text and violation_text are already human-readable (LLM-generated
+// during the weekly contradiction pass). They are passed to synthesis as-is
+// so that it can reference them accurately, but the directive instructs synthesis
+// to surface them as a natural observation rather than a structured data block.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function fetchActiveContradictions(
+  userId: string,
+  supabase: ReturnType<typeof createServiceClient>,
+): Promise<string> {
+  const { data: rows, error } = await supabase
+    .from('contradictions')
+    .select('principle_text, violation_text, severity, category')
+    .eq('user_id', userId)
+    .is('dismissed_at', null)
+    .order('generated_at', { ascending: false })
+    .limit(2)
+
+  if (error || !rows || rows.length === 0) return ''
+
+  const lines = (rows as any[])
+    .map((r: any) =>
+      `— Stated principle: "${r.principle_text}" | Observed pattern: "${r.violation_text}"` +
+      ` | Category: ${r.category} | Severity: ${r.severity}`,
+    )
+    .join('\n')
+
+  return `Unresolved principle–behaviour tensions from this user's prior sessions:\n${lines}`
+}
+
+// ── fetchUserBiasContext (Sprint R2, extended Sprint RE) ─────────────────────
 //
 // Queries bias_library for a user's confirmed + forming longitudinal bias profile
 // and returns two injection-ready blocks for persona/route.ts:
@@ -385,13 +538,19 @@ export function getPredominantSignal(
 //                     scores: bias_key, detection_count, severity (asymmetry avg),
 //                     confidence_weight, and current signal classification
 //                     re-run against this session's ontology vector.
-//                     Ends with a MANDATORY assessment directive.
+//                     Sprint RE: also appends calibration context and active
+//                     contradiction tensions when present.
+//                     Ends with a MANDATORY assessment directive covering all
+//                     three data sources with explicit plain-language instructions.
 //
 //   personaAlert    — single sentence injected into each initial persona's
 //                     system prompt. Only fires when ≥1 bias is DISTORTING.
 //                     Kept terse to avoid overloading 6 parallel persona calls.
 //
 //   hasAnyBiases    — true if user has any bias row at all (detection_count >= 1).
+//
+// Sprint RE: all three DB queries (bias_library, sessions+outcomes, contradictions)
+//   run in parallel via Promise.all. Return shape and call signature unchanged.
 //
 // Early-user threshold design:
 //   Detection count >= 1 is included (not >= 2) so that users with 1–3 sessions
@@ -404,6 +563,13 @@ export function getPredominantSignal(
 //   Each bias signal is re-classified against the CURRENT session's ontology vector,
 //   not the historical average. This ensures "DISTORTING" reflects whether the bias
 //   is actively harmful in THIS decision's structural context.
+//
+// User-facing language contract (enforced via MANDATORY directive):
+//   Synthesis MUST describe all findings — bias patterns, calibration history,
+//   and principle tensions — in plain natural language woven into existing prose.
+//   No section headers, no field names, no technical labels. The directive gives
+//   synthesis concrete example phrasings for each data type to prevent any
+//   mechanical or label-first output reaching the user.
 //
 // Non-fatal: always returns empty blocks on error — never throws to caller.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -424,15 +590,20 @@ export async function fetchUserBiasContext(
   try {
     const supabase = createServiceClient()
 
-    // Fetch all bias rows with at least 1 detection, ordered by severity descending.
-    // Limit 6 — beyond the top 6 patterns, marginal prompt value drops sharply.
-    const { data: biases, error } = await supabase
-      .from('bias_library')
-      .select('bias_parameter, detection_count, confidence_weight, asymmetry_score_avg, activation_contexts')
-      .eq('user_id', userId)
-      .gte('detection_count', 1)
-      .order('asymmetry_score_avg', { ascending: false })
-      .limit(6)
+    // ── Sprint RE: all three DB queries run in parallel ───────────────────
+    const [biasResult, calibrationLine, contradictionBlock] = await Promise.all([
+      supabase
+        .from('bias_library')
+        .select('bias_parameter, detection_count, confidence_weight, asymmetry_score_avg, activation_contexts')
+        .eq('user_id', userId)
+        .gte('detection_count', 1)
+        .order('asymmetry_score_avg', { ascending: false })
+        .limit(6),
+      fetchCalibrationContext(userId, supabase),
+      fetchActiveContradictions(userId, supabase),
+    ])
+
+    const { data: biases, error } = biasResult
 
     if (error || !biases || biases.length === 0) return empty
 
@@ -475,23 +646,48 @@ export async function fetchUserBiasContext(
       return `— ${b.biasKey} | ${statusLabel} | severity: ${b.asymmetryAvg.toFixed(1)} | confidence: ${Math.round(b.confidenceWeight * 100)}% | signal: ${b.signal.toUpperCase()}`
     }).join('\n')
 
-    const hasDistorting  = classified.some(b => b.signal === 'distorting' && b.isConfirmed)
-    const hasForming     = classified.some(b => !b.isConfirmed)
+    const hasDistorting = classified.some(b => b.signal === 'distorting' && b.isConfirmed)
+    const hasForming    = classified.some(b => !b.isConfirmed)
 
-    const directiveBody = hasDistorting
+    // ── Bias directive ────────────────────────────────────────────────────
+    const biasDirective = hasDistorting
       ? 'Your synthesis MUST assess whether any DISTORTING confirmed pattern from this record appears active in this decision, based on the Council outputs and the decision\'s structural profile. If one is active, name it — but in plain user-facing language only. Do NOT use the bias key name (e.g. "loss_aversion_reversal") verbatim — translate it into a human description the user would immediately understand, such as "a tendency to weigh the regret of missing out more heavily than the risk of a concrete loss." Weave this observation into your existing prose naturally — do NOT create a separate section header like "LONGITUDINAL BIAS ASSESSMENT:" or any similar label. If none are active, say so in a single plain sentence. Omission without acknowledgment is not acceptable.'
       : hasForming
         ? 'Your synthesis should note whether any of these emerging patterns — even the FORMING ones — may be influencing the framing of this decision. Use hedged language ("there may be an early pattern of...") for FORMING entries, translated into plain language — never use the raw bias key name. Weave this into your existing prose; do NOT create a separate section header. Silence on this record is not acceptable.'
         : 'Your synthesis should assess whether any of these patterns appears active in the current decision based on the Council outputs. Describe any pattern in plain language — do not reproduce the bias key names.'
+
+    // ── Calibration directive (Sprint RE) ─────────────────────────────────
+    // Only appended when calibration data exists. Instructs synthesis to surface
+    // the pattern as a natural human observation — never a labelled data point.
+    // Example phrasings are given so synthesis has a concrete template to follow.
+    const calibrationDirective = calibrationLine
+      ? ' If the confidence calibration history above is relevant to what the Council raised — for example, if the analysis touches on certainty, risk appetite, or how the user is framing their own judgment — surface it as a plain, natural observation woven into your existing prose. Example phrasings: "your track record suggests you tend to be more certain at the moment of deciding than you give yourself credit for in hindsight" or "one thing worth naming is that you\'ve historically entered decisions with a higher degree of certainty than your retrospective view has supported." Do NOT label it as \'calibration data\', do NOT create a separate section for it, and do NOT quote numbers unless they add genuine human meaning in context.'
+      : ''
+
+    // ── Contradiction directive (Sprint RE) ───────────────────────────────
+    // Only appended when active contradictions exist. Instructs synthesis to
+    // surface any relevant tension as a natural conversational reference —
+    // never as a structured log entry or section header.
+    const contradictionDirective = contradictionBlock
+      ? ' If any documented principle–behaviour tension above is directly relevant to this specific decision — meaning this decision touches the same domain or type of commitment — weave a brief, plain reference into your existing prose. Example phrasings: "this sits in some tension with something you\'ve articulated before — a commitment to [x] that hasn\'t always matched the pattern in subsequent decisions" or "worth flagging that you\'ve navigated something similar before, and the gap between what you intended and what happened is worth holding in mind here." Do NOT call it a \'contradiction\', do NOT reproduce the field values verbatim as a list, and do NOT surface it if it is not genuinely applicable to this decision.'
+      : ''
+
+    // ── Assemble full synthesisBlock ───────────────────────────────────────
+    // Structure: bias record → calibration context (if present) →
+    // contradiction tensions (if present) → MANDATORY directive.
+    const longitudinalContext = [
+      calibrationLine,
+      contradictionBlock,
+    ].filter(Boolean).join('\n\n')
 
     const synthesisBlock =
 `LONGITUDINAL BIAS RECORD — patterns from this user's prior sessions:
 ${biasLines}
 
 Columns: bias_key | status (CONFIRMED = 2+ detections, FORMING = 1 detection) | severity (avg prosecutor–defense asymmetry, 0–10 scale) | confidence (evidence weight: 30% per detection, capped at 100%) | signal (re-classified against THIS decision's structural profile: DISTORTING / NEUTRAL / ADAPTIVE).
-
+${longitudinalContext ? `\n${longitudinalContext}\n` : ''}
 MANDATORY SYNTHESIS REQUIREMENT — NON-NEGOTIABLE:
-${directiveBody}`
+${biasDirective}${calibrationDirective}${contradictionDirective}`
 
     // ── Build personaAlert ────────────────────────────────────────────────
     // Only the single highest-severity DISTORTING bias fires here, and only if confirmed.
