@@ -82,17 +82,14 @@ function deltaColor(v: number | null, flag: boolean): string {
 export default function AdminPage() {
   const router = useRouter()
 
-  const [phase,    setPhase]    = useState<'gate' | 'loading' | 'ready' | 'error'>('gate')
+  const [phase,     setPhase]     = useState<'gate' | 'loading' | 'ready' | 'error'>('gate')
   const [codeInput, setCodeInput] = useState('')
-  const [data,     setData]     = useState<DashboardData | null>(null)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [data,      setData]      = useState<DashboardData | null>(null)
+  const [errorMsg,  setErrorMsg]  = useState('')
 
-  // On mount, check if we already have a stored code
-  useEffect(() => {
-    const stored = sessionStorage.getItem('quorum_admin_code')
-    if (stored) void fetchDashboard(stored)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Define fetchDashboard BEFORE useEffect so the closure captures an
+  // initialised binding. Defining it after caused a TDZ reference in
+  // React strict-mode's synchronous effect replay.
   const fetchDashboard = useCallback(async (code: string) => {
     setPhase('loading')
     try {
@@ -104,20 +101,36 @@ export default function AdminPage() {
         router.push('/')
         return
       }
-      if (!res.ok) {
-        setErrorMsg(`Server error: ${res.status}`)
+      // Parse JSON separately so a non-JSON body (Railway HTML error page)
+      // produces a clear message rather than landing in the generic catch.
+      let json: DashboardData
+      try {
+        json = await res.json() as DashboardData
+      } catch {
+        setErrorMsg(`Response was not JSON — check Railway build logs (HTTP ${res.status})`)
         setPhase('error')
         return
       }
-      const json = await res.json() as DashboardData
+      if (!res.ok) {
+        setErrorMsg(`Server error ${res.status} — check Railway logs`)
+        setPhase('error')
+        return
+      }
       setData(json)
       sessionStorage.setItem('quorum_admin_code', code)
       setPhase('ready')
-    } catch {
-      setErrorMsg('Network error — check Railway deployment.')
+    } catch (err) {
+      setErrorMsg(`Network error: ${String(err)}`)
       setPhase('error')
     }
   }, [router])
+
+  // On mount: if a code is already stored, skip the gate and fetch immediately.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = sessionStorage.getItem('quorum_admin_code')
+    if (stored) void fetchDashboard(stored)
+  }, [fetchDashboard])
 
   const handleSubmit = () => {
     if (!codeInput.trim()) return

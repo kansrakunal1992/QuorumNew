@@ -70,6 +70,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Top-level try/catch ensures the route always returns JSON — never an HTML
+  // error page. If Next.js returns HTML on a runtime crash, res.json() in the
+  // client throws and lands in the generic catch block showing "Network error".
+  // Wrapping here guarantees a parseable error response instead.
+  try {
+    return await handleDashboard()
+  } catch (err) {
+    console.error('[Admin/Dashboard] Unhandled error:', err)
+    return NextResponse.json(
+      { error: 'Internal server error', detail: String(err) },
+      { status: 500 }
+    )
+  }
+}
+
+async function handleDashboard() {
   const supabase  = createServiceClient()
   const since90d  = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
 
