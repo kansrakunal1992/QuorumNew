@@ -174,3 +174,33 @@ export interface BenchmarkData {
   top_dimensions:  BenchmarkDimension[]
   top_biases:      string[]   // bias_parameter keys most common in cluster
 }
+
+// ── Session Reliability Index (R4) ────────────────────────────────────────────
+//
+// Per-session unified score computed from 4 data streams.
+// Returned by GET /api/mirror/session-score as SessionScoreData[].
+//
+// Sub-scores (each 0–100):
+//   structural        — maxStructuralScore from matches_json. 50 = no history yet (neutral)
+//   biasClarity       — inverse of distorting bias presence × asymmetry. 80 = no signals
+//   councilConfidence — deterministic from rule_engine_result mode + flag count
+//   calibration       — derived from outcomes.calibration_delta. 70 = outcome pending
+//
+// score (composite) = structural × 0.25 + biasClarity × 0.30 + councilConfidence × 0.20 + calibration × 0.25
+//
+// actionPlan is a single global action derived from the user's weakest average
+// sub-score across all sessions. Same value on every row — UI reads from [0].
+
+export interface SessionScoreData {
+  sessionId:            string
+  decisionPreview:      string      // first 90 chars of decision_text
+  createdAt:            string      // ISO timestamp
+  score:                number      // composite 0–100
+  structural:           number      // sub-score: structural match quality
+  biasClarity:          number      // sub-score: absence of distorting signals
+  councilConfidence:    number      // sub-score: structural clarity for analysis
+  calibration:          number      // sub-score: confidence calibration quality
+  calibrationPending:   boolean     // true if no outcome logged yet for this session
+  distortingBiasLabels: string[]    // labels of biases flagged as distorting this session
+  actionPlan:           string      // global: what to improve next — always present
+}

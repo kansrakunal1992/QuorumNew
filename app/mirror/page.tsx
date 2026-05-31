@@ -32,6 +32,7 @@ import IndependenceScore      from '@/components/IndependenceScore'
 import DecisionRules          from '@/components/DecisionRules'
 import ContradictionDetector  from '@/components/ContradictionDetector'
 import CalibrationSparkline   from '@/components/CalibrationSparkline'
+import SessionReliabilityIndex from '@/components/SessionReliabilityIndex'
 import PatternStore           from '@/components/PatternStore'
 import StyleCalibration        from '@/components/StyleCalibration'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
@@ -1006,6 +1007,22 @@ function UnlockedView({
           How the confidence you entered a decision with compares to how certain it felt in hindsight — and whether that gap is closing over time.
         </p>
         <CalibrationSparkline authToken={authToken} />
+      </div>
+
+      {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* ── R4: Session Reliability Index ─────────────────────────────────── */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Session Reliability Index
+          </h3>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          A unified score per session combining structural match quality, active bias signals, Council analysis conditions, and your confidence calibration record — and what to do next to raise it.
+        </p>
+        <SessionReliabilityIndex authToken={authToken} />
       </div>
 
       {/* Divider */}
