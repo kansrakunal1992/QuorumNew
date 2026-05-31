@@ -351,6 +351,8 @@ async function stampLastActionAt(
     console.error(`[Examiner POST] last_action_at stamp failed for session ${sessionId}:`, error)
   }
 }
+
+/**
  * /api/bias-score owns all bias_library accumulation logic — schema-correct,
  * handles identity resolution (user_id → user_email → device_id → anonymous).
  * Derives base URL from the incoming request so it works across envs.
