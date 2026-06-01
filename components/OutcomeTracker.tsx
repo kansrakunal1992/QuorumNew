@@ -88,9 +88,9 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
     label: string
     bg: string
   }[] = [
-    { value: 'yes',       label: 'Yes, it changed my thinking',     bg: '#1a4a2e' },
-    { value: 'partially', label: 'Partially — surfaced new angles',  bg: '#3a3a10' },
-    { value: 'no',        label: 'Not meaningfully',                 bg: '#4a1a1a' },
+    { value: 'yes',       label: 'Yes, it changed my thinking',     bg: 'var(--outcome-yes)' },
+    { value: 'partially', label: 'Partially — surfaced new angles',  bg: 'var(--outcome-partial)' },
+    { value: 'no',        label: 'Not meaningfully',                 bg: 'var(--outcome-no)' },
   ]
 
   // Sprint 14: outcome quality options
@@ -186,7 +186,7 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
                   ? '1px solid var(--gold)'
                   : '1px solid var(--border-dim)',
                 background: helped === opt.value ? opt.bg : 'transparent',
-                color: helped === opt.value ? '#fff' : 'var(--text-3)',
+                color: helped === opt.value ? 'var(--text-1)' : 'var(--text-3)',
               }}
             >
               {opt.label}
@@ -215,7 +215,7 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
                 border: outcomeQuality === opt.value
                   ? `1px solid ${opt.color}`
                   : '1px solid var(--border-dim)',
-                background: outcomeQuality === opt.value ? 'rgba(255,255,255,0.04)' : 'transparent',
+                background: outcomeQuality === opt.value ? 'var(--overlay-bg)' : 'transparent',
                 color: outcomeQuality === opt.value ? opt.color : 'var(--text-3)',
               }}
             >
@@ -314,9 +314,9 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
     }[displayOutcome.council_helped]
 
     const helpedBg = {
-      yes:       '#1a4a2e',
-      partially: '#3a3a10',
-      no:        '#4a1a1a',
+      yes:       'var(--outcome-yes)',
+      partially: 'var(--outcome-partial)',
+      no:        'var(--outcome-no)',
     }[displayOutcome.council_helped]
 
     const qualityLabel = displayOutcome.outcome_quality
@@ -344,7 +344,7 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
                 padding: '4px 12px',
                 borderRadius: 20,
                 background: helpedBg,
-                color: '#fff',
+                color: 'var(--text-1)',
                 display: 'inline-block',
               }}>
                 {helpedLabel}

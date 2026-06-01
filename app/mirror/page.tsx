@@ -1228,7 +1228,7 @@ export default function MirrorPage() {
             <span style={{
               fontSize:      10,
               fontWeight:    600,
-              color:         '#4ade80',
+              color:         'var(--success-text)',
               letterSpacing: '0.08em',
               textTransform: 'uppercase',
             }}>

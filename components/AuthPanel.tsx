@@ -31,12 +31,12 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
         alignItems: 'center',
         gap: 8,
         padding: '8px 14px',
-        background: 'rgba(74,222,128,0.06)',
-        border: '1px solid rgba(74,222,128,0.2)',
+        background: 'var(--success-bg)',
+        border: '1px solid var(--success-border)',
         borderRadius: 10,
         marginTop: 12,
       }}>
-        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80', flexShrink: 0 }} />
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success-text)', flexShrink: 0 }} />
         <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
           Sessions linked to <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{userEmail}</span>
           {' · '}cross-device history active

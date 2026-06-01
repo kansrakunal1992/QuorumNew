@@ -335,17 +335,17 @@ export default function SynthesisCard({
                 style={{
                   padding: '8px 18px', borderRadius: 8,
                   border: '1px solid var(--border-mid)',
-                  background: 'rgba(255,255,255,0.04)',
+                  background: 'var(--overlay-bg)',
                   color: 'var(--text-3)', fontSize: 12, fontWeight: 500,
                   cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.01em',
                   transition: 'all 0.15s',
                 }}
                 onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'
+                  (e.currentTarget as HTMLButtonElement).style.background = 'var(--overlay-bg-hover)'
                   ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'
                 }}
                 onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'
+                  (e.currentTarget as HTMLButtonElement).style.background = 'var(--overlay-bg)'
                   ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-3)'
                 }}
               >
@@ -385,8 +385,8 @@ export default function SynthesisCard({
               {registerMode && (
                 <span style={{
                   fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                  border: `1px solid ${registerMode === 'clarification' ? 'rgba(74,222,128,0.4)' : 'var(--gold-dim)'}`,
-                  background: registerMode === 'clarification' ? 'rgba(74,222,128,0.08)' : 'rgba(201,168,76,0.08)',
+                  border: `1px solid ${registerMode === 'clarification' ? 'var(--success-border)' : 'var(--gold-dim)'}`,
+                  background: registerMode === 'clarification' ? 'var(--success-bg)' : 'rgba(201,168,76,0.08)',
                   color: registerMode === 'clarification' ? 'var(--green-text)' : 'var(--gold)',
                   fontWeight: 600, letterSpacing: '0.04em',
                 }}>
@@ -606,7 +606,7 @@ export default function SynthesisCard({
               {isRecalibrating ? 'Recalibrating' : 'Synthesising'}
             </span>
           )}
-          {state === 'done'  && !briefState.match(/streaming|done/) && <span style={{ fontSize: 11, color: 'rgba(74,222,128,0.9)' }}>✓ Complete</span>}
+          {state === 'done'  && !briefState.match(/streaming|done/) && <span style={{ fontSize: 11, color: 'var(--success-text)' }}>✓ Complete</span>}
           {state === 'error' && <span style={{ fontSize: 11, color: '#e05050' }}>✗ Error</span>}
         </div>
       </div>

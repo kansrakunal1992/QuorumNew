@@ -136,7 +136,7 @@ function DeltaLabel({ delta }: { delta: number | null }) {
   }
 
   const positive = delta > 0
-  const color     = positive ? '#4ade80' : 'var(--text-3)'
+  const color     = positive ? 'var(--success-text)' : 'var(--text-3)'
   const arrow     = positive ? '↑' : '↓'
 
   return (

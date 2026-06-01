@@ -149,17 +149,17 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
                     padding: '10px 12px', borderRadius: 9, textAlign: 'left',
                     cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
                     border: `1px solid ${reRegisterMode === opt.value
-                      ? (opt.value === 'analytical' ? 'var(--gold)' : '#4ade80')
+                      ? (opt.value === 'analytical' ? 'var(--gold)' : 'var(--success-border)')
                       : 'var(--border-dim)'}`,
                     background: reRegisterMode === opt.value
-                      ? (opt.value === 'analytical' ? 'rgba(201,168,76,0.1)' : 'rgba(74,222,128,0.08)')
+                      ? (opt.value === 'analytical' ? 'rgba(201,168,76,0.1)' : 'var(--success-bg)')
                       : 'transparent',
                   }}
                 >
                   <p style={{
                     fontSize: 12, fontWeight: 600, marginBottom: 2,
                     color: reRegisterMode === opt.value
-                      ? (opt.value === 'analytical' ? 'var(--gold)' : '#4ade80')
+                      ? (opt.value === 'analytical' ? 'var(--gold)' : 'var(--success-text)')
                       : 'var(--text-2)',
                   }}>
                     {opt.icon} {opt.label}

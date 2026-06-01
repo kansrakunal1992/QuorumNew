@@ -46,6 +46,20 @@
   --accent-elder:             #a86a20;
   --accent-competitor:        #5e6830;
 
+  /* Info (blue) accent — status badges, share-context button, examiner update box */
+  --info-text:         #93c5fd;
+  --info-bg:           rgba(96,165,250,0.07);
+  --info-border:       rgba(96,165,250,0.28);
+
+  /* Success (green) accent — ✓ Complete, Responded badge */
+  --success-text:      rgba(74,222,128,0.9);
+  --success-bg:        rgba(74,222,128,0.07);
+  --success-border:    rgba(74,222,128,0.28);
+
+  /* Overlay glass — subtle button bg that works on any dark card */
+  --overlay-bg:        rgba(255,255,255,0.04);
+  --overlay-bg-hover:  rgba(255,255,255,0.09);
+
   /* TTS strip button colours */
   --tts-btn-color:   rgba(255,255,255,0.70);
   --tts-btn-border:  rgba(255,255,255,0.18);
@@ -91,6 +105,20 @@
   --tts-btn-border:  var(--border-mid);
   --tts-btn-bg:      rgba(0,0,0,0.05);
   --tts-stop-color:  var(--text-3);
+
+  /* Info (blue) accent — readable dark blue on cream */
+  --info-text:         #1a52a8;
+  --info-bg:           rgba(26,82,168,0.08);
+  --info-border:       rgba(26,82,168,0.20);
+
+  /* Success (green) accent — readable dark green on cream */
+  --success-text:      #1a7a3a;
+  --success-bg:        rgba(26,122,58,0.09);
+  --success-border:    rgba(26,122,58,0.25);
+
+  /* Overlay glass — dark-tinted for light cards */
+  --overlay-bg:        rgba(0,0,0,0.04);
+  --overlay-bg-hover:  rgba(0,0,0,0.08);
 
   /* Synthesis card header state backgrounds — light-mode safe */
   --synthesis-done:      var(--green-soft);

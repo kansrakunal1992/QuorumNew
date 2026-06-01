@@ -344,14 +344,14 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                   {q.rule_id === 'C0' ? (
                     <span style={{
                       fontSize: 9.5, fontWeight: 700,
-                      color: '#4ade80',
+                      color: 'var(--success-text)',
                       letterSpacing: '0.12em',
                       textTransform: 'uppercase',
                       marginRight: 8,
                       padding: '2px 6px',
                       borderRadius: 4,
-                      border: '1px solid rgba(74,222,128,0.3)',
-                      background: 'rgba(74,222,128,0.07)',
+                      border: '1px solid var(--success-border)',
+                      background: 'var(--success-bg)',
                     }}>
                       CONTEXT
                     </span>

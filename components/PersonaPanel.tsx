@@ -292,19 +292,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       </span>
     )
     if (examinerUpdateState === 'streaming') return (
-      <span style={{ fontSize: 11, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
+      <span style={{ fontSize: 11, color: 'var(--info-text)', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--info-text)', display: 'inline-block', animation: 'blink 1s step-end infinite' }} />
         Updating
       </span>
     )
     // Sprint 16b Fix 3: show "Responded" once a pushback exchange has completed
     if (panelState === 'done' && exchanges.length > 0) return (
-      <span style={{ fontSize: 11, color: 'rgba(74,222,128,0.9)', display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: 11, color: 'var(--success-text)', display: 'flex', alignItems: 'center', gap: 4 }}>
         <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
         Responded
       </span>
     )
-    if (panelState === 'done') return <span style={{ fontSize: 11, color: 'rgba(74,222,128,0.9)' }}>✓</span>
+    if (panelState === 'done') return <span style={{ fontSize: 11, color: 'var(--success-text)' }}>✓</span>
     if (panelState === 'error') return <span style={{ fontSize: 11, color: '#e05050' }}>✗ error</span>
     return null
   }
@@ -453,19 +453,21 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '7px 14px', borderRadius: 8,
-                border: '1px solid rgba(96,165,250,0.3)',
-                background: 'rgba(96,165,250,0.07)',
-                color: '#93c5fd', fontSize: 11.5, fontWeight: 600,
+                border: '1px solid var(--info-border)',
+                background: 'var(--info-bg)',
+                color: 'var(--info-text)', fontSize: 11.5, fontWeight: 600,
                 cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.02em',
                 transition: 'all 0.15s',
               }}
               onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(96,165,250,0.14)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(96,165,250,0.5)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--info-bg)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--info-border)'
+                ;(e.currentTarget as HTMLButtonElement).style.opacity = '0.8'
               }}
               onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(96,165,250,0.07)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(96,165,250,0.3)'
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--info-bg)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--info-border)'
+                ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
               }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -479,8 +481,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
         {/* Examiner update — shown below original, never overwrites */}
         {(examinerUpdate || examinerUpdateState === 'streaming') && (
-          <div style={{ marginTop: 16, borderRadius: 8, border: '1px solid rgba(96,165,250,0.25)', background: 'rgba(96,165,250,0.06)', padding: '10px 14px' }}>
-            <p style={{ fontSize: 10.5, color: '#60a5fa', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 16, borderRadius: 8, border: '1px solid var(--info-border)', background: 'var(--info-bg)', padding: '10px 14px' }}>
+            <p style={{ fontSize: 10.5, color: 'var(--info-text)', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <polyline points="1 4 1 10 7 10"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/>
               </svg>

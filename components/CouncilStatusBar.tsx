@@ -184,7 +184,7 @@ export default function CouncilStatusBar({
             color:         isSynthesis ? 'var(--gold)' : 'var(--text-4)',
             padding:       '2px 7px',
             borderRadius:  5,
-            background:    isSynthesis ? 'rgba(201,168,76,0.10)' : 'rgba(255,255,255,0.04)',
+            background:    isSynthesis ? 'rgba(201,168,76,0.10)' : 'var(--overlay-bg)',
             border:        '1px solid',
             borderColor:   isSynthesis ? 'var(--gold-dim)' : 'var(--border-dim)',
             whiteSpace:    'nowrap',
