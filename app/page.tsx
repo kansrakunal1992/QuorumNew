@@ -82,6 +82,7 @@ export default function Home() {
   const [preDecisionConfidence, setPreDecisionConfidence] = useState<number>(5)
 
   // Sprint 6b: read ?em= param written by auth callback
+  // Sprint D3: also read ?decision= param written by AvoidanceAlertCard "Bring it back →"
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search)
@@ -89,6 +90,12 @@ export default function Home() {
       if (em && em.includes('@')) {
         storeUserEmail(em)
         setUserEmail(em)
+      }
+      const prefill = params.get('decision')
+      if (prefill) {
+        setDecision(decodeURIComponent(prefill))
+      }
+      if (em || prefill) {
         window.history.replaceState({}, '', '/')
       }
     } catch {}

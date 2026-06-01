@@ -1,7 +1,18 @@
 // app/api/mirror/alerts/route.ts
 // ── Mirror Module: Behavioral Alerts Route (Sprint 7d — fixed) ───────────────
 //
-// Copilot fix (correct): reads actual stored JSONB shape { [sessionId]: { ... } }
+// Sprint D3 (Avoidance Detection — surface layer):
+//   GET now returns two arrays in the response:
+//     alerts          — existing bias alerts (unchanged)
+//     avoidanceAlerts — undismissed avoidance_alerts rows (limit 3, by days_open DESC)
+//                       joined with decision_text from sessions table.
+//   Auth gate + Mirror-unlocked check unchanged.
+//   Both queries run in parallel with the bias query via Promise.all.
+//   avoidanceAlerts: [{ id, sessionId, decisionText, daysOpen,
+//                        upstreamDepScore, structuralEcho, detectedAt }]
+//   Returns empty arrays on any error — never throws to client.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // instead of the assumed shape { decision_type: [], pressure_type: [] } that
 // was never actually stored.
 //
@@ -158,7 +169,7 @@ function extractKeywords(biasKey: string, activation_contexts: unknown): string[
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json({ alerts: [] })
+    return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
   }
 
   const token = authHeader.slice(7)
@@ -172,31 +183,39 @@ export async function GET(req: Request) {
     const { data: { user } } = await anonClient.auth.getUser(token)
     userId = user?.id ?? null
   } catch {
-    return NextResponse.json({ alerts: [] })
+    return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
   }
 
-  if (!userId) return NextResponse.json({ alerts: [] })
+  if (!userId) return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
 
   const supabase = createServiceClient()
 
   // Mirror access gate
   const accessState = await getMirrorAccessState(userId, supabase)
   if (accessState !== 'unlocked') {
-    return NextResponse.json({ alerts: [] })
+    return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
   }
 
-  const { data: biasRows } = await supabase
-    .from('bias_library')
-    .select('bias_parameter, detection_count, activation_contexts')
-    .eq('user_id', userId)
-    .gte('detection_count', 2)
-    .order('detection_count', { ascending: false })
-    .limit(8)
+  // ── Run bias query + avoidance query in parallel (Sprint D3) ─────────────
+  const [biasResult, avoidanceResult] = await Promise.all([
+    supabase
+      .from('bias_library')
+      .select('bias_parameter, detection_count, activation_contexts')
+      .eq('user_id', userId)
+      .gte('detection_count', 2)
+      .order('detection_count', { ascending: false })
+      .limit(8),
+    supabase
+      .from('avoidance_alerts')
+      .select('id, session_id, days_open, upstream_dependency_score, structural_echo, detected_at')
+      .eq('user_id', userId)
+      .is('dismissed_at', null)
+      .order('days_open', { ascending: false })
+      .limit(3),
+  ])
 
-  if (!biasRows || biasRows.length === 0) {
-    return NextResponse.json({ alerts: [] })
-  }
-
+  // ── Build bias alerts (unchanged logic) ───────────────────────────────────
+  const biasRows = biasResult.data ?? []
   const alerts = biasRows.map(row => ({
     biasKey:            row.bias_parameter,
     biasLabel:          getBiasLabel(row.bias_parameter),
@@ -204,5 +223,33 @@ export async function GET(req: Request) {
     activationKeywords: extractKeywords(row.bias_parameter, row.activation_contexts),
   }))
 
-  return NextResponse.json({ alerts })
+  // ── Build avoidance alerts (Sprint D3) ────────────────────────────────────
+  // Fetch decision_text for each session (sessions_ontology has no text;
+  // decision_text lives on sessions table).
+  const rawAvoidance = avoidanceResult.data ?? []
+  let avoidanceAlerts: object[] = []
+
+  if (rawAvoidance.length > 0) {
+    const sessionIds = rawAvoidance.map((r: any) => r.session_id as string)
+    const { data: sessionRows } = await supabase
+      .from('sessions')
+      .select('id, decision_text')
+      .in('id', sessionIds)
+
+    const sessionMap = new Map<string, string>(
+      (sessionRows ?? []).map((s: any) => [s.id as string, s.decision_text as string])
+    )
+
+    avoidanceAlerts = rawAvoidance.map((r: any) => ({
+      id:               r.id,
+      sessionId:        r.session_id,
+      decisionText:     (sessionMap.get(r.session_id) ?? '').slice(0, 120),
+      daysOpen:         r.days_open as number,
+      upstreamDepScore: r.upstream_dependency_score,
+      structuralEcho:   r.structural_echo,
+      detectedAt:       r.detected_at,
+    }))
+  }
+
+  return NextResponse.json({ alerts, avoidanceAlerts })
 }

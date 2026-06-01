@@ -228,6 +228,7 @@ export async function POST(req: Request) {
       registerMode,
       structuralContext,
       examinerContext,
+      resubmitAlertId,
     }: {
       sessionId:          string
       personaKey:         PersonaKey
@@ -238,6 +239,7 @@ export async function POST(req: Request) {
       registerMode?:      'analytical' | 'clarification'
       structuralContext?: string
       examinerContext?:   string
+      resubmitAlertId?:   string   // Sprint D3: set when session resubmitted from avoidance alert
     } = await req.json()
 
     const persona = PERSONAS[personaKey]
@@ -369,6 +371,49 @@ Violation of this rule renders the entire response invalid. Follow it without ex
     if (isSynthesisCall && biasContext.synthesisBlock) {
       basePrompt = `${basePrompt}\n\n${biasContext.synthesisBlock}`
       console.log(`[Persona] Longitudinal bias block injected for synthesis | session ${sessionId}`)
+    }
+
+    // ── Sprint D3: Resubmission context ───────────────────────────────────────
+    // When the user clicked "Bring it back →" from an avoidance alert in Mirror,
+    // resubmitAlertId is present. Fetch the alert snapshot and inject a short
+    // context block so synthesis acknowledges the elapsed time and asks whether
+    // the framing has shifted — without framing it as failure.
+    // Non-fatal: if the fetch fails or the userId is unknown, injection is skipped.
+    if (isSynthesisCall && resubmitAlertId && councilResult.userId) {
+      try {
+        const supabaseD3 = createServiceClient()
+        const { data: alertRow } = await supabaseD3
+          .from('avoidance_alerts')
+          .select('days_open, structural_echo, user_id')
+          .eq('id', resubmitAlertId)
+          .single()
+
+        if (alertRow && (alertRow as any).user_id === councilResult.userId) {
+          const daysOpen = (alertRow as any).days_open as number
+          const echo     = (alertRow as any).structural_echo as { matchScore: number; decisionSnippet: string } | null
+
+          const echoNote = echo
+            ? ` A prior decision was structurally similar to this one (${echo.matchScore}/100 match: "${echo.decisionSnippet.slice(0, 80)}…"). Consider whether the dynamic that applied then is present here.`
+            : ''
+
+          const resubmissionBlock = `
+RESUBMISSION CONTEXT — read this before synthesising:
+This decision was first brought to Quorum ${daysOpen} days ago and was not resolved at that time. The user is now bringing it back.
+
+Your synthesis should:
+1. Acknowledge that time has passed — frame elapsed time as information, not as failure or avoidance. Something like: "The fact that this has been open for ${daysOpen} days is itself worth reading — whether that's because the conditions weren't right, or because something has shifted in the framing."
+2. Note whether anything in the current Council analysis suggests the question has changed since it was first brought. If the framing, stakes, or options look different, name what changed and what that implies for the direction of this analysis.
+3. Do NOT use the phrase "you avoided this" or any language that frames the elapsed time as a failure. The observation is neutral — time open is a signal, not an indictment.${echoNote}
+
+MANDATORY: weave this context into your synthesis naturally. Do not create a separate section header for it.`
+
+          basePrompt = `${basePrompt}\n\n${resubmissionBlock.trim()}`
+          console.log(`[Persona] Resubmission context injected for synthesis | alert ${resubmitAlertId.slice(0, 8)} | ${daysOpen}d open`)
+        }
+      } catch (err) {
+        // Non-fatal — synthesis proceeds without resubmission context
+        console.warn('[Persona] Resubmission context fetch failed (non-fatal):', err)
+      }
     }
 
     // Layer 4 (R3): council weighting directive — synthesis only, always last

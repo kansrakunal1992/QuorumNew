@@ -33,6 +33,8 @@ import DecisionRules          from '@/components/DecisionRules'
 import ContradictionDetector  from '@/components/ContradictionDetector'
 import CalibrationSparkline   from '@/components/CalibrationSparkline'
 import SessionReliabilityIndex from '@/components/SessionReliabilityIndex'
+import AvoidanceAlertCard     from '@/components/AvoidanceAlertCard'
+import type { AvoidanceAlertData } from '@/components/AvoidanceAlertCard'
 import PatternStore           from '@/components/PatternStore'
 import StyleCalibration        from '@/components/StyleCalibration'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
@@ -875,11 +877,13 @@ function UnlockedView({
   sessions,
   authToken,
   initialStyleCue,
+  avoidanceAlerts,
 }: {
   status:           MirrorStatus
   sessions:         TimelineSession[]
   authToken:        string
   initialStyleCue?: StyleCue | null
+  avoidanceAlerts:  AvoidanceAlertData[]
 }) {
   // Sprint 21: style calibration — show when sessionCount >= 5, no DB cue, and not
   // previously dismissed/completed in this browser (localStorage guard).
@@ -902,6 +906,14 @@ function UnlockedView({
           onComplete={handleCalibrationComplete}
           onDismiss={() => setShowCalibration(false)}
         />
+      )}
+
+      {/* Decisions Still Open — Sprint D3 */}
+      {avoidanceAlerts.length > 0 && (
+        <>
+          <AvoidanceAlertCard alerts={avoidanceAlerts} authToken={authToken} />
+          <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+        </>
       )}
 
       {/* Bias Fingerprint — live (Sprint 7b) */}
@@ -1058,6 +1070,8 @@ export default function MirrorPage() {
   const [fetchError,      setFetchError]      = useState(false)
   // Sprint 21: fetched once when status resolves to 'unlocked'
   const [initialStyleCue, setInitialStyleCue] = useState<StyleCue | null>(null)
+  // Sprint D3: avoidance alerts — fetched alongside alerts route on unlocked
+  const [avoidanceAlerts, setAvoidanceAlerts] = useState<AvoidanceAlertData[]>([])
 
   // ── 1. Get auth token ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1099,6 +1113,16 @@ export default function MirrorPage() {
           }
         } catch {
           // Non-critical — calibration simply shows if sessionCount >= 5
+        }
+        // Sprint D3: fetch avoidance alerts (included in alerts route response)
+        try {
+          const alertsRes = await fetch('/api/mirror/alerts', { headers })
+          if (alertsRes.ok) {
+            const alertsData = await alertsRes.json() as { avoidanceAlerts?: AvoidanceAlertData[] }
+            setAvoidanceAlerts(alertsData.avoidanceAlerts ?? [])
+          }
+        } catch {
+          // Non-critical — avoidance section simply stays hidden
         }
       }
     } catch {
@@ -1290,6 +1314,7 @@ export default function MirrorPage() {
                   sessions={sessions}
                   authToken={authToken ?? ''}
                   initialStyleCue={initialStyleCue}
+                  avoidanceAlerts={avoidanceAlerts}
                 />
               )}
             </>

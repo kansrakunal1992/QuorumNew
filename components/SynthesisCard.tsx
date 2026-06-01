@@ -121,7 +121,25 @@ export default function SynthesisCard({
         const res = await fetch('/api/persona', {
           method: 'POST', signal: ctrl.signal,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: sessionIdRef.current, personaKey: 'synthesis', messages: [{ role: 'user', content: msg }], decisionText: decisionRef.current, contextText: contextRef.current, rawMessages: true, token: getStoredBriefCode() || accessCode || tokenInput }),
+          body: JSON.stringify({
+            sessionId:      sessionIdRef.current,
+            personaKey:     'synthesis',
+            messages:       [{ role: 'user', content: msg }],
+            decisionText:   decisionRef.current,
+            contextText:    contextRef.current,
+            rawMessages:    true,
+            token:          getStoredBriefCode() || accessCode || tokenInput,
+            // Sprint D3: pass resubmitAlertId if user came via "Bring it back →" in Mirror.
+            // localStorage is the bridge — AvoidanceAlertCard sets it before navigating.
+            // Read + clear here so it only fires once per resubmission.
+            resubmitAlertId: (() => {
+              try {
+                const id = localStorage.getItem('quorum_resubmit_alert')
+                if (id) localStorage.removeItem('quorum_resubmit_alert')
+                return id ?? undefined
+              } catch { return undefined }
+            })(),
+          }),
         })
         if (!res.ok || !res.body) { setState('error'); return }
         const reader = res.body.getReader()
