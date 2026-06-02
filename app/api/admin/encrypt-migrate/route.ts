@@ -51,11 +51,12 @@ async function migrateTextColumns(
     if (rows.length === 0) break
 
     for (const row of rows) {
+      const r = row as unknown as Record<string, unknown>
       const patch: Record<string, unknown> = {}
       let dirty = false
 
       for (const col of cols) {
-        const val = (row as unknown as Record<string, unknown>)[col]
+        const val = r[col]
         if (isPlaintext(val)) {
           patch[col] = encrypt(val)
           dirty = true
@@ -66,9 +67,9 @@ async function migrateTextColumns(
         const { error: upErr } = await supabase
           .from(tableName)
           .update(patch)
-          .eq(idCol, row[idCol])
+          .eq(idCol, r[idCol])
 
-        if (upErr) { errors++; console.error(`[migrate] ${tableName}.${idCol}=${row[idCol]}:`, upErr.message) }
+        if (upErr) { errors++; console.error(`[migrate] ${tableName}.${idCol}=${r[idCol]}:`, upErr.message) }
         else updated++
       } else {
         skipped++
