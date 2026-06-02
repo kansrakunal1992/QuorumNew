@@ -30,13 +30,20 @@
 import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createCompletion }    from '@/lib/ai-client'
+import { fetchExaminerBiasHint } from '@/lib/bias-scorer'  // Sprint R_JC
 import { encrypt, decrypt }    from '@/lib/encryption'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET — serve Examiner questions (unchanged from Sprint 12)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PERSONALISE_PROMPT = (ruleId: string, template: string, decision: string) => `
+// Sprint R_JC: biasHint is an optional compact string of the user's top
+// confirmed distorting bias patterns. When present, the rewrite instruction
+// includes an additional directive to sharpen questions that are directly
+// relevant to a documented blind spot. Questions unrelated to the bias profile
+// are personalised to the decision text normally — the hint doesn't override
+// the core diagnostic intent, it reinforces it where evidence warrants.
+const PERSONALISE_PROMPT = (ruleId: string, template: string, decision: string, biasHint?: string) => `
 You are the Quorum Examiner. Rewrite the diagnostic question below so it is specific to the decision described.
 
 RULES:
@@ -44,7 +51,7 @@ RULES:
 - Replace generic language with concrete details from the decision text (e.g. names, assets, amounts, relationships, domains) wherever they are present
 - Maximum 28 words
 - Return ONLY the rewritten question — no quotes, no explanation, no preamble
-
+${biasHint ? `\nUSER BIAS PROFILE (confirmed longitudinal patterns from prior decisions): ${biasHint}\nADDITIONAL RULE: If this specific diagnostic question is directly relevant to a documented pattern above, make it harder — sharper and more targeted at that exact blind spot. Otherwise, personalise to the decision text normally.\n` : ''}
 DECISION: "${decision.slice(0, 450)}"
 
 TEMPLATE QUESTION (${ruleId}): "${template}"
@@ -52,12 +59,13 @@ TEMPLATE QUESTION (${ruleId}): "${template}"
 REWRITTEN QUESTION:`.trim()
 
 async function personaliseRuleQuestion(
-  ruleId:   string,
-  template: string,
-  decision: string,
+  ruleId:    string,
+  template:  string,
+  decision:  string,
+  biasHint?: string,  // Sprint R_JC
 ): Promise<string> {
   try {
-    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision), 80)
+    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision, biasHint), 80)
     const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return template
     return clean
@@ -110,13 +118,19 @@ export async function GET(req: Request) {
       .single(),
     supabase
       .from('sessions')
-      .select('decision_text')
+      .select('decision_text, user_id')   // Sprint R_JC: user_id for biasHint fetch
       .eq('id', sessionId)
       .single(),
   ])
 
   const data         = ontologyRes.data
   const decisionText = decrypt(sessionRes.data?.decision_text) ?? ''
+  const userId       = (sessionRes.data as { user_id?: string | null } | null)?.user_id ?? null  // Sprint R_JC
+
+  // Sprint R_JC: fetch confirmed distorting bias hint for question sharpening.
+  // Lightweight query (bias_library, 1–2 rows). Returns '' for anonymous sessions
+  // or users with no confirmed patterns — safe no-op.
+  const biasHint = userId ? await fetchExaminerBiasHint(userId) : ''
 
   if (ontologyRes.error || !data || data.tagger_status !== 'complete') {
     return NextResponse.json({
@@ -165,13 +179,13 @@ export async function GET(req: Request) {
     // Only suppression retained: REDIRECT mode (R1/R7) — redirect is the whole point there.
     const C0_TEMPLATE = "What would this decision have to deliver for you to feel it was genuinely the right call — not just in outcome, but in how it unfolded?"
     const [shouldAddC0, c0Text] = ruleResult.mode !== 'REDIRECT'
-     ? [true, await personaliseRuleQuestion('C0', C0_TEMPLATE, decisionText)]
+     ? [true, await personaliseRuleQuestion('C0', C0_TEMPLATE, decisionText, biasHint)]
      : [false, C0_TEMPLATE]
 
     const personalisedTexts = decisionText
       ? await Promise.all(
           allRules.map(rule =>
-            personaliseRuleQuestion(rule.rule_id, rule.question, decisionText)
+            personaliseRuleQuestion(rule.rule_id, rule.question, decisionText, biasHint)
           )
         )
       : allRules.map(r => r.question)

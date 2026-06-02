@@ -57,6 +57,7 @@
 
 import { createCompletion, getProviderInfo } from '@/lib/ai-client'
 import { createServiceClient }               from '@/lib/supabase'
+import { decrypt }                           from '@/lib/encryption'
 
 // ── 15 Bias Parameters ───────────────────────────────────────────────────────
 export const BIAS_PARAMETERS = [
@@ -528,6 +529,209 @@ async function fetchActiveContradictions(
   return `Unresolved principle–behaviour tensions from this user's prior sessions:\n${lines}`
 }
 
+// ── fetchUserPrinciplesBlock (Sprint R_JC — private) ─────────────────────────
+//
+// Fetches the user's stated success criteria from prior C0 examiner responses
+// (the JTBD question: "What would this decision have to deliver..."). These are
+// the richest single source of explicit operating principles — first-person,
+// contextual, and decision-grounded.
+//
+// Does NOT call the AI rules-generation pipeline (mirror/rules route) — that
+// would add 3–5s to the synthesis critical path. Raw C0 responses are
+// preferable: verbatim, unfiltered, no double AI mediation.
+//
+// Gate: >= 3 C0 responses must exist (below this the pattern is too sparse
+// to represent a reliable principle rather than session noise).
+//
+// sessionIds: pre-fetched by fetchUserBiasContext to avoid a duplicate query.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function fetchUserPrinciplesBlock(
+  sessionIds: string[],
+  supabase:   ReturnType<typeof createServiceClient>,
+): Promise<string> {
+  if (sessionIds.length < 3) return ''
+
+  const { data: c0Rows } = await supabase
+    .from('examiner_responses')
+    .select('response_text')
+    .in('session_id', sessionIds)
+    .eq('rule_id', 'C0')
+    .not('response_text', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(5)
+
+  const principles = (c0Rows ?? [])
+    .map((r: { response_text: string | null }) => decrypt(r.response_text)?.trim() ?? '')
+    .filter((p): p is string => p.length > 10)
+
+  if (principles.length < 3) return ''
+
+  const lines = principles.map(p => `— "${p}"`).join('\n')
+
+  return (
+    `STATED SUCCESS CRITERIA — from this user's prior examiner sessions ` +
+    `(C0 responses — what they said each decision had to deliver to feel genuinely right):\n${lines}`
+  )
+}
+
+// ── fetchRecurringRegretBlock (Sprint R_JC — private) ────────────────────────
+//
+// Identifies recurring regret structures: prior decisions that shared the
+// current session's dominant structural profile AND resulted in a
+// worse_than_expected outcome.
+//
+// Match logic (dimensional overlap, not cosine similarity):
+//   — Extract high-scoring dims from the current session (score >= 4)
+//   — For each bad-outcome session, count shared dims that also score >= 4
+//   — A session "matches" if it shares >= OVERLAP_THRESHOLD dims
+//   — A regret pattern fires if >= MIN_MATCHES bad-outcome sessions match
+//
+// Errs toward specificity: only exact high-dimension overlap across multiple
+// sessions qualifies. No false positives from loose structural similarity.
+//
+// Gates: >= 5 sessions in history; >= 2 worse_than_expected outcomes sharing
+// the current structural profile.
+//
+// sessionIds: pre-fetched by fetchUserBiasContext. currentVector: current session's.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REGRET_DIM_LABELS: Record<string, string> = {
+  reversibility:                'irreversibility',
+  time_pressure:                'time pressure',
+  regret_asymmetry:             'regret asymmetry',
+  emotional_intensity:          'emotional intensity',
+  value_conflict:               'value conflict',
+  stakes_magnitude:             'high stakes',
+  outcome_uncertainty:          'outcome uncertainty',
+  identity_alignment:           'identity alignment',
+  upstream_dependency:          'upstream dependency',
+  decision_discriminating_info: 'information gaps',
+}
+
+async function fetchRecurringRegretBlock(
+  sessionIds:    string[],
+  currentVector: OntologyScoreMap | null,
+  supabase:      ReturnType<typeof createServiceClient>,
+): Promise<string> {
+  if (!currentVector || sessionIds.length < 5) return ''
+
+  // High-scoring dims in the current session (score >= 4 on 1–5 scale)
+  const highDims = Object.entries(currentVector)
+    .filter(([, v]) => {
+      if (!v || typeof v !== 'object') return false
+      return (v as { score?: number }).score !== undefined &&
+             (v as { score: number }).score >= 4
+    })
+    .map(([dim]) => dim)
+
+  if (highDims.length === 0) return ''
+
+  // Fetch bad outcomes + ontology vectors in parallel (both need sessionIds)
+  const [badOutcomesResult, ontologyResult] = await Promise.all([
+    supabase
+      .from('outcomes')
+      .select('session_id')
+      .in('session_id', sessionIds)
+      .eq('outcome_quality', 'worse_than_expected'),
+    supabase
+      .from('sessions_ontology')
+      .select('session_id, ontology_vector')
+      .in('session_id', sessionIds)
+      .eq('tagger_version', 'v2.0')
+      .not('ontology_vector', 'is', null),
+  ])
+
+  const badSessionIds = new Set(
+    (badOutcomesResult.data ?? []).map((r: { session_id: string }) => r.session_id),
+  )
+
+  if (badSessionIds.size < 2) return ''
+
+  const badOntologies = (ontologyResult.data ?? [])
+    .filter((r: { session_id: string }) => badSessionIds.has(r.session_id))
+
+  if (badOntologies.length < 2) return ''
+
+  const OVERLAP_THRESHOLD = 2
+  const MIN_MATCHES        = 2
+
+  const dimMatchCounts: Record<string, number> = {}
+  let matchCount = 0
+
+  for (const row of badOntologies as Array<{ session_id: string; ontology_vector: unknown }>) {
+    const vec = row.ontology_vector as OntologyScoreMap | null
+    if (!vec) continue
+
+    const sharedHighDims = highDims.filter(dim => {
+      const d = vec[dim]
+      if (!d || typeof d !== 'object') return false
+      return (d as { score?: number }).score !== undefined &&
+             (d as { score: number }).score >= 4
+    })
+
+    if (sharedHighDims.length >= OVERLAP_THRESHOLD) {
+      matchCount++
+      for (const dim of sharedHighDims) {
+        dimMatchCounts[dim] = (dimMatchCounts[dim] ?? 0) + 1
+      }
+    }
+  }
+
+  if (matchCount < MIN_MATCHES) return ''
+
+  const recurringDims = Object.entries(dimMatchCounts)
+    .filter(([, count]) => count >= MIN_MATCHES)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([dim]) => REGRET_DIM_LABELS[dim] ?? dim.replace(/_/g, ' '))
+
+  if (recurringDims.length === 0) return ''
+
+  return (
+    `Recurring regret signal — ${matchCount} of this user's prior decisions sharing ` +
+    `a similar structural profile (high ${recurringDims.join(', ')}) ended with a ` +
+    `worse-than-expected outcome. The current decision carries the same structural signature.`
+  )
+}
+
+// ── fetchExaminerBiasHint (Sprint R_JC — exported) ───────────────────────────
+//
+// Returns a compact string of the user's top confirmed distorting biases
+// (detection_count >= 3) for injection into Examiner question personalisation.
+//
+// Used in app/api/examiner/route.ts so the Examiner's diagnostic questions
+// are sharper for users with documented blind spots — e.g. a user with confirmed
+// fomo_urgency gets a harder push on any time-pressure question.
+//
+// Exported (not private) so examiner/route.ts can import it directly.
+// Returns '' when no confirmed biases exist. Always resolves — non-fatal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchExaminerBiasHint(userId: string): Promise<string> {
+  if (!userId) return ''
+  try {
+    const supabase = createServiceClient()
+    const { data: rows } = await supabase
+      .from('bias_library')
+      .select('bias_parameter, detection_count, asymmetry_score_avg')
+      .eq('user_id', userId)
+      .gte('detection_count', 3)
+      .order('asymmetry_score_avg', { ascending: false })
+      .limit(2)
+
+    if (!rows || rows.length === 0) return ''
+
+    return (rows as Array<{ bias_parameter: string; detection_count: number; asymmetry_score_avg: number }>)
+      .map(r =>
+        `${r.bias_parameter} (${r.detection_count} prior detections, severity ${r.asymmetry_score_avg.toFixed(1)}/10)`,
+      )
+      .join('; ')
+  } catch {
+    return ''
+  }
+}
+
 // ── fetchUserBiasContext (Sprint R2, extended Sprint RE) ─────────────────────
 //
 // Queries bias_library for a user's confirmed + forming longitudinal bias profile
@@ -590,8 +794,8 @@ export async function fetchUserBiasContext(
   try {
     const supabase = createServiceClient()
 
-    // ── Sprint RE: all three DB queries run in parallel ───────────────────
-    const [biasResult, calibrationLine, contradictionBlock] = await Promise.all([
+    // ── Sprint RE + R_JC: bias/calibration/contradiction + session IDs in parallel
+    const [biasResult, calibrationLine, contradictionBlock, sessionIdsResult] = await Promise.all([
       supabase
         .from('bias_library')
         .select('bias_parameter, detection_count, confidence_weight, asymmetry_score_avg, activation_contexts')
@@ -601,6 +805,23 @@ export async function fetchUserBiasContext(
         .limit(6),
       fetchCalibrationContext(userId, supabase),
       fetchActiveContradictions(userId, supabase),
+      // R_JC: session IDs fetched once here, shared by principles + regret queries
+      supabase
+        .from('sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(30),
+    ])
+
+    const sessionIds = (
+      (sessionIdsResult as { data: Array<{ id: string }> | null }).data ?? []
+    ).map(s => s.id)
+
+    // R_JC: principles + regret run in parallel (both depend on sessionIds)
+    const [principlesBlock, regretBlock] = await Promise.all([
+      fetchUserPrinciplesBlock(sessionIds, supabase),
+      fetchRecurringRegretBlock(sessionIds, ontologyVector, supabase),
     ])
 
     const { data: biases, error } = biasResult
@@ -674,12 +895,30 @@ export async function fetchUserBiasContext(
       ? ' If any documented principle–behaviour tension above is directly relevant to this specific decision — meaning this decision touches the same domain or type of commitment — weave a brief, plain reference into your existing prose. Example phrasings: "this sits in some tension with something you\'ve articulated before — a commitment to [x] that hasn\'t always matched the pattern in subsequent decisions" or "worth flagging that you\'ve navigated something similar before, and the gap between what you intended and what happened is worth holding in mind here." Do NOT call it a \'contradiction\', do NOT reproduce the field values verbatim as a list, and do NOT surface it if it is not genuinely applicable to this decision.'
       : ''
 
+    // ── Principles directive (Sprint R_JC) ────────────────────────────────
+    // Only appended when C0 principle data exists. Instructs synthesis to check
+    // the current framing against the user's own stated success criteria —
+    // surfacing alignment or tension as a natural human observation.
+    const principlesDirective = principlesBlock
+      ? ' If any of the stated success criteria above are relevant to the current decision — either aligned with the framing or in tension with it — weave a brief reference into your existing prose. Example phrasing: \"One thing worth checking against your own stated criteria here: you\'ve said decisions like this need to [paraphrase the criterion] — the current framing [does/does not] seem to honour that.\" Do NOT reproduce the criteria verbatim in full, do NOT create a separate section header, and omit this entirely if genuinely not applicable to what the Council raised.'
+      : ''
+
+    // ── Regret directive (Sprint R_JC) ────────────────────────────────────
+    // Only appended when a recurring regret pattern exists. Instructs synthesis
+    // to surface the track record as a plain human observation — never a
+    // prediction or a statistical readout.
+    const regretDirective = regretBlock
+      ? ' The recurring regret signal above is factual context about this user\'s track record in structurally similar decisions. If the Council\'s analysis touches on the same structural dimensions (irreversibility, urgency, stakes, value conflict), weave a brief, plain observation into your existing prose. Example phrasing: \"Worth naming: a few decisions you\'ve faced with this structural profile haven\'t landed as expected — not from bad analysis, but because [name the mechanism the Council identified]. That pattern is worth holding in mind before this one closes.\" Do NOT frame it as a prediction of failure. Do NOT surface it if the Council analysis does not connect to those structural dimensions. Do NOT create a separate section header.'
+      : ''
+
     // ── Assemble full synthesisBlock ───────────────────────────────────────
-    // Structure: bias record → calibration context (if present) →
-    // contradiction tensions (if present) → MANDATORY directive.
+    // Structure: bias record → calibration (if present) → contradictions (if present)
+    //            → principles (if present) → regret signal (if present) → MANDATORY directive.
     const longitudinalContext = [
       calibrationLine,
       contradictionBlock,
+      principlesBlock,
+      regretBlock,
     ].filter(Boolean).join('\n\n')
 
     const synthesisBlock =
@@ -689,7 +928,7 @@ ${biasLines}
 Columns: bias_key | status (CONFIRMED = 3+ detections, FORMING = 1–2 detections) | severity (avg prosecutor–defense asymmetry, 0–10 scale) | confidence (evidence weight: 30% per detection, capped at 100%) | signal (re-classified against THIS decision's structural profile: DISTORTING / NEUTRAL / ADAPTIVE).
 ${longitudinalContext ? `\n${longitudinalContext}\n` : ''}
 MANDATORY SYNTHESIS REQUIREMENT — NON-NEGOTIABLE:
-${biasDirective}${calibrationDirective}${contradictionDirective}`
+${biasDirective}${calibrationDirective}${contradictionDirective}${principlesDirective}${regretDirective}`
 
     // ── Build personaAlert ────────────────────────────────────────────────
     // Only the single highest-severity DISTORTING bias fires here, and only if confirmed.
