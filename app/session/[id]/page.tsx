@@ -1,9 +1,14 @@
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase'
 import SessionView from '@/components/SessionView'
+import { decrypt } from '@/lib/encryption'
 
 interface Props {
   params: Promise<{ id: string }>
+}
+
+function decryptText(value: string | null | undefined): string | null {
+  return decrypt(value) ?? null
 }
 
 export default async function SessionPage({ params }: Props) {
@@ -21,14 +26,22 @@ export default async function SessionPage({ params }: Props) {
       : Promise.resolve({ count: null }),
   ])
 
+  
+  const decryptedSession = {
+      ...session,
+      decision_text: decryptText(session.decision_text) ?? '',
+      context_text: decryptText(session.context_text),
+    }
+
   // Build personaKey → full assistant content map from stored messages
   // Only assistant messages; concatenate in order in case of multiple per persona
   const initialMessages: Record<string, string> = {}
   for (const msg of messages ?? []) {
-    if (msg.role === 'assistant' && msg.persona && msg.content) {
-      initialMessages[msg.persona] = (initialMessages[msg.persona] ?? '') + msg.content
+    if (msg.role === 'assistant' && msg.persona && msg.content) {   
+        initialMessages[msg.persona] =
+        (initialMessages[msg.persona] ?? '') + (decrypt(msg.content) ?? '')
     }
   }
 
-  return <SessionView session={session} initialMessages={initialMessages} totalSessionCount={totalSessionCount ?? undefined} />
+  return <SessionView session={decryptedSession} initialMessages={initialMessages} totalSessionCount={totalSessionCount ?? undefined} />
 }
