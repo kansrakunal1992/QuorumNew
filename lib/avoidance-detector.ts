@@ -33,6 +33,7 @@
 import { createServiceClient }       from '@/lib/supabase'
 import { scoreStructuralSimilarity } from '@/lib/structural-retrieval'
 import type { OntologySnapshot }     from '@/lib/structural-retrieval'
+import { decrypt }                   from '@/lib/encryption'
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ function toOntologySnapshot(s: SessionWithOntology): OntologySnapshot {
   const ov = (s.ontology_vector as Record<string, any>) ?? {}
   return {
     session_id:              s.id,
-    decision_text:           s.decision_text,
+    decision_text:           decrypt(s.decision_text) ?? '',
     created_at:              s.created_at,
     tagger_version:          s.tagger_version ?? 'v2.0',
     ontology_vector:         s.ontology_vector,
@@ -214,7 +215,7 @@ async function detectForUser(
   const resolvedMap = new Map<string, string>(
     ((outcomesRes.data ?? []) as any[]).map((r: any) => [
       r.session_id as string,
-      r.what_decided as string,
+      decrypt(r.what_decided) ?? '',
     ])
   )
 

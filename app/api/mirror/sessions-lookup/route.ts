@@ -15,6 +15,7 @@ import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { decrypt } from '@/lib/encryption'
 
 const MAX_IDS = 30   // raised from 10
 
@@ -79,7 +80,7 @@ export async function GET(req: Request) {
   // ── 5. Return full decision_text — no truncation ───────────────────────────
   const sessions = (sessionRows ?? []).map(s => ({
     id:               s.id,
-    decision_preview: (s.decision_text as string ?? '').trim(),
+    decision_preview: (decrypt(s.decision_text) ?? '').trim(),
     created_at:       s.created_at as string,
   }))
 

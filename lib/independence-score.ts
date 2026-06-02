@@ -28,6 +28,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServiceClient } from '@/lib/supabase'
+import { decrypt }             from '@/lib/encryption'
 
 // ── Realistic ceiling ─────────────────────────────────────────────────────────
 // A strong, genuinely engaged response hits 3–4 signals.
@@ -248,11 +249,14 @@ export async function calculateIndependenceScore(
   const bySession = new Map<string, Array<{ response_text: string | null; question_order: number }>>()
   for (const r of allResponses ?? []) {
     if (!bySession.has(r.session_id)) bySession.set(r.session_id, [])
-    bySession.get(r.session_id)!.push(r)
+    bySession.get(r.session_id)!.push({
+      response_text: decrypt(r.response_text) ?? null,
+      question_order: r.question_order,
+    })
   }
 
   const rawSessionScores: (number | null)[] = sessions.map(s =>
-    scoreSession(bySession.get(s.id) ?? [], s.decision_text ?? '', s.id),
+    scoreSession(bySession.get(s.id) ?? [], decrypt(s.decision_text) ?? '', s.id),
   )
 
   const scoredSessions = rawSessionScores.filter((s): s is number => s !== null)

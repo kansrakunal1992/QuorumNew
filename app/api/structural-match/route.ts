@@ -19,6 +19,7 @@ import {
   scoreStructuralSimilarity,
   type OntologySnapshot,
 } from '@/lib/structural-retrieval'
+import { encrypt, decrypt, encryptJson, decryptJson } from '@/lib/encryption'
 
 export async function POST(req: Request) {
   try {
@@ -51,8 +52,8 @@ export async function POST(req: Request) {
         .eq('session_id', sessionId)
         .maybeSingle()
       return NextResponse.json({
-        context_block:      cached.context_block,
-        matches:            cached.matches_json,
+        context_block:      decrypt(cached.context_block),
+        matches:            decryptJson(cached.matches_json),
         session_count_used: cached.session_count_used,
         threshold_met:      cached.threshold_met,
         from_cache:         true,
@@ -193,14 +194,17 @@ export async function POST(req: Request) {
         .in('session_id', pastSessionIds)
 
       outcomesMap = Object.fromEntries(
-        (outcomes ?? []).map(o => [o.session_id, { what_decided: o.what_decided, council_helped: o.council_helped }])
+        (outcomes ?? []).map(o => [o.session_id, {
+          what_decided:   decrypt(o.what_decided) ?? '',
+          council_helped: o.council_helped,
+        }])
       )
     }
 
     // ── 7. Build snapshots ──────────────────────────────────────
     const currentSnapshot: OntologySnapshot = {
       session_id:              sessionId,
-      decision_text:           currentSession.decision_text,
+      decision_text:           decrypt(currentSession.decision_text) ?? '',
       created_at:              currentSession.created_at,
       decision_type_primary:   currentOntology.decision_type_primary ?? '',
       decision_type_secondary: currentOntology.decision_type_secondary ?? [],
@@ -223,7 +227,7 @@ export async function POST(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pastSnapshots: OntologySnapshot[] = (pastOntologies ?? []).map((o: any) => ({
       session_id:              o.session_id,
-      decision_text:           o.sessions?.decision_text ?? '',
+      decision_text:           decrypt(o.sessions?.decision_text) ?? '',
       created_at:              o.sessions?.created_at ?? '',
       decision_type_primary:   o.decision_type_primary ?? '',
       decision_type_secondary: o.decision_type_secondary ?? [],
@@ -295,8 +299,8 @@ export async function POST(req: Request) {
         session_id:          sessionId,
         user_email:          userEmail ?? null,
         user_id:             userId    ?? null,
-        context_block:       result.context_block,
-        matches_json:        result.matches,
+        context_block:       encrypt(result.context_block),
+        matches_json:        encryptJson(result.matches),
         session_count_used:  result.session_count_used,
         threshold_met:       result.threshold_met,
         computed_at:         new Date().toISOString(),

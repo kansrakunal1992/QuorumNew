@@ -24,6 +24,7 @@ import { createClient as anonClient } from '@supabase/supabase-js'
 import { detectContradictions }  from '@/lib/contradiction-detector'
 import type { SessionEvidence }  from '@/lib/contradiction-detector'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { decrypt } from '@/lib/encryption'
 
 // R11 fix: configurable via Railway env vars. Defaults match original heuristics.
 const MIN_SESSIONS          = Number(process.env.MIN_SESSIONS         ?? '5')
@@ -96,7 +97,7 @@ export async function GET(req: Request) {
       .from('sessions')
       .select('id, decision_text')
       .in('id', Array.from(sessionIds))
-    for (const s of sessions ?? []) decisionMap[s.id] = s.decision_text
+    for (const s of sessions ?? []) decisionMap[s.id] = decrypt(s.decision_text) ?? ''
   }
 
   const contradictions = (rows ?? []).map(row => ({
@@ -195,14 +196,17 @@ export async function POST(req: Request) {
   // Build evidence map
   const evidenceMap: Record<string, string[]> = {}
   for (const row of (examinerRows ?? [])) {
-    if (!row.response_text?.trim() || row.response_text.trim().length < 15) continue
+    const qText = decrypt(row.question_text) ?? ''
+    const aText = decrypt(row.response_text) ?? ''
+    if (!aText.trim() || aText.trim().length < 15) continue
     if (!evidenceMap[row.session_id]) evidenceMap[row.session_id] = []
-    evidenceMap[row.session_id].push(`Q: ${row.question_text}\nA: ${row.response_text}`)
+    evidenceMap[row.session_id].push(`Q: ${qText}\nA: ${aText}`)
   }
   for (const row of (pushbackRows ?? [])) {
-    if (!row.content?.trim()) continue
+    const content = decrypt(row.content) ?? ''
+    if (!content.trim()) continue
     if (!evidenceMap[row.session_id]) evidenceMap[row.session_id] = []
-    evidenceMap[row.session_id].push(`Pushback: ${row.content.slice(0, 400)}`)
+    evidenceMap[row.session_id].push(`Pushback: ${content.slice(0, 400)}`)
   }
 
   // Only pass sessions that have actual evidence
@@ -210,7 +214,7 @@ export async function POST(req: Request) {
     .filter(s => evidenceMap[s.id] && evidenceMap[s.id].length > 0)
     .map(s => ({
       sessionId:    s.id,
-      decisionText: s.decision_text,
+      decisionText: decrypt(s.decision_text) ?? '',
       createdAt:    s.created_at,
       responses:    evidenceMap[s.id],
     }))

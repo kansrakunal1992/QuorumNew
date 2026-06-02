@@ -21,6 +21,7 @@ import { createServiceClient }   from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { calculateIndependenceScore, getScoreBand } from '@/lib/independence-score'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { decrypt } from '@/lib/encryption'
 
 // ── Auth helper (shared with fingerprint route) ───────────────────────────────
 
@@ -102,7 +103,7 @@ export async function GET(req: Request) {
         (row.response_text?.trim().length ?? 0) > (best.response_text?.trim().length ?? 0)
           ? row : best
       )
-      const raw = longest.response_text?.trim() ?? ''
+      const raw = (decrypt(longest.response_text) ?? '').trim()
       examinerQuote = raw.length > 180 ? raw.slice(0, 177) + '…' : raw || null
     }
   }

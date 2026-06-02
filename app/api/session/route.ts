@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
+import { encrypt, decrypt } from '@/lib/encryption'
 
 export async function POST(req: Request) {
   try {
@@ -14,8 +15,8 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from('sessions')
       .insert({
-        decision_text: decision_text.trim(),
-        context_text: context_text?.trim() || null,
+        decision_text: encrypt(decision_text.trim()),
+        context_text: encrypt(context_text?.trim() || null),
         register_mode: register_mode ?? 'analytical',
         // ── Sprint 14: baseline confidence before Council ──────────────────
         pre_decision_confidence: (typeof pre_decision_confidence === 'number' && pre_decision_confidence >= 1 && pre_decision_confidence <= 10)
@@ -91,5 +92,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json({
+    ...data,
+    decision_text: decrypt(data.decision_text),
+    context_text:  decrypt(data.context_text),
+  })
 }

@@ -23,6 +23,7 @@ import { createServiceClient }    from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createCompletion }       from '@/lib/ai-client'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { decrypt } from '@/lib/encryption'
 
 // R11 fix: configurable via Railway env vars. Default matches original heuristic.
 const RULES_SESSION_THRESHOLD = Number(process.env.RULES_SESSION_THRESHOLD ?? '8')
@@ -127,7 +128,7 @@ export async function GET(req: Request) {
     .order('created_at', { ascending: true })
 
   // ── 7. Build evidence corpus ──────────────────────────────────────────────
-  const decisionMap = new Map(sessionRows.map(s => [s.id, s.decision_text]))
+  const decisionMap = new Map(sessionRows.map(s => [s.id, decrypt(s.decision_text)]))
 
   // Group examiner responses by session
   const examinerBySession: Record<string, Array<{ q: string; a: string }>> = {}
@@ -135,17 +136,18 @@ export async function GET(req: Request) {
     if (!row.response_text?.trim()) continue
     if (!examinerBySession[row.session_id]) examinerBySession[row.session_id] = []
     examinerBySession[row.session_id].push({
-      q: row.question_text,
-      a: row.response_text,
+      q: decrypt(row.question_text) ?? '',
+      a: decrypt(row.response_text) ?? '',
     })
   }
 
   // Group pushbacks by session
   const pushbackBySession: Record<string, string[]> = {}
   for (const row of (pushbackRows ?? [])) {
-    if (!row.content?.trim()) continue
+    const content = decrypt(row.content) ?? ''
+    if (!content.trim()) continue
     if (!pushbackBySession[row.session_id]) pushbackBySession[row.session_id] = []
-    pushbackBySession[row.session_id].push(row.content)
+    pushbackBySession[row.session_id].push(content)
   }
 
   // Build the corpus text — cap at 20 sessions to stay within token budget

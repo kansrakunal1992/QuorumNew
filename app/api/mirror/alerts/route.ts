@@ -35,6 +35,7 @@ import { createServiceClient }   from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { BIAS_PARAMETERS }       from '@/lib/bias-scorer'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { decrypt } from '@/lib/encryption'
 
 // ── Bias label lookup ─────────────────────────────────────────────────────────
 
@@ -237,7 +238,7 @@ export async function GET(req: Request) {
       .in('id', sessionIds)
 
     const sessionMap = new Map<string, string>(
-      (sessionRows ?? []).map((s: any) => [s.id as string, s.decision_text as string])
+      (sessionRows ?? []).map((s: any) => [s.id as string, decrypt(s.decision_text) as string])
     )
 
     avoidanceAlerts = rawAvoidance.map((r: any) => ({

@@ -24,6 +24,7 @@
 
 import { createServiceClient } from '@/lib/supabase'
 import type { SessionScoreData }  from '@/lib/types'
+import { decrypt }               from '@/lib/encryption'
 
 // ── Sub-score: structural match ───────────────────────────────────────────────
 // Source: sessions_ontology.matches_json (already computed + stored by structural-retrieval.ts)
@@ -239,7 +240,7 @@ export async function computeUserSessionScores(
 
     return {
       sessionId:       sid,
-      decisionPreview: (session.decision_text as string).slice(0, 90),
+      decisionPreview: (decrypt(session.decision_text) ?? '').slice(0, 90),
       createdAt:       session.created_at as string,
       score,
       structural,

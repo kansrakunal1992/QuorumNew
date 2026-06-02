@@ -34,6 +34,7 @@ import {
   BIAS_PARAMETERS,
 } from '@/lib/bias-scorer'
 import type { OntologyScoreMap } from '@/lib/bias-scorer'
+import { decrypt } from '@/lib/encryption'
 
 export async function POST(req: Request) {
   try {
@@ -70,7 +71,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
     }
 
-    if (!session.decision_text?.trim()) {
+    // Decrypt raw user input before any use
+    const decisionText = decrypt(session.decision_text) ?? ''
+    const contextText  = decrypt(session.context_text)  ?? null
+
+    if (!decisionText.trim()) {
       console.warn(`[BiasScore] No decision_text for session ${sessionId} — aborting`)
       return NextResponse.json({ status: 'ok', skipped: true, reason: 'no_decision_text' })
     }
@@ -98,7 +103,7 @@ export async function POST(req: Request) {
       .order('created_at', { ascending: true })
 
     const pushbackTexts: string[] = (userMessages ?? [])
-      .map(m => m.content?.trim())
+      .map(m => (decrypt(m.content) ?? '').trim())
       .filter((t): t is string => Boolean(t) && t.length > 0)
 
     console.log(`[BiasScore] ${pushbackTexts.length} user pushback message(s) for session ${sessionId}`)
@@ -114,7 +119,10 @@ export async function POST(req: Request) {
     const examinerQA: Array<{ question: string; answer: string }> =
       (examinerRows ?? [])
         .filter(r => r.response_text?.trim())
-        .map(r => ({ question: r.question_text, answer: r.response_text! }))
+        .map(r => ({
+          question: decrypt(r.question_text) ?? '',
+          answer:   decrypt(r.response_text)  ?? '',
+        }))
 
     if (examinerQA.length === 0 && pushbackTexts.length === 0) {
       console.log(`[BiasScore] Scoring from decision_text only for session ${sessionId} — no examiner or pushback data yet`)
@@ -135,9 +143,9 @@ export async function POST(req: Request) {
     // ── 6. Score biases (human inputs only) ───────────────────────────────
     const result = await scoreBiasesForSession({
       sessionId,
-      decisionText:  session.decision_text,
-      contextText:   session.context_text ?? null,
-      pushbackTexts,   // Sprint R2: user's own pushback messages (replaces personaResponses)
+      decisionText:  decisionText,
+      contextText:   contextText,
+      pushbackTexts,
       examinerQA,
       ontologyJson,
     })

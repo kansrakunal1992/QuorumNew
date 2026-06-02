@@ -16,6 +16,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { PERSONAS, DECISION_BRIEF } from '@/lib/personas'
 import { createCompletion }   from '@/lib/ai-client'
 import type { PersonaKey }     from '@/lib/types'
+import { encrypt, decrypt }    from '@/lib/encryption'
 
 const APPENDIX_ORDER: PersonaKey[] = [
   'synthesis',
@@ -915,8 +916,16 @@ export async function GET(req: Request, { params }: Params) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
   }
 
-  const session  = sessionResult.data
-  let messages = messagesResult.data ?? []
+  // Decrypt raw user input fields before any use (AI prompt, PDF rendering)
+  const session = {
+    ...sessionResult.data,
+    decision_text: decrypt(sessionResult.data.decision_text) ?? '',
+    context_text:  decrypt(sessionResult.data.context_text)  ?? null,
+  }
+  let messages = (messagesResult.data ?? []).map(m => ({
+    ...m,
+    content: decrypt(m.content) ?? '',
+  }))
 
   // ── Auto-generate Decision Brief if not yet created ─────────────────────────
   const hasBrief = messages.some(m => m.persona === 'decision_brief' && m.role === 'assistant')
@@ -946,13 +955,14 @@ Generate the Decision Brief now.`
       try {
         const briefContent = await createCompletion(briefPrompt, 1200)
         if (briefContent) {
-          // Save to DB so it appears on the record page too
+          // Save encrypted to DB
           await supabase.from('messages').insert({
             session_id: id,
             persona: 'decision_brief',
             role: 'assistant',
-            content: briefContent,
+            content: encrypt(briefContent),
           })
+          // Use plaintext in-memory for this request
           messages = [...messages, {
             persona: 'decision_brief',
             role: 'assistant',
@@ -968,8 +978,8 @@ Generate the Decision Brief now.`
   }
 
   const examinerQAs = (examinerResult.data ?? []).map(r => ({
-    question_text: r.question_text,
-    response_text: r.response_text,
+    question_text:  decrypt(r.question_text)  ?? '',
+    response_text:  decrypt(r.response_text)  ?? null,
     question_order: r.question_order,
   }))
 

@@ -105,6 +105,7 @@ import type { OntologyScoreMap }             from '@/lib/bias-scorer'
 import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
 import type { PersonaKey, Message }          from '@/lib/types'
+import { encrypt }                           from '@/lib/encryption'
 
 // ── Council context fetch (Sprint 12 / R2 / R3 update) ───────────────────────
 //
@@ -475,7 +476,7 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
                 session_id: sessionId,
                 persona:    personaKey,
                 role:       'user',
-                content:    lastMsg.content,
+                content:    encrypt(lastMsg.content),
               })
             }
           }
@@ -486,7 +487,7 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
               session_id: sessionId,
               persona:    personaKey,
               role:       'assistant',
-              content:    assistantContent,
+              content:    encrypt(assistantContent),
             })
             if (error) console.error('[Persona] Supabase insert error:', error)
           }

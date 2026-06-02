@@ -37,6 +37,7 @@ import { NextResponse }         from 'next/server'
 import { createServiceClient }  from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { decrypt } from '@/lib/encryption'
 
 export interface CalibrationPoint {
   session_id:               string
@@ -176,7 +177,7 @@ export async function GET(req: Request) {
 
     return {
       session_id:               row.id,
-      decision_text:            (row.decision_text ?? '').slice(0, 80),
+      decision_text:            (decrypt(row.decision_text) ?? '').slice(0, 80),
       created_at:               row.created_at,
       pre_decision_confidence:  row.pre_decision_confidence ?? null,
       retrospective_confidence: outcome?.retrospective_confidence ?? null,

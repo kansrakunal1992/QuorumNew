@@ -13,6 +13,7 @@
 import { createServiceClient, createClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { decrypt } from '@/lib/encryption'
 
 export async function POST(req: Request) {
   try {
@@ -77,7 +78,13 @@ export async function POST(req: Request) {
 
     const sessions = (sessionsResult.data ?? []).map(s => ({
       ...s,
-      outcome: outcomeMap[s.id] ?? null,
+      decision_text: decrypt(s.decision_text),
+      outcome: outcomeMap[s.id]
+        ? {
+            ...outcomeMap[s.id],
+            what_decided: decrypt(outcomeMap[s.id].what_decided),
+          }
+        : null,
     }))
 
     return NextResponse.json({ sessions })

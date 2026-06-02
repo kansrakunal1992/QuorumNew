@@ -30,6 +30,7 @@
 import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createCompletion }    from '@/lib/ai-client'
+import { encrypt, decrypt }    from '@/lib/encryption'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET — serve Examiner questions (unchanged from Sprint 12)
@@ -115,7 +116,7 @@ export async function GET(req: Request) {
   ])
 
   const data         = ontologyRes.data
-  const decisionText = sessionRes.data?.decision_text ?? ''
+  const decisionText = decrypt(sessionRes.data?.decision_text) ?? ''
 
   if (ontologyRes.error || !data || data.tagger_status !== 'complete') {
     return NextResponse.json({
@@ -286,8 +287,8 @@ export async function POST(req: Request) {
     // ── Save examiner_responses ───────────────────────────────────────────────
     const rows = responses.map(r => ({
       session_id:           sessionId,
-      question_text:        r.question_text,
-      response_text:        r.response_text,
+      question_text:        encrypt(r.question_text),
+      response_text:        encrypt(r.response_text),
       question_order:       r.question_order,
       unknown_unknown_gap:  r.unknown_unknown_gap,
       bias_parameter_probed: null,

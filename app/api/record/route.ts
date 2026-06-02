@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { decrypt } from '@/lib/encryption'
 
 // DELETE — hard-delete a session and all its related rows (messages, outcomes cascade)
 // Auth: user must own the session (user_id match) OR session must have no user_id (device-only)
@@ -116,8 +117,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
   }
 
+  const session = sessionResult.data
+  const messages = (messagesResult.data ?? []).map(m => ({
+    ...m,
+    content: decrypt(m.content),
+  }))
+
   return NextResponse.json({
-    session: sessionResult.data,
-    messages: messagesResult.data ?? [],
+    session: {
+      ...session,
+      decision_text: decrypt(session.decision_text),
+      context_text:  decrypt(session.context_text),
+    },
+    messages,
   })
 }

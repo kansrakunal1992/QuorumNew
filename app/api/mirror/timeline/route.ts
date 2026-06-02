@@ -18,6 +18,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { TimelineSession } from '@/lib/types'
 import { getMirrorAccessState } from '@/lib/mirror-access'
+import { decrypt } from '@/lib/encryption'
 
 export async function GET(req: Request) {
   const supabase = createServiceClient()
@@ -100,7 +101,7 @@ export async function GET(req: Request) {
 
     return {
       id: s.id,
-      decision_text: s.decision_text,
+      decision_text: decrypt(s.decision_text),
       created_at: s.created_at,
       register_mode: (s.register_mode as string | null) ?? null,
       decision_type_primary: ont?.decision_type_primary ?? null,

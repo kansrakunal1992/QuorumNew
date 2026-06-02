@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
+import { encrypt } from '@/lib/encryption'
 
 // Sprint D1 (R11 Avoidance Detection — foundation):
 //   Filing an outcome = resolution signal. Stamp last_action_at so the D2
@@ -45,9 +46,9 @@ export async function POST(req: Request) {
     // Upsert so editing outcome works too
     const { error } = await supabase.from('outcomes').upsert({
       session_id:              sessionId,
-      what_decided,
+      what_decided:            encrypt(what_decided),
       council_helped,
-      notes:                   notes ?? null,
+      notes:                   encrypt(notes ?? null),
       // Sprint 14
       outcome_quality:         outcome_quality ?? null,
       retrospective_confidence: (typeof retrospective_confidence === 'number') ? retrospective_confidence : null,
