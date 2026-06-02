@@ -8,6 +8,7 @@ import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
 import BackButton from '@/components/BackButton'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
+import { decrypt } from '@/lib/encryption'
 
 // Strip <lens>, <position>, <realcost> tags stored in DB — rendered separately in PersonaPanel
 // but never cleaned before persistence, so record page must strip them before display
@@ -34,6 +35,10 @@ const PERSONA_ORDER: PersonaKey[] = [
   'competitor',
 ]
 
+function decryptText(value: string | null | undefined): string {
+  return decrypt(value) ?? ''
+}
+
 export default async function RecordPage({ params }: Props) {
   const { id } = await params
   const supabase = createServiceClient()
@@ -46,8 +51,17 @@ export default async function RecordPage({ params }: Props) {
 
   if (sessionResult.error || !sessionResult.data) notFound()
 
-  const session  = sessionResult.data
-  const messages = messagesResult.data ?? []
+  const session = {
+      ...sessionResult.data,
+      decision_text: decryptText(sessionResult.data.decision_text),
+      context_text: decrypt(sessionResult.data.context_text),
+    }
+  
+    const messages = (messagesResult.data ?? []).map(msg => ({
+      ...msg,
+      content: decryptText(msg.content),
+    }))
+
   const outcome  = outcomeResult.data ?? null
 
   const dateStr = formatDateTime(session.created_at)
