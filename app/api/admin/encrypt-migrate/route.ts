@@ -55,7 +55,7 @@ async function migrateTextColumns(
       let dirty = false
 
       for (const col of cols) {
-        const val = row[col]
+        const val = (row as Record<string, unknown>)[col]
         if (isPlaintext(val)) {
           patch[col] = encrypt(val)
           dirty = true
