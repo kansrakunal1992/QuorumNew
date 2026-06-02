@@ -98,10 +98,11 @@ export async function GET(req: Request) {
   const result: TimelineSession[] = sessions.map(s => {
     const rawOnt = s.sessions_ontology
     const ont = Array.isArray(rawOnt) ? rawOnt[0] ?? null : rawOnt ?? null
+    const decisionText = decrypt(s.decision_text) ?? ''
 
     return {
       id: s.id,
-      decision_text: decrypt(s.decision_text),
+      decision_text: decisionText,
       created_at: s.created_at,
       register_mode: (s.register_mode as string | null) ?? null,
       decision_type_primary: ont?.decision_type_primary ?? null,
