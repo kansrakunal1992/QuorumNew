@@ -173,7 +173,7 @@ export async function detectContradictions(
   let extracted: ExtractedPrinciple[] = []
 
   try {
-    const raw1 = await createCompletion(PASS1_PROMPT(capped), 1200)
+    const raw1 = await createCompletion(PASS1_PROMPT(capped), 1200, { provider: 'anthropic' })
     const clean1 = raw1.replace(/```json|```/g, '').trim()
 
     const parsed1 = JSON.parse(clean1) as Array<{ sessionId: string; principles: string[] }>
@@ -202,7 +202,7 @@ export async function detectContradictions(
 
   // ── Pass 2: Detect contradictions ─────────────────────────────────────────
   try {
-    const raw2 = await createCompletion(PASS2_PROMPT(extracted), 800)
+    const raw2 = await createCompletion(PASS2_PROMPT(extracted), 800, { provider: 'anthropic' })
     const clean2 = raw2.replace(/```json|```/g, '').trim()
 
     const parsed2 = JSON.parse(clean2) as ContradictionRaw[]

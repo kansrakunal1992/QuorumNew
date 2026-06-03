@@ -405,7 +405,7 @@ ${scoringContext}
 Write 2-3 sentences that explain what is structurally similar about these two decisions. Focus on the underlying mechanism — not the surface topic. Use precise language. Do not begin with "Both decisions" or "These decisions". Start with what the structure reveals about the decision-maker's situation. Keep it under 80 words.`
 
   try {
-    const text = await createCompletion(prompt, 200)
+    const text = await createCompletion(prompt, 200, { provider: 'anthropic' })
     return text.trim()
   } catch (err) {
     console.error('[StructuralRetrieval] Annotation failed:', err)

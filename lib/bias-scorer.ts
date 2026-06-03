@@ -264,7 +264,7 @@ export async function scoreBiasesForSession(params: {
     params.ontologyJson,
   )
 
-  const raw   = await createCompletion(prompt, 4000)
+  const raw   = await createCompletion(prompt, 4000, { provider: 'anthropic' })
   const clean = raw.replace(/```json|```/g, '').trim()
   const parsed = JSON.parse(clean) as { scores: BiasScore[] }
   const { provider, model } = getProviderInfo()

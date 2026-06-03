@@ -11,24 +11,13 @@
  *   - All existing columns still populated identically to v1.0.
  *
  * WHAT STAYS IDENTICAL TO v1.0:
- *   - Provider abstraction (AI_PROVIDER env var)
+ *   - Provider: hardcoded to Claude (Anthropic) via ai-client — hybrid routing Sprint 25
  *   - All 9 existing categorical dimension fields
  *   - examiner_gap_1/2/3 fields
  *   - DB write logic (additive only)
  */
 
-import Anthropic from '@anthropic-ai/sdk'
-import OpenAI from 'openai'
-
-const PROVIDER        = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase()
-const ANTHROPIC_MODEL = process.env.AI_MODEL ?? 'claude-sonnet-4-20250514'
-const DEEPSEEK_MODEL  = process.env.AI_MODEL ?? 'deepseek-chat'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
-const deepseek  = new OpenAI({
-  apiKey:  process.env.DEEPSEEK_API_KEY ?? '',
-  baseURL: 'https://api.deepseek.com',
-})
+import { createCompletion } from '@/lib/ai-client'
 
 // ── Dimension score type ───────────────────────────────────────────────────────
 
@@ -300,34 +289,22 @@ Return exactly this structure:
 
 // ── AI call ────────────────────────────────────────────────────────────────────
 
+/**
+ * callTagger — always uses Claude (Anthropic) regardless of AI_PROVIDER env var.
+ * The ontology tagger produces a 14-dimensional structured JSON vector that feeds
+ * all downstream retrieval and scoring. Precision over cost — Claude only.
+ * temperature: 0.1 for near-deterministic classification.
+ */
 async function callTagger(decisionText: string, contextText: string | null): Promise<string> {
   const userMsg = contextText
     ? `Decision: ${decisionText}\n\nAdditional context: ${contextText}`
     : `Decision: ${decisionText}`
 
-  if (PROVIDER === 'deepseek') {
-    const res = await deepseek.chat.completions.create({
-      model:       DEEPSEEK_MODEL,
-      max_tokens:  2000,
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: TAGGER_SYSTEM },
-        { role: 'user',   content: userMsg },
-      ],
-    })
-    return res.choices[0]?.message?.content ?? ''
-  } else {
-    const res = await anthropic.messages.create({
-      model:      ANTHROPIC_MODEL,
-      max_tokens: 2000,
-      system:     TAGGER_SYSTEM,
-      messages:   [{ role: 'user', content: userMsg }],
-    })
-    return res.content
-      .filter(b => b.type === 'text')
-      .map(b => (b as { type: 'text'; text: string }).text)
-      .join('')
-  }
+  return createCompletion(userMsg, 2000, {
+    provider:     'anthropic',
+    systemPrompt: TAGGER_SYSTEM,
+    temperature:  0.1,
+  })
 }
 
 // ── Parse + validate ───────────────────────────────────────────────────────────

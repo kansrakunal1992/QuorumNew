@@ -46,7 +46,7 @@ ${raw}`
 
   let cleaned: string
   try {
-    cleaned = (await createCompletion(prompt, 600)).trim()
+    cleaned = (await createCompletion(prompt, 600, { provider: 'deepseek' })).trim()
   } catch (err) {
     console.error('[voice/cleanup] AI completion failed:', err)
     return NextResponse.json({ error: 'CLEANUP_FAILED' }, { status: 502 })

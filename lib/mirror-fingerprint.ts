@@ -204,7 +204,7 @@ Entries marked status: "forming" have been detected only once. For these entries
 
   const prompt = basePrompt + formingGuidance
 
-  const raw   = await createCompletion(prompt, 2000)
+  const raw   = await createCompletion(prompt, 2000, { provider: 'deepseek' })
   const clean = raw.replace(/```json|```/g, '').trim()
 
   try {

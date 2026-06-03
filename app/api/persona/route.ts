@@ -459,7 +459,11 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
     }
 
     // ── Stream ────────────────────────────────────────────────────────────────
-    const { readable, getContent } = await createStream(systemPrompt, chatMessages)
+    const { readable, getContent } = await createStream(
+      systemPrompt,
+      chatMessages,
+      personaKey === 'synthesis' ? 'anthropic' : 'deepseek',
+    )
 
     const passthrough = new ReadableStream<Uint8Array>({
       async start(controller) {

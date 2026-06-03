@@ -189,14 +189,9 @@ export async function GET(req: Request) {
   // ── 8. AI call — extract rules ────────────────────────────────────────────
   try {
     const rawText = await createCompletion(
-  `${RULES_SYSTEM}
-
-    Here are the user's examiner responses and pushbacks across ${corpusSessions.length} decisions:
-
-    ${corpus}
-
-    Extract their implicit operating principles as a JSON array of first-person rule strings.`,
-      600
+  `${RULES_SYSTEM}\n\n    Here are the user's examiner responses and pushbacks across ${corpusSessions.length} decisions:\n\n    ${corpus}\n\n    Extract their implicit operating principles as a JSON array of first-person rule strings.`,
+      600,
+      { provider: 'anthropic' }
     )
 
     // Parse JSON — strip any accidental markdown fences

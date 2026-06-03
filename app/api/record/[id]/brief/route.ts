@@ -953,7 +953,7 @@ ${personaContext}
 Generate the Decision Brief now.`
 
       try {
-        const briefContent = await createCompletion(briefPrompt, 1200)
+        const briefContent = await createCompletion(briefPrompt, 1200, { provider: 'deepseek' })
         if (briefContent) {
           // Save encrypted to DB
           await supabase.from('messages').insert({

@@ -65,7 +65,7 @@ async function personaliseRuleQuestion(
   biasHint?: string,  // Sprint R_JC
 ): Promise<string> {
   try {
-    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision, biasHint), 80)
+    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision, biasHint), 80, { provider: 'deepseek' })
     const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return template
     return clean
@@ -90,7 +90,7 @@ async function generateGapQuestions(gaps: string[]): Promise<string[]> {
   const nonEmpty = gaps.filter(Boolean)
   if (nonEmpty.length === 0) return []
   try {
-    const raw    = await createCompletion(GAP_QUESTION_PROMPT(nonEmpty), 400)
+    const raw    = await createCompletion(GAP_QUESTION_PROMPT(nonEmpty), 400, { provider: 'anthropic' })
     const clean  = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
     const parsed = JSON.parse(clean)
     return Array.isArray(parsed) ? parsed.slice(0, 3).map(String) : []
