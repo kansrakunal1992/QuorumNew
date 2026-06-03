@@ -239,7 +239,7 @@ export async function POST(req: Request) {
       contextText?:            string
       rawMessages?:            boolean
       registerMode?:           'analytical' | 'clarification'
-      isExaminerContextCall?:  boolean   // set by share-context + examiner updates — skips pushbackProtocol + user-msg DB save
+      isExaminerContextCall?:  boolean   // set by share-context + examiner updates — skips pushbackProtocol injection only; saves still run
       structuralContext?: string
       examinerContext?:   string
       resubmitAlertId?:   string   // Sprint D3: set when session resubmitted from avoidance alert
@@ -474,11 +474,12 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
           const assistantContent = getContent()?.trim()
           const supabase         = createServiceClient()
 
-          // Save pushback user message
-          // Skipped for examiner-context / share-context calls — the user message
-          // is an instruction wrapper, not a real pushback; saving it leaks prompt
-          // text into the record page "You challenged" display.
-          if (sessionId && messages.length > 0 && !rawMessages && !isExaminerContextCall) {
+          // Save pushback / share-context user message.
+          // For isExaminerContextCall, this is the examiner wrapper; the brief PDF
+          // strips it via cleanPushbackText() and the record page does the same.
+          // We save it so the full exchange (user context + advisor update) is
+          // captured in the record and included in the Decision Brief.
+          if (sessionId && messages.length > 0 && !rawMessages) {
             const lastMsg = messages[messages.length - 1]
             if (lastMsg.role === 'user') {
               await supabase.from('messages').insert({
@@ -490,11 +491,11 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
             }
           }
 
-          // Save assistant response
-          // Skipped for examiner-context / share-context calls — these are transient
-          // supplemental updates displayed inline; they must not be persisted as
-          // canonical advisor messages or they duplicate/corrupt the record page.
-          if (sessionId && assistantContent && !isExaminerContextCall) {
+          // Save assistant response.
+          // For isExaminerContextCall this is the advisor's update after receiving
+          // peer-challenge context — deliberately saved so it appears in the record
+          // page and is included in the Decision Brief PDF.
+          if (sessionId && assistantContent) {
             const { error } = await supabase.from('messages').insert({
               session_id: sessionId,
               persona:    personaKey,

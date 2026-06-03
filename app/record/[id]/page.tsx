@@ -20,6 +20,17 @@ function stripHeaderTags(raw: string): string {
     .replace(/^\s+/, '')
 }
 
+// Strip the examiner-style wrapper that "share to all advisors" prepends to user
+// pushback messages before they are saved to the DB — mirrors the same function
+// in the brief PDF route so both surfaces show only the raw pushback text.
+function cleanPushbackText(raw: string): string {
+  return raw
+    .replace(/^The user submitted the following[^"\n]*[:\n]+\s*/i, '')
+    .replace(/^"([\s\S]*)"[\s]*$/, '$1')
+    .replace(/\s*Provide a concise update[\s\S]*$/i, '')
+    .trim()
+}
+
 interface Props {
   params: Promise<{ id: string }>
 }
@@ -434,7 +445,7 @@ export default async function RecordPage({ params }: Props) {
                               You challenged
                             </p>
                             <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6 }}>
-                              {msg.content}
+                              {cleanPushbackText(msg.content)}
                             </p>
                           </div>
                         ) : (
