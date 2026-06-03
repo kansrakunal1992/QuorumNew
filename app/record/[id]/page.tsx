@@ -119,7 +119,8 @@ export default async function RecordPage({ params }: Props) {
           box-shadow: var(--shadow-card);
           padding: 24px 28px 20px;
           position: relative;
-          overflow: hidden;
+          /* NOTE: no overflow:hidden — same Android WebKit line-clamp sibling
+             clipping bug as sv-hero on the session page. */
           margin-bottom: 16px;
         }
         .rec-hero::before {

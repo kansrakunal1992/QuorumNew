@@ -659,7 +659,10 @@ export default function SessionView({ session: initialSession, initialMessages =
           box-shadow: var(--shadow-card);
           padding: 24px 28px 20px;
           position: relative;
-          overflow: hidden;
+          /* NOTE: intentionally NO overflow:hidden here.
+             Android Chrome clips sibling elements (e.g. "Show more" button) when
+             overflow:hidden is set on a parent that contains a -webkit-line-clamp
+             child. The ::before gradient and border-radius work without it. */
         }
         .sv-hero::before {
           content: '';
@@ -793,12 +796,14 @@ export default function SessionView({ session: initialSession, initialMessages =
                   onClick={() => setDecisionExpanded(v => !v)}
                   style={{
                     marginTop: 6,
+                    display: 'block',
+                    minHeight: 28,
                     fontSize: 11,
                     color: 'var(--text-4)',
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    padding: 0,
+                    padding: '4px 0',
                     fontFamily: 'var(--font-mono)',
                     letterSpacing: '0.05em',
                   }}
@@ -839,12 +844,14 @@ export default function SessionView({ session: initialSession, initialMessages =
                       onClick={() => setContextExpanded(v => !v)}
                       style={{
                         marginTop: 4,
+                        display: 'block',
+                        minHeight: 28,
                         fontSize: 11,
                         color: 'var(--text-4)',
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
-                        padding: 0,
+                        padding: '4px 0',
                         fontFamily: 'var(--font-mono)',
                         letterSpacing: '0.05em',
                       }}

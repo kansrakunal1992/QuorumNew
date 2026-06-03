@@ -335,26 +335,7 @@ export async function POST(req: Request) {
       : null
 
     const pushbackProtocol = pushbackText
-      ? `
-
-MANDATORY PUSHBACK PROTOCOL — NON-NEGOTIABLE:
-The decision-maker has just submitted the following challenge or new information:
-"${pushbackText}"
-
-Your FIRST sentence must name exactly what they introduced. Not your position. Not a restatement of your prior analysis. Not a transition phrase. One sentence that identifies what they brought — the specific argument, fact, or objection — before anything else.
-
-Correct opening forms:
-  "You've introduced [X]."
-  "Your pushback adds [X] — [your response]."
-  "The new information here is [X]."
-
-Forbidden openings:
-  Starting with your position ("Two cities is still the right answer…")
-  Starting with a transition ("I hear you, but…" / "That said…")
-  Starting with a restatement of the decision
-  Any form of "I" as the first word
-
-Violation of this rule renders the entire response invalid. Follow it without exception.`
+      ? `\n\nMANDATORY PUSHBACK PROTOCOL — NON-NEGOTIABLE:\nThe decision-maker has just submitted the following challenge or new information:\n"${pushbackText}"\n\nRESPONSE FORMAT — follow exactly, no exceptions:\n\n1. FIRST sentence only: identify what they introduced. One sentence. Nothing before it.\n   Valid forms: "You've introduced [X]." / "Your pushback adds [X]." / "The new information here is [X]."\n\n2. THEN in 3–5 sentences: state specifically what this changes in your prior analysis, and what it does NOT change — and why.\n\n3. Stop. Maximum 150 words total.\n\nHARD BANS — any violation renders the response invalid:\n• NEVER open with "PUSHBACK MODE" or any other label, header, or prefix\n• NEVER restart your full analysis framework — no "The pre-mortem:", no "Execution risk:", no "Assumption risk:", no "Dependency risk:" headers\n• NEVER repeat analysis you already gave — cover only what the pushback changes\n• NEVER start with "I" as the first word\n• NEVER use transition openers ("I hear you, but…" / "That said…" / "However…")\n• Keep under 150 words — always finish the sentence you are writing before stopping`
       : ''
 
     // ── Assemble system prompt ────────────────────────────────────────────────
