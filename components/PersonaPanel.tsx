@@ -233,6 +233,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             decisionText,
             contextText,
             registerMode: registerMode ?? 'analytical',
+            isExaminerContextCall: true,  // suppresses pushbackProtocol injection + DB saves
           }),
         })
         if (!res.ok || !res.body) { setExaminerUpdateState('done'); return }
@@ -481,7 +482,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
         {/* Examiner update — shown below original, never overwrites */}
         {(examinerUpdate || examinerUpdateState === 'streaming') && (
-          <div style={{ marginTop: 16, borderRadius: 8, border: '1px solid var(--info-border)', background: 'var(--info-bg)', padding: '10px 14px' }}>
+          <div style={{ marginTop: 16, borderRadius: 8, border: '1px solid var(--info-border)', background: 'var(--info-bg)', padding: '10px 14px', animation: 'examinerFadeIn 0.35s ease-out both' }}>
             <p style={{ fontSize: 10.5, color: 'var(--info-text)', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <polyline points="1 4 1 10 7 10"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/>

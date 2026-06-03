@@ -230,14 +230,16 @@ export async function POST(req: Request) {
       structuralContext,
       examinerContext,
       resubmitAlertId,
+      isExaminerContextCall,
     }: {
-      sessionId:          string
-      personaKey:         PersonaKey
-      messages:           Message[]
-      decisionText:       string
-      contextText?:       string
-      rawMessages?:       boolean
-      registerMode?:      'analytical' | 'clarification'
+      sessionId:               string
+      personaKey:              PersonaKey
+      messages:                Message[]
+      decisionText:            string
+      contextText?:            string
+      rawMessages?:            boolean
+      registerMode?:           'analytical' | 'clarification'
+      isExaminerContextCall?:  boolean   // set by share-context + examiner updates — skips pushbackProtocol + user-msg DB save
       structuralContext?: string
       examinerContext?:   string
       resubmitAlertId?:   string   // Sprint D3: set when session resubmitted from avoidance alert
@@ -322,9 +324,13 @@ export async function POST(req: Request) {
     const councilContext = councilResult.councilContextStr
 
     // ── Pushback acknowledgment protocol ──────────────────────────────────────
+    // Skipped for examiner-context / share-context calls (isExaminerContextCall) —
+    // those are supplemental AI-to-AI updates, not real user challenges. Injecting
+    // the protocol causes the model to echo instruction text into its response and
+    // the wrapper prompt text to leak into record-page "You challenged" blocks.
     const isPushbackCall = !rawMessages && messages.length > 0
     const lastMsg = messages[messages.length - 1]
-    const pushbackText = isPushbackCall && lastMsg?.role === 'user'
+    const pushbackText = isPushbackCall && !isExaminerContextCall && lastMsg?.role === 'user'
       ? lastMsg.content.trim()
       : null
 
@@ -469,7 +475,10 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
           const supabase         = createServiceClient()
 
           // Save pushback user message
-          if (sessionId && messages.length > 0 && !rawMessages) {
+          // Skipped for examiner-context / share-context calls — the user message
+          // is an instruction wrapper, not a real pushback; saving it leaks prompt
+          // text into the record page "You challenged" display.
+          if (sessionId && messages.length > 0 && !rawMessages && !isExaminerContextCall) {
             const lastMsg = messages[messages.length - 1]
             if (lastMsg.role === 'user') {
               await supabase.from('messages').insert({
@@ -482,7 +491,10 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
           }
 
           // Save assistant response
-          if (sessionId && assistantContent) {
+          // Skipped for examiner-context / share-context calls — these are transient
+          // supplemental updates displayed inline; they must not be persisted as
+          // canonical advisor messages or they duplicate/corrupt the record page.
+          if (sessionId && assistantContent && !isExaminerContextCall) {
             const { error } = await supabase.from('messages').insert({
               session_id: sessionId,
               persona:    personaKey,

@@ -216,6 +216,7 @@ html[data-theme="light"] body {
 
 /* ── Streaming cursor ───────────────────────────────────────── */
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+@keyframes examinerFadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 .cursor::after {
   content: '▋';
   display: inline-block;

@@ -156,7 +156,7 @@ function computeStructuralEcho(
   return {
     sessionId:       bestMatch.id,
     matchScore:      bestScore,
-    decisionSnippet: bestMatch.decision_text.slice(0, 120),
+    decisionSnippet: (decrypt(bestMatch.decision_text) ?? '').slice(0, 120),
     outcomeSummary:  bestMatch.what_decided.slice(0, 120),
   }
 }
