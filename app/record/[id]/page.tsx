@@ -9,6 +9,7 @@ import BackButton from '@/components/BackButton'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
 import { decrypt } from '@/lib/encryption'
+import TrustBadgeStrip from '@/components/TrustBadgeStrip'
 
 // Strip <lens>, <position>, <realcost> tags stored in DB — rendered separately in PersonaPanel
 // but never cleaned before persistence, so record page must strip them before display
@@ -286,6 +287,9 @@ export default async function RecordPage({ params }: Props) {
               </button>
             </Link>
           </div>
+
+          {/* S2-03 — Trust badge strip: encryption, visibility, AI disclosure */}
+          <TrustBadgeStrip encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY} />
 
           {/* ── Decision Hero Card ─────────────────────────────── */}
           <div className="rec-hero rec-fade rec-fade-2">

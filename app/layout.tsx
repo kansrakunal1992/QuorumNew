@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import ThemeToggle from '@/components/ThemeToggle'
+import CookieConsent from '@/components/CookieConsent'
+import AppFooter from '@/components/AppFooter'
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
@@ -52,6 +54,10 @@ export default function RootLayout({
       <body>
         <ThemeToggle />
         {children}
+        {/* S2-04 — legal footer on every page */}
+        <AppFooter />
+        {/* S2-01 — cookie consent banner; gated to client, no SSR flash */}
+        <CookieConsent />
       </body>
     </html>
   )

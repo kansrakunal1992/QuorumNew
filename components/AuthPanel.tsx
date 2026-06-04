@@ -247,6 +247,24 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
       {errMsg && (
         <p style={{ fontSize: 11, color: '#e05050', marginTop: 6, margin: '6px 0 0' }}>{errMsg}</p>
       )}
+
+      {/* S2-05 — Terms acknowledgement at point of account creation */}
+      <p style={{
+        fontSize: 10.5,
+        color: 'var(--text-4)',
+        margin: '10px 0 0',
+        lineHeight: 1.55,
+        fontFamily: 'var(--font-body)',
+      }}>
+        By continuing you agree to our{' '}
+        <a href="/terms" style={{ color: 'var(--text-3)', textDecoration: 'underline', textUnderlineOffset: 2 }}>
+          Terms of Service
+        </a>
+        {' '}and{' '}
+        <a href="/privacy" style={{ color: 'var(--text-3)', textDecoration: 'underline', textUnderlineOffset: 2 }}>
+          Privacy Policy
+        </a>.
+      </p>
     </div>
   )
 }

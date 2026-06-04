@@ -21,6 +21,8 @@ interface Props {
   session: Session
   initialMessages?: Record<string, string>
   totalSessionCount?: number   // real DB count for RecordReceipt, passed from server
+  // S2-02 / S2-03: server-side context for trust disclosure
+  encryptionEnabled?: boolean  // true if DB_ENCRYPTION_KEY is set
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -61,7 +63,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -880,21 +882,39 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </>
               )}
 
-              {/* Privacy notice — footer inside hero card */}
-              <p style={{
+              {/* Privacy notice + AI disclosure — footer inside hero card */}
+              <div style={{
                 marginTop: 14,
                 paddingTop: 12,
                 borderTop: '1px solid var(--border-dim)',
-                fontSize: 11,
-                color: 'var(--text-4)',
-                fontFamily: 'var(--font-mono)',
-                letterSpacing: '0.04em',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 3,
               }}>
-                {session.user_id
-                  ? 'Linked to your account · included in decision memory'
-                  : 'Private by URL · no account or identity linked'
-                }
-              </p>
+                {/* Session scope */}
+                <p style={{
+                  fontSize: 11,
+                  color: 'var(--text-4)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: '0.04em',
+                  margin: 0,
+                }}>
+                  {session.user_id
+                    ? `Linked to your account · included in decision memory${encryptionEnabled ? ' · encrypted at rest' : ''}`
+                    : `Private by URL · no account or identity linked${encryptionEnabled ? ' · encrypted at rest' : ''}`
+                  }
+                </p>
+                {/* S2-02: AI processing disclosure */}
+                <p style={{
+                  fontSize: 11,
+                  color: 'var(--text-4)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: '0.04em',
+                  margin: 0,
+                }}>
+                  Analysed by AI · not used for model training
+                </p>
+              </div>
             </div>
 
             <TTSProvider>

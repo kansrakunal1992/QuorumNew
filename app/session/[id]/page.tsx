@@ -43,5 +43,10 @@ export default async function SessionPage({ params }: Props) {
     }
   }
 
-  return <SessionView session={decryptedSession} initialMessages={initialMessages} totalSessionCount={totalSessionCount ?? undefined} />
+  return <SessionView
+    session={decryptedSession}
+    initialMessages={initialMessages}
+    totalSessionCount={totalSessionCount ?? undefined}
+    encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY}
+  />
 }
