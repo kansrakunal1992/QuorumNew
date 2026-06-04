@@ -10,7 +10,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react'
-import type { MonthlyReviewData, OpenLoop } from '@/app/api/mirror/monthly-review/route'
+interface OpenLoop {
+  session_id:   string
+  decision_text: string
+  created_at:   string
+  review_date:  string | null
+  days_overdue: number | null
+  days_open:    number
+}
+
+interface MonthlyReviewData {
+  window:             'last_30_days' | 'all_time'
+  window_start:       string
+  decisions_total:    number
+  loops_closed:       number
+  loops_closed_pct:   number
+  rule_recall_applied: number
+  confirmed_patterns: number
+  open_loops:         OpenLoop[]
+}
 
 interface Props {
   authToken: string
