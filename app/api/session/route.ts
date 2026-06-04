@@ -94,7 +94,11 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ...data,
-    decision_text: decrypt(data.decision_text),
-    context_text:  decrypt(data.context_text),
+    decision_text:        decrypt(data.decision_text),
+    context_text:         decrypt(data.context_text),
+    // Sprint Chunk 1: decrypt commitment fields stored encrypted
+    commitment_leaning:   decrypt(data.commitment_leaning)    ?? null,
+    commitment_switch:    decrypt(data.commitment_switch)     ?? null,
+    rule_recall_rule_text: decrypt(data.rule_recall_rule_text) ?? null,
   })
 }

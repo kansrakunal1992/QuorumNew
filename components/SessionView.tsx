@@ -14,6 +14,8 @@ import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
 import RecordReceipt from './RecordReceipt'
 import ContradictionBanner from './ContradictionBanner'
+import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
+import RuleRecallBanner from './RuleRecallBanner'       // Sprint Chunk 1
 
 interface Props {
   session: Session
@@ -933,7 +935,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
-              {/* ── 1c. Contradiction Banner (Chunk 4b) ──────────────────── */}
+              {/* ── 1c. Contradiction Banner ─────────────────────────────── */}
               {synthesisDone && contradiction && (
                 <div className="sv-fade sv-fade-2">
                   <ContradictionBanner
@@ -941,6 +943,15 @@ export default function SessionView({ session: initialSession, initialMessages =
                     authToken={authTokenSV}
                     onDismiss={() => setContradiction(null)}
                   />
+                </div>
+              )}
+
+              {/* ── 1d. Decision State Card (Sprint Chunk 1) ─────────────── */}
+              {/* Appears after synthesis completes. Captures commitment position,
+                  switch conditions, and review date in 3 clubbed fields. */}
+              {synthesisDone && (
+                <div className="sv-fade sv-fade-2">
+                  <DecisionStateCard sessionId={session.id} />
                 </div>
               )}
 
@@ -954,6 +965,17 @@ export default function SessionView({ session: initialSession, initialMessages =
                   forceDismissed={examinerDismissed}
                 />
               </div>
+
+              {/* ── 2b. Rule Recall Banner (Sprint Chunk 1) ──────────────── */}
+              {/* Appears after examiner is submitted — surfaces a prior rule
+                  for the user to apply, note as exception, or dismiss.
+                  Silently absent for unauthenticated sessions or sessions
+                  below the 8-session rules threshold. */}
+              <RuleRecallBanner
+                sessionId={session.id}
+                authToken={authTokenSV}
+                visible={examinerSubmitted && !redirectBlocked}
+              />
 
               {/* ── 3. Relevance label ── */}
               {gridReordered && !redirectBlocked && (

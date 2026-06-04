@@ -36,6 +36,19 @@ export interface Session {
   register_mode?: RegisterMode
   decision_type_primary?: string | null
   stakes_reversibility?: string | null
+  // ── Sprint Chunk 1: commitment capture + rule recall ─────────────────────
+  // commitment_leaning:      "Where are you leaning + first move?" (clubbed)
+  // commitment_switch:       "What would change your course?" (clubbed)
+  // commitment_review_date:  ISO date string (YYYY-MM-DD) — primary retention hook
+  // commitment_captured_at:  ISO timestamp — null means not yet captured
+  // rule_recall_choice:      user action when a rule was surfaced mid-session
+  // rule_recall_rule_text:   the rule text that was surfaced
+  commitment_leaning?:      string | null
+  commitment_switch?:       string | null
+  commitment_review_date?:  string | null
+  commitment_captured_at?:  string | null
+  rule_recall_choice?:      'applied' | 'exception' | 'ignored' | null
+  rule_recall_rule_text?:   string | null
 }
 
 export interface DecisionRecord {
