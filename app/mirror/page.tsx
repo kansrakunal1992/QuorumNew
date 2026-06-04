@@ -35,6 +35,7 @@ import CalibrationSparkline   from '@/components/CalibrationSparkline'
 import SessionReliabilityIndex from '@/components/SessionReliabilityIndex'
 import AvoidanceAlertCard     from '@/components/AvoidanceAlertCard'
 import type { AvoidanceAlertData } from '@/components/AvoidanceAlertCard'
+import MonthlyJudgmentReview  from '@/components/MonthlyJudgmentReview'
 import PatternStore           from '@/components/PatternStore'
 import StyleCalibration        from '@/components/StyleCalibration'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
@@ -1038,6 +1039,15 @@ function UnlockedView({
       </div>
 
       {/* Divider */}
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* ── Chunk 2: Loop Closure (Monthly Judgment Review) ────────────────── */}
+      {/* Silently absent until decisions_total > 0. No extra fetch in the
+          parent — MonthlyJudgmentReview fetches its own data internally.
+          Falls back to all-time window when session count < 10. */}
+      <MonthlyJudgmentReview authToken={authToken} />
+
+      {/* Divider — only shown when MonthlyJudgmentReview renders */}
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Decision Timeline — archival record, moved to bottom */}
