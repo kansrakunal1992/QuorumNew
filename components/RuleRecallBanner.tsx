@@ -1,43 +1,50 @@
 'use client'
 // components/RuleRecallBanner.tsx
-// ── Sprint Chunk 1 — Rule Recall at session time ───────────────────────────────
+// ── Sprint Chunk 1 (fix) — Rule Recall BEFORE examiner submission ─────────────
 //
-// Fires between examiner submission and synthesis. Shows the user a rule they've
-// previously established (from Mirror → Decision Rules) and asks what they want
-// to do with it for this decision.
+// Fires when ontologyReady = true, BEFORE the user submits examiner answers.
+// This gives the user time to factor the recalled rule into their responses,
+// and ensures the "Apply" choice is captured before handleExaminerComplete
+// fires — so the rule text is available for injection into synthesis context.
 //
 // Requires:
-//   — authToken:   valid Bearer token (user must be authenticated)
-//   — sessionId:   current session
-//   — visible:     parent controls when to mount (after examinerSubmitted)
+//   — authToken:      valid Bearer token
+//   — sessionId:      current session
+//   — visible:        ontologyReady && !examinerSubmitted (parent-controlled)
+//   — onRuleApplied:  callback fired when user clicks "Apply" — passes rule
+//                     text to SessionView for injection into Council context
 //
 // Behaviour:
-//   — Fetches GET /api/mirror/rules with auth token
-//   — Silently returns null if: not authenticated, < 8 sessions, no mirror access,
-//     no rules returned, or any fetch error.
-//   — Shows first rule from the list (most recently derived)
-//   — 3 action buttons: Apply this rule | Note as exception | Dismiss
-//   — On choice: PATCH /api/session/commitment to save choice + rule text
-//   — Dismisses after any action
-//
-// This component is intentionally lightweight — it does one fetch and either
-// shows or hides. No loading state shown to user (silent null on any failure).
+//   — Fetches /api/mirror/rules on mount (silent null on any failure)
+//   — Shows first rule from the list
+//   — 3 actions: Apply this rule | Note as exception | Dismiss
+//   — "Apply": calls onRuleApplied(rule) THEN saves to DB THEN dismisses
+//   — Window auto-closes when visible becomes false (examiner submitted without
+//     a choice) — banner dismissed, no DB write, no injection
+//   — All non-apply choices: DB write only, no injection
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react'
 
 interface Props {
-  sessionId:  string
-  authToken:  string | null
-  visible:    boolean           // controls mount timing (set by examinerSubmitted)
+  sessionId:     string
+  authToken:     string | null
+  visible:       boolean            // ontologyReady && !examinerSubmitted
+  onRuleApplied?: (rule: string) => void  // Sprint Chunk 1 fix — inject into synthesis
 }
 
 type BannerState = 'loading' | 'ready' | 'dismissed' | 'hidden'
 
-export default function RuleRecallBanner({ sessionId, authToken, visible }: Props) {
+export default function RuleRecallBanner({ sessionId, authToken, visible, onRuleApplied }: Props) {
   const [state,       setState]       = useState<BannerState>('loading')
   const [rule,        setRule]        = useState<string | null>(null)
   const [actioning,   setActioning]   = useState(false)
+
+  // Auto-dismiss when the examiner is submitted before a choice is made.
+  // visible flips false → the window has closed, no injection, no DB write.
+  useEffect(() => {
+    if (!visible && state === 'ready') setState('dismissed')
+  }, [visible, state])
 
   useEffect(() => {
     if (!visible || !authToken) {
@@ -74,6 +81,12 @@ export default function RuleRecallBanner({ sessionId, authToken, visible }: Prop
   const handleAction = async (choice: 'applied' | 'exception' | 'ignored') => {
     if (actioning || !rule) return
     setActioning(true)
+
+    // Fire injection callback FIRST — before any async work — so SessionView's
+    // appliedRuleRef is set before handleExaminerComplete has a chance to fire.
+    if (choice === 'applied' && onRuleApplied) {
+      onRuleApplied(rule)
+    }
 
     try {
       await fetch('/api/session/commitment', {

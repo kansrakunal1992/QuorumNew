@@ -135,6 +135,10 @@ export default function SessionView({ session: initialSession, initialMessages =
   const pendingOrderRef      = useRef<PersonaKey[] | null>(null)
   const allPersonasDoneRef   = useRef(false)
   const examinerSubmittedRef = useRef(false)
+  // Sprint Chunk 1 fix: stores rule text if user clicks "Apply this rule" on
+  // RuleRecallBanner BEFORE submitting the examiner. Read by handleExaminerComplete
+  // to prepend the rule to every persona's initial context and to synthExaminerContext.
+  const appliedRuleRef = useRef<string | null>(null)
   const styleCueRef          = useRef<string | null>(null)
 
   // ── FLIP animation refs ──────────────────────────────────────────────────
@@ -367,9 +371,17 @@ export default function SessionView({ session: initialSession, initialMessages =
 
       if (!responses.length) return
 
+      // Sprint Chunk 1 fix: if user applied a rule before submitting the examiner,
+      // prepend it to all synthesis and persona contexts so the Council reasons
+      // against it. Format mirrors the C0 block so personas treat it equivalently.
+      const appliedRuleBlock = appliedRuleRef.current
+        ? `USER APPLIED RULE — from their prior decisions (factor this into your analysis where relevant):\n"${appliedRuleRef.current}"\n\n`
+        : ''
+
       const allAnswered = responses.filter(r => r.response_text?.trim())
-      if (allAnswered.length > 0) {
+      if (allAnswered.length > 0 || appliedRuleBlock) {
         setSynthExaminerContext(
+          appliedRuleBlock +
           allAnswered.map(r => `Q: ${r.question_text}\nA: ${r.response_text}`).join('\n\n')
         )
       }
@@ -378,6 +390,10 @@ export default function SessionView({ session: initialSession, initialMessages =
       const c0Block = c0Responses.length > 0
         ? `USER STATED INTENT:\nQ: ${c0Responses[0].question_text}\nA: ${c0Responses[0].response_text}\n\n`
         : ''
+
+      // contextPreamble = applied rule (if any) + C0 block — shared prefix for
+      // every persona's initial context. Rule comes first so it frames the C0 answer.
+      const contextPreamble = appliedRuleBlock + c0Block
 
       const initialCtx: Record<string, string> = {}
       for (const pk of PERSONA_ORDER) {
@@ -389,12 +405,12 @@ export default function SessionView({ session: initialSession, initialMessages =
         const ruleBlock = ruleAnswers.length > 0
           ? `ADDITIONAL CONTEXT FROM EXAMINER:\n${ruleAnswers.map(r => `Q: ${r.question_text}\nA: ${r.response_text}`).join('\n\n')}`
           : ''
-        const combined = (c0Block + ruleBlock).trim()
+        const combined = (contextPreamble + ruleBlock).trim()
         if (combined) initialCtx[pk] = combined
       }
-      if (c0Block.trim() && Object.keys(initialCtx).length < PERSONA_ORDER.length) {
+      if (contextPreamble.trim() && Object.keys(initialCtx).length < PERSONA_ORDER.length) {
         for (const pk of PERSONA_ORDER) {
-          if (!initialCtx[pk]) initialCtx[pk] = c0Block.trim()
+          if (!initialCtx[pk]) initialCtx[pk] = contextPreamble.trim()
         }
       }
       if (Object.keys(initialCtx).length > 0) {
@@ -955,7 +971,21 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
-              {/* ── 2. Examiner ── */}
+              {/* ── 2b. Rule Recall Banner (Sprint Chunk 1 fix) ──────────── */}
+              {/* Fires when ontologyReady — BEFORE examiner submission so the
+                  user's "Apply" choice is captured before handleExaminerComplete
+                  fires. onRuleApplied sets appliedRuleRef which is then read by
+                  handleExaminerComplete to inject the rule into Council context.
+                  Auto-dismisses when examiner is submitted without a choice.
+                  Silent no-op below the 8-session rules threshold. */}
+              <RuleRecallBanner
+                sessionId={session.id}
+                authToken={authTokenSV}
+                visible={ontologyReady && !examinerSubmitted && !redirectBlocked}
+                onRuleApplied={(rule) => { appliedRuleRef.current = rule }}
+              />
+
+              {/* ── 2c. Examiner ── */}
               <div className="sv-fade sv-fade-2">
                 <ExaminerPanel
                   key={`examiner-${sessionKey}`}
@@ -965,17 +995,6 @@ export default function SessionView({ session: initialSession, initialMessages =
                   forceDismissed={examinerDismissed}
                 />
               </div>
-
-              {/* ── 2b. Rule Recall Banner (Sprint Chunk 1) ──────────────── */}
-              {/* Appears after examiner is submitted — surfaces a prior rule
-                  for the user to apply, note as exception, or dismiss.
-                  Silently absent for unauthenticated sessions or sessions
-                  below the 8-session rules threshold. */}
-              <RuleRecallBanner
-                sessionId={session.id}
-                authToken={authTokenSV}
-                visible={examinerSubmitted && !redirectBlocked}
-              />
 
               {/* ── 3. Relevance label ── */}
               {gridReordered && !redirectBlocked && (
