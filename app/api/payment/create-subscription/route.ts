@@ -14,10 +14,16 @@
 // Response:
 //   { ok: true, accessType: string, expiresAt: string | null }
 //
-// Auth: requires service-role level caller OR an admin-bypass header for testing.
-//       In production this will be called by the payment webhook, not the client.
+// ── Sprint 4 (S4-03): Auth header fix ────────────────────────────────────────
+// VULNERABILITY FIXED: previous code compared x-admin-key against
+// SUPABASE_SERVICE_ROLE_KEY — the DB master key was being transmitted over HTTP
+// and logged by Railway and any proxy layer.
 //
-// Uses ON CONFLICT (user_id) DO UPDATE to respect the unique index on user_id.
+// FIX: a separate PAYMENT_WEBHOOK_SECRET env var is used for this route only.
+// The service role key is never sent over HTTP.
+//
+// Set PAYMENT_WEBHOOK_SECRET in Railway → Variables to a random 32+ char secret:
+//   openssl rand -hex 32
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
@@ -36,10 +42,16 @@ function getExpiresAt(plan: SubscriptionPlan): string | null {
 }
 
 export async function POST(req: Request) {
-  // Simple auth guard — require the service header in this stub
-  // (replace with webhook signature verification in Sprint 20)
-  const adminKey = req.headers.get('x-admin-key')
-  if (adminKey !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  // ── S4-03: Auth guard — use PAYMENT_WEBHOOK_SECRET, never the service role key
+  const paymentSecret = process.env.PAYMENT_WEBHOOK_SECRET
+  if (!paymentSecret) {
+    // Misconfigured deployment — fail closed, log loudly
+    console.error('[create-subscription] PAYMENT_WEBHOOK_SECRET is not set. Endpoint disabled.')
+    return NextResponse.json({ error: 'Endpoint not configured' }, { status: 503 })
+  }
+
+  const incomingKey = req.headers.get('x-admin-key')
+  if (!incomingKey || incomingKey !== paymentSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

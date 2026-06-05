@@ -230,16 +230,21 @@ export default function Home() {
     setError('')
     setLoading(true)
     try {
-      let resolvedUserId: string | null = null
+      // S4-02: get access token → send as Bearer header; server derives user_id.
+      // user_id removed from body to prevent session hijacking.
+      let accessToken: string | null = null
       try {
         const { createClient: getClient } = await import('@/lib/supabase')
         const sb = getClient()
         const { data: { session: authSession } } = await sb.auth.getSession()
-        resolvedUserId = authSession?.user?.id ?? null
+        accessToken = authSession?.access_token ?? null
       } catch {}
       const res = await fetch('/api/session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           decision_text:           decision.trim(),
           context_text:            context.trim() || null,
@@ -247,7 +252,7 @@ export default function Home() {
           pre_decision_confidence: preDecisionConfidence,
           user_email:              userEmail ?? null,
           device_id:               getOrCreateDeviceId(),
-          user_id:                 resolvedUserId,
+          // user_id intentionally omitted — server derives from Bearer token
         }),
       })
       if (!res.ok) throw new Error()
