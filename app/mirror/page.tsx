@@ -38,6 +38,7 @@ import type { AvoidanceAlertData } from '@/components/AvoidanceAlertCard'
 import MonthlyJudgmentReview  from '@/components/MonthlyJudgmentReview'
 import PatternStore           from '@/components/PatternStore'
 import StyleCalibration        from '@/components/StyleCalibration'
+import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -872,6 +873,146 @@ function BenchmarkModule({ authToken }: { authToken: string }) {
 }
 
 
+// ── Sprint M3: Welcome to Mirror card ────────────────────────────────────────
+//
+// Shown exactly once on first Mirror open (localStorage gate).
+// Purpose: bridge the gap between "Mirror unlocked!" excitement and the reality
+// that several modules are still thin at session 3. Without this, users scan
+// a page of locked/forming states and feel underwhelmed immediately after
+// paying. This card reframes that: names what IS live, and frames thin modules
+// as a building system, not broken promises.
+//
+// Fires for all unlocked users on first visit. After dismiss:
+//   localStorage.quorum_mirror_welcomed = 'true'
+// MirrorSummaryCard (Sprint M1) takes over the above-fold slot from session 2+.
+
+function WelcomeMirrorCard({
+  sessionCount,
+  onDismiss,
+}: {
+  sessionCount: number
+  onDismiss:    () => void
+}) {
+  const handleDismiss = () => {
+    try { localStorage.setItem('quorum_mirror_welcomed', 'true') } catch {}
+    onDismiss()
+  }
+
+  return (
+    <div style={{
+      background:   'rgba(201,168,76,0.04)',
+      border:       '1px solid var(--gold-dim)',
+      borderRadius: 12,
+      padding:      '20px 22px',
+      marginBottom: 28,
+      position:     'relative',
+      overflow:     'hidden',
+    }}>
+      {/* Gold top accent */}
+      <div style={{
+        position:   'absolute', top: 0, left: 0,
+        width:      '100%',    height: 2,
+        background: 'linear-gradient(90deg, var(--gold) 0%, transparent 70%)',
+      }} />
+
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />
+          <p style={{
+            fontSize: 10, fontWeight: 700, color: 'var(--gold)',
+            textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0,
+          }}>Mirror active</p>
+        </div>
+        <button
+          onClick={handleDismiss}
+          aria-label="Dismiss"
+          style={{
+            background: 'none', border: 'none', color: 'var(--text-4)',
+            cursor: 'pointer', fontSize: 18, lineHeight: 1,
+            padding: '0 2px', opacity: 0.45, transition: 'opacity 0.15s',
+          }}
+          onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '1')}
+          onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.opacity = '0.45')}
+        >×</button>
+      </div>
+
+      {/* Headline */}
+      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', margin: '0 0 6px', lineHeight: 1.4 }}>
+        Your first {sessionCount} decision{sessionCount !== 1 ? 's are' : ' is'} being read.
+      </p>
+      <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 16px', lineHeight: 1.6 }}>
+        Some modules are live now. Others build as you add more decisions —
+        that&apos;s the difference between a signal and noise.
+      </p>
+
+      {/* Active / Building two-column grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '12px 14px' }}>
+          <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 9px' }}>
+            Active now
+          </p>
+          {['Bias Fingerprint', 'Independence Score', 'Decision Timeline', 'What Keeps Coming Up'].map((item, i, arr) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: i < arr.length - 1 ? 5 : 0 }}>
+              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />
+              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0, lineHeight: 1.3 }}>{item}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '12px 14px' }}>
+          <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 9px' }}>
+            Still building
+          </p>
+          {([
+            ['Implicit Rules',         'at 8 sessions'],
+            ['Contradiction Detector', 'from 10+'],
+            ['Confidence Calibration', 'file outcomes to start'],
+          ] as [string, string][]).map(([name, hint], i, arr) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: i < arr.length - 1 ? 5 : 0 }}>
+              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border-hi)', flexShrink: 0, marginTop: 3 }} />
+              <div>
+                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.3 }}>{name}</p>
+                <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '1px 0 0', lineHeight: 1.3 }}>{hint}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        paddingTop: 12, borderTop: '1px solid var(--border-dim)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 16, flexWrap: 'wrap',
+      }}>
+        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5, flex: 1 }}>
+          Answer Examiner questions in depth — that&apos;s the primary signal source across most modules.
+        </p>
+        <button
+          onClick={handleDismiss}
+          style={{
+            background: 'transparent', border: '1px solid var(--border-mid)',
+            borderRadius: 6, padding: '7px 16px',
+            color: 'var(--text-3)', fontSize: 12, fontWeight: 600,
+            fontFamily: 'inherit', cursor: 'pointer',
+            transition: 'all 0.15s', whiteSpace: 'nowrap', flexShrink: 0,
+          }}
+          onMouseEnter={e => {
+            ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
+            ;(e.currentTarget as HTMLButtonElement).style.color       = 'var(--gold)'
+          }}
+          onMouseLeave={e => {
+            ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-mid)'
+            ;(e.currentTarget as HTMLButtonElement).style.color       = 'var(--text-3)'
+          }}
+        >
+          Got it →
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Unlocked view ─────────────────────────────────────────────────────────────
 function UnlockedView({
   status,
@@ -893,9 +1034,22 @@ function UnlockedView({
     try { return localStorage.getItem('quorum_style_calibration_dismissed') !== 'true' } catch { return true }
   })
 
+  // Sprint M3: Welcome to Mirror card — shown once on first Mirror open.
+  // After dismiss, MirrorSummaryCard (Sprint M1) takes the above-fold slot.
+  const [showWelcome, setShowWelcome] = useState(() => {
+    try { return localStorage.getItem('quorum_mirror_welcomed') !== 'true' } catch { return true }
+  })
+
   function handleCalibrationComplete(_cue: StyleCue) {
     setShowCalibration(false)
   }
+
+  // Sprint M3: topBiasLabel for DecisionRules ThresholdGate personalisation.
+  // status.teaserBiases is now populated for unlocked users (status/route.ts change).
+  // Falls back to undefined gracefully — ThresholdGate renders without the line.
+  const topBiasLabel = status.teaserBiases.length > 0
+    ? getBiasLabel(status.teaserBiases[0])
+    : undefined
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
@@ -907,6 +1061,23 @@ function UnlockedView({
           onComplete={handleCalibrationComplete}
           onDismiss={() => setShowCalibration(false)}
         />
+      )}
+
+      {/* Sprint M3: Welcome card — first Mirror visit only.
+          Explains active vs still-building modules so session-3 users aren't
+          confused by thin/locked states after the unlock moment. */}
+      {showWelcome && (
+        <WelcomeMirrorCard
+          sessionCount={status.sessionCount}
+          onDismiss={() => setShowWelcome(false)}
+        />
+      )}
+
+      {/* Sprint M1: Mirror Summary Card — every visit after welcome is dismissed.
+          Above-fold snapshot: independence score + delta, pattern count,
+          open loops, next action, examiner quote, "since last visit" line. */}
+      {!showWelcome && (
+        <MirrorSummaryCard authToken={authToken} />
       )}
 
       {/* Decisions Still Open — Sprint D3 */}
@@ -960,7 +1131,7 @@ function UnlockedView({
         <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
           The operating principles you implicitly follow — extracted from how you reason, not what you say about yourself.
         </p>
-        <DecisionRules authToken={authToken} sessionCount={status.sessionCount} />
+        <DecisionRules authToken={authToken} sessionCount={status.sessionCount} topBiasLabel={topBiasLabel} />
       </div>
 
       {/* Divider */}
@@ -1164,15 +1335,16 @@ export default function MirrorPage() {
         @keyframes blink      { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
         .mirror-section-h3   { border-left: 2px solid rgba(201,168,76,0.35); padding-left: 8px; }
         @media (max-width: 600px) {
-          .mirror-content-pad  { padding: 0 16px !important; }
-          .mirror-page-header  { padding: 24px 16px 20px !important; }
-          .mirror-stats-grid   { grid-template-columns: 1fr !important; }
-          .mirror-rules-card   { padding: 18px 16px 14px !important; }
-          .mirror-rules-btn    { padding: 12px !important; }
-          .mirror-score-row    { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
-          .mirror-cta-card     { padding: 20px 16px !important; }
-          .mirror-cta-btn      { min-height: 44px; display: inline-flex !important; align-items: center !important; }
-          .mirror-bias-grid    { grid-template-columns: 1fr !important; }
+          .mirror-content-pad   { padding: 0 16px !important; }
+          .mirror-page-header   { padding: 24px 16px 20px !important; }
+          .mirror-stats-grid    { grid-template-columns: 1fr !important; }
+          .mirror-summary-stats { grid-template-columns: repeat(2, 1fr) !important; }
+          .mirror-rules-card    { padding: 18px 16px 14px !important; }
+          .mirror-rules-btn     { padding: 12px !important; }
+          .mirror-score-row     { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important; }
+          .mirror-cta-card      { padding: 20px 16px !important; }
+          .mirror-cta-btn       { min-height: 44px; display: inline-flex !important; align-items: center !important; }
+          .mirror-bias-grid     { grid-template-columns: 1fr !important; }
         }
       `}</style>
 

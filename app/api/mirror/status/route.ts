@@ -69,9 +69,11 @@ export async function GET(req: Request) {
   // Map MirrorAccessState to MirrorGateState (both share 'unlocked' / 'teaser' / 'locked')
   const gateState: MirrorStatus['gateState'] = accessState
 
-  // ── 5. Fetch teaser biases for teaser state ───────────────────────────────
+  // ── 5. Fetch top bias keys for teaser + unlocked states ──────────────────
+  // Teaser: rendered as blurred tiles. Unlocked: passed to DecisionRules
+  // ThresholdGate for personalised milestone copy (Sprint M3).
   let teaserBiases: string[] = []
-  if (gateState === 'teaser') {
+  if (gateState === 'teaser' || gateState === 'unlocked') {
     try {
       const { data: { user: authUser } } = await supabase.auth.admin.getUserById(userId)
       const userEmail = authUser?.email ?? null

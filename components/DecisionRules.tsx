@@ -16,8 +16,9 @@ interface RulesData {
 }
 
 interface Props {
-  authToken:    string
-  sessionCount: number
+  authToken:     string
+  sessionCount:  number
+  topBiasLabel?: string   // Sprint M3 — personalises the ThresholdGate teaser line
 }
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -38,24 +39,125 @@ function RulesSkeleton() {
   )
 }
 
-// ── Threshold gate ────────────────────────────────────────────────────────────
+// ── Threshold gate — Sprint M3 ────────────────────────────────────────────────
+//
+// Reframed from gate-language ("N more to unlock") to milestone-commitment
+// language ("Your decision logic surfaces at 8 — here's what it will reveal").
+// When topBiasLabel is available, adds a single personalised line that names
+// the pattern already forming so the countdown feels earned, not arbitrary.
 
-function ThresholdGate({ sessionCount, threshold }: { sessionCount: number; threshold: number }) {
+function ThresholdGate({
+  sessionCount,
+  threshold,
+  topBiasLabel,
+}: {
+  sessionCount:  number
+  threshold:     number
+  topBiasLabel?: string
+}) {
   const remaining = threshold - sessionCount
+
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '18px 20px' }}>
-      <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 10px', lineHeight: 1.6 }}>
-        Decision Rules extracts the implicit principles you follow across decisions —
-        the rules you&apos;ve never written down but consistently apply.
-        {' '}{remaining === 1 ? 'One more decision to unlock.' : `${remaining} more decisions to unlock.`}
+    <div style={{
+      background:   'var(--bg-card)',
+      border:       '1px solid var(--border-dim)',
+      borderRadius: 12,
+      padding:      '20px 22px',
+      position:     'relative',
+      overflow:     'hidden',
+    }}>
+      {/* Subtle gold top accent — visual continuity with RulesDisplay */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0,
+        width: '100%', height: 2,
+        background: 'linear-gradient(90deg, var(--gold-dim) 0%, transparent 60%)',
+      }} />
+
+      {/* Milestone label */}
+      <p style={{
+        fontSize: 10, fontWeight: 700, color: 'var(--gold)',
+        textTransform: 'uppercase', letterSpacing: '0.1em',
+        margin: '0 0 8px',
+      }}>
+        Unlocks at {threshold} decisions
       </p>
-      <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+
+      {/* Forward-looking headline — what will surface, not what's locked */}
+      <p style={{
+        fontSize: 14, fontWeight: 600, color: 'var(--text-1)',
+        margin: '0 0 10px', lineHeight: 1.4,
+      }}>
+        Your implicit operating logic —&nbsp;
+        {remaining === 1 ? 'one decision away' : `${remaining} decisions away`}
+      </p>
+
+      {/* What will be extracted (not "what you can't see") */}
+      <p style={{
+        fontSize: 12.5, color: 'var(--text-3)',
+        margin: '0 0 12px', lineHeight: 1.6,
+      }}>
+        Decision Rules surfaces the principles you consistently apply across
+        situations but have never written down — extracted from your actual
+        reasoning, not from what you say about yourself.
+      </p>
+
+      {/* Personalised teaser — only when a bias is already detected */}
+      {topBiasLabel && (
+        <p style={{
+          fontSize:    12,
+          color:       'var(--text-4)',
+          fontStyle:   'italic',
+          margin:      '0 0 14px',
+          paddingLeft: 10,
+          borderLeft:  '2px solid rgba(201,168,76,0.25)',
+          lineHeight:  1.55,
+        }}>
+          Your {topBiasLabel} pattern is already forming in your Fingerprint.
+          At session {threshold}, the governing rule behind when it activates
+          will surface here.
+        </p>
+      )}
+
+      {/* Progress dots */}
+      <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginBottom: 14 }}>
         {Array.from({ length: threshold }).map((_, i) => (
-          <div key={i} style={{ width: 16, height: 3, borderRadius: 2, background: i < sessionCount ? 'var(--gold)' : 'var(--border-mid)', opacity: i < sessionCount ? 1 : 0.3, transition: 'background 0.3s' }} />
+          <div key={i} style={{
+            width:      16,
+            height:     3,
+            borderRadius: 2,
+            background: i < sessionCount ? 'var(--gold)' : 'var(--border-mid)',
+            opacity:    i < sessionCount ? 1 : 0.3,
+            transition: 'background 0.3s',
+          }} />
         ))}
-        <span style={{ fontSize: 10, color: 'var(--text-4)', marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{
+          fontSize: 10, color: 'var(--text-4)',
+          marginLeft: 6, fontVariantNumeric: 'tabular-nums',
+        }}>
           {sessionCount}/{threshold}
         </span>
+      </div>
+
+      {/* CTA */}
+      <div style={{ paddingTop: 12, borderTop: '1px solid var(--border-dim)' }}>
+        <a
+          href="/"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 11.5, fontWeight: 600, color: 'var(--gold)',
+            textDecoration: 'none', opacity: 0.8, transition: 'opacity 0.15s',
+          }}
+          onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+          onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.8')}
+        >
+          Run your next decision →
+        </a>
+        <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.4 }}>
+          Each Examiner response builds the signal.&nbsp;
+          {remaining === 1
+            ? 'One more and this activates.'
+            : `${remaining} more to activate.`}
+        </p>
       </div>
     </div>
   )
@@ -117,7 +219,7 @@ function RulesDisplay({ rules, basedOnDecisions }: { rules: string[]; basedOnDec
 
 const RULES_SESSION_THRESHOLD = 8
 
-export default function DecisionRules({ authToken, sessionCount }: Props) {
+export default function DecisionRules({ authToken, sessionCount, topBiasLabel }: Props) {
   const [data,    setData]    = useState<RulesData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
@@ -143,7 +245,13 @@ export default function DecisionRules({ authToken, sessionCount }: Props) {
     return () => { cancelled = true }
   }, [authToken, belowThreshold])
 
-  if (belowThreshold) return <ThresholdGate sessionCount={sessionCount} threshold={RULES_SESSION_THRESHOLD} />
+  if (belowThreshold) return (
+    <ThresholdGate
+      sessionCount={sessionCount}
+      threshold={RULES_SESSION_THRESHOLD}
+      topBiasLabel={topBiasLabel}
+    />
+  )
   if (loading) return <RulesSkeleton />
 
   if (error) {
@@ -167,7 +275,7 @@ export default function DecisionRules({ authToken, sessionCount }: Props) {
         </div>
       )
     }
-    return <ThresholdGate sessionCount={data.sessionCount} threshold={data.threshold ?? RULES_SESSION_THRESHOLD} />
+    return <ThresholdGate sessionCount={data.sessionCount} threshold={data.threshold ?? RULES_SESSION_THRESHOLD} topBiasLabel={topBiasLabel} />
   }
 
   if (data?.rules && data.rules.length > 0) {

@@ -57,12 +57,15 @@ const UNLOCK_THRESHOLD = 40
 // Milestone definitions — what copy and how many blurred tiles to show
 const MILESTONES = [
   {
-    min:      0,
-    max:      9,
-    label:    'Detection initialising',
-    body:     'Contradiction detection begins reading patterns across your decisions. The system needs more signal before it can identify genuine inconsistencies — not surface-level ones.',
-    tiles:    0,
-    excerpt:  null,
+    // Sprint M3: reframed from "Detection initialising" (gate) to "Building the map"
+    // (forward commitment). Old copy said "needs more signal" which read as
+    // nothing happening. New copy explains what IS being built and why it matters.
+    min:     0,
+    max:     9,
+    label:   'Building the map',
+    body:    'Quorum is constructing a record of the reasoning principles you\'ve stated across your decisions — what you said you\'d prioritise, how you framed commitments, what conditions you said would change your mind. At 10 decisions, it begins testing that map against what you actually chose.',
+    tiles:   0,
+    excerpt: 'This isn\'t an assessment — it\'s your own logic, about to be checked against itself.',
   },
   {
     min:      10,
