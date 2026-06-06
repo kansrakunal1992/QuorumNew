@@ -250,14 +250,13 @@ export async function GET(req: Request) {
   // ── Side-effect: stamp last_mirror_viewed_at = NOW ────────────────────────
   // Best-effort — never blocks the response.
 
-  void supabase
+  supabase
     .from('user_preferences')
     .upsert(
       { user_id: userId, last_mirror_viewed_at: new Date().toISOString() },
       { onConflict: 'user_id' },
     )
-    .then()
-    .catch(() => {/* non-critical */})
+    .then(undefined, () => {/* non-critical */})
 
   // ── Return ────────────────────────────────────────────────────────────────
 
