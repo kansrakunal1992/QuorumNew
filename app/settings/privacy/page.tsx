@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 
 const CONSENT_KEY = 'quorum_cookie_consent'
 
@@ -42,9 +43,13 @@ export default function PrivacyCenterPage() {
 
   // ── Modal state ────────────────────────────────────────────────────────────
   const [showExportNote, setShowExportNote]   = useState(false)
+  const [exportLoading, setExportLoading]     = useState(false)
+  const [exportError,   setExportError]       = useState<string | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteConfirm, setDeleteConfirm]     = useState('')
   const [deleteSubmitted, setDeleteSubmitted] = useState(false)
+  const [deleteLoading,   setDeleteLoading]   = useState(false)
+  const [deleteError,     setDeleteError]     = useState<string | null>(null)
 
   useEffect(() => {
     const consent = readConsent()
@@ -61,12 +66,79 @@ export default function PrivacyCenterPage() {
     setTimeout(() => setConsentSaved(false), 2400)
   }
 
-  const handleDeleteRequest = () => {
-    // S6-03 will wire up the real DELETE /api/account endpoint.
-    // For now, log the intent and show a confirmation.
-    setDeleteSubmitted(true)
-    setShowDeleteModal(false)
-    setDeleteConfirm('')
+  // S6-02: Real data export
+  const handleExport = async () => {
+    setExportLoading(true)
+    setExportError(null)
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setExportError('Please sign in first to export your data.')
+        return
+      }
+      const res = await fetch('/api/account/export', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (res.status === 401) { setExportError('Please sign in to export your data.'); return }
+      if (res.status === 429) {
+        const data = await res.json() as { message?: string }
+        setExportError(data.message ?? 'Export limit reached. Try again in 24 hours.')
+        return
+      }
+      if (!res.ok) { setExportError('Export failed. Please try again.'); return }
+
+      // Trigger download
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const date = new Date().toISOString().split('T')[0]
+      a.href = url
+      a.download = `quorum-data-export-${date}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setShowExportNote(false)
+    } catch {
+      setExportError('Export failed. Please try again.')
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
+  // S6-03: Real account deletion
+  const handleDeleteRequest = async () => {
+    setDeleteLoading(true)
+    setDeleteError(null)
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setDeleteError('Please sign in first.')
+        setDeleteLoading(false)
+        return
+      }
+      const res = await fetch('/api/account', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        setDeleteError(data.error ?? 'Deletion failed. Please try again.')
+        setDeleteLoading(false)
+        return
+      }
+      // Success — sign out and redirect to home
+      await supabase.auth.signOut()
+      setDeleteSubmitted(true)
+      setShowDeleteModal(false)
+      setDeleteConfirm('')
+      setTimeout(() => router.push('/'), 1500)
+    } catch {
+      setDeleteError('Deletion failed. Please try again.')
+      setDeleteLoading(false)
+    }
   }
 
   return (
@@ -204,7 +276,8 @@ export default function PrivacyCenterPage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => setShowExportNote(true)}
+                    onClick={handleExport}
+                    disabled={exportLoading}
                     style={{
                       padding: '8px 16px', borderRadius: 7, flexShrink: 0,
                       border: '1px solid var(--border-mid)',
@@ -213,20 +286,18 @@ export default function PrivacyCenterPage() {
                       fontFamily: 'inherit', whiteSpace: 'nowrap',
                     }}
                   >
-                    Request export
+                    {exportLoading ? 'Exporting…' : 'Export my data'}
                   </button>
                 </div>
-                {showExportNote && (
-                  <div style={{
-                    marginTop: 12, padding: '10px 12px', borderRadius: 7,
-                    background: 'var(--info-bg)', border: '1px solid var(--info-border)',
-                  }}>
-                    <p style={{ fontSize: 12.5, color: 'var(--info-text)', margin: 0, lineHeight: 1.6 }}>
-                      Automated export is coming soon. Your export will be processed within 30 days.
-                      Sign in to make sure your account email is confirmed, then check back here
-                      when this feature is fully available.
-                    </p>
-                  </div>
+                {exportLoading && (
+                  <p style={{ marginTop: 8, fontSize: 12, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+                    Preparing your export…
+                  </p>
+                )}
+                {exportError && (
+                  <p style={{ marginTop: 8, fontSize: 12.5, color: '#e05050', lineHeight: 1.6 }}>
+                    {exportError}
+                  </p>
                 )}
               </div>
 
@@ -338,6 +409,9 @@ export default function PrivacyCenterPage() {
                   fontSize: 13, fontFamily: 'var(--font-mono)', outline: 'none', width: '100%',
                 }}
               />
+              {deleteError && (
+                <p style={{ fontSize: 12.5, color: '#e05050', margin: '0 0 4px' }}>{deleteError}</p>
+              )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
                 <button
                   onClick={() => { setShowDeleteModal(false); setDeleteConfirm('') }}
@@ -352,7 +426,7 @@ export default function PrivacyCenterPage() {
                 </button>
                 <button
                   onClick={handleDeleteRequest}
-                  disabled={deleteConfirm.trim().toLowerCase() !== 'delete my account'}
+                  disabled={deleteConfirm.trim().toLowerCase() !== 'delete my account' || deleteLoading}
                   style={{
                     padding: '8px 18px', borderRadius: 8,
                     border: '1px solid rgba(224,80,80,0.4)',
@@ -362,7 +436,7 @@ export default function PrivacyCenterPage() {
                     opacity: deleteConfirm.trim().toLowerCase() !== 'delete my account' ? 0.4 : 1,
                   }}
                 >
-                  Delete permanently
+                  {deleteLoading ? 'Deleting…' : 'Delete permanently'}
                 </button>
               </div>
             </div>

@@ -35,6 +35,7 @@
 
 import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
+import { writeAuditLog }        from '@/lib/audit'
 
 // council_helped → numeric helpfulness score for averaging
 const HELPED_SCORE: Record<string, number> = {
@@ -61,14 +62,44 @@ const RULE_LABELS: Record<string, string> = {
   R12: 'Counterparty intent (FLAG)',
 }
 
+// S6-04: In-memory IP lockout — 5 failures → 15 min block
+const failedAttempts = new Map<string, { count: number; lockedUntil: number }>()
+
 export async function GET(req: Request) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+
+  // ── Lockout check ──────────────────────────────────────────────────────────
+  const lockState = failedAttempts.get(ip)
+  if (lockState && lockState.lockedUntil > Date.now()) {
+    void writeAuditLog({ action: 'admin.locked_out', ip_address: ip })
+    const secsLeft = Math.ceil((lockState.lockedUntil - Date.now()) / 1000)
+    return NextResponse.json(
+      { error: `Too many failed attempts. Try again in ${Math.ceil(secsLeft / 60)} minutes.` },
+      { status: 429, headers: { 'Retry-After': String(secsLeft) } }
+    )
+  }
+
   // ── Auth guard ──────────────────────────────────────────────────────────────
   const auth  = req.headers.get('Authorization') ?? ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
 
   if (!token || !process.env.ADMIN_CODE || token !== process.env.ADMIN_CODE) {
+    // Track failure
+    const prev = failedAttempts.get(ip) ?? { count: 0, lockedUntil: 0 }
+    const next = { count: prev.count + 1, lockedUntil: prev.lockedUntil }
+    if (next.count >= 5) next.lockedUntil = Date.now() + 15 * 60_000
+    failedAttempts.set(ip, next)
+    void writeAuditLog({
+      action: 'admin.auth_failed', ip_address: ip,
+      metadata: { attempt: next.count, locked: next.count >= 5 },
+    })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  // Success — clear lockout, log access
+  failedAttempts.delete(ip)
+  void writeAuditLog({ action: 'admin.access', ip_address: ip,
+    user_agent: req.headers.get('user-agent') ?? undefined })
 
   // Top-level try/catch ensures the route always returns JSON — never an HTML
   // error page. If Next.js returns HTML on a runtime crash, res.json() in the

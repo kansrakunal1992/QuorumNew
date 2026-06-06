@@ -78,6 +78,16 @@ interface DashboardData {
   }
 }
 
+interface AuditLogEntry {
+  id:          string
+  created_at:  string
+  actor_email: string | null
+  action:      string
+  resource_id: string | null
+  ip_address:  string | null
+  metadata:    Record<string, unknown> | null
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtScore(v: number | null): string {
@@ -106,6 +116,7 @@ export default function AdminPage() {
   const [phase,     setPhase]     = useState<'gate' | 'loading' | 'ready' | 'error'>('gate')
   const [codeInput, setCodeInput] = useState('')
   const [data,      setData]      = useState<DashboardData | null>(null)
+  const [auditLog,  setAuditLog]  = useState<AuditLogEntry[]>([])
   const [errorMsg,  setErrorMsg]  = useState('')
 
   // Define fetchDashboard BEFORE useEffect so the closure captures an
@@ -140,6 +151,17 @@ export default function AdminPage() {
       setData(json)
       sessionStorage.setItem('quorum_admin_code', code)
       setPhase('ready')
+
+      // S6-05: fetch audit log (non-blocking — failure is non-fatal)
+      try {
+        const auditRes = await fetch('/api/admin/audit-log', {
+          headers: { Authorization: `Bearer ${code}` },
+        })
+        if (auditRes.ok) {
+          const auditData = await auditRes.json() as { entries: AuditLogEntry[] }
+          setAuditLog(auditData.entries ?? [])
+        }
+      } catch { /* non-fatal */ }
     } catch (err) {
       setErrorMsg(`Network error: ${String(err)}`)
       setPhase('error')
@@ -234,6 +256,60 @@ export default function AdminPage() {
       </div>
 
       {/* ── R7: Rule Calibration ─────────────────────────────────────────────── */}
+      {/* ── S6-05: Audit Log ─────────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold text-zinc-300 mb-1">Audit Log</h2>
+        <p className="text-xs text-zinc-500 mb-3">Last 100 events · most recent first</p>
+        {auditLog.length === 0 ? (
+          <p className="text-xs text-zinc-600">No audit events yet — run the sprint6_audit_log.sql migration first.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="py-2 pr-4 text-left font-medium text-zinc-400 whitespace-nowrap">Time (UTC)</th>
+                  <th className="py-2 pr-4 text-left font-medium text-zinc-400">Actor</th>
+                  <th className="py-2 pr-4 text-left font-medium text-zinc-400">Action</th>
+                  <th className="py-2 pr-4 text-left font-medium text-zinc-400">IP</th>
+                  <th className="py-2 text-left font-medium text-zinc-400">Meta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLog.map(entry => (
+                  <tr key={entry.id} className="border-b border-zinc-900 hover:bg-zinc-900/30">
+                    <td className="py-1.5 pr-4 text-zinc-500 whitespace-nowrap tabular-nums">
+                      {new Date(entry.created_at).toISOString().replace('T', ' ').slice(0, 19)}
+                    </td>
+                    <td className="py-1.5 pr-4 text-zinc-400 max-w-[160px] truncate">
+                      {entry.actor_email ?? '—'}
+                    </td>
+                    <td className="py-1.5 pr-4">
+                      <span className={`font-mono ${
+                        entry.action.startsWith('admin.auth_fail') || entry.action.startsWith('admin.locked')
+                          ? 'text-red-400'
+                          : entry.action.startsWith('account.delete')
+                          ? 'text-orange-400'
+                          : entry.action.startsWith('admin.')
+                          ? 'text-amber-400'
+                          : 'text-zinc-400'
+                      }`}>
+                        {entry.action}
+                      </span>
+                    </td>
+                    <td className="py-1.5 pr-4 text-zinc-600 font-mono">
+                      {entry.ip_address ?? '—'}
+                    </td>
+                    <td className="py-1.5 text-zinc-600 font-mono max-w-[200px] truncate">
+                      {entry.metadata ? JSON.stringify(entry.metadata) : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       <section>
         <h2 className="text-zinc-400 text-xs tracking-widest uppercase mb-1">R7 — Rule Calibration</h2>
         <p className="text-zinc-600 text-xs mb-4">

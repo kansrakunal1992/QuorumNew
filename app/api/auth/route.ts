@@ -20,6 +20,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
+import { writeAuditLog, getAuditContext } from '@/lib/audit'
 
 export async function POST(req: Request) {
   // S5-01: rate limit magic link sends — 5 per 15 min per IP
@@ -78,6 +79,14 @@ export async function POST(req: Request) {
     }
 
     console.log(`[Auth] Magic link sent to ${email} with ${sessionIds?.length ?? 0} session IDs and deviceId=${deviceId ?? 'none'}`)
+
+    // S6-01: audit log — non-blocking
+    void writeAuditLog({
+      actor_email: email.toLowerCase().trim(),
+      action:      'auth.magic_link_sent',
+      ...getAuditContext(req),
+    })
+
     return NextResponse.json({ status: 'ok', message: 'Magic link sent' })
 
   } catch (err) {
