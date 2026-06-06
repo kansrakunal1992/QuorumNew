@@ -19,8 +19,13 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 export async function POST(req: Request) {
+  // S5-01: rate limit magic link sends — 5 per 15 min per IP
+  const rlResult = checkLimit(getClientIP(req), LIMITS.auth)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'sign-in requests')
+
   try {
     const { email, deviceId, sessionIds } = await req.json() as {
       email?:      string

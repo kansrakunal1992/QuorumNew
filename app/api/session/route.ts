@@ -1,27 +1,14 @@
-// app/api/session/route.ts
-// ── Sprint 4 (S4-02): Fix client-supplied user_id ────────────────────────────
-//
-// VULNERABILITY FIXED: user_id is no longer accepted from the request body.
-// Previous code trusted the client-supplied user_id directly — any caller
-// could pass an arbitrary UUID and stamp a session under another user's account.
-//
-// FIX: user_id is derived entirely server-side from the Authorization header.
-//   1. Client sends `Authorization: Bearer <access_token>` (from supabase.auth.getSession())
-//   2. Server calls anonClient.auth.getUser(token) to verify the token
-//   3. Verified user.id is used — body user_id field is silently ignored
-//   4. If no valid token, user_id is null (anonymous session — correct behaviour)
-//
-// All other fields (decision_text, context_text, user_email, device_id) are
-// unchanged — only user_id derivation moved to server.
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { createServiceClient, createClient } from '@/lib/supabase'
+import { createServiceClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 import { encrypt, decrypt } from '@/lib/encryption'
 
 export async function POST(req: Request) {
+  // S5-01: rate limit session creation — 20 per 15 min per IP
+  const rlResult = checkLimit(getClientIP(req), LIMITS.session)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'session requests')
+
   try {
-    // ── S4-02: Derive user_id from Bearer token — never trust the body ────────
+    // S4-02: Derive user_id from Bearer token — never trust body
     let serverUserId: string | null = null
     const authHeader = req.headers.get('Authorization')
     if (authHeader?.startsWith('Bearer ')) {
@@ -31,23 +18,10 @@ export async function POST(req: Request) {
           const anonClient = createClient()
           const { data: { user } } = await anonClient.auth.getUser(token)
           serverUserId = user?.id ?? null
-        } catch {
-          // Invalid or expired token — treat as anonymous
-          serverUserId = null
-        }
+        } catch { serverUserId = null }
       }
     }
-
-    // ── Parse body — note: user_id field in body is intentionally ignored ──────
-    const {
-      decision_text,
-      context_text,
-      register_mode,
-      pre_decision_confidence,
-      user_email,
-      device_id,
-      // user_id is intentionally NOT destructured — always derived server-side above
-    } = await req.json()
+    const { decision_text, context_text, register_mode, pre_decision_confidence, user_email, device_id } = await req.json()
 
     if (!decision_text?.trim()) {
       return NextResponse.json({ error: 'decision_text is required' }, { status: 400 })
@@ -59,21 +33,24 @@ export async function POST(req: Request) {
       .from('sessions')
       .insert({
         decision_text: encrypt(decision_text.trim()),
-        context_text:  encrypt(context_text?.trim() || null),
+        context_text: encrypt(context_text?.trim() || null),
         register_mode: register_mode ?? 'analytical',
         // ── Sprint 14: baseline confidence before Council ──────────────────
-        pre_decision_confidence: (
-          typeof pre_decision_confidence === 'number' &&
-          pre_decision_confidence >= 1 &&
-          pre_decision_confidence <= 10
-        ) ? pre_decision_confidence : null,
+        pre_decision_confidence: (typeof pre_decision_confidence === 'number' && pre_decision_confidence >= 1 && pre_decision_confidence <= 10)
+          ? pre_decision_confidence : null,
         status: 'active',
         // ── Sprint 4b: user identity chain ─────────────────────────────────
         // user_email: entered optionally on home page (pre-auth).
+        //   Allows bias accumulation before magic-link auth completes.
+        //   After auth, link_sessions_to_user RPC also populates user_id.
+        // device_id: generated silently on first visit, stored in localStorage.
+        //   Third-tier fallback — accumulation scoped to this device only.
+        //   If user later adds email, their email-keyed bias rows take over.
         user_email: user_email?.trim().toLowerCase() || null,
-        // device_id: anonymous device fingerprint from localStorage.
         device_id:  device_id || null,
-        // ── S4-02: user_id stamped from verified server-side token only ─────
+        // ── Sprint 6 fix: stamp user_id at session creation when user is authenticated
+        // Client reads this from supabase.auth.getSession() and passes it here.
+        // Avoids relying solely on the post-auth link-sessions RPC to backfill.
         user_id: serverUserId,
       })
       .select('id')
@@ -103,9 +80,10 @@ function fireOntologyTagger(
 ) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
+  const internalSecret = process.env.INTERNAL_API_SECRET ?? ''
   fetch(`${baseUrl}/api/ontology`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
     body: JSON.stringify({ sessionId, decisionText, contextText }),
   }).catch(err => {
     console.error('[Session] Ontology tagger fire failed:', err)
@@ -134,11 +112,11 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ...data,
-    decision_text:         decrypt(data.decision_text),
-    context_text:          decrypt(data.context_text),
+    decision_text:        decrypt(data.decision_text),
+    context_text:         decrypt(data.context_text),
     // Sprint Chunk 1: decrypt commitment fields stored encrypted
-    commitment_leaning:    decrypt(data.commitment_leaning)    ?? null,
-    commitment_switch:     decrypt(data.commitment_switch)     ?? null,
+    commitment_leaning:   decrypt(data.commitment_leaning)    ?? null,
+    commitment_switch:    decrypt(data.commitment_switch)     ?? null,
     rule_recall_rule_text: decrypt(data.rule_recall_rule_text) ?? null,
   })
 }

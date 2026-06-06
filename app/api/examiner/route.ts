@@ -254,6 +254,10 @@ type ExaminerResponseRow = {
 }
 
 export async function POST(req: Request) {
+  // S5-01: rate limit examiner calls — 40 per 10 min per IP
+  const rlResult = checkLimit(getClientIP(req), LIMITS.examiner)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'analysis requests')
+
   try {
     const body = await req.json()
     const { sessionId, responses, skipped } = body as {
@@ -377,9 +381,10 @@ async function fireBiasScore(sessionId: string, req: Request): Promise<void> {
   // Railway exposes PORT (default 8080); INTERNAL_API_URL overrides for other envs.
   const port = process.env.PORT ?? '8080'
   const base = process.env.INTERNAL_API_URL ?? `http://localhost:${port}`
+  const internalSecret = process.env.INTERNAL_API_SECRET ?? ''
   const res = await fetch(`${base}/api/bias-score`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
     body:    JSON.stringify({ sessionId }),
   })
   if (!res.ok) {

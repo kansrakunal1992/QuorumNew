@@ -1,3 +1,4 @@
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 export const runtime = 'nodejs'
 
 const SONIOX_TTS_URL = 'https://tts-rt.soniox.com/tts'
@@ -11,6 +12,10 @@ function stripMarkdown(text: string): string {
 }
 
 export async function POST(req: Request) {
+  // S5-01: rate limit TTS calls — 80 per 10 min per IP
+  const rlResult = checkLimit(getClientIP(req), LIMITS.voiceTts)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'audio requests')
+
   const apiKey = process.env.SONIOX_API_KEY
   if (!apiKey) {
     return Response.json({ error: 'TTS_NOT_CONFIGURED' }, { status: 503 })

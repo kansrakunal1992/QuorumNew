@@ -218,6 +218,10 @@ async function fetchCouncilContextWithRetry(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
+  // S5-01: rate limit persona calls — 60 per 10 min per IP
+  const rlResult = checkLimit(getClientIP(req), LIMITS.persona)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'analysis requests')
+
   try {
     const {
       sessionId,

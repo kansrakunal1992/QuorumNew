@@ -83,6 +83,13 @@ function tagToInsert(sessionId: string, tag: OntologyTag, ruleResult: ReturnType
 // ── POST handler ───────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
+  // S5-03: internal route — only accessible from server-side fetch with INTERNAL_API_SECRET
+  const internalSecret = process.env.INTERNAL_API_SECRET
+  const incoming = req.headers.get('x-internal-secret')
+  if (internalSecret && incoming !== internalSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   try {
     const { sessionId, decisionText, contextText } = await req.json()
 

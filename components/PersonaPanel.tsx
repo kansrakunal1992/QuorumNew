@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import RateLimitBanner, { parseRateLimit, type RateLimitInfo } from '@/components/RateLimitBanner'
 import { useTTSContext } from '@/context/TTSContext'
 import type { PersonaMeta, Message } from '@/lib/types'
 
@@ -93,6 +94,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
   const [examinerUpdateState, setExaminerUpdateState] = useState<'idle' | 'streaming' | 'done'>('idle')
+  const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null)
+  const clearRateLimit = useCallback(() => setRateLimitInfo(null), [])
 
   const responseRef   = useRef(initialContent ?? '')
   const exchangesRef  = useRef(exchanges)
@@ -150,6 +153,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText, registerMode: registerMode ?? 'analytical', structuralContext, examinerContext: isFirst ? examinerCtx : undefined }),
       })
       if (!res.ok || !res.body) {
+        const rl = await parseRateLimit(res)
+        if (rl) { setRateLimitInfo(rl); setPanelState('idle'); return }
         setPanelState('error')
         setResponse('Failed to load. Check API key.')
         return
@@ -312,6 +317,16 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
   return (
     <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280, borderLeft: `3px solid ${accentColor}` }}>
+      {/* S5-01: Rate limit banner — shown when 429 is returned from /api/persona */}
+      {rateLimitInfo && (
+        <div style={{ padding: '8px 12px 4px' }}>
+          <RateLimitBanner
+            message={rateLimitInfo.message}
+            resetAt={rateLimitInfo.resetAt}
+            onExpired={clearRateLimit}
+          />
+        </div>
+      )}
       {/* Header */}
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-card-alt)', borderRadius: '14px 14px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

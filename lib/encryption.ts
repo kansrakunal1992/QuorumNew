@@ -48,6 +48,18 @@ const TAG_LENGTH = 16   // bytes → 32 hex chars
 const ENC_PREFIX = 'enc:'
 const JSONB_KEY  = '_enc'
 
+// ── Sprint 5 (S5-02): Production startup warning ──────────────────────────────
+// Log a CRITICAL error at module load time if running in production without a key.
+// This surfaces misconfiguration immediately in Railway logs rather than
+// silently storing plaintext in the database.
+if (process.env.NODE_ENV === 'production' && !process.env.DB_ENCRYPTION_KEY) {
+  console.error(
+    '[Encryption] CRITICAL: DB_ENCRYPTION_KEY is not set in production. ' +
+    'Decision text and analysis WILL BE STORED AS PLAINTEXT. ' +
+    'Set DB_ENCRYPTION_KEY in Railway → Variables immediately.'
+  )
+}
+
 // ── Key resolution ─────────────────────────────────────────────────────────────
 
 function getKey(): Buffer | null {
@@ -64,14 +76,23 @@ function getKey(): Buffer | null {
 // ── Core encrypt / decrypt ─────────────────────────────────────────────────────
 
 /**
- * Encrypt a string. Returns the original value unchanged when:
- *   - value is null / undefined / empty string
- *   - DB_ENCRYPTION_KEY is not set (backward-compat no-op)
+ * Encrypt a string. In production, throws if DB_ENCRYPTION_KEY is not set
+ * (fail-closed: prevents plaintext from being silently written to the DB).
+ * In development, returns the original value when no key is set (backward compat).
  */
 export function encrypt(value: string | null | undefined): string | null | undefined {
   if (value === null || value === undefined || value === '') return value
   const key = getKey()
-  if (!key) return value   // key not configured — store plaintext
+  if (!key) {
+    // S5-02: fail-closed in production — throw to surface 500, not silent plaintext write
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        '[Encryption] DB_ENCRYPTION_KEY is required in production. ' +
+        'Set it in Railway → Variables.'
+      )
+    }
+    return value   // development: allow plaintext (backward compat)
+  }
 
   try {
     const iv      = randomBytes(IV_LENGTH)
