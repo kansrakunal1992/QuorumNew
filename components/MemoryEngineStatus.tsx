@@ -125,14 +125,17 @@ export default function MemoryEngineStatus({
 
   let statusLabel: string
   let statusColor: string
-  if (mirrorUnlocked) {
+  if (mirrorUnlocked && patternActive) {
+    // Both Pattern Memory (≥5 sessions) and Mirror subscription active
     statusLabel = 'Pattern Memory active · Mirror active'
     statusColor = 'var(--green-text)'
-  } else if (mirrorReady) {
-    statusLabel = 'Pattern Memory active · Mirror ready to activate'
+  } else if (mirrorUnlocked) {
+    // Mirror unlocked but local session count hasn't hit 5 yet (cross-device edge case)
+    statusLabel = 'Mirror active'
     statusColor = 'var(--green-text)'
   } else if (patternActive) {
-    statusLabel = 'Pattern Memory active'
+    // ≥5 sessions, no Mirror subscription
+    statusLabel = 'Pattern Memory active · Mirror ready to activate'
     statusColor = 'var(--green-text)'
   } else if (mirrorTeaserReady) {
     const remaining = PATTERN_MEMORY_THRESHOLD - sessionCount

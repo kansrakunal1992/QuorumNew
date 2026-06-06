@@ -30,6 +30,7 @@ import { createServiceClient }                  from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState }                 from '@/lib/mirror-access'
 import { computeUserSessionScores }             from '@/lib/session-score'
+import { decrypt }                              from '@/lib/encryption'
 
 // ── Auth helper (same pattern as preferences/route.ts) ────────────────────────
 
@@ -168,7 +169,7 @@ export async function GET(req: Request) {
           ((a.response_text as string)?.length ?? 0) >= ((b.response_text as string)?.length ?? 0)
             ? a : b
         )
-        const raw = (best.response_text as string | null) ?? ''
+        const raw = (decrypt(best.response_text as string | null) ?? '').trim()
         if (raw.length > 20) {
           examinerQuote = raw.length > 180 ? raw.slice(0, 177) + '…' : raw
         }

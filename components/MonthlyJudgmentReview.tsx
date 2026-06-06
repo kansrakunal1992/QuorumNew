@@ -135,6 +135,82 @@ function OpenLoopRow({ loop }: { loop: OpenLoop }) {
   )
 }
 
+// ── Loops list with show-more (mirrors DecisionRules expand pattern) ──────────
+
+const LOOPS_PREVIEW = 5
+
+function LoopsList({ loops }: { loops: OpenLoop[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const visible    = expanded ? loops : loops.slice(0, LOOPS_PREVIEW)
+  const hiddenCount = Math.max(0, loops.length - LOOPS_PREVIEW)
+
+  return (
+    <div style={{
+      background:   'var(--bg-card)',
+      border:       '1px solid var(--border-dim)',
+      borderRadius: 10,
+      overflow:     'hidden',
+    }}>
+      <div style={{
+        padding:        '12px 16px 10px',
+        borderBottom:   '1px solid var(--border-dim)',
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'space-between',
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 700,
+          letterSpacing: '0.1em', textTransform: 'uppercase',
+          color: 'var(--text-4)',
+        }}>
+          Open loops
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
+          {loops.length} decision{loops.length !== 1 ? 's' : ''} awaiting closure
+        </span>
+      </div>
+
+      {visible.map(loop => (
+        <OpenLoopRow key={loop.session_id} loop={loop} />
+      ))}
+
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          style={{
+            display:     'flex',
+            alignItems:  'center',
+            gap:         7,
+            width:       '100%',
+            padding:     '10px 16px',
+            background:  'transparent',
+            border:      'none',
+            borderTop:   '1px solid var(--border-dim)',
+            cursor:      'pointer',
+            fontFamily:  'inherit',
+            fontSize:    12,
+            color:       'var(--text-4)',
+            letterSpacing: '0.03em',
+            transition:  'color 0.15s',
+            textAlign:   'left',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-4)' }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+          {expanded
+            ? 'Show fewer decisions'
+            : `Show ${hiddenCount} more decision${hiddenCount !== 1 ? 's' : ''}`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function MonthlyJudgmentReview({ authToken }: Props) {
   const [data,    setData]    = useState<MonthlyReviewData | null>(null)
@@ -214,38 +290,7 @@ export default function MonthlyJudgmentReview({ authToken }: Props) {
 
       {/* ── Open loops list ─────────────────────────────────────────────────── */}
       {data.open_loops.length > 0 && (
-        <div style={{
-          background:   'var(--bg-card)',
-          border:       '1px solid var(--border-dim)',
-          borderRadius: 10,
-          overflow:     'hidden',
-        }}>
-
-          <div style={{
-            padding:      '12px 16px 10px',
-            borderBottom: '1px solid var(--border-dim)',
-            display:      'flex',
-            alignItems:   'center',
-            justifyContent: 'space-between',
-          }}>
-            <span style={{
-              fontSize:      10,
-              fontWeight:    700,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color:         'var(--text-4)',
-            }}>
-              Open loops
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
-              {data.open_loops.length} decision{data.open_loops.length !== 1 ? 's' : ''} awaiting closure
-            </span>
-          </div>
-
-          {data.open_loops.map(loop => (
-            <OpenLoopRow key={loop.session_id} loop={loop} />
-          ))}
-        </div>
+        <LoopsList loops={data.open_loops} />
       )}
 
       {/* Empty state for open loops */}

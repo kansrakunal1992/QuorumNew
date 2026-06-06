@@ -74,7 +74,9 @@ export default async function RecordPage({ params }: Props) {
       content: decryptText(msg.content),
     }))
 
-  const outcome  = outcomeResult.data ?? null
+  const outcome  = outcomeResult.data
+    ? { ...outcomeResult.data, what_decided: decryptText(outcomeResult.data.what_decided) }
+    : null
 
   const dateStr = formatDateTime(session.created_at)
 
