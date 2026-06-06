@@ -105,6 +105,7 @@ import type { OntologyScoreMap }             from '@/lib/bias-scorer'
 import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
 import type { PersonaKey, Message }          from '@/lib/types'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 import { encrypt }                           from '@/lib/encryption'
 
 // ── Council context fetch (Sprint 12 / R2 / R3 update) ───────────────────────

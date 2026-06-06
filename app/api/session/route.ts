@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 import { encrypt, decrypt } from '@/lib/encryption'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 export async function POST(req: Request) {
   // S5-01: rate limit session creation — 20 per 15 min per IP
