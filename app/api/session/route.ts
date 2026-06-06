@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase'
+import { createServiceClient, createClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
