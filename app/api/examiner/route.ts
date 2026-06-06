@@ -28,6 +28,7 @@
  */
 
 import { NextResponse }        from 'next/server'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 import { createServiceClient } from '@/lib/supabase'
 import { createCompletion }    from '@/lib/ai-client'
 import { fetchExaminerBiasHint } from '@/lib/bias-scorer'  // Sprint R_JC
