@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import type { DecisionRecord } from '@/lib/types'
-import { PERSONAS } from '@/lib/personas'
+import { PERSONAS }    from '@/lib/personas'
+import { formatLongDate } from '@/lib/dates'
 
 export interface ExaminerQA {
   question_text: string
@@ -231,9 +232,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
       y += 9
 
       // Date + session ID
-      const dateStr = new Date(record.session.created_at).toLocaleDateString('en-IN', {
-        day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata',
-      })
+      const dateStr = formatLongDate(record.session.created_at)
       doc.setFontSize(8)
       doc.setTextColor(74, 85, 104)
       doc.text(`${dateStr}  ·  Session ${record.session.id.slice(0, 8)}`, ML, y)

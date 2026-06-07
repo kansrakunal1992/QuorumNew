@@ -1,5 +1,7 @@
 'use client'
 
+import { formatShortDate } from '@/lib/dates'
+
 // components/CalibrationSparkline.tsx
 // ── Mirror: Calibration Sparkline (Sprint 15) ─────────────────────────────────
 //
@@ -77,9 +79,7 @@ function trendColor(trend: CalibrationSummary['trend']): string {
   }
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })
-}
+// formatDate → formatShortDate from lib/dates
 
 // ── Tooltip state ─────────────────────────────────────────────────────────────
 interface TooltipState {
@@ -435,7 +435,7 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
                     fill="var(--bg-inset)" stroke="var(--border-mid)" strokeWidth={0.8} />
                   <text x={tx} y={ty + 13} textAnchor="middle"
                     fill="var(--text-3)" fontSize="8.5" fontFamily="var(--font-mono)">
-                    {formatDate(p.created_at)}
+                    {formatShortDate(p.created_at)}
                   </text>
                   <text x={tx} y={ty + 26} textAnchor="middle"
                     fill="var(--text-4)" fontSize="8" fontFamily="var(--font-mono)">
@@ -506,15 +506,15 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
           marginTop:   6,
         }}>
           <span style={{ fontSize: 9, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
-            {formatDate(paired[0].created_at)}
+            {formatShortDate(paired[0].created_at)}
           </span>
           {total >= 5 && (
             <span style={{ fontSize: 9, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
-              {formatDate(paired[Math.floor(total / 2)].created_at)}
+              {formatShortDate(paired[Math.floor(total / 2)].created_at)}
             </span>
           )}
           <span style={{ fontSize: 9, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
-            {formatDate(paired[total - 1].created_at)}
+            {formatShortDate(paired[total - 1].created_at)}
           </span>
         </div>
       </div>

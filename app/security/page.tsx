@@ -1,7 +1,7 @@
 // app/security/page.tsx
 // ── Sprint 3 (S3-04) — Security & Trust ──────────────────────────────────────
 // Only technically provable, implemented facts are listed.
-// No aspirational claims (SOC 2, pen tests, MFA, key rotation are NOT listed).
+// No aspirational claims (SOC 2, pen tests, MFA, scheduled key rotation are NOT listed).
 // Server component — static.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -48,15 +48,24 @@ const IMPLEMENTED: { label: string; detail: string }[] = [
     detail:
       'Your decision text is processed by an AI service solely to generate your Council analysis. The AI provider does not use your submissions to train its models.',
   },
+  {
+    label: 'Encryption key rotation tooling',
+    detail:
+      'A rotation script (scripts/rotate-encryption-key.ts) re-encrypts all database columns from an old AES-256-GCM key to a new one without downtime. Rotation is performed manually on a deliberate schedule to ensure human oversight of a sensitive cryptographic operation.',
+  },
+  {
+    label: 'Vulnerability disclosure programme',
+    detail:
+      'A machine-readable disclosure policy is published at /.well-known/security.txt per RFC 9116. Report issues to security@quorumvault.org. We acknowledge valid reports within 5 business days and target remediation of critical issues within 30 days.',
+  },
 ]
 
 const NOT_YET: string[] = [
   'SOC 2 Type II certification',
   'Independent penetration testing',
   'Multi-factor authentication (MFA)',
-  'Automated encryption key rotation',
+  'Automated scheduled key rotation',
   'Dedicated security operations centre',
-  'Vulnerability disclosure programme',
 ]
 
 export default function SecurityPage() {
