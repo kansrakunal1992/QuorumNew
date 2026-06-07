@@ -315,6 +315,18 @@ function RuleRow({ pattern, maxCount, authToken }: { pattern: RulePattern; maxCo
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', flex: 1, lineHeight: 1.4 }}>
           {pattern.label}
         </span>
+        {/* Sprint M4: ↑ Increasing badge when pattern fired in > 2 of last 10 sessions */}
+        {(pattern.recent_fire_count ?? 0) > 2 && (
+          <span style={{
+            fontSize:      9, fontWeight: 700, letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color:         '#e8a030', background: 'rgba(232,160,48,0.1)',
+            border:        '1px solid rgba(232,160,48,0.3)',
+            borderRadius:  3, padding: '2px 6px', flexShrink: 0,
+          }}>
+            ↑ Increasing
+          </span>
+        )}
         <button
           onClick={() => setDrawerOpen(o => !o)}
           title="See which decisions triggered this pattern"

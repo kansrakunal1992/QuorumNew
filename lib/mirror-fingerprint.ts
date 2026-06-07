@@ -225,8 +225,6 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     .select('bias_parameter, detection_count, confidence_weight, asymmetry_score_avg, activation_contexts, session_ids')
     .eq('user_id', userId)
     .order('detection_count', { ascending: false })
-
-  if (!biasRows || biasRows.length === 0) {
     return {
       narrative:      null,
       confirmedTiles: [],
@@ -356,6 +354,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       isTeaser:          false,
       signalType,        // Sprint 20
       sessionIds,        // Sprint 20
+      lastFiredAt:       null,  // Sprint M4: populated below after batch session fetch
     }
   })
 
@@ -392,8 +391,42 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       isTeaser:          true,
       signalType:        null,   // Sprint 20
       sessionIds,                // Sprint 20
+      lastFiredAt:       null,   // Sprint M4: populated below
     }
   })
+
+  // ── Sprint M4: Batch-fetch session dates to populate lastFiredAt ──────────
+  // lastFiredAt = most recent session date in each tile's sessionIds array.
+  // Used to show "Active" badge on tiles that fired within the last 14 days.
+  // Single batch query — no per-tile fetches.
+  const allTileSessionIds = [
+    ...confirmedTiles.flatMap(t => t.sessionIds),
+    ...formingTiles.flatMap(t => t.sessionIds),
+  ]
+  const uniqueSessionIds = [...new Set(allTileSessionIds)]
+
+  if (uniqueSessionIds.length > 0) {
+    try {
+      const { data: sessionDateRows } = await supabase
+        .from('sessions')
+        .select('id, created_at')
+        .in('id', uniqueSessionIds)
+
+      const dateMap = new Map(
+        (sessionDateRows ?? []).map(s => [s.id as string, s.created_at as string])
+      )
+
+      const latestDate = (ids: string[]): string | null => {
+        const dates = ids.map(id => dateMap.get(id)).filter(Boolean) as string[]
+        return dates.length > 0 ? dates.sort().at(-1) ?? null : null
+      }
+
+      for (const tile of confirmedTiles) tile.lastFiredAt = latestDate(tile.sessionIds)
+      for (const tile of formingTiles)   tile.lastFiredAt = latestDate(tile.sessionIds)
+    } catch {
+      // Non-critical — lastFiredAt stays null, no badges shown
+    }
+  }
 
   return {
     narrative:      aiContent.narrative,

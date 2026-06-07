@@ -43,6 +43,7 @@ interface ContradictionData {
   meetsThreshold:    boolean
   threshold:         number
   lastRanAt:         string | null
+  dismissedCount?:   number   // Sprint M4: all-time dismissed count for ratio display
 }
 
 interface Props {
@@ -513,6 +514,12 @@ export default function ContradictionDetector({ authToken, sessionCount }: Props
   // ── Live contradictions ───────────────────────────────────────────────────
   return (
     <div>
+      {/* Sprint M4: dismissed / active ratio */}
+      {(data?.dismissedCount ?? 0) > 0 && (
+        <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 10px', letterSpacing: '0.03em' }}>
+          {data!.dismissedCount} dismissed all-time &nbsp;·&nbsp; {active.length} active
+        </p>
+      )}
       {active.map(item => (
         <ContradictionCard key={item.id} item={item} onDismiss={handleDismiss} />
       ))}

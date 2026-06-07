@@ -31,7 +31,8 @@ interface MonthlyReviewData {
 }
 
 interface Props {
-  authToken: string
+  authToken:         string
+  onOpenLoopCount?:  (n: number) => void   // Sprint M2: lets page.tsx reposition MJR when loops > 0
 }
 
 // ── Metric tile ───────────────────────────────────────────────────────────────
@@ -212,12 +213,24 @@ function LoopsList({ loops }: { loops: OpenLoop[] }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function MonthlyJudgmentReview({ authToken }: Props) {
+export default function MonthlyJudgmentReview({ authToken, onOpenLoopCount }: Props) {
   const [data,    setData]    = useState<MonthlyReviewData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!authToken) { setLoading(false); return }
+    fetch('/api/mirror/monthly-review', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        setData(d as MonthlyReviewData | null)
+        // Sprint M2: inform parent of open loop count for dynamic positioning
+        if (onOpenLoopCount) onOpenLoopCount((d as MonthlyReviewData | null)?.open_loops?.length ?? 0)
+      })
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [authToken, onOpenLoopCount])
 
     fetch('/api/mirror/monthly-review', {
       headers: { Authorization: `Bearer ${authToken}` },

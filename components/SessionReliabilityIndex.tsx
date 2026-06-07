@@ -111,7 +111,7 @@ function ScoreBar({ score }: { score: number }) {
 
 // ── Session row ───────────────────────────────────────────────────────────────
 
-function SessionRow({ row }: { row: SessionScoreData }) {
+function SessionRow({ row, isLatest }: { row: SessionScoreData; isLatest?: boolean }) {
   const preview = row.decisionPreview.length >= 90
     ? row.decisionPreview + '…'
     : row.decisionPreview
@@ -124,9 +124,21 @@ function SessionRow({ row }: { row: SessionScoreData }) {
       gap: 12,
       padding: '10px 0',
       borderBottom: '1px solid var(--border-dim)',
+      // Sprint M4: highlight the most recent session
+      borderLeft:   isLatest ? '2px solid rgba(201,168,76,0.5)' : '2px solid transparent',
+      paddingLeft:  isLatest ? 8 : 0,
     }}>
       {/* Decision preview + date */}
       <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          {isLatest && (
+            <span style={{
+              fontSize: 8.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: 'var(--gold)', background: 'rgba(201,168,76,0.1)',
+              border: '1px solid rgba(201,168,76,0.25)', borderRadius: 3, padding: '1px 5px', flexShrink: 0,
+            }}>Latest</span>
+          )}
+        </div>
         <p style={{
           margin: 0, fontSize: 12, color: 'var(--text-2)',
           lineHeight: 1.45, overflow: 'hidden',
@@ -244,8 +256,8 @@ export default function SessionReliabilityIndex({ authToken }: { authToken: stri
 
       {/* Session list */}
       <div>
-        {displayed.map(row => (
-          <SessionRow key={row.sessionId} row={row} />
+        {displayed.map((row, i) => (
+          <SessionRow key={row.sessionId} row={row} isLatest={i === 0} />
         ))}
       </div>
 

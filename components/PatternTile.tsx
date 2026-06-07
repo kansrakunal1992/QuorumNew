@@ -215,6 +215,11 @@ function ConfirmedTile({ tile, authToken }: { tile: FingerprintTile; authToken: 
   const isStrong         = tile.confidenceDots === 3
   const [drawerOpen, setDrawerOpen] = useState(false)
 
+  // Sprint M4: "Active" badge when pattern fired within last 14 days
+  const isRecentlyActive = tile.lastFiredAt
+    ? (Date.now() - new Date(tile.lastFiredAt).getTime()) < 14 * 86_400_000
+    : false
+
   return (
     <div
       style={{
@@ -244,12 +249,26 @@ function ConfirmedTile({ tile, authToken }: { tile: FingerprintTile; authToken: 
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
-        <span style={{
-          fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: 'var(--text-3)', lineHeight: 1.4, flex: 1,
-        }}>
-          {tile.biasLabel}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, flexWrap: 'wrap' }}>
+          <span style={{
+            fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em',
+            textTransform: 'uppercase', color: 'var(--text-3)', lineHeight: 1.4,
+          }}>
+            {tile.biasLabel}
+          </span>
+          {/* Sprint M4: Active badge — pattern fired in last 14 days */}
+          {isRecentlyActive && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: '#4caf86', background: 'rgba(76,175,134,0.1)',
+              border: '1px solid rgba(76,175,134,0.3)',
+              borderRadius: 3, padding: '1px 6px', flexShrink: 0,
+            }}>
+              Active
+            </span>
+          )}
+        </div>
         <ConfidenceDots filled={tile.confidenceDots} />
       </div>
 

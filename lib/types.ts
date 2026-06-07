@@ -125,6 +125,7 @@ export interface FingerprintTile {
   isTeaser: boolean                // detection_count === 1 (blurred in paid view)
   signalType: BiasSignalType | null   // Sprint 20: predominant signal across sessions
   sessionIds: string[]                // Sprint 20: source sessions for drawer
+  lastFiredAt: string | null          // Sprint M4: most recent session date — drives "Active" badge
 }
 
 export interface FingerprintData {
@@ -148,13 +149,14 @@ export interface SessionPreview {
 export type RuleType = 'REDIRECT' | 'GATE' | 'FLAG'
 
 export interface RulePattern {
-  rule_id:     string
-  label:       string
-  description: string
-  type:        RuleType
-  fire_count:  number
-  pct:         number       // fraction of sessions_with_rules — e.g. 0.67
-  session_ids: string[]     // Sprint 20: sessions that fired this rule
+  rule_id:            string
+  label:              string
+  description:        string
+  type:               RuleType
+  fire_count:         number
+  pct:                number       // fraction of sessions_with_rules — e.g. 0.67
+  session_ids:        string[]     // Sprint 20: sessions that fired this rule
+  recent_fire_count?: number       // Sprint M4: fires in last 10 sessions — drives ↑ increasing badge
 }
 
 export interface DimPattern {

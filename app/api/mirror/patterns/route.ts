@@ -118,6 +118,8 @@ export async function GET(req: Request) {
   }
 
   const sessionIds = sessionRows.map(s => s.id)
+  // Sprint M4: last 10 sessions (ascending order → last 10 are most recent)
+  const last10Set  = new Set(sessionIds.slice(-10))
 
   // ── 4. Fetch ontology rows for all sessions ───────────────────────────────
   const { data: ontologyRows, error: ontErr } = await supabase
@@ -170,9 +172,10 @@ export async function GET(req: Request) {
         label:       meta?.label       ?? ruleId,
         description: meta?.description ?? '',
         type:        meta?.type        ?? 'FLAG' as RuleType,
-        fire_count:  count,
-        pct:         sessionsWithRules > 0 ? Math.round((count / sessionsWithRules) * 100) / 100 : 0,
-        session_ids: ruleSessionIds[ruleId] ?? [],   // Sprint 20
+        fire_count:         count,
+        pct:                sessionsWithRules > 0 ? Math.round((count / sessionsWithRules) * 100) / 100 : 0,
+        session_ids:        ruleSessionIds[ruleId] ?? [],   // Sprint 20
+        recent_fire_count:  (ruleSessionIds[ruleId] ?? []).filter(id => last10Set.has(id)).length,  // Sprint M4
       }
     })
     .sort((a, b) => b.fire_count - a.fire_count)

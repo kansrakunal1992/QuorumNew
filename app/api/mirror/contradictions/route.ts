@@ -84,6 +84,13 @@ export async function GET(req: Request) {
     .order('generated_at', { ascending: false })
     .limit(5)
 
+  // Sprint M4: dismissed count for ratio display in section header
+  const { count: dismissedCount } = await supabase
+    .from('contradictions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .not('dismissed_at', 'is', null)
+
   // Enrich with decision_text for each referenced session
   const sessionIds = new Set<string>()
   for (const row of rows ?? []) {
@@ -120,6 +127,7 @@ export async function GET(req: Request) {
     threshold:         MIN_SESSIONS,
     lastRanAt:         runRow?.ran_at ?? null,
     sessionCountAtRun: runRow?.session_count_at_run ?? null,
+    dismissedCount:    dismissedCount ?? 0,  // Sprint M4
   })
 }
 

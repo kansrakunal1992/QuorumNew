@@ -38,6 +38,7 @@ import type { AvoidanceAlertData } from '@/components/AvoidanceAlertCard'
 import MonthlyJudgmentReview  from '@/components/MonthlyJudgmentReview'
 import PatternStore           from '@/components/PatternStore'
 import StyleCalibration        from '@/components/StyleCalibration'
+import MirrorNav               from '@/components/MirrorNav'           // Sprint M2
 import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
 
@@ -1013,6 +1014,82 @@ function WelcomeMirrorCard({
   )
 }
 
+// ── Sprint M2: Section wrapper ────────────────────────────────────────────────
+// Wraps every Mirror module with:
+//   • id="msec-{key}"          → MirrorNav scroll targets
+//   • type-coloured left border → urgent / core / deep / archival
+//   • desc-collapse toggle      → "?" hides/shows description text (localStorage)
+//   • section collapse toggle   → chevron collapses entire section (localStorage)
+//   • staggered fade-in         → animDelay ms for smooth page assembly
+
+const SEC_TYPE_BORDER: Record<string, string> = {
+  urgent:   '#E24B4A',
+  core:     'rgba(201,168,76,0.45)',
+  deep:     'rgba(74,158,222,0.45)',
+  archival: 'rgba(120,120,115,0.3)',
+}
+
+function SectionWrapper({
+  sectionKey, title, desc, badge, type = 'core', animDelay = 0,
+  collapsed, descHidden, onToggleCollapse, onToggleDesc, children,
+}: {
+  sectionKey:       string
+  title:            string
+  desc?:            string
+  badge?:           React.ReactNode
+  type?:            'urgent' | 'core' | 'deep' | 'archival'
+  animDelay?:       number
+  collapsed:        boolean
+  descHidden:       boolean
+  onToggleCollapse: (k: string) => void
+  onToggleDesc:     (k: string) => void
+  children:         React.ReactNode
+}) {
+  const border = SEC_TYPE_BORDER[type]
+  return (
+    <div
+      id={`msec-${sectionKey}`}
+      style={{ marginBottom: 28, animation: `secFadeIn 0.4s ease both`, animationDelay: `${animDelay}ms` }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : (desc && !descHidden ? 6 : 14) }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+          <h3 style={{
+            fontSize: 13, fontWeight: 700, color: 'var(--text-3)',
+            letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0,
+            paddingLeft: 8, borderLeft: `2px solid ${border}`,
+          }}>{title}</h3>
+          {badge}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, marginLeft: 10 }}>
+          {desc && (
+            <button onClick={() => onToggleDesc(sectionKey)}
+              title={descHidden ? 'Show description' : 'Hide description'}
+              style={{ background: 'none', border: '1px solid var(--border-dim)', borderRadius: '50%',
+                width: 18, height: 18, cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 10, color: 'var(--text-4)', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.15s', flexShrink: 0 }}>?</button>
+          )}
+          <button onClick={() => onToggleCollapse(sectionKey)}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-4)', padding: '2px 0', display: 'flex',
+              alignItems: 'center', transition: 'color 0.15s', flexShrink: 0 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+              style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      {!collapsed && desc && !descHidden && (
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>{desc}</p>
+      )}
+      {!collapsed && children}
+    </div>
+  )
+}
+
 // ── Unlocked view ─────────────────────────────────────────────────────────────
 function UnlockedView({
   status,
@@ -1027,34 +1104,66 @@ function UnlockedView({
   initialStyleCue?: StyleCue | null
   avoidanceAlerts:  AvoidanceAlertData[]
 }) {
-  // Sprint 21: style calibration — show when sessionCount >= 5, no DB cue, and not
-  // previously dismissed/completed in this browser (localStorage guard).
+  // Sprint 21: style calibration
   const [showCalibration, setShowCalibration] = useState(() => {
     if (status.sessionCount < 5 || initialStyleCue) return false
     try { return localStorage.getItem('quorum_style_calibration_dismissed') !== 'true' } catch { return true }
   })
 
   // Sprint M3: Welcome to Mirror card — shown once on first Mirror open.
-  // After dismiss, MirrorSummaryCard (Sprint M1) takes the above-fold slot.
   const [showWelcome, setShowWelcome] = useState(() => {
     try { return localStorage.getItem('quorum_mirror_welcomed') !== 'true' } catch { return true }
   })
 
-  function handleCalibrationComplete(_cue: StyleCue) {
-    setShowCalibration(false)
-  }
+  function handleCalibrationComplete(_cue: StyleCue) { setShowCalibration(false) }
 
   // Sprint M3: topBiasLabel for DecisionRules ThresholdGate personalisation.
-  // status.teaserBiases is now populated for unlocked users (status/route.ts change).
-  // Falls back to undefined gracefully — ThresholdGate renders without the line.
   const topBiasLabel = status.teaserBiases.length > 0
     ? getBiasLabel(status.teaserBiases[0])
     : undefined
 
+  // Sprint M2: open loop count from MJR — drives conditional positioning
+  const [openLoopCount, setOpenLoopCount] = useState(0)
+
+  // Sprint M2: section collapse state (persisted in localStorage)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem('quorum_mirror_collapsed') ?? '{}') } catch { return {} }
+  })
+  const toggleCollapse = useCallback((k: string) => {
+    setCollapsed(prev => {
+      const next = { ...prev, [k]: !prev[k] }
+      try { localStorage.setItem('quorum_mirror_collapsed', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  // Sprint M2: section description hide state (persisted in localStorage)
+  const [descHidden, setDescHidden] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem('quorum_mirror_desc_hidden') ?? '{}') } catch { return {} }
+  })
+  const toggleDesc = useCallback((k: string) => {
+    setDescHidden(prev => {
+      const next = { ...prev, [k]: !prev[k] }
+      try { localStorage.setItem('quorum_mirror_desc_hidden', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  // Shorthand to build SectionWrapper props — avoids repeating collapsed/descHidden/handlers
+  const sw = (key: string) => ({
+    sectionKey:       key,
+    collapsed:        collapsed[key] ?? false,
+    descHidden:       descHidden[key] ?? false,
+    onToggleCollapse: toggleCollapse,
+    onToggleDesc:     toggleDesc,
+  })
+
+  const earlyUser = status.sessionCount < 10
+
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
 
-      {/* Sprint 21: Style Calibration — shown once when sessionCount >= 5 */}
+      {/* Sprint 21: Style Calibration */}
       {showCalibration && (
         <StyleCalibration
           authToken={authToken}
@@ -1063,24 +1172,18 @@ function UnlockedView({
         />
       )}
 
-      {/* Sprint M3: Welcome card — first Mirror visit only.
-          Explains active vs still-building modules so session-3 users aren't
-          confused by thin/locked states after the unlock moment. */}
+      {/* Sprint M3: Welcome card — first visit only */}
       {showWelcome && (
-        <WelcomeMirrorCard
-          sessionCount={status.sessionCount}
-          onDismiss={() => setShowWelcome(false)}
-        />
+        <WelcomeMirrorCard sessionCount={status.sessionCount} onDismiss={() => setShowWelcome(false)} />
       )}
 
-      {/* Sprint M1: Mirror Summary Card — every visit after welcome is dismissed.
-          Above-fold snapshot: independence score + delta, pattern count,
-          open loops, next action, examiner quote, "since last visit" line. */}
-      {!showWelcome && (
-        <MirrorSummaryCard authToken={authToken} />
-      )}
+      {/* Sprint M1: Mirror Summary Card — every visit after welcome */}
+      {!showWelcome && <MirrorSummaryCard authToken={authToken} />}
 
-      {/* Decisions Still Open — Sprint D3 */}
+      {/* Sprint M2: Sticky section nav */}
+      {!showWelcome && <MirrorNav />}
+
+      {/* Decisions Still Open */}
       {avoidanceAlerts.length > 0 && (
         <>
           <AvoidanceAlertCard alerts={avoidanceAlerts} authToken={authToken} />
@@ -1088,153 +1191,89 @@ function UnlockedView({
         </>
       )}
 
-      {/* Bias Fingerprint — live (Sprint 7b) */}
-      <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
-          Bias Fingerprint
-        </h3>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-          The conditions that trigger your patterns — not that you have them, but exactly when and why they show up.
-        </p>
+      {/* Sprint M2: Decision Timeline — near top for early users (< 10 sessions) */}
+      {earlyUser && (
+        <>
+          <SectionWrapper {...sw('timeline')} title="Decision Timeline" type="archival" animDelay={0}
+            badge={<span style={{ fontSize: 10, color: 'var(--text-4)' }}>{status.sessionCount} session{status.sessionCount !== 1 ? 's' : ''}</span>}>
+            <MirrorTimeline sessions={sessions} />
+          </SectionWrapper>
+          <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+        </>
+      )}
+
+      {/* Sprint M2: Monthly Judgment Review — near top when open loops exist */}
+      {openLoopCount > 0 && (
+        <>
+          <MonthlyJudgmentReview authToken={authToken} onOpenLoopCount={setOpenLoopCount} />
+          <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+        </>
+      )}
+
+      {/* ── Core modules ───────────────────────────────────────────────────── */}
+
+      <SectionWrapper {...sw('fingerprint')} title="Bias Fingerprint" type="core" animDelay={60}
+        desc="The conditions that trigger your patterns — not that you have them, but exactly when and why they show up.">
         <BiasFingerprint authToken={authToken} />
-      </div>
-
-      {/* Divider */}
+      </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Decision Independence Score — Sprint 7c */}
-      <div style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
-          Decision Independence Score
-        </h3>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-          How much this decision came from you. Whether your judgment is compounding or deferring over time.
-        </p>
+      <SectionWrapper {...sw('independence')} title="Decision Independence Score" type="core" animDelay={100}
+        desc="How much this decision came from you. Whether your judgment is compounding or deferring over time.">
         <IndependenceScore authToken={authToken} />
-      </div>
-
-      {/* Divider */}
+      </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Decision Rules — Sprint 7d */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Your Implicit Rules
-          </h3>
-          {status.sessionCount >= 8 && (
-            <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
-              From {status.sessionCount} decisions
-            </span>
-          )}
-        </div>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-          The operating principles you implicitly follow — extracted from how you reason, not what you say about yourself.
-        </p>
+      <SectionWrapper {...sw('rules')} title="Your Implicit Rules" type="core" animDelay={140}
+        desc="The operating principles you implicitly follow — extracted from how you reason, not what you say about yourself."
+        badge={status.sessionCount >= 8 ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>From {status.sessionCount} decisions</span> : undefined}>
         <DecisionRules authToken={authToken} sessionCount={status.sessionCount} topBiasLabel={topBiasLabel} />
-      </div>
-
-      {/* Divider */}
+      </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Pattern Store — Sprint 18b */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            What Keeps Coming Up
-          </h3>
-          {status.sessionCount >= 3 && (
-            <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
-              From {status.sessionCount} decisions
-            </span>
-          )}
-        </div>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-          What keeps showing up in how you make decisions — not what you say about yourself, but what Quorum
-          has observed across your actual sessions.
-        </p>
+      <SectionWrapper {...sw('patterns')} title="What Keeps Coming Up" type="core" animDelay={180}
+        desc="What keeps showing up in how you make decisions — not what you say about yourself, but what Quorum has observed across your actual sessions."
+        badge={status.sessionCount >= 3 ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>From {status.sessionCount} decisions</span> : undefined}>
         <PatternStore authToken={authToken} />
-      </div>
-
-      {/* Divider */}
+      </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Contradiction Detector — Sprint 9 */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Contradiction Detector
-          </h3>
-          {status.sessionCount >= 40 && (
-            <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
-              {status.sessionCount} decisions
-            </span>
-          )}
-        </div>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-          Where what you said you believe and what you actually did come apart — surfaced from your own words, across decisions.
-        </p>
+      {/* ── Deep insight modules ────────────────────────────────────────────── */}
+
+      <SectionWrapper {...sw('contradictions')} title="Contradiction Detector" type="deep" animDelay={220}
+        desc="Where what you said you believe and what you actually did come apart — surfaced from your own words, across decisions."
+        badge={status.sessionCount >= 40 ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{status.sessionCount} decisions</span> : undefined}>
         <ContradictionDetector authToken={authToken} sessionCount={status.sessionCount} />
-      </div>
-
-      {/* Divider */}
+      </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Calibration Trend — Sprint 15 */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Confidence Calibration
-          </h3>
-        </div>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-          How the confidence you entered a decision with compares to how certain it felt in hindsight — and whether that gap is closing over time.
-        </p>
+      <SectionWrapper {...sw('calibration')} title="Confidence Calibration" type="deep" animDelay={260}
+        desc="How the confidence you entered a decision with compares to how certain it felt in hindsight — and whether that gap is closing over time.">
         <CalibrationSparkline authToken={authToken} />
-      </div>
-
-      {/* Divider */}
+      </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* ── R4: Session Reliability Index ─────────────────────────────────── */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Session Reliability Index
-          </h3>
-        </div>
-        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 14px', lineHeight: 1.55 }}>
-          A unified score per session combining structural match quality, active bias signals, Council analysis conditions, and your confidence calibration record — and what to do next to raise it.
-        </p>
+      <SectionWrapper {...sw('sri')} title="Session Reliability Index" type="deep" animDelay={300}
+        desc="A unified score per session combining structural match quality, active bias signals, Council analysis conditions, and your confidence calibration record — and what to do next to raise it.">
         <SessionReliabilityIndex authToken={authToken} />
-      </div>
-
-      {/* Divider */}
+      </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* ── Chunk 2: Loop Closure (Monthly Judgment Review) ────────────────── */}
-      {/* Silently absent until decisions_total > 0. No extra fetch in the
-          parent — MonthlyJudgmentReview fetches its own data internally.
-          Falls back to all-time window when session count < 10. */}
-      <MonthlyJudgmentReview authToken={authToken} />
-
-      {/* Divider — only shown when MonthlyJudgmentReview renders */}
+      {/* Sprint M2: MJR — default position (when no open loops, or to get the callback) */}
+      <MonthlyJudgmentReview
+        authToken={authToken}
+        onOpenLoopCount={openLoopCount === 0 ? setOpenLoopCount : undefined}
+      />
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Decision Timeline — archival record, moved to bottom */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Decision Timeline
-          </h3>
-          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
-            {status.sessionCount} session{status.sessionCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <MirrorTimeline sessions={sessions} />
-      </div>
+      {/* Sprint M2: Decision Timeline — bottom for users with >= 10 sessions */}
+      {!earlyUser && (
+        <SectionWrapper {...sw('timeline')} title="Decision Timeline" type="archival" animDelay={340}
+          badge={<span style={{ fontSize: 10, color: 'var(--text-4)' }}>{status.sessionCount} session{status.sessionCount !== 1 ? 's' : ''}</span>}>
+          <MirrorTimeline sessions={sessions} />
+        </SectionWrapper>
+      )}
 
-      {/* Others in Similar Decisions — Sprint 20 */}
       <BenchmarkModule authToken={authToken} />
     </div>
   )
@@ -1333,6 +1372,7 @@ export default function MirrorPage() {
       <style>{`
         @keyframes seg-pulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.5; } }
         @keyframes blink      { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+        @keyframes secFadeIn  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         .mirror-section-h3   { border-left: 2px solid rgba(201,168,76,0.35); padding-left: 8px; }
         @media (max-width: 600px) {
           .mirror-content-pad   { padding: 0 16px !important; }
