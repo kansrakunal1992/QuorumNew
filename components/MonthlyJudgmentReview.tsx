@@ -236,10 +236,6 @@ export default function MonthlyJudgmentReview({ authToken, onOpenLoopCount }: Pr
       headers: { Authorization: `Bearer ${authToken}` },
     })
       .then(r => r.ok ? r.json() : null)
-      .then(d => setData(d as MonthlyReviewData ?? null))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
-  }, [authToken])
 
   if (loading || !data || data.decisions_total === 0) return null
 

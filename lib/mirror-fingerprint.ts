@@ -423,7 +423,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
 
       for (const tile of confirmedTiles) tile.lastFiredAt = latestDate(tile.sessionIds)
       for (const tile of formingTiles)   tile.lastFiredAt = latestDate(tile.sessionIds)
-    } catch {
+    } catch (_e) {
       // Non-critical — lastFiredAt stays null, no badges shown
     }
   }
