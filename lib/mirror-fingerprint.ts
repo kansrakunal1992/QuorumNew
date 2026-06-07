@@ -225,6 +225,8 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     .select('bias_parameter, detection_count, confidence_weight, asymmetry_score_avg, activation_contexts, session_ids')
     .eq('user_id', userId)
     .order('detection_count', { ascending: false })
+
+  if (!biasRows || biasRows.length === 0) {
     return {
       narrative:      null,
       confirmedTiles: [],
