@@ -40,6 +40,9 @@ import PatternStore           from '@/components/PatternStore'
 import StyleCalibration        from '@/components/StyleCalibration'
 import MirrorNav               from '@/components/MirrorNav'           // Sprint M2
 import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
+import AttentionZone          from '@/components/AttentionZone'         // Sprint M5
+import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprint M6
+import type { SummaryData }   from '@/components/MirrorSummaryCard'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -1031,6 +1034,7 @@ const SEC_TYPE_BORDER: Record<string, string> = {
 
 function SectionWrapper({
   sectionKey, title, desc, badge, type = 'core', animDelay = 0,
+  highlighted = false,
   collapsed, descHidden, onToggleCollapse, onToggleDesc, children,
 }: {
   sectionKey:       string
@@ -1039,6 +1043,7 @@ function SectionWrapper({
   badge?:           React.ReactNode
   type?:            'urgent' | 'core' | 'deep' | 'archival'
   animDelay?:       number
+  highlighted?:     boolean   // Sprint M6 — soft prominence from latest session mode
   collapsed:        boolean
   descHidden:       boolean
   onToggleCollapse: (k: string) => void
@@ -1049,7 +1054,16 @@ function SectionWrapper({
   return (
     <div
       id={`msec-${sectionKey}`}
-      style={{ marginBottom: 28, animation: `secFadeIn 0.4s ease both`, animationDelay: `${animDelay}ms` }}
+      style={{
+        marginBottom: 28,
+        animation:    `secFadeIn 0.4s ease both${highlighted ? ', secPulse 2.4s ease-in-out 0.5s 2' : ''}`,
+        animationDelay: `${animDelay}ms`,
+        ...(highlighted && {
+          outline:       '1px solid rgba(201,168,76,0.25)',
+          outlineOffset: 8,
+          borderRadius:  10,
+        }),
+      }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : (desc && !descHidden ? 6 : 14) }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
@@ -1122,8 +1136,18 @@ function UnlockedView({
     ? getBiasLabel(status.teaserBiases[0])
     : undefined
 
-  // Sprint M2: open loop count from MJR — drives conditional positioning
+  // Sprint M2: open loop count — drives MJR conditional positioning
   const [openLoopCount, setOpenLoopCount] = useState(0)
+
+  // Sprint M5+M6: lifted summary data shared across SummaryCard, AttentionZone, MirrorInsightCard
+  const [summaryData, setSummaryData] = useState<SummaryData | null>(null)
+
+  // Sprint M6: derive highlighted module from latest session mode
+  //   REDIRECT → Independence Score    GATE → Contradiction Detector
+  const highlightedModule: string | null =
+    summaryData?.latestSessionMode === 'REDIRECT' ? 'independence'
+    : summaryData?.latestSessionMode === 'GATE'   ? 'contradictions'
+    : null
 
   // Sprint M2: section collapse state (persisted in localStorage)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
@@ -1177,11 +1201,16 @@ function UnlockedView({
         <WelcomeMirrorCard sessionCount={status.sessionCount} onDismiss={() => setShowWelcome(false)} />
       )}
 
-      {/* Sprint M1: Mirror Summary Card — every visit after welcome */}
-      {!showWelcome && <MirrorSummaryCard authToken={authToken} />}
+      {/* Sprint M1: Summary Card — onData lifts data up for M5 AttentionZone + M6 MirrorInsightCard */}
+      {!showWelcome && <MirrorSummaryCard authToken={authToken} onData={setSummaryData} />}
 
-      {/* Sprint M2: Sticky section nav */}
-      {!showWelcome && <MirrorNav />}
+      {/* Sprint M5: Attention Zone — 0-3 urgent/notable cards, absent when nothing to surface */}
+      {!showWelcome && summaryData && <AttentionZone data={summaryData} />}
+
+      {/* Sprint M2: Sticky nav — M6 dot badge on highlighted section */}
+      {!showWelcome && (
+        <MirrorNav highlightedSections={highlightedModule ? [highlightedModule] : []} />
+      )}
 
       {/* Decisions Still Open */}
       {avoidanceAlerts.length > 0 && (
@@ -1212,6 +1241,9 @@ function UnlockedView({
 
       {/* ── Core modules ───────────────────────────────────────────────────── */}
 
+      {/* Sprint M6: Cross-module Mirror Insight — deterministic synthesis, top of module stack */}
+      {summaryData && <MirrorInsightCard data={summaryData} />}
+
       <SectionWrapper {...sw('fingerprint')} title="Bias Fingerprint" type="core" animDelay={60}
         desc="The conditions that trigger your patterns — not that you have them, but exactly when and why they show up.">
         <BiasFingerprint authToken={authToken} />
@@ -1219,6 +1251,7 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       <SectionWrapper {...sw('independence')} title="Decision Independence Score" type="core" animDelay={100}
+        highlighted={highlightedModule === 'independence'}
         desc="How much this decision came from you. Whether your judgment is compounding or deferring over time.">
         <IndependenceScore authToken={authToken} />
       </SectionWrapper>
@@ -1241,6 +1274,7 @@ function UnlockedView({
       {/* ── Deep insight modules ────────────────────────────────────────────── */}
 
       <SectionWrapper {...sw('contradictions')} title="Contradiction Detector" type="deep" animDelay={220}
+        highlighted={highlightedModule === 'contradictions'}
         desc="Where what you said you believe and what you actually did come apart — surfaced from your own words, across decisions."
         badge={status.sessionCount >= 40 ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{status.sessionCount} decisions</span> : undefined}>
         <ContradictionDetector authToken={authToken} sessionCount={status.sessionCount} />
@@ -1373,6 +1407,7 @@ export default function MirrorPage() {
         @keyframes seg-pulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.5; } }
         @keyframes blink      { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
         @keyframes secFadeIn  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        @keyframes secPulse   { 0%, 100% { outline-color: rgba(201,168,76,0.12); } 50% { outline-color: rgba(201,168,76,0.5); } }
         .mirror-section-h3   { border-left: 2px solid rgba(201,168,76,0.35); padding-left: 8px; }
         @media (max-width: 600px) {
           .mirror-content-pad   { padding: 0 16px !important; }

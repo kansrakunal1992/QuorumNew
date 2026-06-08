@@ -24,36 +24,37 @@ const SECTIONS = [
 
 type SectionKey = typeof SECTIONS[number]['key']
 
-export default function MirrorNav() {
+export default function MirrorNav({ highlightedSections = [] }: {
+  highlightedSections?: string[]
+}) {
   const [active, setActive] = useState<SectionKey | null>(null)
 
-  // IntersectionObserver — highlight whichever section is most in view
   useEffect(() => {
     const observers: IntersectionObserver[] = []
-
     SECTIONS.forEach(({ key }) => {
       const el = document.getElementById(`msec-${key}`)
       if (!el) return
-
       const obs = new IntersectionObserver(
-        entries => {
-          entries.forEach(entry => {
-            if (entry.isIntersecting) setActive(key)
-          })
-        },
+        entries => { entries.forEach(e => { if (e.isIntersecting) setActive(key) }) },
         { rootMargin: '-30% 0px -60% 0px', threshold: 0 },
       )
       obs.observe(el)
       observers.push(obs)
     })
-
     return () => observers.forEach(o => o.disconnect())
   }, [])
+
+  // Auto-scroll active pill into view on mobile
+  useEffect(() => {
+    if (!active) return
+    const pill = document.querySelector<HTMLElement>(`.mirror-nav-pill[data-key="${active}"]`)
+    pill?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [active])
 
   const scrollTo = useCallback((key: SectionKey) => {
     const el = document.getElementById(`msec-${key}`)
     if (!el) return
-    const top = el.getBoundingClientRect().top + window.scrollY - 96  // below sticky nav
+    const top = el.getBoundingClientRect().top + window.scrollY - 96
     window.scrollTo({ top, behavior: 'smooth' })
     setActive(key)
   }, [])
@@ -106,7 +107,12 @@ export default function MirrorNav() {
         }
         @media (max-width: 600px) {
           .mirror-nav-wrap { margin: 0 -16px 24px; padding: 0 16px; top: 48px; }
-          .mirror-nav-pill { font-size: 10.5px; padding: 4px 10px; }
+          .mirror-nav-pill { font-size: 10.5px; padding: 6px 12px; min-height: 36px; }
+        }
+        .mirror-nav-badge {
+          display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+          background: var(--gold, #c9a84c); margin-left: 4px;
+          vertical-align: middle; margin-top: -2px;
         }
       `}</style>
       <div className="mirror-nav-wrap">
@@ -114,11 +120,15 @@ export default function MirrorNav() {
           {SECTIONS.map(({ key, label }) => (
             <button
               key={key}
+              data-key={key}
               className={`mirror-nav-pill${active === key ? ' active' : ''}`}
               onClick={() => scrollTo(key)}
               aria-current={active === key ? 'location' : undefined}
             >
               {label}
+              {highlightedSections.includes(key) && (
+                <span className="mirror-nav-badge" aria-hidden="true" />
+              )}
             </button>
           ))}
         </div>

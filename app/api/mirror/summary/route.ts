@@ -246,6 +246,29 @@ export async function GET(req: Request) {
     } catch { /* non-critical */ }
   }
 
+  // Sprint M6: latest session rule_engine_result.mode drives module prominence
+  // REDIRECT → highlight Independence Score; GATE → highlight Contradiction Detector
+  let latestSessionMode: string | null = null
+  try {
+    const { data: latestSess } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (latestSess?.id) {
+      const { data: onto } = await supabase
+        .from('sessions_ontology')
+        .select('rule_engine_result')
+        .eq('session_id', latestSess.id)
+        .single()
+      const r = onto?.rule_engine_result as { mode?: string } | null
+      latestSessionMode = r?.mode ?? null
+    }
+  } catch { /* non-critical */ }
+
   const sinceLastVisit = buildSinceLine({ lastViewedAt, scoreCalcAt, scoreDelta, newContradictions })
 
   // ── Side-effect: stamp last_mirror_viewed_at = NOW ────────────────────────
@@ -271,5 +294,7 @@ export async function GET(req: Request) {
     nextAction,
     sessionCount,
     sinceLastVisit,
+    newContradictions,    // M5: AttentionZone contradiction card
+    latestSessionMode,    // M6: module prominence (REDIRECT/GATE/OPEN/null)
   })
 }

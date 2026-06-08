@@ -26,8 +26,9 @@
 import { useState, useEffect } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+// Exported so AttentionZone and MirrorInsightCard can share the same shape.
 
-interface SummaryData {
+export interface SummaryData {
   independenceScore:     number | null
   scoreDelta:            number | null
   examinerQuote:         string | null
@@ -36,7 +37,9 @@ interface SummaryData {
   openLoopCount:         number
   nextAction:            string | null
   sessionCount:          number
-  sinceLastVisit:        string | null   // e.g. "Since June 1: Independence +4 pts"
+  sinceLastVisit:        string | null
+  newContradictions:     number          // M5 — AttentionZone
+  latestSessionMode:     string | null   // M6 — module prominence
 }
 
 // ── Delta arrow ───────────────────────────────────────────────────────────────
@@ -157,7 +160,10 @@ function SummarySkeleton() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function MirrorSummaryCard({ authToken }: { authToken: string }) {
+export default function MirrorSummaryCard({ authToken, onData }: {
+  authToken: string
+  onData?:   (d: SummaryData) => void
+}) {
   const [data,    setData]    = useState<SummaryData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -169,7 +175,14 @@ export default function MirrorSummaryCard({ authToken }: { authToken: string }) 
       headers: { Authorization: `Bearer ${authToken}` },
     })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled) { setData(d as SummaryData | null); setLoading(false) } })
+      .then(d => {
+        if (!cancelled) {
+          const typed = d as SummaryData | null
+          setData(typed)
+          if (typed && onData) onData(typed)
+          setLoading(false)
+        }
+      })
       .catch(() => { if (!cancelled) setLoading(false) })
 
     return () => { cancelled = true }
