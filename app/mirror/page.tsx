@@ -950,38 +950,53 @@ function WelcomeMirrorCard({
         that&apos;s the difference between a signal and noise.
       </p>
 
-      {/* Active / Building two-column grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '12px 14px' }}>
-          <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 9px' }}>
-            Active now
-          </p>
-          {['Bias Fingerprint', 'Independence Score', 'Decision Timeline', 'What Keeps Coming Up'].map((item, i, arr) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: i < arr.length - 1 ? 5 : 0 }}>
-              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />
-              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0, lineHeight: 1.3 }}>{item}</p>
+      {/* Active / Building two-column grid — dynamic from sessionCount */}
+      {(() => {
+        const RULES_THRESHOLD        = 8
+        const CONTRADICTION_THRESHOLD = 10
+        const activeItems = [
+          'Bias Fingerprint',
+          'Independence Score',
+          'Decision Timeline',
+          'What Keeps Coming Up',
+          ...(sessionCount >= RULES_THRESHOLD         ? ['Implicit Rules']         : []),
+          ...(sessionCount >= CONTRADICTION_THRESHOLD ? ['Contradiction Detector'] : []),
+        ]
+        const buildingItems: [string, string][] = [
+          ...(sessionCount < RULES_THRESHOLD         ? [['Implicit Rules',         `at ${RULES_THRESHOLD} sessions`] as [string, string]] : []),
+          ...(sessionCount < CONTRADICTION_THRESHOLD ? [['Contradiction Detector', 'from 10+']                       as [string, string]] : []),
+          ['Confidence Calibration', 'file outcomes to start'],
+        ]
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '12px 14px' }}>
+              <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 9px' }}>
+                Active now
+              </p>
+              {activeItems.map((item, i, arr) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: i < arr.length - 1 ? 5 : 0 }}>
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />
+                  <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0, lineHeight: 1.3 }}>{item}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '12px 14px' }}>
-          <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 9px' }}>
-            Still building
-          </p>
-          {([
-            ['Implicit Rules',         'at 8 sessions'],
-            ['Contradiction Detector', 'from 10+'],
-            ['Confidence Calibration', 'file outcomes to start'],
-          ] as [string, string][]).map(([name, hint], i, arr) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: i < arr.length - 1 ? 5 : 0 }}>
-              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border-hi)', flexShrink: 0, marginTop: 3 }} />
-              <div>
-                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.3 }}>{name}</p>
-                <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '1px 0 0', lineHeight: 1.3 }}>{hint}</p>
-              </div>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '12px 14px' }}>
+              <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 9px' }}>
+                Still building
+              </p>
+              {buildingItems.map(([name, hint], i, arr) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: i < arr.length - 1 ? 5 : 0 }}>
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border-hi)', flexShrink: 0, marginTop: 3 }} />
+                  <div>
+                    <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.3 }}>{name}</p>
+                    <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '1px 0 0', lineHeight: 1.3 }}>{hint}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+        )
+      })()}
 
       {/* Footer */}
       <div style={{
@@ -1125,7 +1140,15 @@ function UnlockedView({
   })
 
   // Sprint M3: Welcome to Mirror card — shown once on first Mirror open.
+  // Auto-dismiss for established users: once sessionCount >= 10, all session-
+  // threshold features (Rules at 8, Contradictions at 10) are unlocked, so the
+  // "still building" list becomes meaningless. Write to localStorage so it
+  // stays dismissed on return visits and across devices.
   const [showWelcome, setShowWelcome] = useState(() => {
+    if (status.sessionCount >= 10) {
+      try { localStorage.setItem('quorum_mirror_welcomed', 'true') } catch {}
+      return false
+    }
     try { return localStorage.getItem('quorum_mirror_welcomed') !== 'true' } catch { return true }
   })
 

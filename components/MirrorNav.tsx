@@ -66,8 +66,8 @@ export default function MirrorNav({ highlightedSections = [] }: {
           position:         sticky;
           top:              52px;
           z-index:          40;
-          background:       var(--bg-page, #0f0f0f);
-          border-bottom:    1px solid rgba(255,255,255,0.06);
+          background:       var(--bg-void);
+          border-bottom:    1px solid var(--border-dim);
           margin:           0 -24px 28px;
           padding:          0 24px;
         }
@@ -98,7 +98,7 @@ export default function MirrorNav({ highlightedSections = [] }: {
         }
         .mirror-nav-pill:hover {
           color:            var(--text-2, #ccc);
-          background:       rgba(255,255,255,0.04);
+          background:       var(--bg-card-alt);
         }
         .mirror-nav-pill.active {
           color:            var(--gold, #c9a84c);
