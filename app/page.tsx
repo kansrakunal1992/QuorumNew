@@ -10,6 +10,7 @@ import dynamic from 'next/dynamic'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
 import PatternSurfaceCard from '@/components/PatternSurfaceCard'
 import RecurringConditionCard from '@/components/RecurringConditionCard'
+import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -915,6 +916,19 @@ export default function Home() {
               dimensions={patternDimensions}
               sessionCount={sessions.length}
             />
+          )}
+          
+          {/* ── Mirror Open Loop Card (non-unlocked returning users) ──── */}
+          {/* Shows a pattern-building hook for users without a Mirror sub.  */}
+          {/* Countdown (1–2 sessions) or teaser (3+ sessions).             */}
+          {sessions.length > 0 && (
+            <div style={{ marginTop: mirrorUnlocked ? 0 : 20 }}>
+              <MirrorOpenLoopCard
+                authToken={authToken}
+                sessionCount={sessions.length}
+                mirrorUnlocked={mirrorUnlocked}
+              />
+            </div>
           )}
 
           {/* ── Memory Engine (returning users only) ──────── */}
