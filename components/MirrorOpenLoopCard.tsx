@@ -144,10 +144,15 @@ export default function MirrorOpenLoopCard({ authToken, sessionCount, mirrorUnlo
   if (isTeaserState) {
     // Hold render until data arrives — don't flash empty
     if (loading || !teaser) return null
-    // If Mirror hasn't detected any patterns yet, nothing to surface
-    if (teaser.patternCount === 0) return null
+    // bias_library (teaserBiases) and rule engine are separate detection systems.
+    // Mirror page shows bias_library patterns. Use whichever has data.
+    const patternCount = teaser.patternCount > 0
+      ? teaser.patternCount
+      : teaser.teaserBiases.length
 
-    const { patternCount, teaserBiases } = teaser
+    if (patternCount === 0) return null
+
+    const { teaserBiases } = teaser
     const patternWord = patternCount === 1 ? 'pattern' : 'patterns'
 
     return (
