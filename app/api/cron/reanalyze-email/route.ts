@@ -5,7 +5,7 @@
 //
 // Auth: Authorization: Bearer <CRON_SECRET>   (same pattern as avoidance-detect)
 //
-// Called by: Railway Cron Job — daily at 08:00 UTC (1:30 PM IST)
+// Called by: Railway Cron Job — daily at 04:00 UTC (9:30 AM IST)
 //   Railway Dashboard → your service → Settings → Cron Jobs:
 //     Schedule : 0 8 * * *
 //     Command  : curl -s -X POST https://<your-app>.railway.app/api/cron/reanalyze-email \
