@@ -32,6 +32,21 @@ export default function RootLayout({
             `,
           }}
         />
+
+        {/* ── PWA ──────────────────────────────────────────────────────────
+            manifest.json  — app identity, icons, display mode for install prompt
+            theme-color    — browser chrome colour when launched from home screen
+            apple-*        — iOS home screen behaviour (Safari-specific)
+            mobile-web-app — Android home screen add
+        ─────────────────────────────────────────────────────────────────── */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0a0a0a" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Quorum" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+
         {/*
           ── Typography stack ──────────────────────────────────────
           Display  : Cormorant Garamond — editorial serif, counsel gravitas

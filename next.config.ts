@@ -19,6 +19,9 @@
 //     CSP only governs browser-initiated connections.
 //   - Supabase URL is dynamic (*.supabase.co) — using wildcard subdomain.
 //   - microphone is NOT blocked in Permissions-Policy: voice input requires it.
+//   - worker-src 'self': explicit allowance for service worker registration (PWA).
+//     Without this, some browsers fall back to child-src → default-src, but
+//     being explicit prevents any browser-specific ambiguity.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { NextConfig } from 'next'
@@ -49,6 +52,9 @@ const ContentSecurityPolicy = [
 
   // Media: TTS audio is returned as blob: URLs from /api/voice/tts (same origin)
   "media-src 'self' blob:",
+
+  // Workers: explicit 'self' for service worker registration (PWA — sw.js)
+  "worker-src 'self'",
 
   // Block <object>, <embed>, <applet>
   "object-src 'none'",
@@ -85,8 +91,21 @@ const nextConfig: NextConfig = {
 
   async headers() {
     return [
+      // ── Service worker: must not be cached & must declare scope ────────────
+      // Cache-Control: no-cache ensures the browser checks for SW updates on
+      // every navigation. Without this, a stale SW could persist for hours.
+      // Service-Worker-Allowed: / explicitly sets scope to root (belt + suspenders
+      // since sw.js is already at the root path).
       {
-        // Apply to every route
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control',          value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+
+      // ── All other routes: security headers ────────────────────────────────
+      {
         source: '/(.*)',
         headers: [
           {

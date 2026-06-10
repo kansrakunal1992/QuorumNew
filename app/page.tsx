@@ -11,6 +11,7 @@ const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false
 import PatternSurfaceCard from '@/components/PatternSurfaceCard'
 import RecurringConditionCard from '@/components/RecurringConditionCard'
 import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'
+const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -948,6 +949,11 @@ export default function Home() {
             </div>
           )}
 
+          {/* ── Push notifications opt-in (logged-in returning users) ── */}
+           {authToken && sessions.length >= 1 && (
+             <PushEnablePrompt authToken={authToken} />
+           )}
+           
           {/* ── Decision history (returning users only) ────── */}
           {(sessions.length > 0 || loadingHist) && (
             <div ref={historyRef} style={{ marginTop: 8, opacity: loadingHist ? 0 : 1, transition: 'opacity 0.6s ease' }}>

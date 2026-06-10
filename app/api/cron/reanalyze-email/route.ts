@@ -39,6 +39,7 @@
 import { NextResponse }      from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { decrypt }           from '@/lib/encryption'
+import { sendPushToUser }    from '@/lib/push'
 
 // ── Milestones ────────────────────────────────────────────────────────────────
 const MILESTONES = [7, 14, 30] as const
@@ -283,6 +284,13 @@ export async function POST(req: Request) {
           `[ReanalyzeEmail] Sent ${emailType} → ${email.slice(0, 3)}***@*** ` +
           `(session ${session.id.slice(0, 8)})`,
         )
+
+        // Also fire a push notification (non-blocking — email is the primary channel)
+        sendPushToUser(session.user_id as string, {
+          title: `${days} days later`,
+          body:  `"${bodySnippet}" — how's it sitting?`,
+          url:   `${appUrl}/record/${session.id}`,
+        }).catch(err => console.error('[ReanalyzeEmail] Push failed:', err))
       } catch (err) {
         console.error(`[ReanalyzeEmail] Unhandled error for session ${session.id.slice(0, 8)}:`, err)
         errors++

@@ -1,0 +1,41 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH: app/page.tsx
+//
+// Two changes only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+// ── CHANGE 1: Add import after the existing MirrorOpenLoopCard import ─────────
+//
+// Find this line (around line 13):
+//   import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'
+//
+// Add directly below it:
+//   const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })
+//
+// (dynamic is already imported — line 8. No new import needed for that.)
+
+
+// ── CHANGE 2: Add render block after the MemoryEngineStatus block ─────────────
+//
+// Find this block (after MemoryEngineStatus, around line 945):
+//
+//           {sessions.length > 0 && (
+//             <div style={{ marginTop: 'clamp(20px, 4vw, 28px)' }}>
+//               <MemoryEngineStatus
+//                 ...
+//               />
+//             </div>
+//           )}
+//
+// Add directly after the closing `)}` of the MemoryEngineStatus block:
+//
+//           {/* ── Push notifications opt-in (logged-in returning users) ── */}
+//           {authToken && sessions.length >= 1 && (
+//             <PushEnablePrompt authToken={authToken} />
+//           )}
+//
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// That's it. No other changes to page.tsx.
+// ─────────────────────────────────────────────────────────────────────────────
