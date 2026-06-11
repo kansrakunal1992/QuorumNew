@@ -3,6 +3,7 @@ import './globals.css'
 import ThemeToggle from '@/components/ThemeToggle'
 import CookieConsent from '@/components/CookieConsent'
 import AppFooter from '@/components/AppFooter'
+import UpdateBanner from '@/components/UpdateBanner'
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
@@ -67,6 +68,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <UpdateBanner />
         <ThemeToggle />
         {children}
         {/* S2-04 — legal footer on every page */}

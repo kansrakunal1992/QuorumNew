@@ -1,0 +1,45 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH: app/api/cron/reanalyze-email/route.ts
+//
+// One change — defensive normalization of FROM_EMAIL.
+//
+// ROOT CAUSE of "AUTH" showing as sender:
+// FROM_EMAIL on Railway is currently set to a bare address (e.g.
+// "auth@quorumvault.org") with no display name. When Resend sends an email
+// with a bare address and no "Display Name <email>" wrapper, most clients
+// (Gmail included) fall back to showing the local-part before the @ — i.e.
+// "auth" — capitalized by Gmail's UI to "AUTH". The Supabase magic-link email
+// shows "Quorum" because THAT is configured separately in Supabase's own
+// SMTP sender-name field, which is unrelated to this FROM_EMAIL var.
+//
+// TWO FIXES (do both):
+//
+//   FIX 1 (Railway, no code) — REQUIRED:
+//     Update the FROM_EMAIL env var to include a display name:
+//       FROM_EMAIL=Quorum <auth@quorumvault.org>
+//     (Quotes not needed in Railway's variable UI — just paste as-is.)
+//
+//   FIX 2 (this code change) — SAFETY NET:
+//     Normalize FROM_EMAIL in code so that even if someone resets the env var
+//     to a bare address again in future, the email still shows "Quorum" as
+//     the sender name.
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+// Find this block (inside the sendEmail function, near the top):
+//
+//   const apiKey = process.env.RESEND_API_KEY
+//   const from   = process.env.FROM_EMAIL ?? 'Quorum <quorum@quorumvault.org>'
+//
+// Replace with:
+//
+//   const apiKey  = process.env.RESEND_API_KEY
+//   const rawFrom = process.env.FROM_EMAIL ?? 'Quorum <quorum@quorumvault.org>'
+//   // Safety net: if FROM_EMAIL is a bare address with no "Name <email>"
+//   // wrapper, prepend "Quorum" so clients don't fall back to showing the
+//   // local-part (e.g. "auth@...") as the sender name.
+//   const from = rawFrom.includes('<') ? rawFrom : `Quorum <${rawFrom.trim()}>`
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// No other changes to this file.
+// ─────────────────────────────────────────────────────────────────────────────

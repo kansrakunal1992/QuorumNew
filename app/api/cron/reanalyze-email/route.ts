@@ -55,8 +55,12 @@ async function sendEmail({
 }: {
   to: string; subject: string; html: string
 }): Promise<boolean> {
-  const apiKey = process.env.RESEND_API_KEY
-  const from   = process.env.FROM_EMAIL ?? 'Quorum <quorum@quorumvault.org>'
+  const apiKey  = process.env.RESEND_API_KEY
+   const rawFrom = process.env.FROM_EMAIL ?? 'Quorum <quorum@quorumvault.org>'
+   // Safety net: if FROM_EMAIL is a bare address with no "Name <email>"
+   // wrapper, prepend "Quorum" so clients don't fall back to showing the
+   // local-part (e.g. "auth@...") as the sender name.
+   const from = rawFrom.includes('<') ? rawFrom : `Quorum <${rawFrom.trim()}>`
 
   if (!apiKey) {
     console.error('[ReanalyzeEmail] RESEND_API_KEY not set — email not sent')
