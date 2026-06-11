@@ -57,9 +57,18 @@ export default function MirrorNav({ highlightedSections = [] }: {
     const top = el.getBoundingClientRect().top + window.scrollY - 96
     window.scrollTo({ top, behavior: 'smooth' })
     setActive(key)
-  }, [])
-
-  return (
+      }, [])  
+      // Deep-link scroll: fires when landing on /mirror#msec-{key} from an external link  
+      // (e.g. CalibrationRevealCard). Delayed 650ms so sections have rendered before scrolling.  
+      useEffect(() => {
+            const hash = window.location.hash    
+            if (!hash.startsWith('#msec-')) return    
+            const key = hash.slice(6) as SectionKey    
+            const timer = setTimeout(() => scrollTo(key), 650)    
+            return () => clearTimeout(timer)  
+          }, [scrollTo])  
+          
+    return (
     <>
       <style>{`
         .mirror-nav-wrap {
