@@ -680,6 +680,8 @@ export default function SessionView({ session: initialSession, initialMessages =
           /* Reanalyze sits beside Save with tighter padding */
           .sv-navbar-actions .btn-ghost   { padding: 7px 10px; }
           .sv-navbar-actions .btn-primary { padding: 8px 12px; }
+          /* Override global .nav-tagline { display: none } — keep "Reanalyze" label visible here */
+          .sv-navbar-actions .btn-ghost .nav-tagline { display: inline; }
         }
 
         /* Decision hero card */
