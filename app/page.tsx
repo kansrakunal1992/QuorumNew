@@ -12,6 +12,7 @@ import PatternSurfaceCard from '@/components/PatternSurfaceCard'
 import RecurringConditionCard from '@/components/RecurringConditionCard'
 import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'
 const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })
+import CalibrationRevealCard from '@/components/CalibrationRevealCard'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -909,6 +910,16 @@ export default function Home() {
                 sessionCount={sessions.length}
               />
             </div>
+          )}
+
+          {/* ── Chunk 4b — Calibration Reveal Card ────────── */}
+          {/* Shows avg delta + pattern label for unlocked users */}
+          {/* who have ≥3 logged outcomes. Gate is inside component. */}
+          {mirrorUnlocked && (
+            <CalibrationRevealCard
+              authToken={authToken}
+              mirrorUnlocked={mirrorUnlocked}
+            />
           )}
 
           {/* ── Chunk 4c — Recurring Condition Card ───────── */}
