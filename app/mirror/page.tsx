@@ -351,7 +351,7 @@ function LockedView({ sessionCount }: { sessionCount: number }) {
       </div>
 
       <button
-        onClick={() => router.push('/')}
+        onClick={() => window.history.length > 1 ? router.back() : router.push('/')}
         style={{
           background:   'transparent',
           border:       '1px solid var(--border-mid)',
@@ -1467,7 +1467,7 @@ export default function MirrorPage() {
           zIndex:        10,
         }}>
           <button
-            onClick={() => router.push('/')}
+            onClick={() => window.history.length > 1 ? router.back() : router.push('/')}
             style={{
               display:        'flex',
               alignItems:     'center',
