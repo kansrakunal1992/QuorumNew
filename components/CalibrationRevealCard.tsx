@@ -91,7 +91,7 @@ export default function CalibrationRevealCard({ authToken, mirrorUnlocked }: Pro
       `}</style>
       <div style={{
         background: 'var(--bg-card)', border: '1px solid var(--border-dim)',
-        borderRadius: 12, padding: '16px 20px', marginTop: 16,
+        borderRadius: 12, padding: '16px 20px', marginTop: 16, marginBottom: 20,
         animation: 'calibFadeUp 0.35s ease',
       }}>
 
@@ -150,7 +150,7 @@ export default function CalibrationRevealCard({ authToken, mirrorUnlocked }: Pro
         )}
 
         {/* CTA */}
-        <a href="/mirror#calibration" style={{
+        <a href="/mirror#msec-calibration" style={{
           display: 'inline-flex', alignItems: 'center', gap: 5,
           fontSize: 11.5, color: 'var(--text-4)', textDecoration: 'none',
           fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',

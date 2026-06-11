@@ -7,7 +7,7 @@
 //
 // Railway Cron setup:
 //   Dashboard → your service → Settings → Cron Jobs → Add Job
-//   Schedule : 0 8 * * 1      (Mondays 08:00 UTC = 1:30 PM IST)
+//   Schedule : 0 4 * * 1      (Mondays 04:00 UTC = 9:30 AM IST)
 //   Command  : curl -s -X POST https://<your-app>.railway.app/api/cron/mirror-insight-email \
 //                   -H "Authorization: Bearer $CRON_SECRET"
 //
