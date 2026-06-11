@@ -61,15 +61,21 @@ export default function MirrorNav({ highlightedSections = [] }: {
       // Deep-link scroll: fires when landing on /mirror#msec-{key} from an external link  
       // (e.g. CalibrationRevealCard). Delayed 650ms so sections have rendered before scrolling.  
       useEffect(() => {
-            const hash = window.location.hash    
-            if (!hash.startsWith('#msec-')) return    
-            const key = hash.slice(6) as SectionKey    
-            const t1 = setTimeout(() => scrollTo(key), 800)     
-            const t2 = setTimeout(() => scrollTo(key), 3000)     
-            return () => { clearTimeout(t1); clearTimeout(t2); 
-            window.scrollTo(window.scrollX, window.scrollY) }
-          }, [scrollTo])  
-          
+        const hash = window.location.hash
+        if (!hash.startsWith('#msec-')) return
+        const key = hash.slice(6) as SectionKey
+        let lastY = -1; let stable = 0
+        const poll = setInterval(() => {
+          const el = document.getElementById(`msec-${key}`)
+          if (!el) return
+          const y = el.getBoundingClientRect().top + window.scrollY
+          if (Math.abs(y - lastY) < 4) { stable++; if (stable >= 3) { scrollTo(key); clearInterval(poll) } }
+          else { stable = 0 }
+          lastY = y
+        }, 300)
+        setTimeout(() => clearInterval(poll), 5000)
+        return () => { clearInterval(poll); window.scrollTo(window.scrollX, window.scrollY) }
+      }, [scrollTo])        
     return (
     <>
       <style>{`
