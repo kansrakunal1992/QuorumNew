@@ -657,6 +657,15 @@ export default function SessionView({ session: initialSession, initialMessages =
           /* Clear ThemeToggle on the right — it's at right: 20px, ~120px wide */
           margin-right: 116px;
         }
+        .sv-navbar-actions .btn-ghost {
+          font-size: 12px;
+          padding: 8px 14px;
+          white-space: nowrap;
+        }
+        .sv-navbar-actions .btn-primary {
+          font-size: 12px;
+          padding: 9px 16px;
+        }
         .sv-save-short { display: none; }
         .sv-save-full  { display: inline; }
 
@@ -665,10 +674,13 @@ export default function SessionView({ session: initialSession, initialMessages =
           .sv-navbar-decision   { display: none; }
           .sv-navbar-divider    { display: none; }
           .sv-navbar-badge      { display: none; }
-          .sv-navbar-reanalyze  { display: none; }
-          .sv-navbar-actions    { margin-right: 100px; gap: 0; }
+          .sv-navbar-actions    { margin-right: 92px; gap: 6px; }
           .sv-save-short        { display: inline; }
           .sv-save-full         { display: none; }
+          /* Reanalyze becomes icon-only so it sits comfortably beside Save */
+          .sv-navbar-actions .btn-ghost   { padding: 7px 9px; }
+          .sv-navbar-actions .btn-ghost .nav-tagline { display: none; }
+          .sv-navbar-actions .btn-primary { padding: 8px 12px; }
         }
 
         /* Decision hero card */
@@ -757,22 +769,21 @@ export default function SessionView({ session: initialSession, initialMessages =
           <span className="sv-navbar-decision">{session.decision_text}</span>
           <span className="sv-navbar-badge">Session active</span>
           <div className="sv-navbar-actions">
-            <div className="sv-navbar-reanalyze" style={{display:'flex'}}>
+            <div className="sv-navbar-reanalyze">
             <button
               className="btn-ghost"
-              style={{ fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={() => { setReDecision(session.decision_text); setReContext(session.context_text ?? ''); setDrawerOpen(true) }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
                 <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
               </svg>
-              <span className="nav-tagline" style={{ display: 'inline', margin: 0, fontSize: 12, letterSpacing: '0.04em', textTransform: 'none', color: 'inherit' }}>Reanalyze</span>
+              <span className="nav-tagline" style={{ margin: 0, letterSpacing: '0.04em', textTransform: 'none', color: 'inherit' }}>Reanalyze</span>
             </button>
             </div>
             <button
               className="btn-primary"
-              style={{ fontSize: 12, padding: '9px 16px' }}
               onClick={handleSaveRecord}
               disabled={saving}
             >

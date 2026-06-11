@@ -372,7 +372,7 @@ export default function SynthesisCard({
       borderRadius: 14, marginBottom: 4, overflow: 'hidden', transition: 'border-color 0.3s',
     }}>
       {/* Header */}
-      <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--synthesis-border-sub)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: state === 'done' ? 'var(--synthesis-done)' : state === 'streaming' ? 'var(--synthesis-streaming)' : 'var(--synthesis-waiting)', borderRadius: '13px 13px 0 0' }}>
+      <div className="synth-header" style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--synthesis-border-sub)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 10, background: state === 'done' ? 'var(--synthesis-done)' : state === 'streaming' ? 'var(--synthesis-streaming)' : 'var(--synthesis-waiting)', borderRadius: '13px 13px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -404,7 +404,7 @@ export default function SynthesisCard({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="synth-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* ── Read aloud / Pause / Resume — Sprint 25 ── */}
           {state === 'done' && synthesis && (
             <>
@@ -750,6 +750,26 @@ export default function SynthesisCard({
           </div>
         </div>
       )}
+
+      <style>{`
+        @media (max-width: 640px) {
+          .synth-header {
+            padding: 12px 14px 10px;
+          }
+          .synth-header-actions {
+            width: 100%;
+            justify-content: flex-start;
+            gap: 6px;
+          }
+        }
+        @media (max-width: 380px) {
+          .synth-header-actions > button,
+          .synth-header-actions > div > button {
+            font-size: 10.5px;
+            padding: 5px 8px;
+          }
+        }
+      `}</style>
     </div>
   )
 }

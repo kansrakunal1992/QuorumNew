@@ -22,9 +22,8 @@ interface Props {
   onScrollToHistory: () => void
 }
 
-const PATTERN_MEMORY_THRESHOLD = 5
+const PATTERN_MEMORY_THRESHOLD = 5   // Pattern Memory / Structural Retrieval activates here (also segment bar total)
 const MIRROR_TEASER_THRESHOLD  = 3   // Sprint 19: Mirror preview (teaser) activates at 3 sessions
-const MIRROR_THRESHOLD         = 5   // Pattern Memory threshold (segment bar total)
 
 function SegmentBar({ filled, total }: { filled: number; total: number }) {
   return (
@@ -118,10 +117,9 @@ export default function MemoryEngineStatus({
   }
 
   // ── Identified view (email or user_id present) ─────────────────────────────
-  const sessionsTowardMirror  = Math.min(sessionCount, MIRROR_THRESHOLD)
   const patternActive         = sessionCount >= PATTERN_MEMORY_THRESHOLD
   const mirrorTeaserReady     = sessionCount >= MIRROR_TEASER_THRESHOLD
-  const mirrorReady           = sessionCount >= MIRROR_THRESHOLD
+  const mirrorReady           = sessionCount >= PATTERN_MEMORY_THRESHOLD
 
   let statusLabel: string
   let statusColor: string
@@ -178,7 +176,7 @@ export default function MemoryEngineStatus({
                 height: 7,
                 borderRadius: '50%',
                 background: patternActive ? 'var(--green-text)' : 'var(--gold)',
-                animation: patternActive ? 'none' : 'dot-blink 2s ease-in-out infinite',
+                animation: (patternActive || mirrorTeaserReady) ? 'none' : 'dot-blink 2s ease-in-out infinite',
                 flexShrink: 0,
               }}
             />
@@ -204,7 +202,11 @@ export default function MemoryEngineStatus({
               textTransform: 'uppercase',
             }}
           >
-            {patternActive ? (mirrorReady ? '● Active' : '● Pattern Memory') : '○ Inactive'}
+            {patternActive
+              ? (mirrorReady ? '● Active' : '● Pattern Memory')
+              : mirrorTeaserReady
+                ? '● Mirror Preview'
+                : '○ Inactive'}
           </span>
         </div>
 
@@ -213,13 +215,13 @@ export default function MemoryEngineStatus({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <SegmentBar
-                filled={Math.min(sessionCount, MIRROR_THRESHOLD)}
-                total={MIRROR_THRESHOLD}
+                filled={Math.min(sessionCount, PATTERN_MEMORY_THRESHOLD)}
+                total={PATTERN_MEMORY_THRESHOLD}
               />
               <span style={{ fontSize: 11, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                 {mirrorReady
                   ? `${sessionCount} sessions`
-                  : `${sessionCount} of ${MIRROR_THRESHOLD}`}
+                  : `${sessionCount} of ${PATTERN_MEMORY_THRESHOLD}`}
               </span>
             </div>
             <p style={{ fontSize: 11, color: statusColor, margin: 0, lineHeight: 1.4 }}>
@@ -324,7 +326,7 @@ export default function MemoryEngineStatus({
               <span style={{ color: 'var(--text-3)' }}>
                 &quot;you faced this structure before.&quot;
               </span>
-              {' '}Each decision logged builds toward it. Mirror activates at {MIRROR_THRESHOLD} decisions.
+              {' '}Each decision logged builds toward it. Pattern Memory activates at {PATTERN_MEMORY_THRESHOLD} decisions.
             </p>
           </div>
         )}
