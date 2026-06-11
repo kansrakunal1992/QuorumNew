@@ -65,7 +65,7 @@ export default function MirrorNav({ highlightedSections = [] }: {
             if (!hash.startsWith('#msec-')) return    
             const key = hash.slice(6) as SectionKey    
             const t1 = setTimeout(() => scrollTo(key), 800)     
-            const t2 = setTimeout(() => scrollTo(key), 2200)     
+            const t2 = setTimeout(() => scrollTo(key), 3000)     
             return () => { clearTimeout(t1); clearTimeout(t2) }
           }, [scrollTo])  
           
