@@ -677,9 +677,8 @@ export default function SessionView({ session: initialSession, initialMessages =
           .sv-navbar-actions    { margin-right: 92px; gap: 6px; }
           .sv-save-short        { display: inline; }
           .sv-save-full         { display: none; }
-          /* Reanalyze becomes icon-only so it sits comfortably beside Save */
-          .sv-navbar-actions .btn-ghost   { padding: 7px 9px; }
-          .sv-navbar-actions .btn-ghost .nav-tagline { display: none; }
+          /* Reanalyze sits beside Save with tighter padding */
+          .sv-navbar-actions .btn-ghost   { padding: 7px 10px; }
           .sv-navbar-actions .btn-primary { padding: 8px 12px; }
         }
 
