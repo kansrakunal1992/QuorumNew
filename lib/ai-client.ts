@@ -30,7 +30,8 @@ import OpenAI    from 'openai'
 const GLOBAL_PROVIDER = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase() as 'anthropic' | 'deepseek'
 const ROUTING_MODE    = (process.env.ROUTING_MODE ?? 'hybrid') as 'hybrid' | 'deepseek_only'
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-20250514'
-const DEEPSEEK_MODEL  = process.env.DEEPSEEK_MODEL  ?? process.env.AI_MODEL ?? 'deepseek-chat'
+const DEEPSEEK_MODEL    = process.env.DEEPSEEK_MODEL  ?? process.env.AI_MODEL ?? 'deepseek-chat'
+const DEEPSEEK_THINKING = (process.env.DEEPSEEK_THINKING ?? 'enabled') as 'enabled' | 'disabled'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 const deepseek  = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY ?? '', baseURL: 'https://api.deepseek.com' })
@@ -158,11 +159,12 @@ async function streamDeepSeek(
   messages:     { role: 'user' | 'assistant'; content: string }[],
 ): Promise<StreamResult> {
   const stream = await withRetry(
-    () => deepseek.chat.completions.create({
+    () => (deepseek.chat.completions.create as Function)({
       model:      DEEPSEEK_MODEL,
       max_tokens: 1200,
       stream:     true,
       messages:   [{ role: 'system', content: systemPrompt }, ...messages],
+      thinking:   { type: DEEPSEEK_THINKING },
     }),
     'streamDeepSeek',
   )
@@ -227,12 +229,13 @@ export async function createCompletion(
     msgs.push({ role: 'user', content: prompt })
 
     const res = await withRetry(
-      () => deepseek.chat.completions.create({
+      () => (deepseek.chat.completions.create as Function)({
         model:      DEEPSEEK_MODEL,
         max_tokens: maxTokens,
         stream:     false,
-        ...(temperature !== undefined ? { temperature } : {}),
+        ...(temperature !== undefined && DEEPSEEK_THINKING === 'disabled' ? { temperature } : {}),
         messages:   msgs,
+        thinking:   { type: DEEPSEEK_THINKING },
       }),
       'createCompletion',
     )
