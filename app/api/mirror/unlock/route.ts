@@ -6,17 +6,17 @@
 // Body: { code: string }
 // Auth: Bearer token required (user must be signed in)
 //
-// Validates the unlock code against three Railway env vars:
+// Validates the unlock code against two Railway env vars:
 //   MIRROR_TOKEN_MONTHLY   → grants monthly access (30 days)
 //   MIRROR_TOKEN_ANNUAL    → grants annual access (365 days)
-//   MIRROR_TOKEN_LIFETIME  → grants lifetime access (no expiry)
 //
 // Each token is a shared secret — share the appropriate one privately
 // (WhatsApp / email) after payment. Rotate any token in Railway at any time;
 // existing mirror_access rows are unaffected by rotation.
 //
-// Legacy: MIRROR_UNLOCK_TOKEN still accepted as lifetime fallback
-//         so existing shared codes don't break on deploy.
+// 'lifetime' plan retired (Phase 2, repricing sprint) — MIRROR_TOKEN_LIFETIME
+// and the legacy MIRROR_UNLOCK_TOKEN fallback are no longer accepted here.
+// Advisory access is granted via /api/admin/grant-mirror-access, not by code.
 //
 // Future: replace with Razorpay webhook that calls /api/payment/create-subscription.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,8 +25,7 @@ import { NextResponse }        from 'next/server'
 import { createServiceClient }  from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-function getExpiresAt(accessType: 'monthly' | 'annual' | 'lifetime'): string | null {
-  if (accessType === 'lifetime') return null
+function getExpiresAt(accessType: 'monthly' | 'annual'): string {
   const d = new Date()
   if (accessType === 'monthly') d.setDate(d.getDate() + 30)
   if (accessType === 'annual')  d.setDate(d.getDate() + 365)
@@ -69,18 +68,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unlock code required' }, { status: 400 })
   }
 
-  // ── 3. Match code against all three token env vars ────────────────────────
-  // Also accepts legacy MIRROR_UNLOCK_TOKEN as lifetime fallback.
+  // ── 3. Match code against the two token env vars ───────────────────────────
   const provided = code.trim().toLowerCase()
 
-  const tokenMap: Array<{ envKey: string; accessType: 'monthly' | 'annual' | 'lifetime' }> = [
+  const tokenMap: Array<{ envKey: string; accessType: 'monthly' | 'annual' }> = [
     { envKey: 'MIRROR_TOKEN_MONTHLY',  accessType: 'monthly'  },
     { envKey: 'MIRROR_TOKEN_ANNUAL',   accessType: 'annual'   },
-    { envKey: 'MIRROR_TOKEN_LIFETIME', accessType: 'lifetime' },
-    { envKey: 'MIRROR_UNLOCK_TOKEN',   accessType: 'lifetime' }, // legacy fallback
   ]
 
-  let matchedType: 'monthly' | 'annual' | 'lifetime' | null = null
+  let matchedType: 'monthly' | 'annual' | null = null
 
   for (const { envKey, accessType } of tokenMap) {
     const envVal = process.env[envKey]

@@ -9,9 +9,9 @@
 // Body:
 //   {
 //     userId:      string               — Supabase auth.users UUID
-//     accessType:  'lifetime' | 'advisory' | 'monthly' | 'annual'
+//     accessType:  'advisory' | 'monthly' | 'annual'
 //     durationDays?: number            — optional; if omitted, expires_at = null
-//                                        (lifetime / advisory default)
+//                                        (advisory default)
 //   }
 //
 // All writes use ON CONFLICT (user_id) DO UPDATE (upsert) to handle the unique
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'userId and accessType required' }, { status: 400 })
   }
 
-  const validTypes: SubscriptionPlan[] = ['monthly', 'annual', 'lifetime', 'advisory']
+  const validTypes: SubscriptionPlan[] = ['monthly', 'annual', 'advisory']
   if (!validTypes.includes(accessType as SubscriptionPlan)) {
     return NextResponse.json(
       { error: `accessType must be one of: ${validTypes.join(', ')}` },
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     exp.setDate(exp.getDate() + durationDays)
     expiresAt = exp.toISOString()
   }
-  // lifetime and advisory default to null (never expires) unless durationDays given
+  // advisory defaults to null (never expires) unless durationDays given
 
   const supabase = createServiceClient()
 

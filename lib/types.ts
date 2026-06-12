@@ -62,7 +62,7 @@ export interface DecisionRecord {
 //   auth    → not authenticated
 //   locked  → authenticated, < 3 sessions, no access row
 //   teaser  → ≥ 3 sessions, no valid subscription (shows teaser UI)
-//   unlocked → valid subscription (lifetime/advisory always; annual/monthly if not expired)
+//   unlocked → valid subscription (advisory always; annual/monthly if not expired)
 export type MirrorGateState = 'auth' | 'locked' | 'teaser' | 'unlocked'
 
 // Internal access-check result (used by getMirrorAccessState helper)
@@ -72,7 +72,9 @@ export type MirrorAccessState = 'unlocked' | 'teaser' | 'locked'
 export type StyleCue = 'direct' | 'challenge' | 'pattern' | 'risk' | 'stakeholder' | 'long'
 
 // Subscription plan types
-export type SubscriptionPlan = 'monthly' | 'annual' | 'lifetime' | 'advisory'
+// 'lifetime' retired (Phase 2, repricing sprint) — no longer offered or grantable.
+// getMirrorAccessState() retains a defensive check for any legacy 'lifetime' rows.
+export type SubscriptionPlan = 'monthly' | 'annual' | 'advisory'
 
 export interface MirrorStatus {
   authenticated: boolean

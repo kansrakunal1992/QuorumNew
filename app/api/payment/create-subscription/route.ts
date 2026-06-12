@@ -9,7 +9,7 @@
 // a test/dev override.
 //
 // Body:
-//   { userId: string, plan: 'monthly' | 'annual' | 'lifetime', paymentId?: string }
+//   { userId: string, plan: 'monthly' | 'annual' | 'advisory', paymentId?: string }
 //
 // Response:
 //   { ok: true, accessType: string, expiresAt: string | null }
@@ -31,7 +31,7 @@ import { createServiceClient } from '@/lib/supabase'
 import type { SubscriptionPlan } from '@/lib/types'
 
 function getExpiresAt(plan: SubscriptionPlan): string | null {
-  if (plan === 'lifetime' || plan === 'advisory') return null
+  if (plan === 'advisory') return null
   const now = new Date()
   if (plan === 'monthly') {
     now.setMonth(now.getMonth() + 1)
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'userId and plan required' }, { status: 400 })
   }
 
-  const validPlans: SubscriptionPlan[] = ['monthly', 'annual', 'lifetime', 'advisory']
+  const validPlans: SubscriptionPlan[] = ['monthly', 'annual', 'advisory']
   if (!validPlans.includes(plan as SubscriptionPlan)) {
     return NextResponse.json(
       { error: `plan must be one of: ${validPlans.join(', ')}` },

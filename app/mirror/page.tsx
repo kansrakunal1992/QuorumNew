@@ -743,7 +743,7 @@ function TeaserView({
           Your behavioral mirror is already building.
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 20px' }}>
-          From ₹9,999/year · ₹1,499/month. The same quality of insight advisors charge ₹50,000 for — derived from your actual decisions, not a questionnaire.
+          From ₹39,999/year · ₹3,999/month. The same quality of insight advisors charge ₹50,000 for — derived from your actual decisions, not a questionnaire.
         </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a

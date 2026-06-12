@@ -5,7 +5,9 @@
 // Replaces the inline binary mirror_access row-exists checks across all routes.
 //
 // Access logic:
-//   • 'lifetime' / 'advisory'  → always unlocked (no expiry check)
+//   • 'advisory'               → always unlocked (no expiry check)
+//   • 'lifetime' (legacy)      → always unlocked — retired, no longer offered/grantable,
+//                                 but any pre-existing row is still honoured
 //   • 'annual'   / 'monthly'   → unlocked if expires_at > now(); teaser/locked otherwise
 //   • No row, or expired row   → check session count
 //                                ≥ TEASER_THRESHOLD sessions → teaser
@@ -33,7 +35,7 @@ export async function getMirrorAccessState(
     .maybeSingle()
 
   if (accessRow) {
-    // Lifetime and advisory: never expire
+    // Advisory: never expires. Lifetime: legacy, retired — honoured if present.
     if (accessRow.access_type === 'lifetime' || accessRow.access_type === 'advisory') {
       return 'unlocked'
     }
