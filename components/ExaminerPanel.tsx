@@ -25,6 +25,8 @@ const RULE_HINTS: Record<string, string> = {
   R9:  'One path may be genuinely irreversible. Your answer helps the Council assess whether that changes the calculus.',
   R10: 'The decision involves enough moving parts that clarity on structure helps before analysis begins.',
   R12: 'Misalignment between decision-makers is often the real risk. Your answer surfaces where that tension sits.',
+  // S0 — Subject Orientation: fires when decision brief is thin (< 25 words, no context)
+  S0:  'Grounds the Council in what this actually is — context the decision alone couldn\'t supply.',
   // C0 — JTBD context question: not a diagnostic flag, a framing input
   C0:  'This isn\'t about predicting the outcome — it captures what you\'re actually trying to achieve, so the Council reasons from your real intent, not assumed goals.',
 }
@@ -236,7 +238,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                 ? 'Synthesis held — specific information needed first'
                 : isRedirect
                 ? 'Upstream decision unresolved — synthesis blocked'
-                : 'Three questions the council couldn\'t answer without you'}
+                : 'Key questions the council couldn\'t answer without you'}
             </p>
           </div>
         </div>
@@ -354,6 +356,23 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                       background: 'var(--success-bg)',
                     }}>
                       CONTEXT
+                    </span>
+                  ) : q.rule_id === 'S0' ? (
+                    // S0 — Subject Orientation: domain-context question, not a diagnostic flag.
+                    // Same visual register as C0 (framing input, not a red-flag rule) —
+                    // signals to the user "this is grounding, not a warning".
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 700,
+                      color: 'var(--success-text)',
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      marginRight: 8,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      border: '1px solid var(--success-border)',
+                      background: 'var(--success-bg)',
+                    }}>
+                      BRIEF
                     </span>
                   ) : (
                     <span style={{
