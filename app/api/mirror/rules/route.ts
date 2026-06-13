@@ -22,7 +22,7 @@ import { NextResponse }          from 'next/server'
 import { createServiceClient }    from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createCompletion }       from '@/lib/ai-client'
-import { getMirrorAccessState } from '@/lib/mirror-access'
+import { getMirrorAccessState, getMirrorTier } from '@/lib/mirror-access'
 import { decrypt } from '@/lib/encryption'
 
 // R11 fix: configurable via Railway env vars. Default matches original heuristic.
@@ -83,12 +83,16 @@ export async function GET(req: Request) {
   }
 
   // ── 3. Session count gate ─────────────────────────────────────────────────
+  // Phase 5: Mirror Advisory bypasses this threshold — immediate access
+  // regardless of session count. Resolved server-side, not from client input.
+  const tier = await getMirrorTier(userId, supabase)
+
   const { count: sessionCount } = await supabase
     .from('sessions')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
 
-  if (!sessionCount || sessionCount < RULES_SESSION_THRESHOLD) {
+  if (tier !== 'advisory' && (!sessionCount || sessionCount < RULES_SESSION_THRESHOLD)) {
     return NextResponse.json({
       rules:        null,
       sessionCount: sessionCount ?? 0,

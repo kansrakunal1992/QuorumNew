@@ -21,8 +21,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react'
-import type { SessionScoreData } from '@/lib/types'
+import type { SessionScoreData, MirrorTier } from '@/lib/types'
 import { formatDate } from '@/lib/dates'
+import AdvisoryUpsellCard from '@/components/AdvisoryUpsellCard'
+import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'
 
 // ── Sub-score dot ─────────────────────────────────────────────────────────────
 
@@ -168,7 +170,7 @@ function SessionRow({ row, isLatest }: { row: SessionScoreData; isLatest?: boole
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function SessionReliabilityIndex({ authToken }: { authToken: string }) {
+export default function SessionReliabilityIndex({ authToken, tier }: { authToken: string; tier: MirrorTier }) {
   const [scores,  setScores]  = useState<SessionScoreData[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
@@ -261,22 +263,28 @@ export default function SessionReliabilityIndex({ authToken }: { authToken: stri
         ))}
       </div>
 
-      {/* Action plan callout — always present */}
-      {actionPlan && (
-        <div style={{
-          marginTop: 20,
-          padding: '14px 16px',
-          background: 'var(--bg-card-alt)',
-          border: '1px solid var(--border-dim)',
-          borderLeft: '3px solid var(--gold-dim)',
-          borderRadius: 8,
-        }}>
-          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
-            Your next move
-          </p>
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
-            {actionPlan}
-          </p>
+      {/* Action plan callout — Mirror Advisory only (Phase 5) */}
+      {tier === 'advisory' ? (
+        actionPlan && (
+          <div style={{
+            marginTop: 20,
+            padding: '14px 16px',
+            background: 'var(--bg-card-alt)',
+            border: '1px solid var(--border-dim)',
+            borderLeft: '3px solid var(--gold-dim)',
+            borderRadius: 8,
+          }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+              Your next move
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
+              {actionPlan}
+            </p>
+          </div>
+        )
+      ) : (
+        <div style={{ marginTop: 20 }}>
+          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.sriNextMove} />
         </div>
       )}
 

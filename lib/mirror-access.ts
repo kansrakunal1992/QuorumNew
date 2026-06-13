@@ -18,7 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { MirrorAccessState } from './types'
+import type { MirrorAccessState, MirrorTier } from './types'
 
 export const TEASER_THRESHOLD = 3
 
@@ -57,4 +57,27 @@ export async function getMirrorAccessState(
 
   const sessionCount = count ?? 0
   return sessionCount >= TEASER_THRESHOLD ? 'teaser' : 'locked'
+}
+
+// ── Mirror tier (Phase 4) ──────────────────────────────────────────────────────
+//
+// Additive — does not change getMirrorAccessState() or any of its 18 callers.
+// Only meaningful when the caller already knows gateState === 'unlocked';
+// for locked/teaser users this returns 'mirror' but the value is unused.
+//
+// 'advisory' → access_type === 'advisory' (founder-led, capped cohort)
+// 'mirror'   → everything else (monthly / annual / legacy lifetime)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getMirrorTier(
+  userId: string,
+  supabase: SupabaseClient,
+): Promise<MirrorTier> {
+  const { data: accessRow } = await supabase
+    .from('mirror_access')
+    .select('access_type')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  return accessRow?.access_type === 'advisory' ? 'advisory' : 'mirror'
 }

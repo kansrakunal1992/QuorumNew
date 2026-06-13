@@ -18,7 +18,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { getMirrorAccessState } from '@/lib/mirror-access'
+import { getMirrorAccessState, getMirrorTier } from '@/lib/mirror-access'
 import type { MirrorStatus } from '@/lib/types'
 
 export async function GET(req: Request) {
@@ -50,6 +50,7 @@ export async function GET(req: Request) {
       hasAccess: false,
       gateState: 'auth',
       teaserBiases: [],
+      tier: 'mirror',
     }
     return NextResponse.json(response)
   }
@@ -68,6 +69,11 @@ export async function GET(req: Request) {
 
   // Map MirrorAccessState to MirrorGateState (both share 'unlocked' / 'teaser' / 'locked')
   const gateState: MirrorStatus['gateState'] = accessState
+
+  // ── Phase 4: resolve Mirror tier (only meaningful when unlocked) ───────────
+  const tier: MirrorStatus['tier'] = gateState === 'unlocked'
+    ? await getMirrorTier(userId, supabase)
+    : 'mirror'
 
   // ── 5. Fetch top bias keys for teaser + unlocked states ──────────────────
   // Teaser: rendered as blurred tiles. Unlocked: passed to DecisionRules
@@ -99,6 +105,7 @@ export async function GET(req: Request) {
     hasAccess,
     gateState,
     teaserBiases,
+    tier,
   }
 
   return NextResponse.json(response)

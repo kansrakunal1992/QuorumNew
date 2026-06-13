@@ -76,12 +76,19 @@ export type StyleCue = 'direct' | 'challenge' | 'pattern' | 'risk' | 'stakeholde
 // getMirrorAccessState() retains a defensive check for any legacy 'lifetime' rows.
 export type SubscriptionPlan = 'monthly' | 'annual' | 'advisory'
 
+// ── Mirror tier (Phase 4) ─────────────────────────────────────────────────────
+// 'mirror'   → self-serve Mirror subscription (₹3,999/mo · ₹39,999/yr)
+// 'advisory' → founder-led Mirror Advisory (access_type === 'advisory', capped cohort)
+// Only meaningful when gateState === 'unlocked'; locked/teaser users are 'mirror'.
+export type MirrorTier = 'mirror' | 'advisory'
+
 export interface MirrorStatus {
   authenticated: boolean
   sessionCount: number
   hasAccess: boolean
   gateState: MirrorGateState
   teaserBiases: string[]    // bias_parameter keys shown in teaser state
+  tier: MirrorTier           // Phase 4 — drives Advisory-only module gating
 }
 
 export interface TimelineSession {

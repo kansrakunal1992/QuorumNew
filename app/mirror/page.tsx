@@ -43,7 +43,9 @@ import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint
 import AttentionZone          from '@/components/AttentionZone'         // Sprint M5
 import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprint M6
 import type { SummaryData }   from '@/components/MirrorSummaryCard'
-import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue } from '@/lib/types'
+import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier } from '@/lib/types'
+import AdvisoryUpsellCard      from '@/components/AdvisoryUpsellCard'      // Phase 4/5
+import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'             // Phase 4/5
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -798,12 +800,13 @@ const BIAS_LABELS_BENCH: Record<string, string> = {
   loss_aversion_asymmetry:           'Loss Aversion Asymmetry',
 }
 
-function BenchmarkModule({ authToken }: { authToken: string }) {
+function BenchmarkModule({ authToken, tier }: { authToken: string; tier: MirrorTier }) {
   const [data,    setData]    = useState<BenchmarkData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!authToken) return
+    // Phase 5: Benchmark is Advisory-only — don't fetch for 'mirror' tier.
+    if (tier !== 'advisory' || !authToken) { setLoading(false); return }
     fetch('/api/mirror/benchmark', {
       headers: { Authorization: `Bearer ${authToken}` },
     })
@@ -811,7 +814,22 @@ function BenchmarkModule({ authToken }: { authToken: string }) {
       .then(d => setData(d as BenchmarkData))
       .catch(() => setData({ insufficient: true, cluster_size: 0, top_dimensions: [], top_biases: [] }))
       .finally(() => setLoading(false))
-  }, [authToken])
+  }, [authToken, tier])
+
+  // Phase 5: 'mirror' tier sees an upsell card instead of cohort data.
+  if (tier !== 'advisory') {
+    return (
+      <>
+        <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+        <div style={{ marginBottom: 28 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+            Others in Similar Decisions
+          </h3>
+          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.benchmark} />
+        </div>
+      </>
+    )
+  }
 
   // Silently hide while loading or when cluster is insufficient
   if (loading || !data || data.insufficient) return null
@@ -1283,7 +1301,7 @@ function UnlockedView({
       <SectionWrapper {...sw('rules')} title="Your Implicit Rules" type="core" animDelay={140}
         desc="The operating principles you implicitly follow — extracted from how you reason, not what you say about yourself."
         badge={status.sessionCount >= 8 ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>From {status.sessionCount} decisions</span> : undefined}>
-        <DecisionRules authToken={authToken} sessionCount={status.sessionCount} topBiasLabel={topBiasLabel} />
+        <DecisionRules authToken={authToken} sessionCount={status.sessionCount} topBiasLabel={topBiasLabel} tier={status.tier} />
       </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
@@ -1300,7 +1318,7 @@ function UnlockedView({
         highlighted={highlightedModule === 'contradictions'}
         desc="Where what you said you believe and what you actually did come apart — surfaced from your own words, across decisions."
         badge={status.sessionCount >= 40 ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{status.sessionCount} decisions</span> : undefined}>
-        <ContradictionDetector authToken={authToken} sessionCount={status.sessionCount} />
+        <ContradictionDetector authToken={authToken} sessionCount={status.sessionCount} tier={status.tier} />
       </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
@@ -1312,7 +1330,7 @@ function UnlockedView({
 
       <SectionWrapper {...sw('sri')} title="Session Reliability Index" type="deep" animDelay={300}
         desc="A unified score per session combining structural match quality, active bias signals, Council analysis conditions, and your confidence calibration record — and what to do next to raise it.">
-        <SessionReliabilityIndex authToken={authToken} />
+        <SessionReliabilityIndex authToken={authToken} tier={status.tier} />
       </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
@@ -1331,7 +1349,7 @@ function UnlockedView({
         </SectionWrapper>
       )}
 
-      <BenchmarkModule authToken={authToken} />
+      <BenchmarkModule authToken={authToken} tier={status.tier} />
     </div>
   )
 }

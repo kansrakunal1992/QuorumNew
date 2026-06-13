@@ -6,6 +6,7 @@
 // Shows top 5 rules by default; remaining rules expandable.
 
 import { useState, useEffect } from 'react'
+import type { MirrorTier } from '@/lib/types'
 
 interface RulesData {
   rules:            string[] | null
@@ -19,6 +20,7 @@ interface Props {
   authToken:     string
   sessionCount:  number
   topBiasLabel?: string   // Sprint M3 — personalises the ThresholdGate teaser line
+  tier:          MirrorTier
 }
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -219,12 +221,14 @@ function RulesDisplay({ rules, basedOnDecisions }: { rules: string[]; basedOnDec
 
 const RULES_SESSION_THRESHOLD = 8
 
-export default function DecisionRules({ authToken, sessionCount, topBiasLabel }: Props) {
+export default function DecisionRules({ authToken, sessionCount, topBiasLabel, tier }: Props) {
   const [data,    setData]    = useState<RulesData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
 
-  const belowThreshold = sessionCount < RULES_SESSION_THRESHOLD
+  // Phase 5: Advisory bypasses the 8-session threshold — /api/mirror/rules
+  // does the same server-side, so this only needs to skip the local gate.
+  const belowThreshold = tier !== 'advisory' && sessionCount < RULES_SESSION_THRESHOLD
 
   useEffect(() => {
     if (belowThreshold) { setLoading(false); return }
