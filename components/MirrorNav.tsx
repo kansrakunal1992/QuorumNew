@@ -19,8 +19,8 @@ const SECTIONS = [
   { key: 'contradictions',  label: 'Contradictions' },
   { key: 'calibration',     label: 'Calibration'    },
   { key: 'sri',             label: 'Reliability'    },
-  { key: 'timeline',        label: 'Timeline'       },
   { key: 'loops',           label: 'Open Loop'      },
+  { key: 'timeline',        label: 'Timeline'       },
   { key: 'benchmark',       label: 'Benchmark'      },
 ] as const
 
