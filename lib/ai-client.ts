@@ -19,18 +19,27 @@
  *
  * Model selection:
  *   ANTHROPIC_MODEL  env var  → override Claude model   (default: claude-sonnet-4-20250514)
- *   DEEPSEEK_MODEL   env var  → override DeepSeek model (default: deepseek-chat)
+ *   DEEPSEEK_MODEL   env var  → override DeepSeek model (default: deepseek-v4-pro)
  *   Legacy AI_MODEL  env var  → still respected as fallback for DeepSeek only,
  *                               so existing Railway env var configs are not broken.
+ *
+ * DeepSeek thinking mode (DEEPSEEK_THINKING env var):
+ *   DEEPSEEK_THINKING=disabled → thinking OFF for all DeepSeek calls (default)
+ *   DEEPSEEK_THINKING=enabled  → thinking ON for all DeepSeek calls
+ *   Note: thinking mode disables temperature sampling (silently ignored by API).
+ *   Note: streaming calls suppress reasoning_content — only content tokens stream.
+ *   TD logged: enable thinking selectively for non-streaming completions only
+ *   (fingerprint, brief gen) once per-call thinking control is added.
  */
 
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI    from 'openai'
 
-const GLOBAL_PROVIDER = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase() as 'anthropic' | 'deepseek'
-const ROUTING_MODE    = (process.env.ROUTING_MODE ?? 'hybrid') as 'hybrid' | 'deepseek_only'
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-20250514'
-const DEEPSEEK_MODEL  = process.env.DEEPSEEK_MODEL  ?? process.env.AI_MODEL ?? 'deepseek-chat'
+const GLOBAL_PROVIDER    = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase() as 'anthropic' | 'deepseek'
+const ROUTING_MODE       = (process.env.ROUTING_MODE ?? 'hybrid') as 'hybrid' | 'deepseek_only'
+const ANTHROPIC_MODEL    = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-20250514'
+const DEEPSEEK_MODEL     = process.env.DEEPSEEK_MODEL  ?? process.env.AI_MODEL ?? 'deepseek-v4-pro'
+const DEEPSEEK_THINKING  = (process.env.DEEPSEEK_THINKING ?? 'disabled') as 'enabled' | 'disabled'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 const deepseek  = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY ?? '', baseURL: 'https://api.deepseek.com' })
@@ -98,6 +107,7 @@ export interface CompletionOptions {
    * Sampling temperature (0.0–1.0).
    * Defaults to each provider's default when omitted.
    * Set low (0.0–0.2) for structured/JSON outputs that require determinism.
+   * Silently ignored for DeepSeek calls when DEEPSEEK_THINKING=enabled.
    */
   temperature?: number
 }
@@ -163,7 +173,8 @@ async function streamDeepSeek(
       max_tokens: 1200,
       stream:     true,
       messages:   [{ role: 'system', content: systemPrompt }, ...messages],
-    }),
+      thinking:   { type: DEEPSEEK_THINKING },
+    } as any),
     'streamDeepSeek',
   )
   const encoder = new TextEncoder()
@@ -231,9 +242,11 @@ export async function createCompletion(
         model:      DEEPSEEK_MODEL,
         max_tokens: maxTokens,
         stream:     false,
-        ...(temperature !== undefined ? { temperature } : {}),
+        // temperature is silently ignored by DeepSeek when thinking=enabled
+        ...(temperature !== undefined && DEEPSEEK_THINKING === 'disabled' ? { temperature } : {}),
         messages:   msgs,
-      }),
+        thinking:   { type: DEEPSEEK_THINKING },
+      } as any),
       'createCompletion',
     )
     return res.choices[0]?.message?.content ?? ''
@@ -258,5 +271,6 @@ export function getProviderInfo() {
     model:          GLOBAL_PROVIDER === 'deepseek' ? DEEPSEEK_MODEL : ANTHROPIC_MODEL,
     anthropicModel: ANTHROPIC_MODEL,
     deepseekModel:  DEEPSEEK_MODEL,
+    deepseekThinking: DEEPSEEK_THINKING,
   }
 }
