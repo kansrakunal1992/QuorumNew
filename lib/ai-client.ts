@@ -167,16 +167,16 @@ async function streamDeepSeek(
   systemPrompt: string,
   messages:     { role: 'user' | 'assistant'; content: string }[],
 ): Promise<StreamResult> {
-  const stream = await withRetry<AsyncIterable<any>>(
+  const stream = await withRetry(
     () => deepseek.chat.completions.create({
       model:      DEEPSEEK_MODEL,
       max_tokens: 1200,
       stream:     true,
       messages:   [{ role: 'system', content: systemPrompt }, ...messages],
       thinking:   { type: DEEPSEEK_THINKING },
-    } as any),
+    } as any) as any,
     'streamDeepSeek',
-  )
+  ) as AsyncIterable<any>
   const encoder = new TextEncoder()
   let fullContent = ''
   const readable = new ReadableStream<Uint8Array>({
