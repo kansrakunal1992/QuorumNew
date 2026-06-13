@@ -50,7 +50,7 @@ function deriveCards(d: SummaryData): ACard[] {
       key: 'loops', type: 'action',
       headline:  `${d.openLoopCount} decisions open without an outcome filed`,
       sub:       'Each unresolved loop reduces the signal quality of your Confidence Calibration.',
-      targetId:  'msec-sri',
+      targetId:  'msec-loops',
       linkLabel: 'View open loops',
     })
   }

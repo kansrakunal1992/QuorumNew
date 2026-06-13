@@ -88,7 +88,7 @@ function OpenLoopRow({ loop }: { loop: OpenLoop }) {
 
   return (
     <a
-      href={`/session/${loop.session_id}`}
+      href={`/record/${loop.session_id}`}
       style={{
         display:        'block',
         padding:        '12px 16px',

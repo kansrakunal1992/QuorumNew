@@ -1275,7 +1275,9 @@ function UnlockedView({
       {/* Sprint M2: Monthly Judgment Review — near top when open loops exist */}
       {openLoopCount > 0 && (
         <>
-          <MonthlyJudgmentReview authToken={authToken} onOpenLoopCount={setOpenLoopCount} />
+          <div id="msec-loops">
+            <MonthlyJudgmentReview authToken={authToken} onOpenLoopCount={setOpenLoopCount} />
+          </div>
           <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
         </>
       )}
@@ -1335,10 +1337,12 @@ function UnlockedView({
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Sprint M2: MJR — default position (when no open loops, or to get the callback) */}
-      <MonthlyJudgmentReview
-        authToken={authToken}
-        onOpenLoopCount={openLoopCount === 0 ? setOpenLoopCount : undefined}
-      />
+      <div id="msec-loops">
+        <MonthlyJudgmentReview
+          authToken={authToken}
+          onOpenLoopCount={openLoopCount === 0 ? setOpenLoopCount : undefined}
+        />
+      </div>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Sprint M2: Decision Timeline — bottom for users with >= 10 sessions */}
@@ -1349,7 +1353,9 @@ function UnlockedView({
         </SectionWrapper>
       )}
 
-      <BenchmarkModule authToken={authToken} tier={status.tier} />
+      <div id="msec-benchmark">
+        <BenchmarkModule authToken={authToken} tier={status.tier} />
+      </div>
     </div>
   )
 }

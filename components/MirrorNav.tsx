@@ -20,6 +20,8 @@ const SECTIONS = [
   { key: 'calibration',     label: 'Calibration'    },
   { key: 'sri',             label: 'Reliability'    },
   { key: 'timeline',        label: 'Timeline'       },
+  { key: 'loops',           label: 'Open Loop'      },
+  { key: 'benchmark',       label: 'Benchmark'      },
 ] as const
 
 type SectionKey = typeof SECTIONS[number]['key']
