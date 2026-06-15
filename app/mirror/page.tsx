@@ -771,7 +771,7 @@ function TeaserView({
         <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
 
         <div style={{ marginTop: 14 }}>
-          
+          <a
             className="mirror-cta-btn"
             href={PRICING_URL}
             target="_blank"
