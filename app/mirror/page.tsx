@@ -585,22 +585,28 @@ function TeaserView({
   const PRICING_URL = 'https://quorumvault.org/#pricing'
 
   const lockedBadge = (
-    <span style={{
-      display:        'inline-flex',
-      alignItems:     'center',
-      gap:            5,
-      fontSize:       10,
-      color:          'var(--text-4)',
-      background:     'var(--bg-card)',
-      border:         '1px solid var(--border-dim)',
-      borderRadius:   6,
-      padding:        '3px 9px',
-      fontFamily:     'var(--font-mono)',
-      letterSpacing:  '0.06em',
-    }}>
-      building
-    </span>
-  )
+  <span
+    onClick={() => document.getElementById('mirror-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+    style={{
+      display:       'inline-flex',
+      alignItems:    'center',
+      gap:           5,
+      fontSize:      10,
+      color:         'var(--gold)',
+      background:    'rgba(201,168,76,0.06)',
+      border:        '1px solid var(--gold-dim)',
+      borderRadius:  6,
+      padding:       '3px 9px 3px 7px',
+      fontFamily:    'var(--font-mono)',
+      letterSpacing: '0.06em',
+      cursor:        'pointer',
+      transition:    'background 0.15s',
+    }}
+  >
+    <IconLock size={10} />
+    Mirror
+  </span>
+)
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
@@ -677,7 +683,7 @@ function TeaserView({
           </>
         ) : (
           <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
-            Bias patterns are being compiled from your decisions.
+            No patterns confirmed yet. Run a few more decisions and your Bias Fingerprint will start forming — activate Mirror to track them as they build.
           </p>
         )}
       </div>
@@ -731,46 +737,62 @@ function TeaserView({
       </div>
 
       {/* CTA card */}
-      <div className="mirror-cta-card" style={{
+      <div id="mirror-cta" className="mirror-cta-card" style={{
         background:   'var(--bg-card)',
         border:       '1px solid var(--gold-dim)',
         borderRadius: 14,
         padding:      '24px 24px',
         marginTop:    36,
       }}>
-        <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 10px' }}>
-          Activate Mirror — complete your Judgment OS
+        <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>
+          Activate Mirror
         </p>
-        <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 6px' }}>
-          Your behavioral mirror is already building.
+        <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
+          Unlocks these sections:
         </p>
-        <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 20px' }}>
-          From ₹39,999/year · ₹3,999/month. The caliber of insight advisors charge ₹5 lakh/year for — derived from your actual decisions, not a questionnaire.
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
+          {[
+            'Bias Fingerprint — your patterns, named and specific to your decisions',
+            'Decision Independence Score',
+            'Contradiction Detector',
+            'Confidence Calibration',
+          ].map((item, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold-dim)', marginTop: 7, flexShrink: 0 }} />
+              <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>{item}</p>
+            </div>
+          ))}
+        </div>
+        <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
+          ₹3,999/month · ₹39,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
         </p>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <a
+
+        {/* Unlock code input — promoted above "See plans" for early access users */}
+        <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
+
+        <div style={{ marginTop: 14 }}>
+          
             className="mirror-cta-btn"
             href={PRICING_URL}
             target="_blank"
             rel="noopener noreferrer"
             style={{
-              display:      'inline-block',
-              padding:      '10px 22px',
-              background:   'rgba(201,168,76,0.12)',
-              border:       '1px solid var(--gold-dim)',
-              borderRadius: 8,
-              color:        'var(--gold)',
-              fontSize:     13,
-              fontWeight:   600,
-              fontFamily:   'inherit',
+              display:        'inline-block',
+              padding:        '10px 22px',
+              background:     'rgba(201,168,76,0.12)',
+              border:         '1px solid var(--gold-dim)',
+              borderRadius:   8,
+              color:          'var(--gold)',
+              fontSize:       13,
+              fontWeight:     600,
+              fontFamily:     'inherit',
               textDecoration: 'none',
-              transition:   'all 0.15s',
+              transition:     'all 0.15s',
             }}
           >
-            See plans →
+            See full plans →
           </a>
         </div>
-        <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
       </div>
     </div>
   )
