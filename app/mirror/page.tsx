@@ -585,28 +585,28 @@ function TeaserView({
   const PRICING_URL = 'https://quorumvault.org/#pricing'
 
   const lockedBadge = (
-  <span
-    onClick={() => document.getElementById('mirror-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-    style={{
-      display:       'inline-flex',
-      alignItems:    'center',
-      gap:           5,
-      fontSize:      10,
-      color:         'var(--gold)',
-      background:    'rgba(201,168,76,0.06)',
-      border:        '1px solid var(--gold-dim)',
-      borderRadius:  6,
-      padding:       '3px 9px 3px 7px',
-      fontFamily:    'var(--font-mono)',
-      letterSpacing: '0.06em',
-      cursor:        'pointer',
-      transition:    'background 0.15s',
-    }}
-  >
-    <IconLock size={10} />
-    Mirror
-  </span>
-)
+    <span
+      onClick={() => document.getElementById('mirror-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+      style={{
+        display:       'inline-flex',
+        alignItems:    'center',
+        gap:           5,
+        fontSize:      10,
+        color:         'var(--gold)',
+        background:    'rgba(201,168,76,0.06)',
+        border:        '1px solid var(--gold-dim)',
+        borderRadius:  6,
+        padding:       '3px 9px 3px 7px',
+        fontFamily:    'var(--font-mono)',
+        letterSpacing: '0.06em',
+        cursor:        'pointer',
+        transition:    'background 0.15s',
+      }}
+    >
+      <IconLock size={10} />
+      Mirror
+    </span>
+  )
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
@@ -766,10 +766,7 @@ function TeaserView({
         <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
           ₹3,999/month · ₹39,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
         </p>
-
-        {/* Unlock code input — promoted above "See plans" for early access users */}
         <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
-
         <div style={{ marginTop: 14 }}>
           <a
             className="mirror-cta-btn"
