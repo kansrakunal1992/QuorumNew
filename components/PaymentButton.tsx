@@ -103,6 +103,7 @@ export function PaymentButton({
         key:             keyId,
         subscription_id: subscriptionId,
         name:            'Quorum',
+        image:           'https://app.quorumvault.org/icon-512.png',
         description:     plan === 'annual'
           ? 'Mirror — Annual (₹39,999/year)'
           : 'Mirror — Monthly (₹3,999/month)',
@@ -110,7 +111,8 @@ export function PaymentButton({
           email: userEmail,
         },
         theme: {
-          color: '#c9a84c',   // Quorum gold
+          color:          '#c9a84c',
+          backdrop_color: '#08111f',
         },
         // handler fires on successful payment (before webhook)
         handler: () => {
