@@ -47,6 +47,7 @@ import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier
 import AdvisoryUpsellCard      from '@/components/AdvisoryUpsellCard'      // Phase 4/5
 import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'             // Phase 4/5
 import { PaymentButton }         from '@/components/PaymentButton'           // Sprint CX-PAY
+import { CancelSubscription }    from '@/components/CancelSubscription'       // Sprint CX-PAY
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -1370,6 +1371,19 @@ function UnlockedView({
       <div id="msec-benchmark">
         <BenchmarkModule authToken={authToken} tier={status.tier} />
       </div>
+
+      {/* Subscription management — only for self-serve Mirror subscribers, not Advisory */}
+      {status.tier === 'mirror' && (
+        <div style={{
+          marginTop:  40,
+          paddingTop: 20,
+          borderTop:  '1px solid var(--border-dim)',
+          display:    'flex',
+          justifyContent: 'center',
+        }}>
+          <CancelSubscription authToken={authToken} tier={status.tier} />
+        </div>
+      )}
     </div>
   )
 }
