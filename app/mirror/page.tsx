@@ -46,6 +46,7 @@ import type { SummaryData }   from '@/components/MirrorSummaryCard'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier } from '@/lib/types'
 import AdvisoryUpsellCard      from '@/components/AdvisoryUpsellCard'      // Phase 4/5
 import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'             // Phase 4/5
+import { PaymentButton }         from '@/components/PaymentButton'           // Sprint CX-PAY
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -563,11 +564,13 @@ function TeaserView({
   status,
   sessions,
   authToken,
+  userEmail,
   onUnlocked,
 }: {
   status: MirrorStatus
   sessions: TimelineSession[]
   authToken: string
+  userEmail: string
   onUnlocked: () => void
 }) {
   const [teaser, setTeaser] = useState<TeaserData | null>(null)
@@ -582,7 +585,6 @@ function TeaserView({
       .catch(() => {/* degrade gracefully */})
   }, [authToken])
 
-  const PRICING_URL = 'https://quorumvault.org/#pricing'
 
   const lockedBadge = (
     <span
@@ -767,28 +769,21 @@ function TeaserView({
           ₹3,999/month · ₹39,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
         </p>
         <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
-        <div style={{ marginTop: 14 }}>
-          <a
-            className="mirror-cta-btn"
-            href={PRICING_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display:        'inline-block',
-              padding:        '10px 22px',
-              background:     'rgba(201,168,76,0.12)',
-              border:         '1px solid var(--gold-dim)',
-              borderRadius:   8,
-              color:          'var(--gold)',
-              fontSize:       13,
-              fontWeight:     600,
-              fontFamily:     'inherit',
-              textDecoration: 'none',
-              transition:     'all 0.15s',
-            }}
-          >
-            See full plans →
-          </a>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+          <PaymentButton
+            plan="monthly"
+            label="₹3,999 / month →"
+            authToken={authToken}
+            userEmail={userEmail}
+            onSuccess={onUnlocked}
+          />
+          <PaymentButton
+            plan="annual"
+            label="₹39,999 / year  — best value →"
+            authToken={authToken}
+            userEmail={userEmail}
+            onSuccess={onUnlocked}
+          />
         </div>
       </div>
     </div>
@@ -1387,6 +1382,7 @@ export default function MirrorPage() {
   const [status,          setStatus]          = useState<MirrorStatus | null>(null)
   const [sessions,        setSessions]        = useState<TimelineSession[]>([])
   const [authToken,       setAuthToken]       = useState<string | null>(null)
+  const [userEmail,       setUserEmail]       = useState<string>('')
   const [fetchError,      setFetchError]      = useState(false)
   // Sprint 21: fetched once when status resolves to 'unlocked'
   const [initialStyleCue, setInitialStyleCue] = useState<StyleCue | null>(null)
@@ -1400,6 +1396,7 @@ export default function MirrorPage() {
         const supabase = createClient()
         const { data: { session } } = await supabase.auth.getSession()
         setAuthToken(session?.access_token ?? null)
+        setUserEmail(session?.user?.email   ?? '')
       } catch {
         setAuthToken(null)
       }
@@ -1628,6 +1625,7 @@ export default function MirrorPage() {
                   status={status}
                   sessions={sessions}
                   authToken={authToken ?? ''}
+                  userEmail={userEmail}
                   onUnlocked={handleUnlocked}
                 />
               )}
