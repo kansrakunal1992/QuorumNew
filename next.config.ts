@@ -34,7 +34,7 @@ const ContentSecurityPolicy = [
 
   // Scripts: Next.js requires 'unsafe-inline' for hydration scripts.
   // TODO S6+: replace with nonce-based CSP via middleware.ts
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com",
 
   // Styles: Next.js injects inline styles; Google Fonts CSS is loaded in layout.tsx
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -43,12 +43,12 @@ const ContentSecurityPolicy = [
   "font-src 'self' https://fonts.gstatic.com",
 
   // Images: data: URIs used by Next.js Image and inline SVGs; blob: for canvas exports
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://*.razorpay.com",
 
   // Connections from the browser:
   //   - Same origin (API routes, Next.js data fetching)
   //   - Supabase: REST API + Realtime WebSocket for auth and DB reads
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.razorpay.com https://checkout.razorpay.com",
 
   // Media: TTS audio is returned as blob: URLs from /api/voice/tts (same origin)
   "media-src 'self' blob:",
@@ -57,6 +57,7 @@ const ContentSecurityPolicy = [
   "worker-src 'self'",
 
   // Block <object>, <embed>, <applet>
+  "frame-src https://api.razorpay.com",
   "object-src 'none'",
 
   // Restrict base tag to same origin (prevents base-tag hijacking)
@@ -77,7 +78,6 @@ const ContentSecurityPolicy = [
 const PermissionsPolicy = [
   'camera=()',
   'geolocation=()',
-  'payment=()',
   'usb=()',
   'interest-cohort=()',   // opt out of FLoC/Topics
 ].join(', ')
