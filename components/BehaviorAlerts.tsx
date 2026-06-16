@@ -39,9 +39,13 @@ interface AlertBias {
 }
 
 interface ActiveAlert {
-  bias:        AlertBias
-  matchedWord: string
-  tier:        1 | 2
+  biasKey:        string
+  biasLabel:      string
+  detectionCount: number
+  source:         'layer1' | 'layer2' | 'fallback'
+  matchedWord?:   string   // layer1 / layer2 — the phrase that matched
+  evidence?:      string   // fallback — the model's one-sentence evidence
+  logId?:         string | null
 }
 
 interface Props {
@@ -673,7 +677,6 @@ const DEFAULT_COPY = {
 function getBiasCopy(biasKey: string) {
   return BIAS_COPY[biasKey] ?? DEFAULT_COPY
 }
-
 // ── Two-layer matching ────────────────────────────────────────────────────────
 
 interface MatchCandidate {
@@ -683,12 +686,16 @@ interface MatchCandidate {
   specificity: number
 }
 
-function findBestMatch(
+// Sprint CX2: returns up to `max` matches (was: single best match only).
+// Still one candidate per bias (tier1 beats tier2, longer phrase wins within
+// a tier) — this only changes how many distinct biases can surface at once.
+function findBestMatches(
   decisionText: string,
   biases: AlertBias[],
   dismissed: Set<string>,
-): ActiveAlert | null {
-  if (!decisionText || decisionText.trim().length < 20) return null
+  max: number,
+): ActiveAlert[] {
+  if (!decisionText || decisionText.trim().length < 20) return []
 
   const lower      = decisionText.toLowerCase()
   const candidates: MatchCandidate[] = []
@@ -719,22 +726,65 @@ function findBestMatch(
     }
   }
 
-  if (candidates.length === 0) return null
+  if (candidates.length === 0) return []
 
-  // Tier 1 beats Tier 2; within same tier, longer phrase wins
   candidates.sort((a, b) => {
     if (a.tier !== b.tier) return a.tier - b.tier
     return b.specificity - a.specificity
   })
 
-  const best = candidates[0]
-  return { bias: best.bias, matchedWord: best.matchedWord, tier: best.tier }
+  return candidates.slice(0, max).map(c => ({
+    biasKey:        c.bias.biasKey,
+    biasLabel:      c.bias.biasLabel,
+    detectionCount: c.bias.detectionCount,
+    source:         c.tier === 1 ? 'layer1' as const : 'layer2' as const,
+    matchedWord:    c.matchedWord,
+  }))
 }
 
 // ── Alert card ────────────────────────────────────────────────────────────────
 
-function AlertCard({ alert, onDismiss }: { alert: ActiveAlert; onDismiss: () => void }) {
-  const copy = getBiasCopy(alert.bias.biasKey)
+interface AlertCardProps {
+  alert:      ActiveAlert
+  accessTier: 'teaser' | 'unlocked'
+  collapsed?: boolean      // secondary alert, not yet expanded
+  onExpand?:  () => void
+  onDismiss:  () => void
+}
+
+function AlertCard({ alert, accessTier, collapsed, onExpand, onDismiss }: AlertCardProps) {
+  // Collapsed (secondary) state — a single clickable line, not the full card.
+  // Keeps a second pattern visible without pushing the form down or
+  // competing with the primary alert for attention.
+  if (collapsed) {
+    return (
+      <button
+        onClick={onExpand}
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'space-between',
+          width:          '100%',
+          background:     'rgba(201,168,76,0.04)',
+          border:         '1px solid rgba(201,168,76,0.18)',
+          borderRadius:   8,
+          padding:        '7px 12px',
+          marginTop:      8,
+          cursor:         'pointer',
+          textAlign:      'left',
+        }}
+      >
+        <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+          +1 more pattern detected — <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{alert.biasLabel}</span>
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--gold)', opacity: 0.7 }}>→</span>
+      </button>
+    )
+  }
+
+  const copy          = getBiasCopy(alert.biasKey)
+  const considerText  = alert.source === 'fallback' && alert.evidence ? alert.evidence : copy.consider
+  const isMasked      = accessTier === 'teaser'
 
   return (
     <div
@@ -772,67 +822,258 @@ function AlertCard({ alert, onDismiss }: { alert: ActiveAlert; onDismiss: () => 
         >×</button>
       </div>
 
+      {/* Fact line — always visible, both tiers. The bias label + count is
+          already shown to teaser users elsewhere (Mirror open-loop card),
+          so this isn't new exposure. */}
       <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 6px' }}>
-        <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{alert.bias.biasLabel}</span>
-        {' '}has shown up in {alert.bias.detectionCount} of your past decisions.{' '}
-        {copy.consider}
+        <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{alert.biasLabel}</span>
+        {' '}has shown up in {alert.detectionCount} of your past decisions.
       </p>
 
-      <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 10px', fontStyle: 'italic', paddingLeft: 10, borderLeft: '2px solid rgba(201,168,76,0.3)' }}>
-        {copy.action}
-      </p>
-
-      <a
-        href="/mirror"
-        style={{ fontSize: 11, color: 'var(--gold)', textDecoration: 'none', fontWeight: 600, opacity: 0.75, transition: 'opacity 0.15s', display: 'inline-block' }}
-        onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
-        onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.75')}
-      >
-        See your full pattern profile in Mirror →
-      </a>
+      {isMasked ? (
+        <>
+          <p
+            aria-hidden="true"
+            style={{
+              fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 6px',
+              filter: 'blur(4.5px)', userSelect: 'none', WebkitUserSelect: 'none', cursor: 'default',
+            }}
+          >
+            {considerText}
+          </p>
+          <p
+            aria-hidden="true"
+            style={{
+              fontSize: 12, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 10px', fontStyle: 'italic',
+              paddingLeft: 10, borderLeft: '2px solid rgba(201,168,76,0.3)',
+              filter: 'blur(4.5px)', userSelect: 'none', WebkitUserSelect: 'none', cursor: 'default',
+            }}
+          >
+            {copy.action}
+          </p>
+          <a
+            href="/mirror"
+            style={{ fontSize: 11, color: 'var(--gold)', textDecoration: 'none', fontWeight: 700, opacity: 0.9, transition: 'opacity 0.15s', display: 'inline-block' }}
+            onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+            onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.9')}
+          >
+            Unlock your full pattern analysis — Upgrade to Mirror →
+          </a>
+        </>
+      ) : (
+        <>
+          <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 6px' }}>
+            {considerText}
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.55, margin: '0 0 10px', fontStyle: 'italic', paddingLeft: 10, borderLeft: '2px solid rgba(201,168,76,0.3)' }}>
+            {copy.action}
+          </p>
+          <a
+            href="/mirror"
+            style={{ fontSize: 11, color: 'var(--gold)', textDecoration: 'none', fontWeight: 600, opacity: 0.75, transition: 'opacity 0.15s', display: 'inline-block' }}
+            onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
+            onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.75')}
+          >
+            See your full pattern profile in Mirror →
+          </a>
+        </>
+      )}
     </div>
   )
 }
 
+// ── Logging helpers (Sprint CX2 #6) — fire-and-forget, never block the UI ─────
+
+async function logLayerAlert(
+  alert: ActiveAlert,
+  accessTier: 'teaser' | 'unlocked',
+  decisionText: string,
+  authToken: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch('/api/mirror/alerts/log', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({
+        biasKey:         alert.biasKey,
+        source:          alert.source,
+        accessTier,
+        decisionSnippet: decisionText.slice(0, 200),
+        matchedPhrase:   alert.matchedWord ?? '',
+      }),
+    })
+    const data = await res.json() as { id: string | null }
+    return data.id ?? null
+  } catch {
+    return null
+  }
+}
+
+function dismissLoggedAlert(logId: string | null | undefined, authToken: string) {
+  if (!logId) return
+  fetch('/api/mirror/alerts/log', {
+    method:  'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+    body:    JSON.stringify({ id: logId }),
+  }).catch(() => {})
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
+
+const MAX_ALERTS           = 2
+const FALLBACK_MIN_WORDS   = 25
+const FALLBACK_EXTRA_DELAY = 1500   // additional pause beyond the 800ms static-match debounce
+const FALLBACK_TIMEOUT_MS  = 6500   // client-side guard; server itself times out at 6000ms
 
 export default function BehaviorAlerts({ decision, authToken }: Props) {
   const [biases,      setBiases]      = useState<AlertBias[]>([])
-  const [activeAlert, setActiveAlert] = useState<ActiveAlert | null>(null)
+  const [accessTier,  setAccessTier]  = useState<'teaser' | 'unlocked' | 'locked'>('locked')
+  const [activeAlerts, setActiveAlerts] = useState<ActiveAlert[]>([])
   const [dismissed,   setDismissed]   = useState<Set<string>>(new Set())
-  const debounceRef                    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [secondaryExpanded, setSecondaryExpanded] = useState(false)
 
+  const debounceRef          = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fallbackDebounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fallbackInFlightRef  = useRef(false)
+  const lastFallbackTextRef  = useRef<string>('')
+
+  // ── Load this user's confirmed bias set + access tier ─────────────────────
   useEffect(() => {
     if (!authToken) return
     const load = async () => {
       try {
         const res  = await fetch('/api/mirror/alerts', { headers: { Authorization: `Bearer ${authToken}` } })
         if (!res.ok) return
-        const data = await res.json() as { alerts: AlertBias[] }
+        const data = await res.json() as { alerts: AlertBias[]; tier: 'teaser' | 'unlocked' | 'locked' }
         setBiases(data.alerts ?? [])
+        setAccessTier(data.tier ?? 'locked')
       } catch { /* silent fail */ }
     }
     load()
   }, [authToken])
 
-  useEffect(() => {
-    if (biases.length === 0) return
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      setActiveAlert(findBestMatch(decision, biases, dismissed))
-    }, 800)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [decision, biases, dismissed])
+  // ── DeepSeek fallback — only when static matching found nothing at all ────
+  // Scoped to this user's already-confirmed biases only (passed server-side
+  // from bias_library — never a generic 15-bias classification).
+  const runFallback = async (text: string) => {
+    if (fallbackInFlightRef.current || !authToken) return
+    lastFallbackTextRef.current = text
+    fallbackInFlightRef.current = true
 
-  if (!authToken || !activeAlert) return null
+    try {
+      const controller = new AbortController()
+      const timeoutId  = setTimeout(() => controller.abort(), FALLBACK_TIMEOUT_MS)
+
+      const res = await fetch('/api/mirror/alerts/fallback', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body:    JSON.stringify({ decisionText: text }),
+        signal:  controller.signal,
+      })
+      clearTimeout(timeoutId)
+      if (!res.ok) return
+
+      const data = await res.json() as {
+        alert: null | { biasKey: string; biasLabel: string; detectionCount: number; evidence: string; logId: string | null }
+      }
+      if (!data.alert || dismissed.has(data.alert.biasKey)) return
+
+      const newAlert: ActiveAlert = {
+        biasKey:        data.alert.biasKey,
+        biasLabel:      data.alert.biasLabel,
+        detectionCount: data.alert.detectionCount,
+        evidence:       data.alert.evidence,
+        source:         'fallback',
+        logId:          data.alert.logId,
+      }
+
+      // Only apply if nothing else has surfaced in the meantime (user kept
+      // typing, a static match appeared, etc.) — avoids replacing a fresher,
+      // free static match with a slower, costlier fallback one.
+      setActiveAlerts(prev => (prev.length === 0 ? [newAlert] : prev))
+    } catch {
+      // timeout, abort, network error — silent, no UI impact
+    } finally {
+      fallbackInFlightRef.current = false
+    }
+  }
+
+  // ── Static matching (debounced) + conditional fallback trigger ────────────
+  useEffect(() => {
+    if (biases.length === 0) {
+      setActiveAlerts([])
+      return
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+
+    debounceRef.current = setTimeout(() => {
+      const matches = findBestMatches(decision, biases, dismissed, MAX_ALERTS)
+      setActiveAlerts(matches)
+      setSecondaryExpanded(false)
+
+      if (authToken) {
+        for (const m of matches) {
+          logLayerAlert(m, accessTier === 'teaser' ? 'teaser' : 'unlocked', decision, authToken)
+            .then(id => {
+              if (id) setActiveAlerts(prev => prev.map(a => (a.biasKey === m.biasKey ? { ...a, logId: id } : a)))
+            })
+        }
+      }
+
+      if (fallbackDebounceRef.current) clearTimeout(fallbackDebounceRef.current)
+      const wordCount = decision.trim().split(/\s+/).filter(Boolean).length
+      const shouldTryFallback =
+        matches.length === 0 &&
+        wordCount >= FALLBACK_MIN_WORDS &&
+        decision !== lastFallbackTextRef.current
+
+      if (shouldTryFallback) {
+        fallbackDebounceRef.current = setTimeout(() => runFallback(decision), FALLBACK_EXTRA_DELAY)
+      }
+    }, 800)
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (fallbackDebounceRef.current) clearTimeout(fallbackDebounceRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decision, biases, dismissed, accessTier, authToken])
+
+  const handleDismiss = (alert: ActiveAlert) => {
+    setDismissed(prev => new Set([...prev, alert.biasKey]))
+    setActiveAlerts(prev => prev.filter(a => a.biasKey !== alert.biasKey))
+    if (authToken) dismissLoggedAlert(alert.logId, authToken)
+  }
+
+  if (!authToken || accessTier === 'locked' || activeAlerts.length === 0) return null
+
+  const resolvedTier: 'teaser' | 'unlocked' = accessTier === 'teaser' ? 'teaser' : 'unlocked'
+  const [primary, secondary] = activeAlerts
 
   return (
-    <AlertCard
-      alert={activeAlert}
-      onDismiss={() => {
-        setDismissed(prev => new Set([...prev, activeAlert.bias.biasKey]))
-        setActiveAlert(null)
-      }}
-    />
+    <>
+      <AlertCard
+        alert={primary}
+        accessTier={resolvedTier}
+        onDismiss={() => handleDismiss(primary)}
+      />
+      {secondary && (
+        secondaryExpanded ? (
+          <AlertCard
+            alert={secondary}
+            accessTier={resolvedTier}
+            onDismiss={() => handleDismiss(secondary)}
+          />
+        ) : (
+          <AlertCard
+            alert={secondary}
+            accessTier={resolvedTier}
+            collapsed
+            onExpand={() => setSecondaryExpanded(true)}
+            onDismiss={() => handleDismiss(secondary)}
+          />
+        )
+      )}
+    </>
   )
 }

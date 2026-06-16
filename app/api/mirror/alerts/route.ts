@@ -170,7 +170,7 @@ function extractKeywords(biasKey: string, activation_contexts: unknown): string[
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
+    return NextResponse.json({ alerts: [], avoidanceAlerts: [], tier: 'locked' })
   }
 
   const token = authHeader.slice(7)
@@ -184,18 +184,21 @@ export async function GET(req: Request) {
     const { data: { user } } = await anonClient.auth.getUser(token)
     userId = user?.id ?? null
   } catch {
-    return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
+    return NextResponse.json({ alerts: [], avoidanceAlerts: [], tier: 'locked' })
   }
 
-  if (!userId) return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
+  if (!userId) return NextResponse.json({ alerts: [], avoidanceAlerts: [], tier: 'locked' })
 
   const supabase = createServiceClient()
 
-  // Mirror access gate
+  // Mirror access gate (Sprint CX2: bias alerts now also serve 'teaser' state —
+  // same personalized query, masked client-side. avoidance_alerts remain
+  // unlocked-only — a separate paid feature, out of scope for this sprint).
   const accessState = await getMirrorAccessState(userId, supabase)
-  if (accessState !== 'unlocked') {
-    return NextResponse.json({ alerts: [], avoidanceAlerts: [] })
+  if (accessState === 'locked') {
+    return NextResponse.json({ alerts: [], avoidanceAlerts: [], tier: 'locked' })
   }
+  const isTeaser = accessState === 'teaser'
 
   // ── Run bias query + avoidance query in parallel (Sprint D3) ─────────────
   const [biasResult, avoidanceResult] = await Promise.all([
@@ -206,13 +209,15 @@ export async function GET(req: Request) {
       .gte('detection_count', 2)
       .order('detection_count', { ascending: false })
       .limit(8),
-    supabase
-      .from('avoidance_alerts')
-      .select('id, session_id, days_open, upstream_dependency_score, structural_echo, detected_at')
-      .eq('user_id', userId)
-      .is('dismissed_at', null)
-      .order('days_open', { ascending: false })
-      .limit(3),
+    isTeaser
+      ? Promise.resolve({ data: [] as any[] })
+      : supabase
+          .from('avoidance_alerts')
+          .select('id, session_id, days_open, upstream_dependency_score, structural_echo, detected_at')
+          .eq('user_id', userId)
+          .is('dismissed_at', null)
+          .order('days_open', { ascending: false })
+          .limit(3),
   ])
 
   // ── Build bias alerts (unchanged logic) ───────────────────────────────────
@@ -252,5 +257,5 @@ export async function GET(req: Request) {
     }))
   }
 
-  return NextResponse.json({ alerts, avoidanceAlerts })
+  return NextResponse.json({ alerts, avoidanceAlerts, tier: isTeaser ? 'teaser' : 'unlocked' })
 }
