@@ -1240,6 +1240,33 @@ function UnlockedView({
 
   const earlyUser = status.sessionCount < 10
 
+  // Sprint CX2: deep-link scroll to the payment CTA card when landing on
+  // /mirror#mirror-cta (e.g. from BehaviorAlerts' "Upgrade to Mirror" link).
+  // mirror-cta isn't one of MirrorNav's SECTIONS pills, so its #msec- polling
+  // effect won't catch this hash — same polling-for-stability approach,
+  // applied to this one literal id instead.
+  useEffect(() => {
+    if (window.location.hash !== '#mirror-cta') return
+    let lastY = -1; let stable = 0
+    const poll = setInterval(() => {
+      const el = document.getElementById('mirror-cta')
+      if (!el) return
+      const y = el.getBoundingClientRect().top + window.scrollY
+      if (Math.abs(y - lastY) < 4) {
+        stable++
+        if (stable >= 3) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          clearInterval(poll)
+        }
+      } else {
+        stable = 0
+      }
+      lastY = y
+    }, 300)
+    const giveUp = setTimeout(() => clearInterval(poll), 5000)
+    return () => { clearInterval(poll); clearTimeout(giveUp) }
+  }, [])
+
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
 

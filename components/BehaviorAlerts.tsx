@@ -852,7 +852,7 @@ function AlertCard({ alert, accessTier, collapsed, onExpand, onDismiss }: AlertC
             {copy.action}
           </p>
           <a
-            href="/mirror"
+            href="/mirror#mirror-cta"
             style={{ fontSize: 11, color: 'var(--gold)', textDecoration: 'none', fontWeight: 700, opacity: 0.9, transition: 'opacity 0.15s', display: 'inline-block' }}
             onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
             onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.9')}
@@ -869,7 +869,7 @@ function AlertCard({ alert, accessTier, collapsed, onExpand, onDismiss }: AlertC
             {copy.action}
           </p>
           <a
-            href="/mirror"
+            href="/mirror#msec-fingerprint"
             style={{ fontSize: 11, color: 'var(--gold)', textDecoration: 'none', fontWeight: 600, opacity: 0.75, transition: 'opacity 0.15s', display: 'inline-block' }}
             onMouseEnter={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '1')}
             onMouseLeave={e => ((e.currentTarget as HTMLAnchorElement).style.opacity = '0.75')}
