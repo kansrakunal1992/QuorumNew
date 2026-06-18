@@ -1,32 +1,45 @@
 /**
- * QUORUM — Persona Relevance Scoring (Sprint R3)
+ * QUORUM — Persona Relevance Scoring (Sprint R3 + Sprint CAL)
  *
  * Computes a weighted relevance score (0.0–1.0) for each of the 6 advisor
  * personas based on the current session's rule engine signals, ontology
- * dimension scores, and structural match quality.
+ * dimension scores, structural match quality, and (Sprint CAL) the user's
+ * own confirmed personal calibration zones.
  *
  * Used exclusively at synthesis time to produce a COUNCIL WEIGHTING DIRECTIVE
  * injected into the synthesis system prompt as a MANDATORY non-negotiable block.
  *
  * ── How the score is built ───────────────────────────────────────────────────
- *   Base weight     : 0.50 for every persona
- *   Rule boosts     : per RULE_PERSONA_BOOSTS — fires for every triggered/flag rule
- *   Ontology boosts : per DIM_PERSONA_BOOSTS — fires when a dimension crosses a threshold
- *   Structural boost : pattern_analyst gets extra weight when a structural match exists
- *   Clamp           : final scores bounded to [0.0, 1.0]
+ *   Base weight       : 0.50 for every persona
+ *   Rule boosts       : per RULE_PERSONA_BOOSTS — fires for every triggered/flag rule
+ *   Ontology boosts   : per DIM_PERSONA_BOOSTS — fires when a dimension crosses a threshold
+ *   Calibration boosts: +0.10 to the same persona(s) when the current decision is elevated
+ *                        on a dimension where this specific user has a confirmed personal
+ *                        over/underconfidence pattern (lib/calibration-engine.ts). A
+ *                        refinement on the ontology boost above, not a new signal.
+ *   Structural boost  : pattern_analyst gets extra weight when a structural match exists
+ *   Clamp             : final scores bounded to [0.0, 1.0]
  *
  * ── Config maintenance ───────────────────────────────────────────────────────
  *   RULE_PERSONA_BOOSTS  keys are typed against RuleId (derived from rule-engine.ts).
  *   If a rule is added or renamed there, add/update the entry here — TypeScript
  *   will surface a mismatch if an unknown rule_id is referenced.
  *   To retune weights, edit RULE_PERSONA_BOOSTS or DIM_PERSONA_BOOSTS values only.
- *   No logic changes required for retuning.
+ *   No logic changes required for retuning. Calibration boosts reuse
+ *   DIM_PERSONA_BOOSTS directly — there is no separate mapping to maintain.
+ *
+ * KDD: lib/rule-engine.ts thresholds are never personalised by this file or by
+ * lib/calibration-engine.ts. Rule thresholds stay global so the admin R7/R8
+ * calibration-sensitivity tooling (which assumes one threshold per rule across
+ * the whole corpus) remains valid. Personalisation lives only in this relevance
+ * layer and in the synthesis context block built by lib/bias-scorer.ts.
  *
  * See: docs/r3-persona-relevance.md for full rationale.
  */
 
 import type { RuleEngineResult } from './rule-engine'
 import type { OntologyScoreMap }  from './bias-scorer'
+import { isZoneActiveForVector, type DimensionalCalibrationZone } from './calibration-engine'
 
 // ── Persona key subset — the 6 Council advisors (not synthesis/decision_brief) ─
 export type AdvisorKey =
@@ -144,6 +157,7 @@ export function computePersonaRelevance(
   ruleEngineResult:   RuleEngineResult | null,
   ontologyVector:     OntologyScoreMap | null,
   maxStructuralScore: number | null,
+  personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
 ): PersonaRelevanceMap {
   const scores: PersonaRelevanceMap = {
     contrarian:         0.50,
@@ -185,6 +199,26 @@ export function computePersonaRelevance(
     }
   }
 
+  // ── 2.5. Personal calibration zone boosts (Sprint CAL) ───────────────────
+  // When THIS decision is elevated on a dimension where THIS specific user
+  // has a confirmed personal calibration pattern (lib/calibration-engine.ts),
+  // nudge the persona(s) already mapped to that dimension in DIM_PERSONA_BOOSTS.
+  // Deliberately smaller than a primary boost (0.10 vs the 0.10–0.30 above) —
+  // this refines an existing signal, it does not introduce a new one.
+  // KDD: lib/rule-engine.ts thresholds are never personalised — this stays
+  // confined to relevance weighting and the synthesis context block.
+  const CALIBRATION_ZONE_BOOST = 0.10
+  if (ontologyVector && personalCalibrationZones?.length) {
+    for (const zone of personalCalibrationZones) {
+      if (!isZoneActiveForVector(zone, ontologyVector)) continue
+      const entry = DIM_PERSONA_BOOSTS.find(e => e.dim === zone.dim)
+      if (!entry) continue
+      for (const persona of Object.keys(entry.boosts) as AdvisorKey[]) {
+        scores[persona] += CALIBRATION_ZONE_BOOST
+      }
+    }
+  }
+
   // ── 3. Structural match boost ─────────────────────────────────────────────
   const structBoost = getStructuralBoost(maxStructuralScore)
   for (const [persona, boost] of Object.entries(structBoost) as [AdvisorKey, number][]) {
@@ -222,6 +256,7 @@ function buildRationale(
   ruleEngineResult:   RuleEngineResult | null,
   ontologyVector:     OntologyScoreMap | null,
   maxStructuralScore: number | null,
+  personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
 ): string {
   const reasons: string[] = []
 
@@ -245,6 +280,16 @@ function buildRationale(
     }
   }
 
+  if (ontologyVector && personalCalibrationZones?.length) {
+    for (const zone of personalCalibrationZones) {
+      if (!isZoneActiveForVector(zone, ontologyVector)) continue
+      const entry = DIM_PERSONA_BOOSTS.find(e => e.dim === zone.dim)
+      if (entry?.boosts[persona]) {
+        reasons.push(`personal calibration zone: ${zone.dim.replace(/_/g, ' ')}`)
+      }
+    }
+  }
+
   if (persona === 'pattern_analyst' && maxStructuralScore !== null && maxStructuralScore >= 45) {
     reasons.push(`structural match ${maxStructuralScore}/100`)
   }
@@ -259,6 +304,7 @@ export function buildRelevanceBlock(
   ruleEngineResult:   RuleEngineResult | null,
   ontologyVector:     OntologyScoreMap | null,
   maxStructuralScore: number | null,
+  personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
 ): string {
   // Sort descending by score
   const sorted = (Object.entries(map) as [AdvisorKey, number][])
@@ -267,7 +313,7 @@ export function buildRelevanceBlock(
   const lines = sorted.map(([persona, score]) => {
     const label      = PERSONA_DISPLAY[persona]
     const tier       = tierLabel(score)
-    const rationale  = buildRationale(persona, ruleEngineResult, ontologyVector, maxStructuralScore)
+    const rationale  = buildRationale(persona, ruleEngineResult, ontologyVector, maxStructuralScore, personalCalibrationZones)
     const reasonStr  = rationale ? ` — ${rationale}` : ''
     return `— ${label} [${score.toFixed(2)}] ${tier}${reasonStr}`
   })

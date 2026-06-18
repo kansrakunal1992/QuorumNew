@@ -1,25 +1,35 @@
 'use client'
 
 import { formatShortDate } from '@/lib/dates'
+import Link from 'next/link'
 
 // components/CalibrationSparkline.tsx
 // ── Mirror: Calibration Sparkline (Sprint 15) ─────────────────────────────────
 //
 // Renders the user's pre-decision vs. retrospective confidence over time.
 //
-// Three visual layers:
+// Four visual layers:
 //   1. Summary card — avg delta with colour-coding + trend label + pattern text
 //   2. Dual-line SVG sparkline — pre confidence (muted) vs retro confidence (gold)
 //   3. Delta bar row — per-session delta as signed bars (+green / -red)
+//   4. Personal Calibration Zones (Sprint CAL) — per-dimension patterns, each
+//      backed by 1–2 real evidence sessions (decision text + link), not just
+//      an asserted claim. Renders only when lib/calibration-engine.ts has
+//      cleared a dimension's gate — absent for most users, most of the time,
+//      by design.
 //
-// Data threshold: needs >= 3 paired points to render chart. Below that,
-// renders a progress state explaining what will appear.
+// Data threshold: needs >= 3 paired points to render the chart (layers 1–3).
+// Below that, renders a progress state explaining what will appear. The
+// dimensional zones layer (4) has its own, stricter, independent gate and
+// simply does not render when empty — no placeholder, no "not enough data yet"
+// noise stacked under an already-explained insufficient state.
 //
 // Auth: receives authToken prop (same pattern as BiasFingerprint, IndependenceScore).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react'
 import type { CalibrationPoint, CalibrationSummary, CalibrationResponse } from '@/app/api/mirror/calibration/route'
+import type { DimensionalCalibrationZone, CalibrationEvidence } from '@/lib/calibration-engine'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -141,6 +151,147 @@ function InsufficientState({ pairedCount }: { pairedCount: number }) {
   )
 }
 
+// ── Personal Calibration Zones (Sprint CAL) ───────────────────────────────────
+//
+// Each zone is a per-dimension pattern that has cleared lib/calibration-engine.ts's
+// gate — both buckets >= 3 sessions, gap >= 0.4. Deliberately evidence-first:
+// the headline claim is paired with the actual decision(s) that produced it,
+// linked through to the full session record rather than asked to be trusted
+// as an abstract psychological observation.
+function directionLabel(direction: DimensionalCalibrationZone['direction']): string {
+  return direction === 'overconfident'
+    ? 'Runs overconfident here'
+    : 'Runs underconfident here'
+}
+
+function directionColor(direction: DimensionalCalibrationZone['direction']): string {
+  return direction === 'overconfident' ? '#f87171' : '#4ade80'
+}
+
+function formatOutcomeQuality(q: string | null): string | null {
+  if (!q) return null
+  return q.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+}
+
+function EvidenceRow({ evidence }: { evidence: CalibrationEvidence }) {
+  const delta = evidence.calibration_delta
+  const dStr  = (delta >= 0 ? '+' : '') + delta.toFixed(1)
+  const oq    = formatOutcomeQuality(evidence.outcome_quality)
+
+  return (
+    <Link
+      href={`/session/${evidence.session_id}`}
+      style={{
+        display:        'block',
+        textDecoration: 'none',
+        padding:        '10px 12px',
+        marginTop:      6,
+        background:     'var(--bg-inset)',
+        border:         '1px solid var(--border-dim)',
+        borderRadius:   8,
+        transition:     'border-color 0.15s',
+      }}
+    >
+      <p style={{
+        fontSize:   12.5,
+        color:      'var(--text-2)',
+        margin:     '0 0 6px',
+        lineHeight: 1.45,
+      }}>
+        “{evidence.decision_text}{evidence.decision_text.length >= 140 ? '…' : ''}”
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9.5, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+          {formatShortDate(evidence.created_at)}
+        </span>
+        <span style={{ fontSize: 9.5, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+          Pre: {evidence.pre_decision_confidence} → Retro: {evidence.retrospective_confidence}
+        </span>
+        <span style={{
+          fontSize:   9.5,
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 700,
+          color:      deltaColor(delta),
+        }}>
+          Δ {dStr}
+        </span>
+        {oq && (
+          <span style={{ fontSize: 9.5, color: 'var(--text-4)' }}>
+            {oq}
+          </span>
+        )}
+        <span style={{ fontSize: 9.5, color: 'var(--gold)', marginLeft: 'auto' }}>
+          View decision →
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+function ZoneCard({ zone }: { zone: DimensionalCalibrationZone }) {
+  const color = directionColor(zone.direction)
+  return (
+    <div style={{
+      background:   'var(--bg-card)',
+      border:       '1px solid var(--border-dim)',
+      borderRadius: 10,
+      padding:      '16px 16px 14px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+        <p style={{ fontSize: 13.5, color: 'var(--text-1)', margin: 0, fontWeight: 600, lineHeight: 1.4 }}>
+          On decisions with high {zone.dimLabel}
+        </p>
+        <span style={{
+          fontSize:      10.5,
+          fontWeight:    700,
+          color,
+          whiteSpace:    'nowrap',
+        }}>
+          {directionLabel(zone.direction)}
+        </span>
+      </div>
+      <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.5 }}>
+        Calibration delta runs {zone.gap >= 0 ? '+' : ''}{zone.gap} points wider than on decisions
+        where this dimension is low — based on {zone.sampleSize.high} high-scoring and{' '}
+        {zone.sampleSize.low} low-scoring tracked decisions.
+      </p>
+
+      <p style={{
+        fontSize:      9.5,
+        fontWeight:    700,
+        color:         'var(--text-4)',
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        margin:        '14px 0 0',
+      }}>
+        Evidence
+      </p>
+      {zone.evidence.map(e => <EvidenceRow key={e.session_id} evidence={e} />)}
+    </div>
+  )
+}
+
+function DimensionalZonesSection({ zones }: { zones: DimensionalCalibrationZone[] }) {
+  if (zones.length === 0) return null
+  return (
+    <div style={{ marginTop: 18 }}>
+      <p style={{
+        fontSize:      11,
+        fontWeight:    700,
+        color:         'var(--text-4)',
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        margin:        '0 0 10px',
+      }}>
+        Personal Calibration Zones
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {zones.map(z => <ZoneCard key={z.dim} zone={z} />)}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function CalibrationSparkline({ authToken }: { authToken: string }) {
   const [loading,  setLoading]  = useState(true)
@@ -200,7 +351,7 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
     )
   }
 
-  const { points, summary } = data
+  const { points, summary, dimensionalZones } = data
 
   // ── Insufficient data ───────────────────────────────────────────────────────
   if (!summary.dataReady) {
@@ -524,6 +675,9 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
         Based on {summary.pairedCount} decision{summary.pairedCount !== 1 ? 's' : ''} with a retrospective confidence score logged.
         {summary.avg_delta !== null && ' Delta (retro − pre) shown where pre-decision confidence was also recorded.'}
       </p>
+
+      {/* ── Personal Calibration Zones (Sprint CAL) ─────────────────────────── */}
+      <DimensionalZonesSection zones={dimensionalZones} />
     </div>
   )
 }

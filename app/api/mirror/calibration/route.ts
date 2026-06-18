@@ -38,6 +38,7 @@ import { createServiceClient }  from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 import { decrypt } from '@/lib/encryption'
+import { computeDimensionalCalibration, type DimensionalCalibrationZone } from '@/lib/calibration-engine'
 
 export interface CalibrationPoint {
   session_id:               string
@@ -60,8 +61,9 @@ export interface CalibrationSummary {
 }
 
 export interface CalibrationResponse {
-  points:  CalibrationPoint[]
-  summary: CalibrationSummary
+  points:          CalibrationPoint[]
+  summary:         CalibrationSummary
+  dimensionalZones: DimensionalCalibrationZone[]   // Sprint CAL — evidence-backed per-dimension patterns
 }
 
 // ── Trend slope ────────────────────────────────────────────────────────────────
@@ -232,5 +234,12 @@ export async function GET(req: Request) {
     pairedCount,
   }
 
-  return NextResponse.json({ points, summary } satisfies CalibrationResponse)
+  // ── 6. Dimensional calibration zones (Sprint CAL) ─────────────────────────
+  // Reuses the session IDs already fetched above — no extra query to derive them.
+  // Resolves to [] when no dimension clears the gate (see lib/calibration-engine.ts);
+  // that's the expected, common state, not an error.
+  const sessionIds = (rows ?? []).map(r => r.id)
+  const dimensionalZones = await computeDimensionalCalibration(sessionIds, supabase)
+
+  return NextResponse.json({ points, summary, dimensionalZones } satisfies CalibrationResponse)
 }

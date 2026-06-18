@@ -271,9 +271,9 @@ export async function POST(req: Request) {
       ? councilContextPromise.then(({ ontologyVector, userId }) =>
           userId
             ? fetchUserBiasContext(userId, ontologyVector)
-            : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false })
+            : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [] })
         )
-      : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false })
+      : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [] })
 
     // ── Build chat messages ───────────────────────────────────────────────────
     let chatMessages: { role: 'user' | 'assistant'; content: string }[]
@@ -414,17 +414,21 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
     // baseline weights from ontology dimensions). No-ops gracefully if both
     // ruleEngineResult and ontologyVector are null (returns baseline 0.50 map
     // which produces a flat directive — still valid, just less informative).
+    // Sprint CAL: personalCalibrationZones threaded through from biasContext —
+    // already resolved above, no extra DB call needed.
     if (isSynthesisCall) {
       const relevanceMap = computePersonaRelevance(
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
+        biasContext.personalCalibrationZones,
       )
       const relevanceBlock = buildRelevanceBlock(
         relevanceMap,
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
+        biasContext.personalCalibrationZones,
       )
       basePrompt = `${basePrompt}${relevanceBlock}`
       console.log(`[Persona] Council weighting directive injected for synthesis | session ${sessionId}`)

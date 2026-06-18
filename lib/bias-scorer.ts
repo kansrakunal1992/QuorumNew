@@ -58,6 +58,11 @@
 import { createCompletion, getProviderInfo } from '@/lib/ai-client'
 import { createServiceClient }               from '@/lib/supabase'
 import { decrypt }                           from '@/lib/encryption'
+import {
+  computeDimensionalCalibration,
+  isZoneActiveForVector,
+  type DimensionalCalibrationZone,
+}                                             from '@/lib/calibration-engine'
 
 // ── 15 Bias Parameters ───────────────────────────────────────────────────────
 export const BIAS_PARAMETERS = [
@@ -491,6 +496,41 @@ async function fetchCalibrationContext(
   }
 }
 
+// ── buildDimensionalCalibrationLine (Sprint CAL — private) ───────────────────
+//
+// Takes the full set of a user's confirmed personal calibration zones
+// (lib/calibration-engine.ts) and the CURRENT decision's ontology vector, and
+// returns a plain-English data line for any zone that is "live" for this
+// specific decision — i.e. the current vector is elevated on that exact
+// dimension. Returns '' when no zone is currently active (most users, most
+// of the time, by design — see calibration-engine.ts gating).
+//
+// This is deliberately separate from fetchCalibrationContext's global
+// average: that describes "this user's calibration overall," this describes
+// "this user's calibration specifically on decisions structured like THIS
+// one" — a sharper, dimension-anchored claim, evidenced by real sessions
+// rather than an aggregate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildDimensionalCalibrationLine(
+  zones: DimensionalCalibrationZone[],
+  currentVector: OntologyScoreMap | null,
+): string {
+  const active = zones.filter(z => isZoneActiveForVector(z, currentVector))
+  if (active.length === 0) return ''
+
+  const lines = active
+    .map(z =>
+      `— On decisions scoring high on ${z.dimLabel}, this user runs ${z.direction} ` +
+      `(calibration delta averages ${z.gap >= 0 ? '+' : ''}${z.gap} points wider than on ` +
+      `decisions where that dimension is low — based on ${z.sampleSize.high} high-scoring ` +
+      `and ${z.sampleSize.low} low-scoring tracked decisions).`,
+    )
+    .join('\n')
+
+  return `Dimension-specific calibration pattern matching THIS decision's structural profile:\n${lines}`
+}
+
 // ── fetchActiveContradictions (Sprint RE — private) ──────────────────────────
 //
 // Queries the contradictions table for active (non-dismissed) principle–behaviour
@@ -782,13 +822,14 @@ export interface UserBiasContext {
   synthesisBlock:  string        // full block for synthesis system prompt
   personaAlert:    string | null // one-sentence alert for initial persona system prompts
   hasAnyBiases:    boolean
+  personalCalibrationZones: DimensionalCalibrationZone[]  // Sprint CAL — full zone list, for persona-relevance.ts
 }
 
 export async function fetchUserBiasContext(
   userId: string,
   ontologyVector: OntologyScoreMap | null,
 ): Promise<UserBiasContext> {
-  const empty: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false }
+  const empty: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [] }
   if (!userId) return empty
 
   try {
@@ -819,9 +860,11 @@ export async function fetchUserBiasContext(
     ).map(s => s.id)
 
     // R_JC: principles + regret run in parallel (both depend on sessionIds)
-    const [principlesBlock, regretBlock] = await Promise.all([
+    // Sprint CAL: dimensional calibration joins the same batch — also keyed off sessionIds.
+    const [principlesBlock, regretBlock, personalCalibrationZones] = await Promise.all([
       fetchUserPrinciplesBlock(sessionIds, supabase),
       fetchRecurringRegretBlock(sessionIds, ontologyVector, supabase),
+      computeDimensionalCalibration(sessionIds, supabase),
     ])
 
     const { data: biases, error } = biasResult
@@ -911,14 +954,28 @@ export async function fetchUserBiasContext(
       ? ' The recurring regret signal above is factual context about this user\'s track record in structurally similar decisions. If the Council\'s analysis touches on the same structural dimensions (irreversibility, urgency, stakes, value conflict), weave a brief, plain observation into your existing prose. Example phrasing: \"Worth naming: a few decisions you\'ve faced with this structural profile haven\'t landed as expected — not from bad analysis, but because [name the mechanism the Council identified]. That pattern is worth holding in mind before this one closes.\" Do NOT frame it as a prediction of failure. Do NOT surface it if the Council analysis does not connect to those structural dimensions. Do NOT create a separate section header.'
       : ''
 
+    // ── Dimensional calibration line + directive (Sprint CAL) ─────────────
+    // Only appended when a confirmed personal calibration zone (lib/calibration-
+    // engine.ts) is active for THIS decision's structural profile — i.e. the
+    // current vector is elevated on the exact dimension where this user has a
+    // documented over/underconfidence pattern. Sharper and evidence-backed
+    // (real past sessions, not just an aggregate), so it gets its own directive
+    // rather than being folded into the general calibrationDirective above.
+    const dimensionalCalibrationLine = buildDimensionalCalibrationLine(personalCalibrationZones, ontologyVector)
+    const dimensionalCalibrationDirective = dimensionalCalibrationLine
+      ? ' This decision\'s structural profile specifically matches a documented personal calibration pattern above. If relevant to what the Council raised, name it as a plain observation tied to this decision\'s structure — for example, "decisions with this much [paraphrase the dimension] have historically been a spot where your hindsight view has run more [favourable/cautious] than how certain you felt going in." Do NOT reference dimension names, scores, or the phrase \'calibration pattern\' verbatim, and do NOT create a separate section header.'
+      : ''
+
     // ── Assemble full synthesisBlock ───────────────────────────────────────
     // Structure: bias record → calibration (if present) → contradictions (if present)
-    //            → principles (if present) → regret signal (if present) → MANDATORY directive.
+    //            → principles (if present) → regret signal (if present)
+    //            → dimensional calibration (if present) → MANDATORY directive.
     const longitudinalContext = [
       calibrationLine,
       contradictionBlock,
       principlesBlock,
       regretBlock,
+      dimensionalCalibrationLine,
     ].filter(Boolean).join('\n\n')
 
     const synthesisBlock =
@@ -928,7 +985,7 @@ ${biasLines}
 Columns: bias_key | status (CONFIRMED = 3+ detections, FORMING = 1–2 detections) | severity (avg prosecutor–defense asymmetry, 0–10 scale) | confidence (evidence weight: 30% per detection, capped at 100%) | signal (re-classified against THIS decision's structural profile: DISTORTING / NEUTRAL / ADAPTIVE).
 ${longitudinalContext ? `\n${longitudinalContext}\n` : ''}
 MANDATORY SYNTHESIS REQUIREMENT — NON-NEGOTIABLE:
-${biasDirective}${calibrationDirective}${contradictionDirective}${principlesDirective}${regretDirective}`
+${biasDirective}${calibrationDirective}${contradictionDirective}${principlesDirective}${regretDirective}${dimensionalCalibrationDirective}`
 
     // ── Build personaAlert ────────────────────────────────────────────────
     // Only the single highest-severity DISTORTING bias fires here, and only if confirmed.
@@ -939,7 +996,7 @@ ${biasDirective}${calibrationDirective}${contradictionDirective}${principlesDire
       ? `DOCUMENTED BIAS ALERT: This user has a confirmed longitudinal pattern of ${topDistorting.biasKey} (${topDistorting.detectionCount} prior detections, severity ${topDistorting.asymmetryAvg.toFixed(1)}/10, currently DISTORTING for this decision's structural profile). Factor this into your analysis where the evidence supports it.`
       : null
 
-    return { synthesisBlock, personaAlert, hasAnyBiases: true }
+    return { synthesisBlock, personaAlert, hasAnyBiases: true, personalCalibrationZones }
 
   } catch (err) {
     console.error('[BiasContext] fetchUserBiasContext failed:', err)

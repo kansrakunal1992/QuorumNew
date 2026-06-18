@@ -118,7 +118,9 @@ export type VectorDimName = typeof VECTOR_DIMS[number]
 // structural retrieval (which used weights) and peer benchmark (which did not).
 
 // Human-readable labels for annotation prompt and context block injection
-const DIM_LABELS: Record<VectorDimName, string> = {
+// Exported (Sprint CAL) so lib/calibration-engine.ts shares the same labels
+// instead of maintaining a second copy that could drift out of sync.
+export const DIM_LABELS: Record<VectorDimName, string> = {
   reversibility:               'reversibility of outcomes',
   time_horizon:                'time horizon of consequences',
   stakes_magnitude:            'stakes magnitude',
