@@ -279,6 +279,18 @@ export default function DecisionRules({ authToken, sessionCount, topBiasLabel, t
         </div>
       )
     }
+    if (data.reason === 'parse_error') {
+      // A single malformed model response, not a data or threshold problem —
+      // same friendly copy as the fetch-failure state above, not the
+      // session-threshold gate, which would be misleading here.
+      return (
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '18px 20px' }}>
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
+            Decision Rules temporarily unavailable. Your data is intact — try refreshing in a moment.
+          </p>
+        </div>
+      )
+    }
     return <ThresholdGate sessionCount={data.sessionCount} threshold={data.threshold ?? RULES_SESSION_THRESHOLD} topBiasLabel={topBiasLabel} />
   }
 

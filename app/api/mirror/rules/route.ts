@@ -198,9 +198,16 @@ export async function GET(req: Request) {
       { provider: 'anthropic' }
     )
 
-    // Parse JSON — strip any accidental markdown fences
-    const cleaned = rawText.replace(/```json|```/g, '').trim()
+    // Parse JSON — strip accidental markdown fences AND a bare "json" label with
+    // no backticks (seen from DeepSeek when ROUTING_MODE=deepseek_only forces this
+    // anthropic-pinned call onto a different model — the strip needs to survive
+    // either provider, not just the one this call is normally pinned to).
+    const cleaned = rawText
+      .replace(/```json|```/gi, '')
+      .replace(/^\s*json\s*\n/i, '')
+      .trim()
     let rules: string[] = []
+    let parseOk = false
 
     try {
       const parsed = JSON.parse(cleaned)
@@ -208,10 +215,41 @@ export async function GET(req: Request) {
         rules = parsed
           .filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
           .slice(0, 7)  // cap at 7
+          parseOk = true
       }
     } catch {
-      console.error('[mirror/rules] JSON parse error:', cleaned.slice(0, 200))
-      return NextResponse.json({ error: 'Parse error' }, { status: 500 })
+      // Fallback: some non-Claude responses wrap the array in stray preamble/
+      // postamble text even after the strips above. Slicing between the first
+      // "[" and last "]" survives that without caring what surrounds it.
+      const start = cleaned.indexOf('[')
+      const end   = cleaned.lastIndexOf(']')
+      if (start !== -1 && end > start) {
+        try {
+          const parsed = JSON.parse(cleaned.slice(start, end + 1))
+          if (Array.isArray(parsed)) {
+            rules = parsed
+              .filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
+              .slice(0, 7)
+            parseOk = true
+          }
+        } catch {
+          // fall through — parseOk stays false
+        }
+      }
+    }
+
+    if (!parseOk) {
+      console.error('[mirror/rules] JSON parse error (both attempts failed):', cleaned.slice(0, 200))
+      // Degrade gracefully — same shape as the insufficient_examiner_data path
+      // below, not a 500. A single malformed model response shouldn't surface
+      // as a broken page when "rules aren't available right now" is accurate
+      // and the user's data is untouched either way.
+      return NextResponse.json({
+        rules:        null,
+        sessionCount,
+        threshold:    RULES_SESSION_THRESHOLD,
+        reason:       'parse_error',
+      })
     }
 
     return NextResponse.json({
