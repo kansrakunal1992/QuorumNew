@@ -30,6 +30,7 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import type { CalibrationPoint, CalibrationSummary, CalibrationResponse } from '@/app/api/mirror/calibration/route'
 import type { DimensionalCalibrationZone, CalibrationEvidence } from '@/lib/calibration-engine'
+import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS } from '@/lib/calibration-copy'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -159,9 +160,7 @@ function InsufficientState({ pairedCount }: { pairedCount: number }) {
 // linked through to the full session record rather than asked to be trusted
 // as an abstract psychological observation.
 function directionLabel(direction: DimensionalCalibrationZone['direction']): string {
-  return direction === 'overconfident'
-    ? 'Runs overconfident here'
-    : 'Runs underconfident here'
+  return direction === 'overconfident' ? 'Overconfident here' : 'Underconfident here'
 }
 
 function directionColor(direction: DimensionalCalibrationZone['direction']): string {
@@ -174,13 +173,11 @@ function formatOutcomeQuality(q: string | null): string | null {
 }
 
 function EvidenceRow({ evidence }: { evidence: CalibrationEvidence }) {
-  const delta = evidence.calibration_delta
-  const dStr  = (delta >= 0 ? '+' : '') + delta.toFixed(1)
-  const oq    = formatOutcomeQuality(evidence.outcome_quality)
+  const oq = formatOutcomeQuality(evidence.outcome_quality)
 
   return (
     <Link
-      href={`/session/${evidence.session_id}`}
+      href={`/record/${evidence.session_id}`}
       style={{
         display:        'block',
         textDecoration: 'none',
@@ -204,16 +201,11 @@ function EvidenceRow({ evidence }: { evidence: CalibrationEvidence }) {
         <span style={{ fontSize: 9.5, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
           {formatShortDate(evidence.created_at)}
         </span>
-        <span style={{ fontSize: 9.5, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
-          Pre: {evidence.pre_decision_confidence} → Retro: {evidence.retrospective_confidence}
-        </span>
-        <span style={{
-          fontSize:   9.5,
-          fontFamily: 'var(--font-mono)',
-          fontWeight: 700,
-          color:      deltaColor(delta),
-        }}>
-          Δ {dStr}
+        <span style={{ fontSize: 9.5, color: 'var(--text-4)' }}>
+          Felt {evidence.pre_decision_confidence}/10 going in →{' '}
+          <span style={{ color: deltaColor(evidence.calibration_delta), fontWeight: 600 }}>
+            {evidence.retrospective_confidence}/10 in hindsight
+          </span>
         </span>
         {oq && (
           <span style={{ fontSize: 9.5, color: 'var(--text-4)' }}>
@@ -229,7 +221,12 @@ function EvidenceRow({ evidence }: { evidence: CalibrationEvidence }) {
 }
 
 function ZoneCard({ zone }: { zone: DimensionalCalibrationZone }) {
-  const color = directionColor(zone.direction)
+  const color    = directionColor(zone.direction)
+  const phrase   = DIMENSION_EVERYDAY_PHRASE[zone.dim]
+  const headline = phrase.charAt(0).toUpperCase() + phrase.slice(1)
+  const hint     = CALIBRATION_ACTION_HINTS[zone.dim][zone.direction]
+  const gapAbs   = Math.abs(zone.gap).toFixed(1)
+  const totalN   = zone.sampleSize.high + zone.sampleSize.low
   return (
     <div style={{
       background:   'var(--bg-card)',
@@ -239,7 +236,7 @@ function ZoneCard({ zone }: { zone: DimensionalCalibrationZone }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
         <p style={{ fontSize: 13.5, color: 'var(--text-1)', margin: 0, fontWeight: 600, lineHeight: 1.4 }}>
-          On decisions with high {zone.dimLabel}
+          {headline}
         </p>
         <span style={{
           fontSize:      10.5,
@@ -250,11 +247,34 @@ function ZoneCard({ zone }: { zone: DimensionalCalibrationZone }) {
           {directionLabel(zone.direction)}
         </span>
       </div>
+
       <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.5 }}>
-        Calibration delta runs {zone.gap >= 0 ? '+' : ''}{zone.gap} points wider than on decisions
-        where this dimension is low — based on {zone.sampleSize.high} high-scoring and{' '}
-        {zone.sampleSize.low} low-scoring tracked decisions.
+        Going in, your confidence here tends to run about {gapAbs} points{' '}
+        {zone.direction === 'overconfident' ? 'higher' : 'lower'} (out of 10) than how things
+        actually turned out. On decisions where this isn't as much of a factor, that gap mostly
+        disappears.
       </p>
+      <div style={{
+              marginTop:    12,
+              padding:      '10px 12px',
+              background:   'var(--bg-inset)',
+              borderLeft:   '2px solid var(--gold)',
+              borderRadius: '0 6px 6px 0',
+            }}>
+              <p style={{
+                fontSize:      9.5,
+                fontWeight:    700,
+                color:         'var(--gold)',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                margin:        '0 0 4px',
+              }}>
+                Try this next time
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>
+                {hint}
+              </p>
+            </div>
 
       <p style={{
         fontSize:      9.5,
@@ -264,7 +284,7 @@ function ZoneCard({ zone }: { zone: DimensionalCalibrationZone }) {
         textTransform: 'uppercase',
         margin:        '14px 0 0',
       }}>
-        Evidence
+        Evidence — from {totalN} of your past decisions
       </p>
       {zone.evidence.map(e => <EvidenceRow key={e.session_id} evidence={e} />)}
     </div>
