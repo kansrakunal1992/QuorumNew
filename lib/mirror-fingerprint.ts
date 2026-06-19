@@ -234,6 +234,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       formingTiles:   [],
       sessionCount:   0,
       generatedAt:    new Date().toISOString(),
+      personalBiasTriggers:  [],
     }
   }
 
