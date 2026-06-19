@@ -1,16 +1,17 @@
 'use client'
 
 // components/BriefCTA.tsx
-// Fix: Card wrapper moved OUTSIDE BriefCTA function.
-// When defined inside, every keystroke → state change → render → new Card
-// function reference → React unmounts/remounts subtree → input loses focus.
+// Sprint: Brief freemium + dark/light PDF mode
+//
+// Token gate removed — Brief PDF is now free for all users.
+// Added dark/light theme toggle so users can download whichever suits their
+// use-case (dark for screen sharing / presentations; light for printing).
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 
 interface Props { sessionId: string }
-type State = 'teaser' | 'input' | 'validating' | 'invalid' | 'downloading'
 
-// ── Card wrapper — defined at module level, stable reference ──────────────────
+// ── Stable card wrapper — defined at module level to prevent remount on state change ──
 const CARD_STYLE: React.CSSProperties = {
   borderRadius: 14,
   padding:      '18px 22px',
@@ -39,132 +40,96 @@ function Card({ children }: { children: React.ReactNode }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function BriefCTA({ sessionId }: Props) {
-  const [state,    setState]    = useState<State>('teaser')
-  const [token,    setToken]    = useState('')
-  const [errorMsg, setErrorMsg] = useState('')
-  const inputRef                 = useRef<HTMLInputElement>(null)
+  const [theme,       setTheme]       = useState<'dark' | 'light'>('dark')
+  const [downloading, setDownloading] = useState(false)
 
-  const handleSubmit = async () => {
-    if (!token.trim()) return
-    setState('validating')
-    setErrorMsg('')
-    try {
-      const res  = await fetch('/api/brief-access', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ token: token.trim() }),
-      })
-      const data = await res.json() as { valid: boolean }
-      if (!data.valid) {
-        setState('invalid')
-        setErrorMsg("That token doesn't match. Check the one shared with you.")
-        return
-      }
-      setState('downloading')
-      window.location.href = `/api/record/${sessionId}/brief?token=${encodeURIComponent(token.trim())}`
-      setTimeout(() => setState('teaser'), 4000)
-    } catch {
-      setState('invalid')
-      setErrorMsg('Something went wrong. Try again.')
-    }
+  const handleDownload = () => {
+    setDownloading(true)
+    window.location.href = `/api/record/${sessionId}/brief?theme=${theme}`
+    // Reset after a brief delay — browser takes over the download
+    setTimeout(() => setDownloading(false), 4000)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter')  handleSubmit()
-    if (e.key === 'Escape') setState('teaser')
+  const pillBase: React.CSSProperties = {
+    padding:      '5px 13px',
+    borderRadius: 20,
+    fontSize:     11,
+    fontWeight:   600,
+    cursor:       'pointer',
+    border:       '1px solid transparent',
+    transition:   'all 0.15s ease',
   }
-
-  const reset = () => { setState('teaser'); setToken(''); setErrorMsg('') }
-
-  // ── Teaser ─────────────────────────────────────────────────────────────────
-  if (state === 'teaser') {
-    return (
-      <Card>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div>
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--gold)', margin: '0 0 4px', letterSpacing: '0.05em' }}>
-              Decision Brief
-            </p>
-            <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
-              A formatted PDF of this session — all six advisors, the synthesis, and your pushbacks. Ready to share.
-            </p>
-          </div>
-          <button
-            onClick={() => { setState('input'); setTimeout(() => inputRef.current?.focus(), 50) }}
-            style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.35)', borderRadius: 8, padding: '9px 18px', fontSize: 12, fontWeight: 700, color: 'var(--gold)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-          >
-            Get Brief →
-          </button>
-        </div>
-      </Card>
-    )
-  }
-
-  // ── Downloading ────────────────────────────────────────────────────────────
-  if (state === 'downloading') {
-    return (
-      <Card>
-        <style>{`@keyframes brief-spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(201,168,76,0.2)', borderTopColor: 'var(--gold)', animation: 'brief-spin 0.8s linear infinite', flexShrink: 0 }} />
-          <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: 0 }}>Preparing your Brief — downloading now…</p>
-        </div>
-      </Card>
-    )
-  }
-
-  // ── Input / validating / invalid ───────────────────────────────────────────
-  const isInvalid = state === 'invalid'
-  const isBusy    = state === 'validating'
 
   return (
     <Card>
-      <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-3)', margin: '0 0 10px', letterSpacing: '0.03em' }}>
-        Enter your access token
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        {/* Left: label + theme toggle */}
+        <div>
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--gold)', margin: '0 0 6px', letterSpacing: '0.05em' }}>
+            Decision Brief
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 10px', lineHeight: 1.55 }}>
+            A formatted PDF — all six advisors, synthesis, and pushbacks.
+          </p>
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={token}
-          onChange={e => { setToken(e.target.value); if (isInvalid) setState('input') }}
-          onKeyDown={handleKeyDown}
-          placeholder="Paste token here"
-          disabled={isBusy}
-          autoComplete="off"
-          spellCheck={false}
-          style={{
-            flex: 1, background: 'var(--bg-inset)',
-            border: `1px solid ${isInvalid ? 'rgba(220,80,60,0.5)' : 'var(--border-mid)'}`,
-            borderRadius: 8, padding: '9px 13px', fontSize: 13,
-            color: 'var(--text-1)', outline: 'none', fontFamily: 'monospace',
-            letterSpacing: '0.05em',
-          }}
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={isBusy || !token.trim()}
-          style={{ background: 'rgba(201,168,76,0.15)', border: '1px solid rgba(201,168,76,0.3)', borderRadius: 8, padding: '9px 16px', fontSize: 12, fontWeight: 700, color: 'var(--gold)', cursor: isBusy ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: isBusy || !token.trim() ? 0.6 : 1 }}
-        >
-          {isBusy ? 'Checking…' : 'Download PDF'}
-        </button>
+          {/* Theme pills */}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => setTheme('dark')}
+              style={{
+                ...pillBase,
+                background:   theme === 'dark' ? 'rgba(201,168,76,0.15)' : 'transparent',
+                border:       theme === 'dark' ? '1px solid rgba(201,168,76,0.4)' : '1px solid var(--border-mid)',
+                color:        theme === 'dark' ? 'var(--gold)'             : 'var(--text-4)',
+              }}
+            >
+              Dark
+            </button>
+            <button
+              onClick={() => setTheme('light')}
+              style={{
+                ...pillBase,
+                background:   theme === 'light' ? 'rgba(201,168,76,0.15)' : 'transparent',
+                border:       theme === 'light' ? '1px solid rgba(201,168,76,0.4)' : '1px solid var(--border-mid)',
+                color:        theme === 'light' ? 'var(--gold)'             : 'var(--text-4)',
+              }}
+            >
+              Light
+            </button>
+          </div>
+        </div>
+
+        {/* Right: download button */}
+        {downloading ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <style>{`@keyframes brief-spin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{
+              width: 14, height: 14, borderRadius: '50%',
+              border: '2px solid rgba(201,168,76,0.2)', borderTopColor: 'var(--gold)',
+              animation: 'brief-spin 0.8s linear infinite', flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Preparing…</span>
+          </div>
+        ) : (
+          <button
+            onClick={handleDownload}
+            style={{
+              background:    'rgba(201,168,76,0.12)',
+              border:        '1px solid rgba(201,168,76,0.35)',
+              borderRadius:  8,
+              padding:       '9px 18px',
+              fontSize:      12,
+              fontWeight:    700,
+              color:         'var(--gold)',
+              cursor:        'pointer',
+              whiteSpace:    'nowrap',
+              flexShrink:    0,
+            }}
+          >
+            Download PDF →
+          </button>
+        )}
       </div>
-
-      {isInvalid && errorMsg && (
-        <p style={{ fontSize: 11, color: 'rgba(220,80,60,0.9)', margin: '8px 0 0', lineHeight: 1.5 }}>{errorMsg}</p>
-      )}
-
-      <button
-        onClick={reset}
-        style={{ background: 'none', border: 'none', fontSize: 11, color: 'var(--text-4)', cursor: 'pointer', marginTop: 8, padding: 0 }}
-      >
-        Cancel
-      </button>
-
-      <p style={{ fontSize: 10.5, color: 'var(--text-4)', margin: '10px 0 0', lineHeight: 1.5 }}>
-        Token shared privately for verified sessions.
-      </p>
     </Card>
   )
 }

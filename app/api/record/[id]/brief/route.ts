@@ -91,29 +91,76 @@ function stripAdvisorTags(raw: string): string {
     .replace(/^\s+/, '')
 }
 
-// ── Colour palette (dark premium theme) ───────────────────────────────────────
-const C = {
-  gold:        [201, 168, 76]  as [number, number, number],
-  goldDim:     [100, 82,  30]  as [number, number, number],
-  goldText:    [201, 168, 76]  as [number, number, number],
-  pageBg:      [4,   6,   15]  as [number, number, number],
-  headerBg:    [4,   6,   15]  as [number, number, number],
-  briefBg:     [8,   18,  8]   as [number, number, number],
-  synthBg:     [15,  22,  15]  as [number, number, number],
-  decisionBg:  [7,   10,  22]  as [number, number, number],
-  pushbackBg:  [7,   12,  24]  as [number, number, number],
-  bodyText:    [188, 200, 220] as [number, number, number],
-  mutedText:   [74,  85,  104] as [number, number, number],
-  dimText:     [42,  58,  92]  as [number, number, number],
-  ruleGold:    [42,  38,  18]  as [number, number, number],
-  ruleMid:     [28,  43,  74]  as [number, number, number],
-  white:       [232, 234, 240] as [number, number, number],
-  goldLight:   [180, 148, 60]  as [number, number, number],   // pushback label
-  pushbackText:[160, 172, 198] as [number, number, number],   // pushback body — readable on dark
+// ── Colour palettes — dark (original) + light ─────────────────────────────────
+// buildPdf() selects one into a local `const C` and `const PERSONA_ACCENT` at
+// the top of the function; every existing C.xxx / PERSONA_ACCENT[key] reference
+// below resolves to whichever palette is active via lexical scoping — no other
+// lines in the function need to change.
+
+type Palette = {
+  gold:         [number, number, number]
+  goldDim:      [number, number, number]
+  goldText:     [number, number, number]
+  pageBg:       [number, number, number]
+  headerBg:     [number, number, number]
+  briefBg:      [number, number, number]
+  synthBg:      [number, number, number]
+  decisionBg:   [number, number, number]
+  pushbackBg:   [number, number, number]
+  bodyText:     [number, number, number]
+  mutedText:    [number, number, number]
+  dimText:      [number, number, number]
+  ruleGold:     [number, number, number]
+  ruleMid:      [number, number, number]
+  white:        [number, number, number]
+  goldLight:    [number, number, number]
+  pushbackText: [number, number, number]
 }
 
-// Persona accent colours (rgb)
-const PERSONA_ACCENT: Record<string, [number, number, number]> = {
+const DARK_PALETTE: Palette = {
+  gold:         [201, 168, 76],
+  goldDim:      [100, 82,  30],
+  goldText:     [201, 168, 76],
+  pageBg:       [4,   6,   15],
+  headerBg:     [4,   6,   15],
+  briefBg:      [8,   18,  8],
+  synthBg:      [15,  22,  15],
+  decisionBg:   [7,   10,  22],
+  pushbackBg:   [7,   12,  24],
+  bodyText:     [188, 200, 220],
+  mutedText:    [74,  85,  104],
+  dimText:      [42,  58,  92],
+  ruleGold:     [42,  38,  18],
+  ruleMid:      [28,  43,  74],
+  white:        [232, 234, 240],
+  goldLight:    [180, 148, 60],
+  pushbackText: [160, 172, 198],
+}
+
+// Light palette — warm off-white pages, deep bronze gold, near-black text.
+// All tones chosen for print legibility at 300dpi.
+const LIGHT_PALETTE: Palette = {
+  gold:         [150, 108, 20],   // deep bronze — legible on white
+  goldDim:      [200, 172, 110],
+  goldText:     [150, 108, 20],
+  pageBg:       [250, 248, 243],  // warm off-white
+  headerBg:     [250, 248, 243],
+  briefBg:      [232, 240, 228],  // light sage wash
+  synthBg:      [234, 242, 230],
+  decisionBg:   [242, 236, 222],  // light cream wash
+  pushbackBg:   [228, 234, 244],
+  bodyText:     [40,  38,  34],   // near-black warm
+  mutedText:    [120, 114, 104],
+  dimText:      [165, 160, 150],
+  ruleGold:     [225, 205, 165],
+  ruleMid:      [215, 210, 200],
+  white:        [30,  28,  24],   // unused in practice; kept for key parity
+  goldLight:    [140, 100, 40],   // pushback label
+  pushbackText: [55,  65,  90],   // pushback body — readable on light
+}
+
+// Persona accent backgrounds — dark vs light
+const PERSONA_ACCENT_DARK: Record<string, [number, number, number]> = {
   synthesis:         [15,  22,  15],
   contrarian:        [60,  18,  18],
   risk_architect:    [11,  22,  56],
@@ -121,6 +168,16 @@ const PERSONA_ACCENT: Record<string, [number, number, number]> = {
   stakeholder_mirror:[28,  12,  46],
   elder:             [38,  24,  8],
   competitor:        [22,  16,  6],
+}
+
+const PERSONA_ACCENT_LIGHT: Record<string, [number, number, number]> = {
+  synthesis:         [228, 238, 224],
+  contrarian:        [250, 224, 220],
+  risk_architect:    [220, 230, 248],
+  pattern_analyst:   [222, 240, 228],
+  stakeholder_mirror:[240, 226, 248],
+  elder:             [248, 236, 210],
+  competitor:        [242, 240, 216],
 }
 
 // ── PDF builder ───────────────────────────────────────────────────────────────
@@ -137,7 +194,13 @@ async function buildPdf(
   session: { decision_text: string; context_text?: string | null; created_at: string; id: string },
   messages: { persona: string; role: string; content: string }[],
   examinerQAs: ExaminerQA[] = [],
+  theme: 'dark' | 'light' = 'dark',
 ): Promise<Buffer> {
+  // ── Theme selection — every C.xxx and PERSONA_ACCENT[key] reference below
+  // resolves to the active palette without any other code changes needed.
+  const C              = theme === 'light' ? LIGHT_PALETTE      : DARK_PALETTE
+  const PERSONA_ACCENT = theme === 'light' ? PERSONA_ACCENT_LIGHT : PERSONA_ACCENT_DARK
+
   const { jsPDF } = await import('jspdf')
 
   const doc  = new jsPDF({ unit: 'pt', format: 'a4', putOnlyUsedFonts: true })
@@ -150,12 +213,12 @@ async function buildPdf(
   let   Y    = 0
   let   page = 1
 
-  // ── Dark page fill ────────────────────────────────────────────────────────────
-  const fillPageDark = () => {
+  // ── Page fill (uses C.pageBg — resolves to dark or light depending on theme) ──
+  const fillPage = () => {
     doc.setFillColor(...C.pageBg)
     doc.rect(0, 0, PW, PH, 'F')
   }
-  fillPageDark()
+  fillPage()
 
   // ── Footer ────────────────────────────────────────────────────────────────────
   const drawFooter = () => {
@@ -173,7 +236,7 @@ async function buildPdf(
   const ensure = (needed: number) => {
     if (Y + needed > PH - BOTTOM_MARGIN) {
       doc.addPage()
-      fillPageDark()
+      fillPage()
       page++
       Y = 52
       drawFooter()
@@ -656,7 +719,7 @@ async function buildPdf(
 
   if (examinerQAs.length > 0) {
     doc.addPage()
-    fillPageDark()
+    fillPage()
     page++
     Y = 52
     drawFooter()
@@ -688,7 +751,7 @@ async function buildPdf(
   if (briefMsgs && briefMsgs.length > 0) {
     // Always start the Decision Brief on its own page — never inline after the cover
     doc.addPage()
-    fillPageDark()
+    fillPage()
     page++
     Y = ML
     drawFooter()
@@ -750,7 +813,7 @@ async function buildPdf(
   if (hasAppendix) {
     // Appendix divider — new dark page, centred
     doc.addPage()
-    fillPageDark()
+    fillPage()
     page++
     drawFooter()
 
@@ -778,7 +841,7 @@ async function buildPdf(
     // ── Appendix: Examiner Q&A page ──────────────────────────────────────────
     if (examinerQAs.length > 0) {
       doc.addPage()
-      fillPageDark()
+      fillPage()
       page++
       Y = 52
       drawFooter()
@@ -813,14 +876,14 @@ async function buildPdf(
       const isSynthesis = key === 'synthesis'
 
       doc.addPage()
-      fillPageDark()
+      fillPage()
       page++
       Y = ML
       drawFooter()
 
       // Guard: if less than 120pt left, start a fresh page for this persona
       if (Y + 120 > PH - BOTTOM_MARGIN) {
-        doc.addPage(); fillPageDark(); page++; Y = ML; drawFooter()
+        doc.addPage(); fillPage(); page++; Y = ML; drawFooter()
       }
 
       // Persona header band
@@ -888,13 +951,13 @@ async function buildPdf(
 interface Params { params: Promise<{ id: string }> }
 
 export async function GET(req: Request, { params }: Params) {
-  const { id }     = await params
-  const token      = new URL(req.url).searchParams.get('token') ?? ''
-  const validToken = process.env.BRIEF_ACCESS_TOKEN
+  const { id }  = await params
+  const url     = new URL(req.url)
+  const theme   = url.searchParams.get('theme') === 'light' ? 'light' : 'dark'
 
-  if (validToken && token !== validToken) {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
-  }
+  // ── Token gate removed (Sprint: Brief freemium) ───────────────────────────
+  // Brief is now free for all users. BRIEF_ACCESS_TOKEN env var is no longer
+  // checked here. The /api/brief-access route can be decommissioned separately.
 
   const supabase = createServiceClient()
 
@@ -985,7 +1048,7 @@ Generate the Decision Brief now.`
 
   let pdfBuffer: Buffer
   try {
-    pdfBuffer = await buildPdf(session, messages, examinerQAs)
+    pdfBuffer = await buildPdf(session, messages, examinerQAs, theme)
   } catch (err) {
     console.error('[brief/route] PDF build error:', err)
     return NextResponse.json({ error: 'PDF generation failed' }, { status: 500 })

@@ -1,0 +1,145 @@
+'use client'
+
+// components/EarlyEchoCard.tsx
+// Sprint: Second-use early signal
+//
+// Shows a lightweight session-count signal at decisions 2–4 on the record page.
+// Purpose: prove that Quorum is accumulating something *before* the full pattern
+// memory loop activates at session 5 — making return visits feel meaningful
+// from session 2, not session 5.
+//
+// Deliberately lightweight:
+//   - Client-only, reads localStorage
+//   - No API call, no server state
+//   - Hides at session 5+ (MemoryEngineStatus on the homepage handles that)
+//   - Hides if user dismisses (sessionStorage flag per record page)
+//
+// IMPORTANT: this component does NOT touch MIN_SESSIONS or structural-retrieval
+// injection. The Council's structural memory gate remains at 5 sessions.
+// This is a UI signal only.
+
+import { useState, useEffect } from 'react'
+import { getStoredSessionIds } from '@/lib/storage'
+
+interface Props {
+  /** The ID of the session the user is currently viewing */
+  sessionId: string
+}
+
+function getSignal(count: number): { headline: string; sub: string } | null {
+  if (count < 2 || count >= 5) return null
+  const remaining = 5 - count
+  switch (count) {
+    case 2:
+      return {
+        headline: 'Second decision recorded.',
+        sub:      `${remaining} more and Quorum begins recognising structural patterns across your decisions.`,
+      }
+    case 3:
+      return {
+        headline: 'Three decisions in.',
+        sub:      `${remaining} more to activate pattern memory. Your judgment record is building.`,
+      }
+    case 4:
+      return {
+        headline: 'Four decisions recorded.',
+        sub:      'One more to unlock structural pattern recognition — the Council will start connecting your decisions.',
+      }
+    default:
+      return null
+  }
+}
+
+export default function EarlyEchoCard({ sessionId }: Props) {
+  const [signal,  setSignal]  = useState<{ headline: string; sub: string } | null>(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    try {
+      const dismissKey = `quorum_echo_dismissed_${sessionId}`
+      if (sessionStorage.getItem(dismissKey)) return
+
+      const stored = getStoredSessionIds()
+      // Include current session even if not yet pushed
+      const ids = stored.includes(sessionId) ? stored : [sessionId, ...stored]
+      const count  = ids.length
+      const result = getSignal(count)
+      if (result) {
+        setSignal(result)
+        setVisible(true)
+      }
+    } catch {
+      // localStorage/sessionStorage unavailable — stay hidden
+    }
+  }, [sessionId])
+
+  if (!visible || !signal) return null
+
+  const handleDismiss = () => {
+    try { sessionStorage.setItem(`quorum_echo_dismissed_${sessionId}`, '1') } catch {}
+    setVisible(false)
+  }
+
+  return (
+    <div style={{
+      borderRadius:  12,
+      padding:       '13px 18px',
+      background:    'var(--bg-card)',
+      border:        '1px solid var(--border-subtle)',
+      display:       'flex',
+      alignItems:    'flex-start',
+      justifyContent:'space-between',
+      gap:           12,
+    }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        {/* Pulse indicator */}
+        <div style={{
+          width:        7,
+          height:       7,
+          borderRadius: '50%',
+          background:   'var(--gold-dim)',
+          marginTop:    5,
+          flexShrink:   0,
+          boxShadow:    '0 0 0 3px rgba(201,168,76,0.12)',
+        }} />
+        <div>
+          <p style={{
+            fontSize:     12.5,
+            fontWeight:   600,
+            color:        'var(--text-2)',
+            margin:       '0 0 3px',
+            lineHeight:   1.4,
+          }}>
+            {signal.headline}
+          </p>
+          <p style={{
+            fontSize:   12,
+            color:      'var(--text-4)',
+            margin:     0,
+            lineHeight: 1.55,
+          }}>
+            {signal.sub}
+          </p>
+        </div>
+      </div>
+
+      <button
+        onClick={handleDismiss}
+        aria-label="Dismiss"
+        style={{
+          background: 'none',
+          border:     'none',
+          padding:    0,
+          fontSize:   15,
+          color:      'var(--text-4)',
+          cursor:     'pointer',
+          flexShrink: 0,
+          marginTop:  -1,
+          lineHeight: 1,
+        }}
+      >
+        ×
+      </button>
+    </div>
+  )
+}

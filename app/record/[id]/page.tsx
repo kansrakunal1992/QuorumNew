@@ -3,6 +3,8 @@ import { formatDateTime } from '@/lib/dates'
 import { createServiceClient } from '@/lib/supabase'
 import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
+import EmailCaptureCard from '@/components/EmailCaptureCard'
+import EarlyEchoCard from '@/components/EarlyEchoCard'
 import Link from 'next/link'
 import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
 import BackButton from '@/components/BackButton'
@@ -336,8 +338,19 @@ export default async function RecordPage({ params }: Props) {
           </div>
 
           {/* ── Decision Brief CTA ─────────────────────────────── */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 28 }}>
+          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
             <BriefCTA sessionId={session.id} />
+          </div>
+
+          {/* ── Session count signal (2–4 decisions) — EarlyEchoCard ── */}
+          {/* Reads localStorage client-side; hidden at 0–1 or 5+ sessions */}
+          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
+            <EarlyEchoCard sessionId={session.id} />
+          </div>
+
+          {/* ── Email capture — shown to unlinked users only ────── */}
+          <div className="rec-fade rec-fade-3" style={{ marginBottom: 28 }}>
+            <EmailCaptureCard sessionId={session.id} />
           </div>
 
           {/* ── Persona Sections ───────────────────────────────── */}
