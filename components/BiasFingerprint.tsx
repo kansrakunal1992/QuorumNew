@@ -15,6 +15,7 @@ import Link                     from 'next/link'
 import type { FingerprintData } from '@/lib/types'
 import type { PersonalBiasTrigger, BiasTriggerEvidence } from '@/lib/bias-trigger-engine'
 import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS } from '@/lib/calibration-copy'
+import PendingOutcomesCTA from '@/components/PendingOutcomesCTA'
 
 // ── Personal Trigger Patterns (Sprint BT) ─────────────────────────────────────
 function TriggerEvidenceRow({ evidence }: { evidence: BiasTriggerEvidence }) {
@@ -74,17 +75,46 @@ function TriggerCard({ trigger }: { trigger: PersonalBiasTrigger }) {
   )
 }
 
-function PersonalTriggerSection({ triggers }: { triggers: PersonalBiasTrigger[] }) {
-  if (triggers.length === 0) return null
+function PersonalTriggerSection({
+  triggers,
+  confirmedBiasLabels,
+  authToken,
+}: {
+  triggers:             PersonalBiasTrigger[]
+  confirmedBiasLabels:  string[]
+  authToken:            string
+}) {
+  if (triggers.length > 0) {
+    return (
+      <div style={{ marginTop: 20 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-4)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 2px' }}>
+          When these patterns become costly
+        </p>
+        <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 4px', lineHeight: 1.5 }}>
+          Based on your own decisions that didn't land as expected.
+        </p>
+        {triggers.map(t => <TriggerCard key={t.biasKey + t.triggerDim} trigger={t} />)}
+      </div>
+    )
+  }
+
+  // No triggers discovered yet. Only worth a CTA if there's actually
+  // something to eventually correlate — i.e. at least one confirmed bias.
+  // With zero confirmed biases, this section staying silent is correct;
+  // there's nothing personal to point at yet.
+  if (confirmedBiasLabels.length === 0) return null
+
+  const namedBiases = confirmedBiasLabels.slice(0, 2).join(' and ')
   return (
-    <div style={{ marginTop: 20 }}>
-      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-4)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 2px' }}>
+    <div style={{ marginTop: 20, background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '14px 16px' }}>
+      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-4)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
         When these patterns become costly
       </p>
-      <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 4px', lineHeight: 1.5 }}>
-        Based on your own decisions that didn't land as expected.
+      <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 10px', lineHeight: 1.55 }}>
+        We can already see {namedBiases} showing up in how you decide. What we can't tell yet is
+        when it actually costs you — that takes outcomes logged on the decisions where it fired.
       </p>
-      {triggers.map(t => <TriggerCard key={t.biasKey + t.triggerDim} trigger={t} />)}
+      <PendingOutcomesCTA authToken={authToken} introText="Start with one of these:" />
     </div>
   )
 }
@@ -291,7 +321,11 @@ export default function BiasFingerprint({ authToken }: Props) {
       )}
 
       {/* Personal Trigger Patterns (Sprint BT) */}
-      <PersonalTriggerSection triggers={data.personalBiasTriggers ?? []} />
+      <PersonalTriggerSection
+        triggers={data.personalBiasTriggers ?? []}
+        confirmedBiasLabels={data.confirmedTiles.map(t => t.biasLabel)}
+        authToken={authToken}
+      />
 
       {/* Footer */}
       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '14px 0 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>

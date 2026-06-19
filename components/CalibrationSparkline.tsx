@@ -31,6 +31,7 @@ import { useState, useEffect } from 'react'
 import type { CalibrationPoint, CalibrationSummary, CalibrationResponse } from '@/app/api/mirror/calibration/route'
 import type { DimensionalCalibrationZone, CalibrationEvidence } from '@/lib/calibration-engine'
 import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS } from '@/lib/calibration-copy'
+import PendingOutcomesCTA from '@/components/PendingOutcomesCTA'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -100,7 +101,7 @@ interface TooltipState {
 }
 
 // ── Empty / loading states ────────────────────────────────────────────────────
-function InsufficientState({ pairedCount }: { pairedCount: number }) {
+function InsufficientState({ pairedCount, authToken }: { pairedCount: number; authToken: string }) {
   const needed = 3 - pairedCount
   return (
     <div style={{
@@ -148,6 +149,9 @@ function InsufficientState({ pairedCount }: { pairedCount: number }) {
           {pairedCount} / 3 to activate
         </span>
       </div>
+      
+      {/* Sprint OUT: direct links to the user's own open decisions */}
+      <PendingOutcomesCTA authToken={authToken} introText="Closest decisions to log:" />
     </div>
   )
 }
@@ -375,7 +379,7 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
 
   // ── Insufficient data ───────────────────────────────────────────────────────
   if (!summary.dataReady) {
-    return <InsufficientState pairedCount={summary.pairedCount} />
+    return <InsufficientState pairedCount={summary.pairedCount} authToken={authToken} />
   }
 
   // ── Points for chart rendering ───────────────────────────────────────────────
