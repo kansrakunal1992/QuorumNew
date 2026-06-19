@@ -1,18 +1,95 @@
 'use client'
 
 // components/BiasFingerprint.tsx
-// ── Mirror Module: Bias Fingerprint Section (Sprint 7b, updated Sprint 20) ────
+// ── Mirror Module: Bias Fingerprint Section (Sprint 7b, updated Sprint 20 + Sprint BT) ────
 //
 // Sprint 20: passes authToken down to PatternTile so each tile can open
 // a source-session drawer. signalType and sessionIds are now in FingerprintTile
 // (populated by mirror-fingerprint.ts) and flow through automatically.
+// Sprint BT: renders Personal Trigger Patterns section beneath the tile grid.
 
 import { useState, useEffect } from 'react'
 import { formatShortDate } from '@/lib/dates'
 import PatternTile              from '@/components/PatternTile'
+import Link                     from 'next/link'
 import type { FingerprintData } from '@/lib/types'
+import type { PersonalBiasTrigger, BiasTriggerEvidence } from '@/lib/bias-trigger-engine'
+import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS } from '@/lib/calibration-copy'
 
-// ── Skeleton ──────────────────────────────────────────────────────────────────
+// ── Personal Trigger Patterns (Sprint BT) ─────────────────────────────────────
+function TriggerEvidenceRow({ evidence }: { evidence: BiasTriggerEvidence }) {
+  return (
+    <Link
+      href={`/record/${evidence.session_id}`}
+      style={{ display: 'block', textDecoration: 'none', padding: '8px 10px', marginTop: 5, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', borderRadius: 7 }}
+    >
+      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 4px', lineHeight: 1.4 }}>
+        "{evidence.decision_text}{evidence.decision_text.length >= 140 ? '…' : ''}"
+      </p>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9.5, color: 'var(--text-4)' }}>{formatShortDate(evidence.created_at)}</span>
+        <span style={{ fontSize: 9.5, color: '#f87171', fontWeight: 600 }}>Worse than expected</span>
+        <span style={{ fontSize: 9.5, color: 'var(--gold)', marginLeft: 'auto' }}>View →</span>
+      </div>
+    </Link>
+  )
+}
+
+function TriggerCard({ trigger }: { trigger: PersonalBiasTrigger }) {
+  const phrase    = DIMENSION_EVERYDAY_PHRASE[trigger.triggerDim]
+  const hint      = CALIBRATION_ACTION_HINTS[trigger.triggerDim]?.overconfident
+  const highPct   = Math.round(trigger.badRateHigh * 100)
+  const lowPct    = Math.round(trigger.badRateLow * 100)
+  const totalN    = trigger.sampleSize.high + trigger.sampleSize.low
+
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '14px 14px 12px', marginTop: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-1)', margin: 0, fontWeight: 600, lineHeight: 1.4 }}>
+          {trigger.biasLabel}
+        </p>
+        <span style={{ fontSize: 10, fontWeight: 700, color: '#f87171', whiteSpace: 'nowrap' }}>
+          Danger zone ↑
+        </span>
+      </div>
+      <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.5 }}>
+        When you have <strong style={{ color: 'var(--text-2)', fontWeight: 600 }}>{phrase}</strong>,
+        this pattern has preceded a worse-than-expected outcome{' '}
+        <strong style={{ color: '#f87171' }}>{highPct}% of the time</strong> — vs. {lowPct}% in decisions without that pressure.
+        Across {totalN} decisions where this pattern was active and you later logged how it went.
+      </p>
+
+      {hint && (
+        <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg-inset)', borderLeft: '2px solid var(--gold)', borderRadius: '0 5px 5px 0' }}>
+          <p style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Try this next time</p>
+          <p style={{ fontSize: 11.5, color: 'var(--text-2)', margin: 0, lineHeight: 1.45 }}>{hint}</p>
+        </div>
+      )}
+
+      <p style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '12px 0 0' }}>
+        When it went wrong — {trigger.evidence.length} example{trigger.evidence.length !== 1 ? 's' : ''}
+      </p>
+      {trigger.evidence.map(e => <TriggerEvidenceRow key={e.session_id} evidence={e} />)}
+    </div>
+  )
+}
+
+function PersonalTriggerSection({ triggers }: { triggers: PersonalBiasTrigger[] }) {
+  if (triggers.length === 0) return null
+  return (
+    <div style={{ marginTop: 20 }}>
+      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-4)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 2px' }}>
+        When these patterns become costly
+      </p>
+      <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 4px', lineHeight: 1.5 }}>
+        Based on your own decisions that didn't land as expected.
+      </p>
+      {triggers.map(t => <TriggerCard key={t.biasKey + t.triggerDim} trigger={t} />)}
+    </div>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 function FingerprintSkeleton() {
   const bar = (w: string, h = 8) => (
@@ -212,6 +289,9 @@ export default function BiasFingerprint({ authToken }: Props) {
           )}
         </div>
       )}
+
+      {/* Personal Trigger Patterns (Sprint BT) */}
+      <PersonalTriggerSection triggers={data.personalBiasTriggers ?? []} />
 
       {/* Footer */}
       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '14px 0 0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>

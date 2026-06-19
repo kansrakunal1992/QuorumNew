@@ -64,6 +64,11 @@ import {
   type DimensionalCalibrationZone,
 }                                             from '@/lib/calibration-engine'
 
+import {
+  computePersonalBiasTriggers,
+  type PersonalBiasTrigger,
+}                                             from '@/lib/bias-trigger-engine'
+
 // ── 15 Bias Parameters ───────────────────────────────────────────────────────
 export const BIAS_PARAMETERS = [
   {
@@ -822,14 +827,15 @@ export interface UserBiasContext {
   synthesisBlock:  string        // full block for synthesis system prompt
   personaAlert:    string | null // one-sentence alert for initial persona system prompts
   hasAnyBiases:    boolean
-  personalCalibrationZones: DimensionalCalibrationZone[]  // Sprint CAL — full zone list, for persona-relevance.ts
+  personalCalibrationZones: DimensionalCalibrationZone[]  // Sprint CAL — for persona-relevance.ts
+  personalBiasTriggers:     PersonalBiasTrigger[]          // Sprint BT  — for mirror-fingerprint.ts
 }
 
 export async function fetchUserBiasContext(
   userId: string,
   ontologyVector: OntologyScoreMap | null,
 ): Promise<UserBiasContext> {
-  const empty: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [] }
+  const empty: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] }
   if (!userId) return empty
 
   try {
@@ -861,10 +867,12 @@ export async function fetchUserBiasContext(
 
     // R_JC: principles + regret run in parallel (both depend on sessionIds)
     // Sprint CAL: dimensional calibration joins the same batch — also keyed off sessionIds.
-    const [principlesBlock, regretBlock, personalCalibrationZones] = await Promise.all([
+    // Sprint BT:  personal bias triggers joins the same batch — keyed off userId.
+    const [principlesBlock, regretBlock, personalCalibrationZones, personalBiasTriggers] = await Promise.all([
       fetchUserPrinciplesBlock(sessionIds, supabase),
       fetchRecurringRegretBlock(sessionIds, ontologyVector, supabase),
       computeDimensionalCalibration(sessionIds, supabase),
+      computePersonalBiasTriggers(userId, supabase),
     ])
 
     const { data: biases, error } = biasResult
@@ -955,27 +963,43 @@ export async function fetchUserBiasContext(
       : ''
 
     // ── Dimensional calibration line + directive (Sprint CAL) ─────────────
-    // Only appended when a confirmed personal calibration zone (lib/calibration-
-    // engine.ts) is active for THIS decision's structural profile — i.e. the
-    // current vector is elevated on the exact dimension where this user has a
-    // documented over/underconfidence pattern. Sharper and evidence-backed
-    // (real past sessions, not just an aggregate), so it gets its own directive
-    // rather than being folded into the general calibrationDirective above.
     const dimensionalCalibrationLine = buildDimensionalCalibrationLine(personalCalibrationZones, ontologyVector)
     const dimensionalCalibrationDirective = dimensionalCalibrationLine
       ? ' This decision\'s structural profile specifically matches a documented personal calibration pattern above. If relevant to what the Council raised, name it as a plain observation tied to this decision\'s structure — for example, "decisions with this much [paraphrase the dimension] have historically been a spot where your hindsight view has run more [favourable/cautious] than how certain you felt going in." Do NOT reference dimension names, scores, or the phrase \'calibration pattern\' verbatim, and do NOT create a separate section header.'
       : ''
-
+    // ── Personal bias trigger line + directive (Sprint BT) ────────────────
+        // Only appended when a confirmed personal trigger exists for a bias that
+        // is DISTORTING for this specific decision's ontology vector — the
+        // intersection of "this bias is active here" AND "this condition is the one
+        // where it actually costs this user." Narrower claim than the universal
+        // classifyBiasSignal() → always evidenced by real outcome-logged sessions.
+        const activeTriggerLines = personalBiasTriggers
+          .filter(t => {
+            const d = ontologyVector?.[t.triggerDim]
+            return !!d && typeof d.score === 'number' && d.score >= 4
+          })
+          .map(t =>
+            `— ${t.biasLabel}: when ${t.triggerDimLabel} is elevated, this bias has preceded worse-than-expected outcomes ${Math.round(t.badRateHigh * 100)}% of the time vs ${Math.round(t.badRateLow * 100)}% when it isn't (${t.sampleSize.high} high-scoring and ${t.sampleSize.low} low-scoring firing sessions with outcomes logged).`,
+          )
+    
+        const biasTriggerLine = activeTriggerLines.length > 0
+          ? `Personal bias trigger patterns active for THIS decision's structural profile:\n${activeTriggerLines.join('\n')}`
+          : ''
+    
+        const biasTriggerDirective = biasTriggerLine
+          ? ' One or more personal bias trigger patterns above are active for this decision. For each one, if the Council\'s analysis touches on the domain where this has historically cost the user, weave a brief plain observation into your existing prose — for example, "one thing to name here: when decisions carry this much [paraphrase the trigger dimension], [paraphrase the bias] has historically preceded outcomes that landed worse than expected for you." Do NOT reproduce the statistical gap verbatim, do NOT use technical terms like \'trigger dimension\' or \'bad-outcome rate\', and do NOT create a separate section header.'
+          : ''
+    
     // ── Assemble full synthesisBlock ───────────────────────────────────────
-    // Structure: bias record → calibration (if present) → contradictions (if present)
-    //            → principles (if present) → regret signal (if present)
-    //            → dimensional calibration (if present) → MANDATORY directive.
+    // Structure: bias record → calibration → contradictions → principles
+    //            → regret → dimensional calibration → bias triggers → MANDATORY directive.
     const longitudinalContext = [
       calibrationLine,
       contradictionBlock,
       principlesBlock,
       regretBlock,
       dimensionalCalibrationLine,
+      biasTriggerLine,
     ].filter(Boolean).join('\n\n')
 
     const synthesisBlock =
@@ -985,18 +1009,14 @@ ${biasLines}
 Columns: bias_key | status (CONFIRMED = 3+ detections, FORMING = 1–2 detections) | severity (avg prosecutor–defense asymmetry, 0–10 scale) | confidence (evidence weight: 30% per detection, capped at 100%) | signal (re-classified against THIS decision's structural profile: DISTORTING / NEUTRAL / ADAPTIVE).
 ${longitudinalContext ? `\n${longitudinalContext}\n` : ''}
 MANDATORY SYNTHESIS REQUIREMENT — NON-NEGOTIABLE:
-${biasDirective}${calibrationDirective}${contradictionDirective}${principlesDirective}${regretDirective}${dimensionalCalibrationDirective}`
-
+${biasDirective}${calibrationDirective}${contradictionDirective}${principlesDirective}${regretDirective}${dimensionalCalibrationDirective}${biasTriggerDirective}`
     // ── Build personaAlert ────────────────────────────────────────────────
-    // Only the single highest-severity DISTORTING bias fires here, and only if confirmed.
-    // Forming patterns are excluded from persona alerts — insufficient evidence to
-    // direct advisor reasoning.
     const topDistorting = classified.find(b => b.signal === 'distorting' && b.isConfirmed)
     const personaAlert = topDistorting
       ? `DOCUMENTED BIAS ALERT: This user has a confirmed longitudinal pattern of ${topDistorting.biasKey} (${topDistorting.detectionCount} prior detections, severity ${topDistorting.asymmetryAvg.toFixed(1)}/10, currently DISTORTING for this decision's structural profile). Factor this into your analysis where the evidence supports it.`
       : null
 
-    return { synthesisBlock, personaAlert, hasAnyBiases: true, personalCalibrationZones }
+    return { synthesisBlock, personaAlert, hasAnyBiases: true, personalCalibrationZones, personalBiasTriggers }
 
   } catch (err) {
     console.error('[BiasContext] fetchUserBiasContext failed:', err)

@@ -24,6 +24,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { createCompletion }    from '@/lib/ai-client'
 import { MIRROR_FINGERPRINT_NARRATIVE } from '@/lib/personas'
 import { BIAS_PARAMETERS, getPredominantSignal } from '@/lib/bias-scorer'
+import { computePersonalBiasTriggers } from '@/lib/bias-trigger-engine'
 import type { FingerprintTile, FingerprintData } from '@/lib/types'
 
 // ── Bias label lookup ─────────────────────────────────────────────────────────
@@ -397,38 +398,37 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     }
   })
 
-  // ── Sprint M4: Batch-fetch session dates to populate lastFiredAt ──────────
-  // lastFiredAt = most recent session date in each tile's sessionIds array.
-  // Used to show "Active" badge on tiles that fired within the last 14 days.
-  // Single batch query — no per-tile fetches.
-  const allTileSessionIds = [
-    ...confirmedTiles.flatMap(t => t.sessionIds),
-    ...formingTiles.flatMap(t => t.sessionIds),
-  ]
-  const uniqueSessionIds = [...new Set(allTileSessionIds)]
+  // ── Sprint BT: Personal bias triggers ────────────────────────────────────
+  // Runs in parallel with the lastFiredAt batch — keyed off userId, not session ids.
+  // Resolves to [] when insufficient outcome-logged data; non-fatal.
+  const [, personalBiasTriggers] = await Promise.all([
+    (async () => {
+      if (uniqueSessionIds.length > 0) {
+        try {
+          const { data: sessionDateRows } = await supabase
+            .from('sessions')
+            .select('id, created_at')
+            .in('id', uniqueSessionIds)
 
-  if (uniqueSessionIds.length > 0) {
-    try {
-      const { data: sessionDateRows } = await supabase
-        .from('sessions')
-        .select('id, created_at')
-        .in('id', uniqueSessionIds)
+          const dateMap = new Map(
+            (sessionDateRows ?? []).map(s => [s.id as string, s.created_at as string])
+          )
 
-      const dateMap = new Map(
-        (sessionDateRows ?? []).map(s => [s.id as string, s.created_at as string])
-      )
+          const latestDate = (ids: string[]): string | null => {
+            const dates = ids.map(id => dateMap.get(id)).filter(Boolean) as string[]
+            return dates.length > 0 ? dates.sort().at(-1) ?? null : null
+          }
 
-      const latestDate = (ids: string[]): string | null => {
-        const dates = ids.map(id => dateMap.get(id)).filter(Boolean) as string[]
-        return dates.length > 0 ? dates.sort().at(-1) ?? null : null
+          for (const tile of confirmedTiles) tile.lastFiredAt = latestDate(tile.sessionIds)
+          for (const tile of formingTiles)   tile.lastFiredAt = latestDate(tile.sessionIds)
+        } catch (_e) {
+          // Non-critical — lastFiredAt stays null, no badges shown
+        }
       }
 
-      for (const tile of confirmedTiles) tile.lastFiredAt = latestDate(tile.sessionIds)
-      for (const tile of formingTiles)   tile.lastFiredAt = latestDate(tile.sessionIds)
-    } catch (_e) {
-      // Non-critical — lastFiredAt stays null, no badges shown
-    }
-  }
+       })(),
+    computePersonalBiasTriggers(userId, supabase),
+  ])
 
   return {
     narrative:      aiContent.narrative,
@@ -436,5 +436,6 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     formingTiles,
     sessionCount:   sessionCount ?? 0,
     generatedAt:    new Date().toISOString(),
+    personalBiasTriggers,
   }
 }

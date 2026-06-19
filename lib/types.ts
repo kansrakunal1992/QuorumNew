@@ -143,6 +143,7 @@ export interface FingerprintData {
   formingTiles: FingerprintTile[]   // detection_count === 1 (teasers in unlocked view)
   sessionCount: number
   generatedAt: string
+  personalBiasTriggers: import('@/lib/bias-trigger-engine').PersonalBiasTrigger[]  // Sprint BT
 }
 
 // ── Session preview (Sprint 20: source-decision drawer) ──────────────────────

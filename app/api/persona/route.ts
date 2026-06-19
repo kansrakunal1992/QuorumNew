@@ -271,9 +271,9 @@ export async function POST(req: Request) {
       ? councilContextPromise.then(({ ontologyVector, userId }) =>
           userId
             ? fetchUserBiasContext(userId, ontologyVector)
-            : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [] })
+            : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] })
         )
-      : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [] })
+      : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] })
 
     // ── Build chat messages ───────────────────────────────────────────────────
     let chatMessages: { role: 'user' | 'assistant'; content: string }[]
