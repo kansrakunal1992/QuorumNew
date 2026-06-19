@@ -399,6 +399,13 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     }
   })
 
+  const uniqueSessionIds = Array.from(
+      new Set([
+        ...confirmedTiles.flatMap(tile => tile.sessionIds ?? []),
+        ...formingTiles.flatMap(tile => tile.sessionIds ?? []),
+      ]),
+    )
+
   // ── Sprint BT: Personal bias triggers ────────────────────────────────────
   // Runs in parallel with the lastFiredAt batch — keyed off userId, not session ids.
   // Resolves to [] when insufficient outcome-logged data; non-fatal.
