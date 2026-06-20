@@ -14,8 +14,7 @@ import PatternTile              from '@/components/PatternTile'
 import Link                     from 'next/link'
 import type { FingerprintData } from '@/lib/types'
 import type { PersonalBiasTrigger, BiasTriggerEvidence } from '@/lib/bias-trigger-engine'
-import { CATEGORY_VALUE_LABELS } from '@/lib/bias-trigger-engine'
-import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS, FLAG_EVERYDAY_PHRASE, FLAG_ACTION_HINTS, CATEGORY_ACTION_HINTS } from '@/lib/calibration-copy'
+import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS, FLAG_EVERYDAY_PHRASE, FLAG_ACTION_HINTS, CATEGORY_ACTION_HINTS, CATEGORY_VALUE_LABELS } from '@/lib/calibration-copy'
 import PendingOutcomesCTA from '@/components/PendingOutcomesCTA'
 
 // ── Personal Trigger Patterns (Sprint BT) ─────────────────────────────────────

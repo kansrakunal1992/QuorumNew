@@ -90,6 +90,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { decrypt } from '@/lib/encryption'
 import { VECTOR_DIMS, DIM_LABELS, type VectorDimName, type OntologyVector } from '@/lib/structural-retrieval'
 import { BIAS_PARAMETERS, type BiasParameterKey } from '@/lib/bias-scorer'
+import { CATEGORY_VALUE_LABELS } from '@/lib/calibration-copy'
 
 const HIGH_THRESHOLD            = 4     // score >= 4 on the 1–5 scale (dimension triggers)
 const LOW_THRESHOLD             = 2     // score <= 2 on the 1–5 scale (dimension triggers)
@@ -121,25 +122,10 @@ export const DOMINANT_EMOTION_VALUES = [
 ] as const
 export type DominantEmotionValue = typeof DOMINANT_EMOTION_VALUES[number]
 
-export const CATEGORY_VALUE_LABELS: Record<CategoryField, Record<string, string>> = {
-  decision_type_primary: {
-    commitment:    'this is a commitment-type decision',
-    allocation:    'this is an allocation-type decision',
-    transition:    'this is a transition-type decision',
-    acquisition:   'this is an acquisition-type decision',
-    renunciation:  'this is a renunciation-type decision',
-    governance:    'this is a governance-type decision',
-    delegation:    'this is a delegation-type decision',
-  },
-  dominant_emotion: {
-    anxiety:      'anxiety is the dominant emotion',
-    excitement:   'excitement is the dominant emotion',
-    obligation:   'obligation is the dominant emotion',
-    ambivalence:  'ambivalence is the dominant emotion',
-    urgency:      'urgency is the dominant emotion',
-    resignation:  'resignation is the dominant emotion',
-  },
-}
+// Moved to lib/calibration-copy.ts — that file is client-safe (no path to
+// lib/ai-client.ts), this one isn't. Importing it back here is safe (a
+// server file importing a client-safe file has no risk), just not exported
+// from here anymore — see CATEGORY_VALUE_LABELS in calibration-copy.ts.
 
 const CATEGORY_FIELD_LABELS: Record<CategoryField, string> = {
   decision_type_primary: 'decision type',

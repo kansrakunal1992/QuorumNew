@@ -132,6 +132,26 @@ export const FLAG_ACTION_HINTS: Record<BooleanFlagKey, string> = {
 // synthesis-facing phrasing pulls from lib/bias-trigger-engine.ts's
 // CATEGORY_VALUE_LABELS directly. No direction split — same one-directional
 // rule as flag triggers.
+export const CATEGORY_VALUE_LABELS: Record<CategoryField, Record<string, string>> = {
+  decision_type_primary: {
+    commitment:    'this is a commitment-type decision',
+    allocation:    'this is an allocation-type decision',
+    transition:    'this is a transition-type decision',
+    acquisition:   'this is an acquisition-type decision',
+    renunciation:  'this is a renunciation-type decision',
+    governance:    'this is a governance-type decision',
+    delegation:    'this is a delegation-type decision',
+  },
+  dominant_emotion: {
+    anxiety:      'anxiety is the dominant emotion',
+    excitement:   'excitement is the dominant emotion',
+    obligation:   'obligation is the dominant emotion',
+    ambivalence:  'ambivalence is the dominant emotion',
+    urgency:      'urgency is the dominant emotion',
+    resignation:  'resignation is the dominant emotion',
+  },
+}
+
 export const CATEGORY_ACTION_HINTS: Record<CategoryField, Record<string, string>> = {
   decision_type_primary: {
     commitment:   "Before locking in a commitment, name the exit cost out loud — that's usually the thing this pattern skips.",
