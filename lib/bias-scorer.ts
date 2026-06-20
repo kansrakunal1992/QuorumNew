@@ -314,8 +314,6 @@ export function classifyBiasSignal(
   biasKey: BiasParameterKey,
   score: BiasScore,
   ontologyVector: OntologyScoreMap | null,
-  decisionTypePrimary: string | null = null,  // Sprint BT Phase 2b — current session's canonical decision type
-  dominantEmotion:     string | null = null,  // Sprint BT Phase 2b — current session's canonical dominant emotion
 ): BiasSignalType {
   // Extract the three dimensions relevant to signal classification.
   // Default to mid-range (3) when the ontology isn't available — produces 'neutral'.
@@ -837,6 +835,8 @@ export interface UserBiasContext {
 export async function fetchUserBiasContext(
   userId: string,
   ontologyVector: OntologyScoreMap | null,
+  decisionTypePrimary: string | null = null,  // Sprint BT Phase 2b — current session's canonical decision type
+  dominantEmotion:     string | null = null,  // Sprint BT Phase 2b — current session's canonical dominant emotion
 ): Promise<UserBiasContext> {
   const empty: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] }
   if (!userId) return empty
