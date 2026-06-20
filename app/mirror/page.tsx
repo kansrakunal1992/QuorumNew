@@ -23,6 +23,7 @@
 // /api/mirror/status and /api/mirror/timeline (same pattern as /api/history).
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { ReactNode } from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
@@ -471,7 +472,7 @@ function TeaserStatSection({
   copy,
 }: {
   title:    string
-  value?:   React.ReactNode
+  value?:   ReactNode
   blurred?: boolean
   copy:     string
 }) {
