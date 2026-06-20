@@ -5,10 +5,12 @@ import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
 import EmailCaptureCard from '@/components/EmailCaptureCard'
 import EarlyEchoCard from '@/components/EarlyEchoCard'
+import BiasNoteCard from '@/components/BiasNoteCard'
 import Link from 'next/link'
 import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
 import BackButton from '@/components/BackButton'
 import { PERSONAS } from '@/lib/personas'
+import { BIAS_PARAMETERS } from '@/lib/bias-scorer'
 import type { PersonaKey } from '@/lib/types'
 import { decrypt } from '@/lib/encryption'
 import TrustBadgeStrip from '@/components/TrustBadgeStrip'
@@ -79,6 +81,60 @@ export default async function RecordPage({ params }: Props) {
   const outcome  = outcomeResult.data
     ? { ...outcomeResult.data, what_decided: decryptText(outcomeResult.data.what_decided) }
     : null
+
+  // ── Item A: bias note for this session — server-rendered, free, no Mirror gate ──
+  // Looks up bias_library rows that include this session_id, scoped to whichever
+  // identity tier the session has (user_id > user_email > device_id — same
+  // precedence used when the row was written in /api/bias-score). Only
+  // signal_type === 'distorting' detections are surfaced; 'neutral' and
+  // 'adaptive' classifications are not shown as a caution here. Shows at most
+  // one note — the strongest signal for this specific session, not a
+  // longitudinal claim (no detection_count threshold).
+  let biasNote: { label: string; reasoning: string } | null = null
+  {
+    const identityCol =
+      session.user_id    ? 'user_id'    :
+      session.user_email ? 'user_email' :
+      session.device_id  ? 'device_id'  : null
+
+    const identityVal =
+      session.user_id ?? session.user_email ?? session.device_id ?? null
+
+    if (identityCol && identityVal) {
+      const { data: biasRows } = await supabase
+        .from('bias_library')
+        .select('bias_parameter, activation_contexts')
+        .eq(identityCol, identityVal)
+        .contains('session_ids', [session.id])
+
+      type SessionBiasContext = {
+        reasoning?:        string
+        signal_type?:      'distorting' | 'neutral' | 'adaptive'
+        prosecutor_score?: number
+      }
+
+      const candidates = (biasRows ?? [])
+        .map(row => {
+          const contexts = row.activation_contexts as Record<string, SessionBiasContext> | null
+          const ctx = contexts?.[session.id]
+          return ctx ? { biasKey: row.bias_parameter as string, ctx } : null
+        })
+        .filter((c): c is { biasKey: string; ctx: SessionBiasContext } => c !== null)
+        .filter(c => c.ctx.signal_type === 'distorting' && !!c.ctx.reasoning)
+        .sort((a, b) => (b.ctx.prosecutor_score ?? 0) - (a.ctx.prosecutor_score ?? 0))
+
+      const top = candidates[0]
+      if (top) {
+        const param = BIAS_PARAMETERS.find(b => b.key === top.biasKey)
+        const label = param?.label ?? top.biasKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        const rawReasoning = top.ctx.reasoning!.trim()
+        const reasoning = rawReasoning.length > 220
+          ? rawReasoning.slice(0, 220).replace(/\s+\S*$/, '') + '…'
+          : rawReasoning
+        biasNote = { label, reasoning }
+      }
+    }
+  }
 
   const dateStr = formatDateTime(session.created_at)
 
@@ -335,6 +391,12 @@ export default async function RecordPage({ params }: Props) {
           {/* ── Outcome Tracker ────────────────────────────────── */}
           <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
             <OutcomeTracker sessionId={session.id} existingOutcome={outcome} />
+          </div>
+
+          {/* ── Bias note for this session — free, no Mirror gate ──── */}
+          {/* Hidden entirely when biasNote is null (BiasNoteCard returns null) */}
+          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
+            <BiasNoteCard note={biasNote} />
           </div>
 
           {/* ── Decision Brief CTA ─────────────────────────────── */}

@@ -138,7 +138,7 @@ export function deriveActionPlan(avgScores: {
   switch (weakest.key) {
     case 'structural':
       if (avgScores.structural === 50) {
-        return 'Structural matching activates once Quorum has prior sessions to compare against — log your next 2–3 decisions to unlock the comparison signal.'
+        return 'Bring 3 or more decisions to Quorum and the Council begins connecting patterns across them — each one makes the next analysis more precise.'
       }
       return 'Bring decisions with different structural profiles — variety in decision type and reversibility builds a richer comparison set and raises your structural match quality.'
 

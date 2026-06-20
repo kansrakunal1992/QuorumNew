@@ -2,6 +2,7 @@
 
 // components/EarlyEchoCard.tsx
 // Sprint: Second-use early signal
+// Sprint: Item C — structural dimension upgrade at session 3+
 //
 // Shows a lightweight session-count signal at decisions 2–4 on the record page.
 // Purpose: prove that Quorum is accumulating something *before* the full pattern
@@ -9,14 +10,21 @@
 // from session 2, not session 5.
 //
 // Deliberately lightweight:
-//   - Client-only, reads localStorage
-//   - No API call, no server state
+//   - Count-only copy (session 2–4) renders immediately, client-only, from
+//     localStorage — no network call, no loading state, no layout shift.
+//   - At session count 3+, a single optional fetch to
+//     /api/record/[id]/echo-hint asks for one abstracted structural dimension
+//     name. If it resolves with a match, the sub-line is upgraded in place.
+//     If it doesn't resolve (no identity linked, no qualifying match, or the
+//     request fails), the original count-only copy stays exactly as it was —
+//     this is progressive enhancement, never a blocking or required step.
 //   - Hides at session 5+ (MemoryEngineStatus on the homepage handles that)
 //   - Hides if user dismisses (sessionStorage flag per record page)
 //
 // IMPORTANT: this component does NOT touch MIN_SESSIONS or structural-retrieval
 // injection. The Council's structural memory gate remains at 5 sessions.
-// This is a UI signal only.
+// The echo-hint endpoint is a separate, read-only, uncached lightweight path —
+// see app/api/record/[id]/echo-hint/route.ts for the full boundary explanation.
 
 import { useState, useEffect } from 'react'
 import { getStoredSessionIds } from '@/lib/storage'
@@ -64,9 +72,29 @@ export default function EarlyEchoCard({ sessionId }: Props) {
       const ids = stored.includes(sessionId) ? stored : [sessionId, ...stored]
       const count  = ids.length
       const result = getSignal(count)
-      if (result) {
-        setSignal(result)
-        setVisible(true)
+      if (!result) return
+
+      setSignal(result)
+      setVisible(true)
+
+      // Item C: at session 3+, try to upgrade the sub-line with a named
+      // structural dimension. Fire-and-forget — failure leaves count-only
+      // copy in place, which is already a complete, correct message.
+      if (count >= 3) {
+        fetch(`/api/record/${sessionId}/echo-hint`)
+          .then(res => res.ok ? res.json() : null)
+          .then((data: { available?: boolean; dimensionLabel?: string; matchDate?: string | null } | null) => {
+            if (data?.available && data.dimensionLabel) {
+              const dateClause = data.matchDate ? ` in ${data.matchDate}` : ''
+              setSignal({
+                headline: result.headline,
+                sub: `This decision shares ${data.dimensionLabel} with one you brought${dateClause}. ${5 - count} more to let the Council connect these directly.`,
+              })
+            }
+          })
+          .catch(() => {
+            // Silent — count-only copy already rendered, nothing to fix
+          })
       }
     } catch {
       // localStorage/sessionStorage unavailable — stay hidden
