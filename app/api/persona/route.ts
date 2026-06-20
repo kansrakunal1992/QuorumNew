@@ -277,7 +277,7 @@ export async function POST(req: Request) {
       ? isInitialPersona
         ? fetchCouncilContextWithRetry(sessionId)
         : fetchCouncilContext(sessionId)
-      : Promise.resolve({ councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null })
+      : Promise.resolve({ councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null })
 
     // ── Sprint R2: bias context — chained off councilContextPromise ───────────
     // Sprint BT Phase 2b: also threads the CURRENT session's decisionTypePrimary
