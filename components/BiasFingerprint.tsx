@@ -14,7 +14,8 @@ import PatternTile              from '@/components/PatternTile'
 import Link                     from 'next/link'
 import type { FingerprintData } from '@/lib/types'
 import type { PersonalBiasTrigger, BiasTriggerEvidence } from '@/lib/bias-trigger-engine'
-import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS } from '@/lib/calibration-copy'
+import { CATEGORY_VALUE_LABELS } from '@/lib/bias-trigger-engine'
+import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS, FLAG_EVERYDAY_PHRASE, FLAG_ACTION_HINTS, CATEGORY_ACTION_HINTS } from '@/lib/calibration-copy'
 import PendingOutcomesCTA from '@/components/PendingOutcomesCTA'
 
 // ── Personal Trigger Patterns (Sprint BT) ─────────────────────────────────────
@@ -37,11 +38,30 @@ function TriggerEvidenceRow({ evidence }: { evidence: BiasTriggerEvidence }) {
 }
 
 function TriggerCard({ trigger }: { trigger: PersonalBiasTrigger }) {
-  const phrase    = DIMENSION_EVERYDAY_PHRASE[trigger.triggerDim]
-  const hint      = CALIBRATION_ACTION_HINTS[trigger.triggerDim]?.overconfident
-  const highPct   = Math.round(trigger.badRateHigh * 100)
-  const lowPct    = Math.round(trigger.badRateLow * 100)
-  const totalN    = trigger.sampleSize.high + trigger.sampleSize.low
+  // Phase 2b: trigger is a 3-way union (dimension | flag | category). Each
+  // type needs its own opening clause — "When you have {noun phrase}," fits
+  // dimension copy (a noun phrase) but NOT flag or category copy (both full
+  // clauses, e.g. "there is real or perceived time pressure") — forcing them
+  // through the same template produced broken grammar in the original
+  // Phase 2a build ("When you have there is real or perceived time
+  // pressure"). Fixed here by branching the whole opening clause per type.
+  let whenClause: string
+  let hint: string | undefined
+
+  if (trigger.triggerType === 'dimension') {
+    whenClause = `you're facing ${DIMENSION_EVERYDAY_PHRASE[trigger.triggerDim]}`
+    hint       = CALIBRATION_ACTION_HINTS[trigger.triggerDim]?.overconfident
+  } else if (trigger.triggerType === 'flag') {
+    whenClause = FLAG_EVERYDAY_PHRASE[trigger.triggerFlag]
+    hint       = FLAG_ACTION_HINTS[trigger.triggerFlag]
+  } else {
+    whenClause = CATEGORY_VALUE_LABELS[trigger.categoryField][trigger.categoryValue] ?? trigger.categoryValueLabel
+    hint       = CATEGORY_ACTION_HINTS[trigger.categoryField]?.[trigger.categoryValue]
+  }
+
+  const highPct = Math.round(trigger.badRateHigh * 100)
+  const lowPct  = Math.round(trigger.badRateLow * 100)
+  const totalN  = trigger.sampleSize.high + trigger.sampleSize.low
 
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 10, padding: '14px 14px 12px', marginTop: 10 }}>
@@ -54,9 +74,9 @@ function TriggerCard({ trigger }: { trigger: PersonalBiasTrigger }) {
         </span>
       </div>
       <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.5 }}>
-        When you have <strong style={{ color: 'var(--text-2)', fontWeight: 600 }}>{phrase}</strong>,
+        When <strong style={{ color: 'var(--text-2)', fontWeight: 600 }}>{whenClause}</strong>,
         this pattern has preceded a worse-than-expected outcome{' '}
-        <strong style={{ color: '#f87171' }}>{highPct}% of the time</strong> — vs. {lowPct}% in decisions without that pressure.
+        <strong style={{ color: '#f87171' }}>{highPct}% of the time</strong> — vs. {lowPct}% otherwise.
         Across {totalN} decisions where this pattern was active and you later logged how it went.
       </p>
 
@@ -93,7 +113,12 @@ function PersonalTriggerSection({
         <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 4px', lineHeight: 1.5 }}>
           Based on your own decisions that didn't land as expected.
         </p>
-        {triggers.map(t => <TriggerCard key={t.biasKey + t.triggerDim} trigger={t} />)}
+        {triggers.map(t => {
+          const subKey = t.triggerType === 'dimension' ? t.triggerDim
+            : t.triggerType === 'flag' ? t.triggerFlag
+            : `${t.categoryField}:${t.categoryValue}`
+          return <TriggerCard key={t.biasKey + t.triggerType + subKey} trigger={t} />
+        })}
       </div>
     )
   }

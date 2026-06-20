@@ -122,6 +122,8 @@ async function fetchCouncilContext(sessionId: string): Promise<{
   userId:             string | null
   ruleEngineResult:   RuleEngineResult | null   // Sprint R3
   maxStructuralScore: number | null             // Sprint R3
+  decisionTypePrimary: string | null            // Sprint BT Phase 2b
+  dominantEmotion:     string | null            // Sprint BT Phase 2b
 }> {
   try {
     const supabase = createServiceClient()
@@ -129,7 +131,14 @@ async function fetchCouncilContext(sessionId: string): Promise<{
     const [ontologyResult, sessionResult] = await Promise.all([
       supabase
         .from('sessions_ontology')
-        .select('tagger_version, ontology_vector, rule_engine_result, matches_json')  // Sprint R3: +matches_json
+        // Sprint BT Phase 2b: +decision_type_primary, +dominant_emotion — the
+        // CURRENT session's own canonical categorical fields, needed to check
+        // whether a discovered category trigger (lib/bias-trigger-engine.ts)
+        // is active for THIS decision. No race condition here — both are
+        // written by the same ontology-tagger call as ontology_vector itself,
+        // well before synthesis runs (unlike Phase 2a's flag triggers, which
+        // depend on a separate fire-and-forget bias-score call).
+        .select('tagger_version, ontology_vector, rule_engine_result, matches_json, decision_type_primary, dominant_emotion')
         .eq('session_id', sessionId)
         .single(),
       supabase
@@ -142,9 +151,9 @@ async function fetchCouncilContext(sessionId: string): Promise<{
     const userId = sessionResult.data?.user_id ?? null
 
     const { data, error } = ontologyResult
-    if (error || !data) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null }
-    if (data.tagger_version !== 'v2.0') return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null }
-    if (!data.ontology_vector || !data.rule_engine_result) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null }
+    if (error || !data) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
+    if (data.tagger_version !== 'v2.0') return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
+    if (!data.ontology_vector || !data.rule_engine_result) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
 
     // Sprint R3: extract max structural score from matches_json (JSONB array or null)
     let maxStructuralScore: number | null = null
@@ -171,10 +180,12 @@ async function fetchCouncilContext(sessionId: string): Promise<{
       userId,
       ruleEngineResult,                    // Sprint R3
       maxStructuralScore,                  // Sprint R3
+      decisionTypePrimary: (data.decision_type_primary as string) ?? null,  // Sprint BT Phase 2b
+      dominantEmotion:     (data.dominant_emotion as string) ?? null,        // Sprint BT Phase 2b
     }
   } catch (err) {
     console.error('[Persona] fetchCouncilContext failed:', err)
-    return { councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null }
+    return { councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
   }
 }
 
@@ -203,6 +214,8 @@ async function fetchCouncilContextWithRetry(
   userId:             string | null
   ruleEngineResult:   RuleEngineResult | null
   maxStructuralScore: number | null
+  decisionTypePrimary: string | null
+  dominantEmotion:     string | null
 }> {
   const start = Date.now()
   while (true) {
@@ -267,10 +280,14 @@ export async function POST(req: Request) {
       : Promise.resolve({ councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null })
 
     // ── Sprint R2: bias context — chained off councilContextPromise ───────────
+    // Sprint BT Phase 2b: also threads the CURRENT session's decisionTypePrimary
+    // and dominantEmotion through, so fetchUserBiasContext can check whether a
+    // discovered category trigger is active for THIS decision (same pattern as
+    // ontologyVector for dimension triggers).
     const biasContextPromise = (isSynthesisCall || isInitialPersona)
-      ? councilContextPromise.then(({ ontologyVector, userId }) =>
+      ? councilContextPromise.then(({ ontologyVector, userId, decisionTypePrimary, dominantEmotion }) =>
           userId
-            ? fetchUserBiasContext(userId, ontologyVector)
+            ? fetchUserBiasContext(userId, ontologyVector, decisionTypePrimary, dominantEmotion)
             : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] })
         )
       : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] })

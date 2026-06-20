@@ -66,6 +66,7 @@ import {
 
 import {
   computePersonalBiasTriggers,
+  isSynthesisEligibleTrigger,
   type PersonalBiasTrigger,
 }                                             from '@/lib/bias-trigger-engine'
 
@@ -313,6 +314,8 @@ export function classifyBiasSignal(
   biasKey: BiasParameterKey,
   score: BiasScore,
   ontologyVector: OntologyScoreMap | null,
+  decisionTypePrimary: string | null = null,  // Sprint BT Phase 2b — current session's canonical decision type
+  dominantEmotion:     string | null = null,  // Sprint BT Phase 2b — current session's canonical dominant emotion
 ): BiasSignalType {
   // Extract the three dimensions relevant to signal classification.
   // Default to mid-range (3) when the ontology isn't available — produces 'neutral'.
@@ -967,28 +970,54 @@ export async function fetchUserBiasContext(
     const dimensionalCalibrationDirective = dimensionalCalibrationLine
       ? ' This decision\'s structural profile specifically matches a documented personal calibration pattern above. If relevant to what the Council raised, name it as a plain observation tied to this decision\'s structure — for example, "decisions with this much [paraphrase the dimension] have historically been a spot where your hindsight view has run more [favourable/cautious] than how certain you felt going in." Do NOT reference dimension names, scores, or the phrase \'calibration pattern\' verbatim, and do NOT create a separate section header.'
       : ''
-    // ── Personal bias trigger line + directive (Sprint BT) ────────────────
-        // Only appended when a confirmed personal trigger exists for a bias that
-        // is DISTORTING for this specific decision's ontology vector — the
-        // intersection of "this bias is active here" AND "this condition is the one
-        // where it actually costs this user." Narrower claim than the universal
-        // classifyBiasSignal() → always evidenced by real outcome-logged sessions.
-        const activeTriggerLines = personalBiasTriggers
-          .filter(t => {
-            const d = ontologyVector?.[t.triggerDim]
-            return !!d && typeof d.score === 'number' && d.score >= 4
-          })
-          .map(t =>
-            `— ${t.biasLabel}: when ${t.triggerDimLabel} is elevated, this bias has preceded worse-than-expected outcomes ${Math.round(t.badRateHigh * 100)}% of the time vs ${Math.round(t.badRateLow * 100)}% when it isn't (${t.sampleSize.high} high-scoring and ${t.sampleSize.low} low-scoring firing sessions with outcomes logged).`,
-          )
-    
-        const biasTriggerLine = activeTriggerLines.length > 0
-          ? `Personal bias trigger patterns active for THIS decision's structural profile:\n${activeTriggerLines.join('\n')}`
-          : ''
-    
-        const biasTriggerDirective = biasTriggerLine
-          ? ' One or more personal bias trigger patterns above are active for this decision. For each one, if the Council\'s analysis touches on the domain where this has historically cost the user, weave a brief plain observation into your existing prose — for example, "one thing to name here: when decisions carry this much [paraphrase the trigger dimension], [paraphrase the bias] has historically preceded outcomes that landed worse than expected for you." Do NOT reproduce the statistical gap verbatim, do NOT use technical terms like \'trigger dimension\' or \'bad-outcome rate\', and do NOT create a separate section header.'
-          : ''
+    // ── Personal bias trigger line + directive (Sprint BT, Phase 1) ───────
+    // Only appended when a confirmed personal trigger exists for a bias that
+    // is DISTORTING for this specific decision's ontology vector — the
+    // intersection of "this bias is active here" AND "this condition is the one
+    // where it actually costs this user." Narrower claim than the universal
+    // classifyBiasSignal() → always evidenced by real outcome-logged sessions.
+    //
+    // Filtered to isSynthesisEligibleTrigger() — DIMENSION (Phase 1) and
+    // CATEGORY (Phase 2b) triggers only. Both check fields written by the
+    // ontology tagger early in the request pipeline, well before synthesis
+    // runs — no ordering risk. FLAG triggers (Phase 2a: urgency_present /
+    // counterparty_present) are deliberately excluded — their "is this active
+    // for the CURRENT decision" check would depend on this same decision's
+    // own activation_context, written by a fire-and-forget background call
+    // (fireBiasScore() in app/api/examiner/route.ts) with no guaranteed
+    // completion before synthesis runs. Gating a MANDATORY directive on a
+    // value that may not have landed yet risks a silent, intermittent miss.
+    // Flag triggers surface only in the Mirror UI (lib/mirror-fingerprint.ts /
+    // components/BiasFingerprint.tsx), which always reads fully-settled
+    // historical data — no race there. See lib/bias-trigger-engine.ts header.
+    const activeTriggerLines = personalBiasTriggers
+      .filter(isSynthesisEligibleTrigger)
+      .filter(t => {
+        if (t.triggerType === 'dimension') {
+          const d = ontologyVector?.[t.triggerDim]
+          return !!d && typeof d.score === 'number' && d.score >= 4
+        }
+        // category trigger — active when THIS session's own canonical field
+        // value matches the discovered trigger value.
+        const currentValue = t.categoryField === 'decision_type_primary'
+          ? decisionTypePrimary
+          : dominantEmotion
+        return !!currentValue && currentValue === t.categoryValue
+      })
+      .map(t => {
+        if (t.triggerType === 'dimension') {
+          return `— ${t.biasLabel}: when ${t.triggerDimLabel} is elevated, this bias has preceded worse-than-expected outcomes ${Math.round(t.badRateHigh * 100)}% of the time vs ${Math.round(t.badRateLow * 100)}% when it isn't (${t.sampleSize.high} high-scoring and ${t.sampleSize.low} low-scoring firing sessions with outcomes logged).`
+        }
+        return `— ${t.biasLabel}: when ${t.categoryValueLabel}, this bias has preceded worse-than-expected outcomes ${Math.round(t.badRateHigh * 100)}% of the time vs ${Math.round(t.badRateLow * 100)}% otherwise (${t.sampleSize.high} matching and ${t.sampleSize.low} other firing sessions with outcomes logged).`
+      })
+
+    const biasTriggerLine = activeTriggerLines.length > 0
+      ? `Personal bias trigger patterns active for THIS decision's structural profile:\n${activeTriggerLines.join('\n')}`
+      : ''
+
+    const biasTriggerDirective = biasTriggerLine
+      ? ' One or more personal bias trigger patterns above are active for this decision. For each one, if the Council\'s analysis touches on the domain where this has historically cost the user, weave a brief plain observation into your existing prose — for example, "one thing to name here: when decisions carry this much [paraphrase the trigger dimension or category], [paraphrase the bias] has historically preceded outcomes that landed worse than expected for you." Do NOT reproduce the statistical gap verbatim, do NOT use technical terms like \'trigger dimension\', \'category\', or \'bad-outcome rate\', and do NOT create a separate section header.'
+      : ''
     
     // ── Assemble full synthesisBlock ───────────────────────────────────────
     // Structure: bias record → calibration → contradictions → principles

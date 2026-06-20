@@ -1,23 +1,34 @@
 // lib/calibration-copy.ts
-// ── Plain-language copy for Personal Calibration Zones (Sprint CAL UX) ───────
+// ── Plain-language copy for Calibration Zones + Bias Triggers (Sprint CAL UX, Sprint BT) ────
 //
 // lib/structural-retrieval.ts's DIM_LABELS ("stakes magnitude", "outcome
 // uncertainty") is written for LLM prompts, where precision matters more
-// than warmth. This file is the human-facing counterpart, used only by
-// components/CalibrationSparkline.tsx — DIM_LABELS itself is untouched and
-// still feeds the synthesis directive in lib/bias-scorer.ts.
+// than warmth. This file is the human-facing counterpart.
 //
-// Two maps, both keyed by VectorDimName:
-//   DIMENSION_EVERYDAY_PHRASE — a plain noun phrase describing the dimension,
-//     used in place of "high {dimLabel}" in the zone card headline and body.
-//   CALIBRATION_ACTION_HINTS  — one concrete suggestion per dimension per
-//     direction (overconfident / underconfident). Deliberately specific to
-//     each dimension rather than a single generic template — genuinely
-//     different things go wrong in a high-stakes decision versus a
-//     time-pressured one, and the action should reflect that difference.
+// Consumers: components/CalibrationSparkline.tsx (dimension maps only) and
+// components/BiasFingerprint.tsx (dimension maps for Phase-1 dimension
+// triggers, flag maps for Phase-2a boolean-flag triggers). DIM_LABELS itself
+// is untouched and still feeds the synthesis directive in lib/bias-scorer.ts.
+//
+// Four maps:
+//   DIMENSION_EVERYDAY_PHRASE — keyed by VectorDimName. A plain noun phrase
+//     describing the dimension, used in place of "high {dimLabel}".
+//   CALIBRATION_ACTION_HINTS  — keyed by VectorDimName. One concrete
+//     suggestion per dimension per direction (overconfident / underconfident).
+//   FLAG_EVERYDAY_PHRASE      — keyed by BooleanFlagKey (Sprint BT Phase 2a).
+//     Plain phrase for urgency_present / counterparty_present.
+//   FLAG_ACTION_HINTS         — keyed by BooleanFlagKey. One hint per flag —
+//     no direction split, since bias triggers are inherently one-directional
+//     (a flag condition that makes a bias MORE costly, never less).
+//
+// All four deliberately hand-written per key rather than a single generic
+// template — genuinely different things go wrong in a high-stakes decision
+// versus a time-pressured one versus a negotiation with a counterparty in
+// the room, and the copy should reflect that difference.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { VectorDimName } from '@/lib/structural-retrieval'
+import type { BooleanFlagKey, CategoryField } from '@/lib/bias-trigger-engine'
 
 export const DIMENSION_EVERYDAY_PHRASE: Record<VectorDimName, string> = {
   reversibility:                'decisions that are hard to undo',
@@ -97,5 +108,46 @@ export const CALIBRATION_ACTION_HINTS: Record<VectorDimName, ActionHintPair> = {
   upstream_dependency: {
     overconfident:  "Name the upstream question you're treating as settled — that's usually the one that turns out not to be.",
     underconfident: "An unresolved upstream question hasn't hurt your judgment on this one — it's just made a fine call feel shakier than it is.",
+  },
+}
+
+// ── Phase 2a — boolean-flag trigger copy ──────────────────────────────────────
+// Mirror-UI-only (see lib/bias-trigger-engine.ts header for why these never
+// feed the synthesis directive). No direction split — a flag trigger is
+// always "this condition makes the bias more dangerous," never the reverse.
+export const FLAG_EVERYDAY_PHRASE: Record<BooleanFlagKey, string> = {
+  urgency_present:      'there is real or perceived time pressure',
+  counterparty_present: 'another person or party is directly involved',
+}
+
+export const FLAG_ACTION_HINTS: Record<BooleanFlagKey, string> = {
+  urgency_present:      'Before deciding under a deadline, check whether the deadline is actually real or self-imposed — that single question has mattered for you before.',
+  counterparty_present: "Before deciding, write down what you'd want if the other party weren't in the room — then check how much that's actually shifted.",
+}
+
+// ── Phase 2b — categorical trigger copy ───────────────────────────────────────
+// Mirror-UI feed only by default disposition, but unlike Phase 2a's flags,
+// decision_type_primary and dominant_emotion DO feed the synthesis directive
+// too (lib/bias-scorer.ts) — these labels are for the Mirror UI card; the
+// synthesis-facing phrasing pulls from lib/bias-trigger-engine.ts's
+// CATEGORY_VALUE_LABELS directly. No direction split — same one-directional
+// rule as flag triggers.
+export const CATEGORY_ACTION_HINTS: Record<CategoryField, Record<string, string>> = {
+  decision_type_primary: {
+    commitment:   "Before locking in a commitment, name the exit cost out loud — that's usually the thing this pattern skips.",
+    allocation:   "Before allocating, write down what you're NOT funding as a result — the trade-off is where this pattern tends to hide.",
+    transition:   "Before a transition, name what specifically ends — vague transitions are where this pattern shows up most.",
+    acquisition:  "Before acquiring anything, separate what you're buying from what you're hoping it becomes — that gap is where this pattern lives.",
+    renunciation: "Before giving something up, name what you expect to gain from letting go — if you can't say it plainly, slow down.",
+    governance:   "Before setting a rule or structure, ask who it actually constrains — including yourself — before deciding it's the right one.",
+    delegation:   "Before delegating, name the one thing you're not willing to hand off — if you can't name it, that's the risk.",
+  },
+  dominant_emotion: {
+    anxiety:      "When you notice anxiety driving the decision, separate the part that's real risk from the part that's just discomfort with not knowing yet.",
+    excitement:   "When something feels exciting, give it 24 hours before committing — this pattern has tended to look different a day later.",
+    obligation:   "When a decision feels like something you 'should' do, check whether it's actually yours to do — obligation has blurred that line before.",
+    ambivalence:  "When you're genuinely torn, name the actual trade-off you're avoiding choosing between — staying in ambivalence has a cost too.",
+    urgency:      "When it feels urgent, check whether the urgency is real or self-generated — that question alone has changed the outcome before.",
+    resignation:  "When a decision feels like the only option left, double-check that's actually true — resignation has narrowed the field before when it wasn't.",
   },
 }
