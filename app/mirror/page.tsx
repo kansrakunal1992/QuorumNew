@@ -429,6 +429,86 @@ function TeaserTile({ biasKey }: { biasKey: string }) {
   )
 }
 
+// ── Locked-section badge (Sprint RET-4) ───────────────────────────────────────
+// Lifted out of TeaserView so every teaser section — existing and new — shares
+// one definition. Click scrolls to the CTA card, same behaviour as before.
+function LockedBadge() {
+  return (
+    <span
+      onClick={() => document.getElementById('mirror-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+      style={{
+        display:       'inline-flex',
+        alignItems:    'center',
+        gap:           5,
+        fontSize:      10,
+        color:         'var(--gold)',
+        background:    'rgba(201,168,76,0.06)',
+        border:        '1px solid var(--gold-dim)',
+        borderRadius:  6,
+        padding:       '3px 9px 3px 7px',
+        fontFamily:    'var(--font-mono)',
+        letterSpacing: '0.06em',
+        cursor:        'pointer',
+        transition:    'background 0.15s',
+      }}
+    >
+      <IconLock size={10} />
+      Mirror
+    </span>
+  )
+}
+
+// ── Compact locked stat section (Sprint RET-4) ────────────────────────────────
+// Shared shell for the 5 newly-added teaser previews (Rules, Patterns,
+// Calibration, Session Reliability, Open Loop). Deliberately lighter-weight
+// than the original 3 hand-built sections (Fingerprint/Independence/
+// Contradictions keep their richer, bespoke layouts) — one stat line + one
+// copy line, so adding 5 more sections doesn't turn the page into a wall.
+function TeaserStatSection({
+  title,
+  value,
+  blurred,
+  copy,
+}: {
+  title:    string
+  value?:   React.ReactNode
+  blurred?: boolean
+  copy:     string
+}) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          {title}
+        </h3>
+        <LockedBadge />
+      </div>
+      <div style={{
+        background:   'var(--bg-card)',
+        border:       '1px solid var(--border-dim)',
+        borderRadius: 10,
+        padding:      '16px 20px',
+      }}>
+        {value !== undefined && (
+          <div style={{
+            fontSize:     22,
+            fontWeight:   700,
+            color:        'var(--text-1)',
+            marginBottom: 6,
+            filter:       blurred ? 'blur(6px)' : undefined,
+            userSelect:   blurred ? 'none' : undefined,
+          }}>
+            {value}
+          </div>
+        )}
+        <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
+          {copy}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Unlock code input ─────────────────────────────────────────────────────────
 function UnlockCodeInput({ authToken, onSuccess }: { authToken: string; onSuccess: () => void }) {
   const [code,     setCode]     = useState('')
@@ -555,10 +635,14 @@ function UnlockCodeInput({ authToken, onSuccess }: { authToken: string; onSucces
 interface TeaserData {
   sessionCount:      number
   patternCount:      number
+  patternLabels:     string[]
   independenceScore: number | null
   contradictionCount: number
   calibrationDates:  string[]
   teaserBiases:      string[]
+  rulesThreshold:    number
+  sriAverage:        number | null
+  openLoopCount:     number
 }
 
 function TeaserView({
@@ -586,30 +670,6 @@ function TeaserView({
       .catch(() => {/* degrade gracefully */})
   }, [authToken])
 
-
-  const lockedBadge = (
-    <span
-      onClick={() => document.getElementById('mirror-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-      style={{
-        display:       'inline-flex',
-        alignItems:    'center',
-        gap:           5,
-        fontSize:      10,
-        color:         'var(--gold)',
-        background:    'rgba(201,168,76,0.06)',
-        border:        '1px solid var(--gold-dim)',
-        borderRadius:  6,
-        padding:       '3px 9px 3px 7px',
-        fontFamily:    'var(--font-mono)',
-        letterSpacing: '0.06em',
-        cursor:        'pointer',
-        transition:    'background 0.15s',
-      }}
-    >
-      <IconLock size={10} />
-      Mirror
-    </span>
-  )
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
@@ -671,7 +731,7 @@ function TeaserView({
           <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Bias Fingerprint
           </h3>
-          {lockedBadge}
+          <LockedBadge />
         </div>
         {status.teaserBiases.length > 0 ? (
           <>
@@ -697,7 +757,7 @@ function TeaserView({
           <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Decision Independence Score
           </h3>
-          {lockedBadge}
+          <LockedBadge />
         </div>
         <div className="mirror-score-row" style={{
           background:   'var(--bg-card)',
@@ -717,13 +777,35 @@ function TeaserView({
         </div>
       </div>
 
+      {/* Section: Decision Rules (locked) — Sprint RET-4 */}
+      <TeaserStatSection
+        title="Decision Rules"
+        copy={
+          teaser
+            ? teaser.sessionCount >= teaser.rulesThreshold
+              ? `Enough decisions logged to extract your implicit operating principles. Activate Mirror to read them.`
+              : `${teaser.sessionCount} of ${teaser.rulesThreshold} decisions — Quorum extracts your first-person operating principles once you cross ${teaser.rulesThreshold}.`
+            : 'Reads back the implicit rules you actually operate by, extracted from how you\u2019ve answered the Examiner across your decisions. Visible after subscribing.'
+        }
+      />
+
+      {/* Section: Patterns (locked) — Sprint RET-4 */}
+      <TeaserStatSection
+        title="Patterns"
+        copy={
+          teaser && teaser.patternLabels.length > 0
+            ? `${teaser.patternLabels.length} structural pattern${teaser.patternLabels.length !== 1 ? 's' : ''} detected: ${teaser.patternLabels.join(', ')}. Activate Mirror to see how often each fires and which decisions triggered them.`
+            : 'Tracks which structural rules recur across your decisions \u2014 frequency, recency, and which sessions triggered them. Visible after subscribing.'
+        }
+      />
+
       {/* Section: Contradiction Detector (locked) */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
             Contradiction Detector
           </h3>
-          {lockedBadge}
+          <LockedBadge />
         </div>
         <div style={{
           background:   'var(--bg-card)',
@@ -738,6 +820,35 @@ function TeaserView({
           </p>
         </div>
       </div>
+
+      {/* Section: Confidence Calibration (locked) — Sprint RET-4 */}
+      <TeaserStatSection
+        title="Confidence Calibration"
+        value={teaser && teaser.calibrationDates.length > 0 ? `${teaser.calibrationDates.length}` : undefined}
+        copy={
+          teaser && teaser.calibrationDates.length > 0
+            ? `decision${teaser.calibrationDates.length !== 1 ? 's' : ''} with confidence tracked. Activate Mirror to see whether your stated confidence runs ahead of or behind your actual judgment.`
+            : 'Confidence tracking begins on your next decision. Activate Mirror to see whether your stated confidence matches your judgment over time.'
+        }
+      />
+
+      {/* Section: Session Reliability Index (locked / blurred) — Sprint RET-4 */}
+      <TeaserStatSection
+        title="Session Reliability Index"
+        value={teaser?.sriAverage != null ? Math.round(teaser.sriAverage) : '—'}
+        blurred={teaser?.sriAverage != null}
+        copy="Composite score across structural fit, bias clarity, council confidence, and calibration \u2014 the single number behind how reliable each of your decisions was. Visible after activating Mirror."
+      />
+
+      {/* Section: Open Loop (locked) — Sprint RET-4 */}
+      <TeaserStatSection
+        title="Open Loop"
+        copy={
+          teaser && teaser.openLoopCount > 0
+            ? `${teaser.openLoopCount} decision${teaser.openLoopCount !== 1 ? 's' : ''} without a closed loop, or past their review date. Activate Mirror for the Monthly Judgment Review \u2014 a rolling summary of what's decided versus what's still open.`
+            : 'Tracks decisions you haven\u2019t closed the loop on \u2014 past review dates, decisions sitting open too long. Visible after subscribing.'
+        }
+      />
 
       {/* CTA card */}
       <div id="mirror-cta" className="mirror-cta-card" style={{
@@ -757,8 +868,13 @@ function TeaserView({
           {[
             'Bias Fingerprint — your patterns, named and specific to your decisions',
             'Decision Independence Score',
+            'Decision Rules — your implicit operating principles, extracted',
+            'Patterns — which structural rules recur, how often, and where',
             'Contradiction Detector',
             'Confidence Calibration',
+            'Session Reliability Index',
+            'Open Loop — your Monthly Judgment Review',
+            'Peer Benchmark — how your decisions compare structurally to others',
           ].map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold-dim)', marginTop: 7, flexShrink: 0 }} />
