@@ -23,7 +23,6 @@
 // /api/mirror/status and /api/mirror/timeline (same pattern as /api/history).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { ReactNode } from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
@@ -472,7 +471,7 @@ function TeaserStatSection({
   copy,
 }: {
   title:    string
-  value?:   ReactNode
+  value?:   React.ReactNode
   blurred?: boolean
   copy:     string
 }) {
@@ -1495,14 +1494,22 @@ function UnlockedView({
       </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
-      {/* Sprint M2: MJR — default position (when no open loops, or to get the callback) */}
-      <div id="msec-loops">
-        <MonthlyJudgmentReview
-          authToken={authToken}
-          onOpenLoopCount={openLoopCount === 0 ? setOpenLoopCount : undefined}
-        />
-      </div>
-      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+      {/* Sprint M2: MJR — default position (no open loops). RET-6: previously
+          unconditional, so when openLoopCount > 0 this rendered alongside the
+          top-position instance above (line ~1434) — same id="msec-loops"
+          twice in the DOM, and the entire module visibly duplicated on the
+          page. Now mutually exclusive with the top instance. */}
+      {openLoopCount === 0 && (
+        <>
+          <div id="msec-loops">
+            <MonthlyJudgmentReview
+              authToken={authToken}
+              onOpenLoopCount={setOpenLoopCount}
+            />
+          </div>
+          <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+        </>
+      )}
 
       {/* Sprint M2: Decision Timeline — bottom for users with >= 10 sessions */}
       {!earlyUser && (

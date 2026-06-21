@@ -232,11 +232,6 @@ export default function MonthlyJudgmentReview({ authToken, onOpenLoopCount }: Pr
       .finally(() => setLoading(false))
   }, [authToken, onOpenLoopCount])
 
-    fetch('/api/mirror/monthly-review', {
-      headers: { Authorization: `Bearer ${authToken}` },
-    })
-      .then(r => r.ok ? r.json() : null)
-
   if (loading || !data || data.decisions_total === 0) return null
 
   const windowLabel = data.window === 'last_30_days' ? 'Last 30 days' : 'All time'
@@ -269,11 +264,16 @@ export default function MonthlyJudgmentReview({ authToken, onOpenLoopCount }: Pr
       </p>
 
       {/* ── 4 metric tiles ─────────────────────────────────────────────────── */}
+      {/* RET-6: marginBottom was previously conditional on open_loops.length > 0,
+          but something always renders below this grid once decisions_total > 0
+          (either LoopsList or the empty-state card) — the conditional left
+          zero gap in the empty-state case, which read as the card overlapping
+          the grid above it. Always 16 now. */}
       <div style={{
         display:             'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
         gap:                 10,
-        marginBottom:        data.open_loops.length > 0 ? 16 : 0,
+        marginBottom:        16,
       }}
         className="mjr-grid"
       >
