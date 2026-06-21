@@ -472,6 +472,10 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [drawerOpen,     setDrawerOpen]     = useState(false)
   const [reDecision,     setReDecision]     = useState(initialSession.decision_text)
   const [reContext,      setReContext]       = useState(initialSession.context_text ?? '')
+  // Root-cause fix (Sprint RET-4 follow-up, June 21, 2026): reanalyzed decisions previously
+  // never captured entry confidence, so they were silently invisible to the calibration
+  // record (KDD 194). Defaults to 5, same as the homepage form's slider.
+  const [rePreConfidence, setRePreConfidence] = useState(5)
   const [reanalyzing,    setReanalyzing]     = useState(false)
   const [reanalyzeError, setReanalyzeError] = useState('')
 
@@ -517,6 +521,7 @@ export default function SessionView({ session: initialSession, initialMessages =
           decision_text: reDecision.trim(),
           context_text:  reContext.trim() || null,
           register_mode: reRegisterMode,
+          pre_decision_confidence: rePreConfidence,
           user_id:       session.user_id   ?? null,
           device_id:     getOrCreateDeviceId(),
         }),
@@ -557,7 +562,7 @@ export default function SessionView({ session: initialSession, initialMessages =
       setReanalyzeError('Something went wrong. Please try again.')
       setReanalyzing(false)
     }
-  }, [reDecision, reContext, reRegisterMode])
+  }, [reDecision, reContext, reRegisterMode, rePreConfidence])
 
   // ── Scroll state for navbar shadow ───────────────────────────────────────
   const [navScrolled, setNavScrolled] = useState(false)
@@ -1255,6 +1260,40 @@ export default function SessionView({ session: initialSession, initialMessages =
                     <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic' }}>{opt.sub}</p>
                   </button>
                 ))}
+              </div>
+
+              {/* Confidence slider — closes the gap that left reanalyzed decisions
+                  out of the calibration record (KDD 194) */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.13em',
+                    textTransform: 'uppercase', color: 'var(--text-4)',
+                  }}>
+                    Confidence going into this reanalysis
+                  </label>
+                  <span style={{
+                    fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)',
+                    color: rePreConfidence <= 3 ? '#c04040' : rePreConfidence <= 6 ? 'var(--gold)' : 'var(--green-text)',
+                    minWidth: 28, textAlign: 'right',
+                  }}>
+                    {rePreConfidence}<span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-4)' }}>/10</span>
+                  </span>
+                </div>
+                <input
+                  type="range" min={1} max={10} step={1}
+                  value={rePreConfidence}
+                  onChange={(e) => setRePreConfidence(Number(e.target.value))}
+                  style={{
+                    width: '100%',
+                    accentColor: rePreConfidence <= 3 ? '#c04040' : rePreConfidence <= 6 ? 'var(--gold)' : 'var(--green-text)',
+                    cursor: 'pointer', height: 4,
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Foggy</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Fully clear</span>
+                </div>
               </div>
 
               {reanalyzeError && (
