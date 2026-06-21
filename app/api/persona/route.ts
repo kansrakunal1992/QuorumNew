@@ -101,6 +101,7 @@ import {
 import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
 import { computePersonaRelevance, buildRelevanceBlock } from '@/lib/persona-relevance'  // Sprint R3
+import { type CouncilContext, EMPTY_COUNCIL_CONTEXT } from '@/lib/council-context'
 import type { OntologyScoreMap }             from '@/lib/bias-scorer'
 import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
@@ -128,26 +129,6 @@ import { encrypt }                           from '@/lib/encryption'
 // retyping the shape. A future field addition that misses one of these
 // sites will now fail to compile rather than silently passing partial
 // data into synthesis.
-
-export interface CouncilContext {
-  councilContextStr:  string | null
-  ontologyVector:     OntologyScoreMap | null
-  userId:             string | null
-  ruleEngineResult:   RuleEngineResult | null   // Sprint R3
-  maxStructuralScore: number | null             // Sprint R3
-  decisionTypePrimary: string | null            // Sprint BT Phase 2b
-  dominantEmotion:     string | null            // Sprint BT Phase 2b
-}
-
-export const EMPTY_COUNCIL_CONTEXT: CouncilContext = {
-  councilContextStr:   null,
-  ontologyVector:      null,
-  userId:              null,
-  ruleEngineResult:    null,
-  maxStructuralScore:  null,
-  decisionTypePrimary: null,
-  dominantEmotion:     null,
-}
 
 async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
   try {
