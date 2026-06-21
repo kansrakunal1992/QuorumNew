@@ -281,8 +281,14 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
   // to establish a reliable pattern — one unusual decision can produce two
   // correlated signals. Three detections across distinct sessions is the minimum
   // for a stable fingerprint. Forming = 1 or 2 detections.
+  // Sprint RET-5: detection_count can be 0 for a row whose only contributing
+  // session(s) were deleted — kept in bias_library for backend analytics
+  // (so a future detection builds back up from history instead of a fresh
+  // row), but must stay invisible here. Without the >= 1 floor a 0-count row
+  // would fall into formingRows (0 < 3) and render as a phantom "forming"
+  // tile for a pattern with zero surviving evidence.
   const confirmedRows = biasRows.filter(b => b.detection_count >= 3)
-  const formingRows   = biasRows.filter(b => b.detection_count < 3)
+  const formingRows   = biasRows.filter(b => b.detection_count >= 1 && b.detection_count < 3)
 
   // ── 5. Generate AI content ────────────────────────────────────────────────
   // Sprint R2: generateFingerprintContent() now always runs when there are ANY

@@ -172,6 +172,7 @@ export async function GET(req: Request) {
         .from('bias_library')
         .select('bias_parameter, detection_count')
         .eq('user_email', userEmail)
+        .gt('detection_count', 0)
         .order('detection_count', { ascending: false })
         .limit(3)
       teaserBiases = (biasRows ?? []).map(b => b.bias_parameter as string)

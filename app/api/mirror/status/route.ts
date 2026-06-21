@@ -89,6 +89,7 @@ export async function GET(req: Request) {
           .from('bias_library')
           .select('bias_parameter, detection_count')
           .eq('user_email', userEmail)
+          .gt('detection_count', 0)   // Sprint RET-5: excludes rows zeroed out by session deletion
           .order('detection_count', { ascending: false })
           .limit(3)
 
