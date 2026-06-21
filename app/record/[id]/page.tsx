@@ -390,7 +390,11 @@ export default async function RecordPage({ params }: Props) {
 
           {/* ── Outcome Tracker ────────────────────────────────── */}
           <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
-            <OutcomeTracker sessionId={session.id} existingOutcome={outcome} />
+            <OutcomeTracker
+              sessionId={session.id}
+              existingOutcome={outcome}
+              preDecisionConfidence={session.pre_decision_confidence ?? null}
+            />
           </div>
 
           {/* ── Bias note for this session — free, no Mirror gate ──── */}

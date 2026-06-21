@@ -12,12 +12,34 @@ interface Outcome {
   retrospective_confidence: number | null
 }
 
-interface Props {
-  sessionId:       string
-  existingOutcome: Outcome | null
+// Lever (ii) — single-outcome calibration note. Mirrors the delta-sign logic
+// already established in CalibrationRevealCard's DeltaBadge `sub` copy, but
+// computed for exactly one session instead of averaged across the Mirror-gated
+// aggregate. Returns null (renders nothing) unless BOTH pre and retro
+// confidence exist for this session — a single paired point is the minimum
+// bar for a real calibration claim; retro-only or pre-only states are silent.
+function calibrationNoteCopy(pre: number | null, retro: number | null): string | null {
+  if (pre === null || retro === null) return null
+  const delta = retro - pre
+  const direction =
+    delta > 0  ? "you're gaining confidence in hindsight" :
+    delta < 0  ? 'you entered more confident than the outcome warranted' :
+                 'your confidence held steady'
+  return `Your confidence was ${pre}/10 going in, ${retro}/10 in hindsight — ${direction}. That's now 1 data point toward your calibration record.`
 }
 
-export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
+interface Props {
+  sessionId:             string
+  existingOutcome:       Outcome | null
+  // Lever (ii) — free single-outcome calibration feedback (no Mirror gate,
+  // no ≥3-paired threshold). Sourced from sessions.pre_decision_confidence,
+  // already queried server-side in app/record/[id]/page.tsx — same column
+  // the Mirror-gated CalibrationRevealCard's aggregate uses, just read here
+  // for a single session instead of averaged across many.
+  preDecisionConfidence: number | null
+}
+
+export default function OutcomeTracker({ sessionId, existingOutcome, preDecisionConfidence }: Props) {
   // localSaved: captures outcome data after a fresh in-session save,
   // since existingOutcome is a server prop and won't update client-side.
   const [localSaved, setLocalSaved] = useState<Outcome | null>(null)
@@ -378,6 +400,24 @@ export default function OutcomeTracker({ sessionId, existingOutcome }: Props) {
                 {displayOutcome.notes}
               </p>
             )}
+            {/* ── Lever (ii): single-outcome calibration note ──────────────
+                Fires the instant displayOutcome is populated, whether that's
+                a fresh localSaved write this session or an existingOutcome
+                from a prior visit — both converge into displayOutcome above,
+                so this needs no separate fetch or client wiring. */}
+            {(() => {
+              const note = calibrationNoteCopy(preDecisionConfidence, displayOutcome.retrospective_confidence)
+              if (!note) return null
+              return (
+                <p style={{
+                  fontSize: 11.5, color: 'var(--text-4)', marginTop: 10,
+                  paddingTop: 10, borderTop: '1px solid var(--border-dim)',
+                  lineHeight: 1.55,
+                }}>
+                  {note}
+                </p>
+              )
+            })()}
           </div>
           <button
             className="btn-ghost"
