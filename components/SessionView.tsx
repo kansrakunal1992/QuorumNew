@@ -524,6 +524,7 @@ export default function SessionView({ session: initialSession, initialMessages =
           pre_decision_confidence: rePreConfidence,
           user_id:       session.user_id   ?? null,
           device_id:     getOrCreateDeviceId(),
+          parent_session_id: session.id,    // ← RET-5 Sprint 1: link back to origin
         }),
       })
       if (!res.ok) throw new Error()

@@ -55,6 +55,7 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
           pre_decision_confidence: rePreConfidence,
           user_id:       resolvedUserId,       // ← carry auth into new session
           device_id:     getOrCreateDeviceId(), // ← device fallback
+          parent_session_id: sessionId,         // ← RET-5 Sprint 1: link back to origin
         }),
       })
       if (!res.ok) throw new Error()

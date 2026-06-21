@@ -49,6 +49,11 @@ export interface Session {
   commitment_captured_at?:  string | null
   rule_recall_choice?:      'applied' | 'exception' | 'ignored' | null
   rule_recall_rule_text?:   string | null
+  // ── RET-5 Sprint 1: linked revisit ────────────────────────────────────────
+  // Set when this session originated from a "Reanalyze" on another session.
+  // Resolved server-side in /api/session POST and validated against the
+  // requester's identity — never trust this field if it appears client-side.
+  parent_session_id?:       string | null
 }
 
 export interface DecisionRecord {

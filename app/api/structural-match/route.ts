@@ -21,6 +21,43 @@ import {
 } from '@/lib/structural-retrieval'
 import { encrypt, decrypt, encryptJson, decryptJson } from '@/lib/encryption'
 
+// ── RET-5 Sprint 1: lineage exclusion ────────────────────────────────────────
+// A revisit's own parent (or any ancestor/descendant in its chain) is not a
+// cross-decision "structural pattern" — it's the same decision restated. Left
+// unfiltered, a revisit would self-match its origin at a near-perfect score,
+// which is noise, not signal. Bounded to 20 hops each direction — far more
+// than any realistic revisit chain, just a guard against runaway queries.
+async function fetchSessionLineage(
+  supabase: ReturnType<typeof createServiceClient>,
+  sessionId: string,
+  parentSessionId: string | null,
+): Promise<Set<string>> {
+  const lineage = new Set<string>()
+
+  // Ancestors — walk up via parent_session_id
+  let cursor = parentSessionId
+  let hops = 0
+  while (cursor && hops < 20) {
+    lineage.add(cursor)
+    const { data } = await supabase.from('sessions').select('parent_session_id').eq('id', cursor).single()
+    cursor = data?.parent_session_id ?? null
+    hops++
+  }
+
+  // Descendants — walk down via reverse lookup, breadth-first
+  let frontier = [sessionId]
+  hops = 0
+  while (frontier.length > 0 && hops < 20) {
+    const { data } = await supabase.from('sessions').select('id').in('parent_session_id', frontier)
+    const next = (data ?? []).map(r => r.id)
+    next.forEach(id => lineage.add(id))
+    frontier = next
+    hops++
+  }
+
+  return lineage
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json() as {
@@ -68,7 +105,7 @@ export async function POST(req: Request) {
     // because the client-side call in SessionView never passed them anyway.
     const { data: currentSession } = await supabase
       .from('sessions')
-      .select('decision_text, created_at, user_email, user_id')
+      .select('decision_text, created_at, user_email, user_id, parent_session_id')
       .eq('id', sessionId)
       .single()
 
@@ -171,13 +208,20 @@ export async function POST(req: Request) {
       pastQuery = pastQuery.eq('sessions.user_email', userEmail)
     }
 
-    const { data: pastOntologies, error: pastErr } = await pastQuery
+    const { data: pastOntologiesRaw, error: pastErr } = await pastQuery
       .order('created_at', { ascending: false })
       .limit(50)
 
     if (pastErr) {
       console.error('[StructuralMatch] Past sessions query failed:', pastErr)
       return NextResponse.json({ context_block: '', matches: [], threshold_met: false, session_count_used: 0, ontology_ready: true })
+    }
+
+    // ── RET-5 Sprint 1: exclude same-lineage sessions from candidates ───────
+    const lineageIds = await fetchSessionLineage(supabase, sessionId, currentSession.parent_session_id ?? null)
+    const pastOntologies = (pastOntologiesRaw ?? []).filter(o => !lineageIds.has(o.session_id))
+    if (lineageIds.size > 0) {
+      console.log(`[StructuralMatch] Excluded ${(pastOntologiesRaw ?? []).length - pastOntologies.length} same-lineage session(s) from candidates`)
     }
 
     const pastCount = (pastOntologies ?? []).length

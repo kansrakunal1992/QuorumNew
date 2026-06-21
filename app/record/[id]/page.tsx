@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { formatDateTime } from '@/lib/dates'
+import { formatDateTime, formatDate } from '@/lib/dates'
 import { createServiceClient } from '@/lib/supabase'
 import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
@@ -59,10 +59,12 @@ export default async function RecordPage({ params }: Props) {
   const { id } = await params
   const supabase = createServiceClient()
 
-  const [sessionResult, messagesResult, outcomeResult] = await Promise.all([
+  const [sessionResult, messagesResult, outcomeResult, childSessionsResult] = await Promise.all([
     supabase.from('sessions').select('*').eq('id', id).single(),
     supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
     supabase.from('outcomes').select('*').eq('session_id', id).single(),
+    // RET-5 Sprint 1: any sessions that revisit THIS one (forward link)
+    supabase.from('sessions').select('id, created_at').eq('parent_session_id', id).order('created_at', { ascending: false }),
   ])
 
   if (sessionResult.error || !sessionResult.data) notFound()
@@ -137,6 +139,31 @@ export default async function RecordPage({ params }: Props) {
   }
 
   const dateStr = formatDateTime(session.created_at)
+
+  // ── RET-5 Sprint 1: revisit breadcrumbs (linked re-ask, no AI behavior change) ──
+  // Backward: this session originated from a Reanalyze on an earlier one.
+  // Forward: this session has since been revisited (one or more times).
+  let parentLink: { id: string; decisionPreview: string; createdAt: string } | null = null
+  if (session.parent_session_id) {
+    const { data: parentRow } = await supabase
+      .from('sessions')
+      .select('id, decision_text, created_at')
+      .eq('id', session.parent_session_id)
+      .single()
+    if (parentRow) {
+      const preview = decryptText(parentRow.decision_text)
+      parentLink = {
+        id: parentRow.id,
+        decisionPreview: preview.length > 70 ? preview.slice(0, 70).replace(/\s+\S*$/, '') + '…' : preview,
+        createdAt: parentRow.created_at,
+      }
+    }
+  }
+
+  const childSessions = childSessionsResult.data ?? []
+  const childLink = childSessions[0]
+    ? { id: childSessions[0].id, createdAt: childSessions[0].created_at, count: childSessions.length }
+    : null
 
   // Group by persona, deduplicated.
   // If a session was re-run (e.g. pre-Sprint 24b or via examiner update), multiple assistant
@@ -325,6 +352,29 @@ export default async function RecordPage({ params }: Props) {
               }}>
                 Decision Record · {dateStr}
               </p>
+
+              {/* RET-5 Sprint 1: revisit breadcrumbs */}
+              {parentLink && (
+                <Link href={`/record/${parentLink.id}`} style={{ textDecoration: 'none' }} title={parentLink.decisionPreview}>
+                  <p style={{
+                    fontSize: 11.5, color: 'var(--gold-dim)', marginTop: 6,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    ← Revisiting a decision from {formatDate(parentLink.createdAt)}
+                  </p>
+                </Link>
+              )}
+              {childLink && (
+                <Link href={`/record/${childLink.id}`} style={{ textDecoration: 'none' }}>
+                  <p style={{
+                    fontSize: 11.5, color: 'var(--gold-dim)', marginTop: 6,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    Revisited on {formatDate(childLink.createdAt)}
+                    {childLink.count > 1 ? ` (+${childLink.count - 1} more)` : ''} →
+                  </p>
+                </Link>
+              )}
             </div>
 
             <Link href="/">

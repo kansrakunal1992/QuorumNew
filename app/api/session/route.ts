@@ -22,13 +22,41 @@ export async function POST(req: Request) {
         } catch { serverUserId = null }
       }
     }
-    const { decision_text, context_text, register_mode, pre_decision_confidence, user_email, device_id } = await req.json()
+    const { decision_text, context_text, register_mode, pre_decision_confidence, user_email, device_id, parent_session_id } = await req.json()
 
     if (!decision_text?.trim()) {
       return NextResponse.json({ error: 'decision_text is required' }, { status: 400 })
     }
 
     const supabase = createServiceClient()
+
+    // ── RET-5 Sprint 1: validate parent_session_id belongs to the same identity ──
+    // before linking. Without this check, a forged parent_session_id would let
+    // the Sprint 2 Council-continuity injection read someone else's decision,
+    // examiner answers, and pushback into this session. Parent linkage must
+    // never cross identities — same precedence used elsewhere in the identity
+    // chain (user_id > user_email > device_id).
+    let resolvedParentId: string | null = null
+    if (parent_session_id) {
+      const { data: parentRow } = await supabase
+        .from('sessions')
+        .select('user_id, user_email, device_id')
+        .eq('id', parent_session_id)
+        .single()
+
+      const requesterEmail = user_email?.trim().toLowerCase() || null
+      const sameIdentity = !!(
+        (serverUserId   && parentRow?.user_id    === serverUserId) ||
+        (requesterEmail && parentRow?.user_email === requesterEmail) ||
+        (device_id      && parentRow?.device_id  === device_id)
+      )
+
+      if (sameIdentity) {
+        resolvedParentId = parent_session_id
+      } else if (parentRow) {
+        console.warn(`[Session] parent_session_id ${parent_session_id} identity mismatch — dropping link`)
+      }
+    }
 
     const { data, error } = await supabase
       .from('sessions')
@@ -53,6 +81,8 @@ export async function POST(req: Request) {
         // Client reads this from supabase.auth.getSession() and passes it here.
         // Avoids relying solely on the post-auth link-sessions RPC to backfill.
         user_id: serverUserId,
+        // ── RET-5 Sprint 1: linked revisit ──────────────────────────────────
+        parent_session_id: resolvedParentId,
       })
       .select('id')
       .single()
