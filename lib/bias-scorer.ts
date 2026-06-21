@@ -832,13 +832,23 @@ export interface UserBiasContext {
   personalBiasTriggers:     PersonalBiasTrigger[]          // Sprint BT  — for mirror-fingerprint.ts
 }
 
+// Sprint TB1 (June 2026): hoisted from a function-local const to a module-level
+// export so every fallback site that needs this exact empty shape — inside this
+// function and at call sites in app/api/persona/route.ts — references the same
+// declaration. Diligence finding (June 2026 update): a function signature
+// extended with new optional fields in three places caused exactly one
+// hand-typed fallback literal elsewhere in the codebase to be missed on first
+// deploy. A named, exported constant means a future field addition fails to
+// compile everywhere it's needed instead of silently shipping a partial shape.
+export const EMPTY_USER_BIAS_CONTEXT: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] }
+
 export async function fetchUserBiasContext(
   userId: string,
   ontologyVector: OntologyScoreMap | null,
   decisionTypePrimary: string | null = null,  // Sprint BT Phase 2b — current session's canonical decision type
   dominantEmotion:     string | null = null,  // Sprint BT Phase 2b — current session's canonical dominant emotion
 ): Promise<UserBiasContext> {
-  const empty: UserBiasContext = { synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] }
+  const empty = EMPTY_USER_BIAS_CONTEXT
   if (!userId) return empty
 
   try {

@@ -99,7 +99,7 @@ import {
   getPersonaStructuralDirective,             // Sprint R1
 }                                            from '@/lib/structural-retrieval'
 import { buildCouncilContext }               from '@/lib/rule-engine'
-import { fetchUserBiasContext }              from '@/lib/bias-scorer'
+import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
 import { computePersonaRelevance, buildRelevanceBlock } from '@/lib/persona-relevance'  // Sprint R3
 import type { OntologyScoreMap }             from '@/lib/bias-scorer'
 import type { ScoredVector }                 from '@/lib/ontology-tagger'
@@ -115,8 +115,21 @@ import { encrypt }                           from '@/lib/encryption'
 //   maxStructuralScore for computePersonaRelevance() at synthesis time.
 //   matches_json added to the select — already stored in sessions_ontology
 //   by the structural-match route. No new DB round-trip.
+//
+// Sprint TB1 (June 2026): this shape was previously hand-typed as an inline
+// object literal in 7 separate places across this file (the function
+// signature, the retry wrapper's signature, 3 early returns inside the try
+// block, the catch block, and the no-fetch fallback in POST) — a diligence
+// finding from the same engagement: a function signature extended with new
+// optional fields in three places caused exactly one fallback literal
+// elsewhere to be missed on first deploy, a TypeScript build failure that
+// shipped a partial shape until caught. Named here once; every site below
+// now references CouncilContext / EMPTY_COUNCIL_CONTEXT instead of
+// retyping the shape. A future field addition that misses one of these
+// sites will now fail to compile rather than silently passing partial
+// data into synthesis.
 
-async function fetchCouncilContext(sessionId: string): Promise<{
+export interface CouncilContext {
   councilContextStr:  string | null
   ontologyVector:     OntologyScoreMap | null
   userId:             string | null
@@ -124,7 +137,19 @@ async function fetchCouncilContext(sessionId: string): Promise<{
   maxStructuralScore: number | null             // Sprint R3
   decisionTypePrimary: string | null            // Sprint BT Phase 2b
   dominantEmotion:     string | null            // Sprint BT Phase 2b
-}> {
+}
+
+export const EMPTY_COUNCIL_CONTEXT: CouncilContext = {
+  councilContextStr:   null,
+  ontologyVector:      null,
+  userId:              null,
+  ruleEngineResult:    null,
+  maxStructuralScore:  null,
+  decisionTypePrimary: null,
+  dominantEmotion:     null,
+}
+
+async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
   try {
     const supabase = createServiceClient()
 
@@ -151,9 +176,9 @@ async function fetchCouncilContext(sessionId: string): Promise<{
     const userId = sessionResult.data?.user_id ?? null
 
     const { data, error } = ontologyResult
-    if (error || !data) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
-    if (data.tagger_version !== 'v2.0') return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
-    if (!data.ontology_vector || !data.rule_engine_result) return { councilContextStr: null, ontologyVector: null, userId, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
+    if (error || !data) return { ...EMPTY_COUNCIL_CONTEXT, userId }
+    if (data.tagger_version !== 'v2.0') return { ...EMPTY_COUNCIL_CONTEXT, userId }
+    if (!data.ontology_vector || !data.rule_engine_result) return { ...EMPTY_COUNCIL_CONTEXT, userId }
 
     // Sprint R3: extract max structural score from matches_json (JSONB array or null)
     let maxStructuralScore: number | null = null
@@ -185,7 +210,7 @@ async function fetchCouncilContext(sessionId: string): Promise<{
     }
   } catch (err) {
     console.error('[Persona] fetchCouncilContext failed:', err)
-    return { councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null }
+    return EMPTY_COUNCIL_CONTEXT
   }
 }
 
@@ -208,15 +233,7 @@ async function fetchCouncilContextWithRetry(
   sessionId: string,
   maxWaitMs  = 3000,
   intervalMs = 400,
-): Promise<{
-  councilContextStr:  string | null
-  ontologyVector:     OntologyScoreMap | null
-  userId:             string | null
-  ruleEngineResult:   RuleEngineResult | null
-  maxStructuralScore: number | null
-  decisionTypePrimary: string | null
-  dominantEmotion:     string | null
-}> {
+): Promise<CouncilContext> {
   const start = Date.now()
   while (true) {
     const result = await fetchCouncilContext(sessionId)
@@ -277,7 +294,7 @@ export async function POST(req: Request) {
       ? isInitialPersona
         ? fetchCouncilContextWithRetry(sessionId)
         : fetchCouncilContext(sessionId)
-      : Promise.resolve({ councilContextStr: null, ontologyVector: null, userId: null, ruleEngineResult: null, maxStructuralScore: null, decisionTypePrimary: null, dominantEmotion: null })
+      : Promise.resolve(EMPTY_COUNCIL_CONTEXT)
 
     // ── Sprint R2: bias context — chained off councilContextPromise ───────────
     // Sprint BT Phase 2b: also threads the CURRENT session's decisionTypePrimary
@@ -288,9 +305,9 @@ export async function POST(req: Request) {
       ? councilContextPromise.then(({ ontologyVector, userId, decisionTypePrimary, dominantEmotion }) =>
           userId
             ? fetchUserBiasContext(userId, ontologyVector, decisionTypePrimary, dominantEmotion)
-            : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] })
+            : Promise.resolve(EMPTY_USER_BIAS_CONTEXT)
         )
-      : Promise.resolve({ synthesisBlock: '', personaAlert: null, hasAnyBiases: false, personalCalibrationZones: [], personalBiasTriggers: [] })
+      : Promise.resolve(EMPTY_USER_BIAS_CONTEXT)
 
     // ── Build chat messages ───────────────────────────────────────────────────
     let chatMessages: { role: 'user' | 'assistant'; content: string }[]

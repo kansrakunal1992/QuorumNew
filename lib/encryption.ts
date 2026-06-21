@@ -1,3 +1,12 @@
+import 'server-only'
+// ^ Build-time guard (Sprint TB1, June 2026) — see lib/ai-client.ts for the
+// incident this class of fix targets. This module holds DB_ENCRYPTION_KEY in
+// module scope and is a strictly server-only file (confirmed: zero client
+// component imports it as of this sprint). A leak here is worse than
+// ai-client.ts's — raw decryption capability in a browser bundle, not just a
+// blank page — so the guard is added even though no live import path
+// triggers it today.
+
 /**
  * lib/encryption.ts
  * ── Quorum: Application-level field encryption ────────────────────────────────

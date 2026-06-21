@@ -1,3 +1,15 @@
+import 'server-only'
+// ^ Build-time guard (Sprint TB1, June 2026). Throws if this module is ever
+// reached by a client bundle — directly or transitively through any lib file
+// that imports it (lib/bias-scorer.ts, lib/ontology-tagger.ts,
+// lib/structural-retrieval.ts, lib/contradiction-detector.ts,
+// lib/mirror-fingerprint.ts). Converts the failure mode from "blank white
+// screen in production with no useful error" (see diligence finding #2,
+// June 2026 update — components/BiasFingerprint.tsx crashed this way after a
+// value-import of a constant created a transitive chain to the module-scope
+// `new Anthropic(...)` below executing in-browser) into a local build error
+// naming the exact import chain. Do not remove.
+
 /**
  * AI provider abstraction.
  *
