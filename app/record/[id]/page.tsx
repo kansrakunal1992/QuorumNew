@@ -14,6 +14,9 @@ import { BIAS_PARAMETERS } from '@/lib/bias-scorer'
 import type { PersonaKey } from '@/lib/types'
 import { decrypt } from '@/lib/encryption'
 import TrustBadgeStrip from '@/components/TrustBadgeStrip'
+import DecisionTimeline from '@/components/DecisionTimeline'  // RET-5 Sprint 3
+import type { TimelineEntry } from '@/components/DecisionTimeline'
+import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
 
 // Strip <lens>, <position>, <realcost> tags stored in DB — rendered separately in PersonaPanel
 // but never cleaned before persistence, so record page must strip them before display
@@ -164,6 +167,85 @@ export default async function RecordPage({ params }: Props) {
   const childLink = childSessions[0]
     ? { id: childSessions[0].id, createdAt: childSessions[0].created_at, count: childSessions.length }
     : null
+
+  // ── RET-5 Sprint 3: Decision Arc timeline — only on root sessions with ≥1 revisit ──
+  // Breadcrumbs on revisit pages already link back to root; timeline lives here.
+  // Adds at most 3 DB queries, only when this page is a chain root.
+  let timelineEntries:     TimelineEntry[] | null = null
+  let hasMirrorAccess      = false
+  let avgCalibrationDelta: number | null = null
+
+  const isChainRoot = !session.parent_session_id && childSessions.length > 0
+
+  if (isChainRoot) {
+    const childIds = childSessions.map((c: { id: string }) => c.id)
+    const allIds   = [session.id, ...childIds]
+
+    const [childDetailsResult, allOutcomesResult] = await Promise.all([
+      supabase
+        .from('sessions')
+        .select('id, decision_text, created_at')
+        .in('id', childIds),
+      supabase
+        .from('outcomes')
+        .select('session_id, what_decided, council_helped, calibration_delta')
+        .in('session_id', allIds),
+    ])
+
+    // Mirror access — only checked when there's a chain worth showing the tile for
+    if (session.user_id) {
+      const accessState = await getMirrorAccessState(session.user_id, supabase)
+      hasMirrorAccess = accessState === 'unlocked'
+    }
+
+    // Build outcome map — what_decided is encrypted
+    const outcomeMap: Record<string, {
+      whatDecided:      string
+      councilHelped:    string
+      calibrationDelta: number | null
+    }> = {}
+    for (const o of allOutcomesResult.data ?? []) {
+      outcomeMap[o.session_id] = {
+        whatDecided:      decryptText(o.what_decided),
+        councilHelped:    o.council_helped,
+        calibrationDelta: o.calibration_delta ?? null,
+      }
+    }
+
+    // calibration_delta average — only from sittings that have it
+    const deltas = (allOutcomesResult.data ?? [])
+      .map(o => o.calibration_delta)
+      .filter((d): d is number => typeof d === 'number')
+    avgCalibrationDelta = deltas.length > 0
+      ? parseFloat((deltas.reduce((a, b) => a + b, 0) / deltas.length).toFixed(1))
+      : null
+
+    // Root entry first, then children in ascending date order
+    const SNIPPET_LEN = 80
+    const snippet = (text: string) =>
+      text.length > SNIPPET_LEN ? text.slice(0, SNIPPET_LEN).replace(/\s+\S*$/, '') + '…' : text
+
+    const rootEntry: TimelineEntry = {
+      id:              session.id,
+      createdAt:       session.created_at,
+      decisionSnippet: snippet(session.decision_text),
+      isCurrent:       session.id === id,
+      outcome:         outcomeMap[session.id] ?? null,
+    }
+
+    const childEntries: TimelineEntry[] = [...(childDetailsResult.data ?? [])]
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      .map(c => ({
+        id:              c.id,
+        createdAt:       c.created_at,
+        decisionSnippet: snippet(decryptText(c.decision_text)),
+        isCurrent:       c.id === id,
+        outcome:         outcomeMap[c.id] ?? null,
+      }))
+
+    timelineEntries = [rootEntry, ...childEntries]
+  }
+
 
   // Group by persona, deduplicated.
   // If a session was re-run (e.g. pre-Sprint 24b or via examiner update), multiple assistant
@@ -605,6 +687,19 @@ export default async function RecordPage({ params }: Props) {
               )
             })}
           </div>
+
+          {/* ── Decision Arc timeline — root sessions with ≥1 revisit ──── */}
+          {/* RET-5 Sprint 3: free and ungated. Mirror conversion tile additive at bottom. */}
+          {timelineEntries && (
+            <div className="rec-fade rec-fade-4" style={{ marginTop: 24, marginBottom: 8 }}>
+              <DecisionTimeline
+                entries={timelineEntries}
+                currentSessionId={id}
+                hasMirrorAccess={hasMirrorAccess}
+                avgCalibrationDelta={avgCalibrationDelta}
+              />
+            </div>
+          )}
 
           {/* ── Bottom Tray ────────────────────────────────────── */}
           <div style={{ marginTop: 44 }}>
