@@ -396,7 +396,7 @@ export default async function RecordPage({ params }: Props) {
             <div>
               {/* Back button — exact component + inline style override preserved */}
               <BackButton
-                label="← Back to Council"
+                label="← Back"
                 style={{
                   padding: 0,
                   fontSize: 12,
@@ -707,7 +707,7 @@ export default async function RecordPage({ params }: Props) {
             <div className="rec-bottom-tray">
               <div className="rec-bottom-left">
                 <BackButton
-                  label="← Back to Council"
+                  label="← Back"
                   style={{ padding: '10px 18px', fontSize: 13, minHeight: 44 }}
                 />
                 <ReanalyzeDrawer

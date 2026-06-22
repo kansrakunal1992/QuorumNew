@@ -119,28 +119,28 @@ function buildEmailHtml({
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Your decision — ${daysAgo} days later</title>
 </head>
-<body style="background:#0a0a0a;margin:0;padding:48px 20px;font-family:'DM Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
+<body style="background:#f5f4f0;margin:0;padding:48px 20px;font-family:'DM Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
   <div style="max-width:480px;margin:0 auto">
 
     <!-- Wordmark -->
-    <p style="color:#555;font-size:10px;letter-spacing:0.22em;text-transform:uppercase;margin:0 0 40px;font-family:monospace">
+    <p style="color:#999;font-size:10px;letter-spacing:0.22em;text-transform:uppercase;margin:0 0 40px;font-family:monospace">
       Quorum &middot; Judgment Record
     </p>
 
     <!-- Hook -->
-    <p style="color:#c0b89a;font-size:20px;line-height:1.45;margin:0 0 10px;font-weight:400">
+    <p style="color:#1a1a1a;font-size:20px;line-height:1.45;margin:0 0 10px;font-weight:400">
       It&rsquo;s been ${daysAgo} days.
     </p>
 
     <!-- Decision snippet -->
-    <p style="color:#666;font-size:14px;margin:0 0 20px;line-height:1.65;font-style:italic;border-left:2px solid #2a2820;padding-left:14px">
+    <p style="color:#666;font-size:14px;margin:0 0 20px;line-height:1.65;font-style:italic;border-left:2px solid #dddad0;padding-left:14px">
       &ldquo;${decisionSnippet}&rdquo;
     </p>
 
     ${confidenceLine}
 
     <!-- The question -->
-    <p style="color:#d4cbb8;font-size:17px;margin:0 0 32px;line-height:1.5;font-weight:400">
+    <p style="color:#1a1a1a;font-size:17px;margin:0 0 32px;line-height:1.5;font-weight:400">
       How&rsquo;s it sitting?
     </p>
 
@@ -153,9 +153,9 @@ function buildEmailHtml({
     </a>
 
     <!-- Footer -->
-    <p style="color:#333;font-size:11px;margin:48px 0 0;line-height:1.7">
+    <p style="color:#bbb;font-size:11px;margin:48px 0 0;line-height:1.7">
       One nudge per milestone. No further reminders for this decision.<br>
-      <a href="${appUrl}" style="color:#3a3a3a;text-decoration:none">Quorum</a>
+      <a href="${appUrl}" style="color:#aaa;text-decoration:none">Quorum</a>
     </p>
 
   </div>
