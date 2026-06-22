@@ -665,8 +665,8 @@ function TeaserView({
     fetch('/api/mirror/teaser', {
       headers: { Authorization: `Bearer ${authToken}` },
     })
-      .then(r => r.json())
-      .then(d => setTeaser(d as TeaserData))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && typeof d.patternCount === 'number') setTeaser(d as TeaserData) })
       .catch(() => {/* degrade gracefully */})
   }, [authToken])
 

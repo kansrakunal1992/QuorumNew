@@ -49,8 +49,8 @@ export default function MirrorOpenLoopCard({ authToken, sessionCount, mirrorUnlo
     fetch('/api/mirror/teaser', {
       headers: { Authorization: `Bearer ${authToken}` },
     })
-      .then(r => r.json())
-      .then(d => setTeaser(d))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && typeof d.patternCount === 'number') setTeaser(d) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [isTeaserState, authToken])
@@ -148,7 +148,7 @@ export default function MirrorOpenLoopCard({ authToken, sessionCount, mirrorUnlo
     // Mirror page shows bias_library patterns. Use whichever has data.
     const patternCount = teaser.patternCount > 0
       ? teaser.patternCount
-      : teaser.teaserBiases.length
+      : (teaser.teaserBiases?.length ?? 0)
 
     if (patternCount === 0) return null
 
