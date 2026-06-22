@@ -514,15 +514,27 @@ export default function SessionView({ session: initialSession, initialMessages =
     setReanalyzeError('')
     setReanalyzing(true)
     try {
+      // S4-02: server derives user_id from Bearer token only — never trust body.
+      let accessToken: string | null = null
+      try {
+        const { createClient } = await import('@/lib/supabase')
+        const sb = createClient()
+        const { data: { session: authSession } } = await sb.auth.getSession()
+        accessToken = authSession?.access_token ?? null
+      } catch { /* non-blocking */ }
+
       const res = await fetch('/api/session', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        },
         body:    JSON.stringify({
           decision_text: reDecision.trim(),
           context_text:  reContext.trim() || null,
           register_mode: reRegisterMode,
           pre_decision_confidence: rePreConfidence,
-          user_id:       session.user_id   ?? null,
+          // user_id intentionally omitted — server derives from Bearer token (S4-02)
           device_id:     getOrCreateDeviceId(),
           parent_session_id: session.id,    // ← RET-5 Sprint 1: link back to origin
         }),

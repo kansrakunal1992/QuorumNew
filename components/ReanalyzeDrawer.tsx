@@ -33,27 +33,28 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
     setReanalyzeError('')
     setReanalyzing(true)
     try {
-      // Resolve user_id: prefer prop (passed from server component which read the session row).
-      // Fall back to live getSession() in case the record page didn't pass it.
-      let resolvedUserId: string | null = userIdProp ?? null
-      if (!resolvedUserId) {
-        try {
-          const { createClient } = await import('@/lib/supabase')
-          const sb = createClient()
-          const { data: { session: authSession } } = await sb.auth.getSession()
-          resolvedUserId = authSession?.user?.id ?? null
-        } catch { /* non-blocking */ }
-      }
+      // S4-02: server derives user_id from Bearer token only — never trust body.
+      // Get the access token here and pass it as Authorization header.
+      let accessToken: string | null = null
+      try {
+        const { createClient } = await import('@/lib/supabase')
+        const sb = createClient()
+        const { data: { session: authSession } } = await sb.auth.getSession()
+        accessToken = authSession?.access_token ?? null
+      } catch { /* non-blocking */ }
 
       const res = await fetch('/api/session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           decision_text: reDecision.trim(),
           context_text:  reContext.trim() || null,
           register_mode: reRegisterMode,
           pre_decision_confidence: rePreConfidence,
-          user_id:       resolvedUserId,       // ← carry auth into new session
+          // user_id intentionally omitted — server derives from Bearer token (S4-02)
           device_id:     getOrCreateDeviceId(), // ← device fallback
           parent_session_id: sessionId,         // ← RET-5 Sprint 1: link back to origin
         }),
