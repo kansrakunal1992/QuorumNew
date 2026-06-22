@@ -22,6 +22,7 @@ import 'server-only'
  *   examiner_responses — question_text, response_text
  *   outcomes           — what_decided, notes
  *   structural_matches — context_block (text), matches_json (JSONB via _enc wrapper)
+ *   graph_edges        — explanation_text (user_asserted edges only; null for all computed types)
  *
  * ── EXCLUDED (derived tables — numeric scores, enums, AI summaries) ───────────
  *   sessions_ontology, bias_library, structural_scores, independence_score_log,

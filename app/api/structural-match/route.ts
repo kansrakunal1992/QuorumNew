@@ -20,6 +20,7 @@ import {
   type OntologySnapshot,
 } from '@/lib/structural-retrieval'
 import { encrypt, decrypt, encryptJson, decryptJson } from '@/lib/encryption'
+import { upsertStructuralEdge } from '@/lib/graph-engine'  // Sprint G1: live graph edge writes
 
 // ── RET-5 Sprint 1: lineage exclusion ────────────────────────────────────────
 // A revisit's own parent (or any ancestor/descendant in its chain) is not a
@@ -292,15 +293,23 @@ export async function POST(req: Request) {
       outcome:                 outcomesMap[o.session_id] ?? null,
     }))
 
-    // ── 8. Write pairwise scores into structural_scores ─────────
-    // This populates the structural_scores table (previously always empty).
+    // ── 8. Write pairwise scores into structural_scores + graph_edges ──────
+    // structural_scores: traceability table, all pairs regardless of threshold.
+    // graph_edges (Sprint G1): only qualifying pairs (total >= MATCH_THRESHOLD),
+    //   with dimension_breakdown for explainability. Writes are additive and
+    //   never block the route response — errors are caught and logged only.
     // SCHEMA NOTE: structural_scores has no threshold_met column — dropped.
     //   threshold_met is derivable as (total_score >= 45) from stored data.
     //   user_email is stored for per-user traceability queries.
     if (pastSnapshots.length > 0) {
-      const scoreRows = pastSnapshots.map(past => {
+      const MATCH_THRESHOLD = Number(process.env.MATCH_THRESHOLD ?? 45)
+      const scoreRows: Record<string, unknown>[] = []
+      const graphEdgePromises: Promise<void>[] = []
+
+      for (const past of pastSnapshots) {
         const breakdown = scoreStructuralSimilarity(currentSnapshot, past)
-        return {
+
+        scoreRows.push({
           session_id_a:         sessionId,
           session_id_b:         past.session_id,
           user_email:           userEmail ?? null,  // for traceability queries
@@ -313,10 +322,19 @@ export async function POST(req: Request) {
           scoring_mode:         breakdown.scoring_mode,
           vector_similarity:    breakdown.vector_similarity ?? null,
           computed_at:          new Date().toISOString(),
-        }
-      })
+        })
 
-      // Insert in batches of 20 to avoid payload limits
+        // Sprint G1: materialise qualifying pairs as graph edges live.
+        // userId may be null for pre-auth / device-id-only sessions — skip those
+        // (graph is strictly per authenticated user, same gate as bias scoring).
+        if (userId && breakdown.total >= MATCH_THRESHOLD) {
+          graphEdgePromises.push(
+            upsertStructuralEdge(supabase, userId, sessionId, past.session_id, breakdown)
+          )
+        }
+      }
+
+      // Insert structural_scores in batches of 20 to avoid payload limits
       for (let i = 0; i < scoreRows.length; i += 20) {
         const batch = scoreRows.slice(i, i + 20)
         const { error: scoresErr } = await supabase
@@ -330,6 +348,16 @@ export async function POST(req: Request) {
         } else {
           console.log(`[StructuralMatch] Wrote ${batch.length} rows to structural_scores`)
         }
+      }
+
+      // Sprint G1: write graph edges — awaited inside the background route,
+      // never delays the route's own NextResponse (structural-match itself is
+      // called fire-and-forget from the client after Council completes).
+      if (graphEdgePromises.length > 0) {
+        await Promise.all(graphEdgePromises).catch(err => {
+          console.error('[StructuralMatch] Graph edge writes partially failed (non-blocking):', err)
+        })
+        console.log(`[StructuralMatch] Wrote ${graphEdgePromises.length} graph edge(s)`)
       }
     }
 
