@@ -89,6 +89,37 @@
  *     shaped the persona's angle, they close with one sentence beginning
  *     \"Structurally, this decision [observation].\" If the record did not apply
  *     to their specific analytical angle, the sentence is omitted entirely.
+ *
+ * RET-5 Sprint 2 additions:
+ *
+ *   Council continuity for linked revisits (decision-continuity.ts)
+ *
+ *     fetchContinuityContext() fires in parallel with fetchCouncilContext() for
+ *     all initial persona and synthesis calls. Returns EMPTY_CONTINUITY_CONTEXT
+ *     (no-op) when the session has no parent_session_id.
+ *
+ *     When a parent exists, gathers from it:
+ *       - decision text + context text
+ *       - prior Council synthesis (capped at 600 chars)
+ *       - examiner Q&A + user pushback (up to 6 lines, decrypted)
+ *       - logged outcome (what_decided + council_helped)
+ *       - commitment_leaning + commitment_switch (where they were leaning
+ *         and what they said would change their course)
+ *
+ *     Two injection points:
+ *       personaBlock        → prepended to initial persona user turn.
+ *                             Informational framing; not a mandate.
+ *       synthesisDirective  → appended AFTER relevanceBlock (Layer 4) as the
+ *                             true terminal layer in synthesis system prompt.
+ *                             NON-NEGOTIABLE. Forces explicit reference to
+ *                             prior synthesis, examiner evidence, and outcome.
+ *
+ *     Updated system prompt layer order (synthesis, when revisit):
+ *       1. persona.prompt
+ *       2. councilContext
+ *       3. synthesisBlock         — longitudinal bias record
+ *       4. relevanceBlock         — MANDATORY council weighting directive
+ *       5. synthesisDirective     — MANDATORY continuity / prior-sitting reference ← NEW
  */
 
 import { PERSONAS }                            from '@/lib/personas'
@@ -102,6 +133,7 @@ import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
 import { computePersonaRelevance, buildRelevanceBlock } from '@/lib/persona-relevance'  // Sprint R3
 import { type CouncilContext, EMPTY_COUNCIL_CONTEXT } from '@/lib/council-context'
+import { fetchContinuityContext, EMPTY_CONTINUITY_CONTEXT } from '@/lib/decision-continuity'  // RET-5 Sprint 2
 import type { OntologyScoreMap }             from '@/lib/bias-scorer'
 import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
@@ -277,6 +309,13 @@ export async function POST(req: Request) {
         : fetchCouncilContext(sessionId)
       : Promise.resolve(EMPTY_COUNCIL_CONTEXT)
 
+    // ── RET-5 Sprint 2: continuity context — fires in parallel with council context ──
+    // Only for the two call types that run full system-prompt assembly.
+    // Non-blocking: EMPTY_CONTINUITY_CONTEXT returned when session has no parent.
+    const continuityContextPromise = (isSynthesisCall || isInitialPersona) && sessionId
+      ? fetchContinuityContext(sessionId)
+      : Promise.resolve(EMPTY_CONTINUITY_CONTEXT)
+
     // ── Sprint R2: bias context — chained off councilContextPromise ───────────
     // Sprint BT Phase 2b: also threads the CURRENT session's decisionTypePrimary
     // and dominantEmotion through, so fetchUserBiasContext can check whether a
@@ -336,12 +375,26 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── Resolve council context + bias context in parallel ────────────────────
-    const [councilResult, biasContext] = await Promise.all([
+    // ── Resolve council context + bias context + continuity context in parallel ─
+    const [councilResult, biasContext, continuityCtx] = await Promise.all([
       councilContextPromise,
       biasContextPromise,
+      continuityContextPromise,   // RET-5 Sprint 2
     ])
     const councilContext = councilResult.councilContextStr
+
+    // ── RET-5 Sprint 2: continuity block — initial personas only ─────────────
+    // Injected into the user turn (informational framing, not a mandate).
+    // Position: prepended before registerBlock so it reads as the broadest
+    // framing before session-mode and decision text. Only fires when this
+    // session has a parent (continuityCtx.personaBlock is '' otherwise).
+    if (isInitialPersona && continuityCtx.personaBlock) {
+      chatMessages[0] = {
+        ...chatMessages[0],
+        content: `${continuityCtx.personaBlock}\n\n${chatMessages[0].content}`,
+      }
+      console.log(`[Persona] Continuity block injected for ${personaKey} | parent ${continuityCtx.parentSessionId?.slice(0, 8)} | session ${sessionId}`)
+    }
 
     // ── Pushback acknowledgment protocol ──────────────────────────────────────
     // Skipped for examiner-context / share-context calls (isExaminerContextCall) —
@@ -447,6 +500,16 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
       )
       basePrompt = `${basePrompt}${relevanceBlock}`
       console.log(`[Persona] Council weighting directive injected for synthesis | session ${sessionId}`)
+
+      // ── RET-5 Sprint 2: continuity directive — terminal layer (after relevanceBlock) ──
+      // Position matters: this must be the final instruction before synthesis output
+      // begins. LLM adherence is highest for terminal system prompt instructions.
+      // NON-NEGOTIABLE — synthesis must explicitly reference prior sitting evidence.
+      // No-ops (empty string) when session has no parent_session_id.
+      if (continuityCtx.synthesisDirective) {
+        basePrompt = `${basePrompt}${continuityCtx.synthesisDirective}`
+        console.log(`[Persona] Continuity synthesis directive injected | parent ${continuityCtx.parentSessionId?.slice(0, 8)} | session ${sessionId}`)
+      }
     }
 
     // Layer 5: one-sentence bias alert for initial personas (confirmed + distorting only)
