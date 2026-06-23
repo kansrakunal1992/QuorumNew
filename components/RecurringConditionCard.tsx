@@ -3,10 +3,8 @@
 // ── RecurringConditionCard ────────────────────────────────────────────────────
 // Chunk 4c — "What Keeps Coming Up"
 // Plain language. No behavioral jargon. One actionable line.
-// UX fix: decision evidence follows same toggle pattern as PatternSurfaceCard.
+// CTA links to Mirror → "What Keeps Coming Up" section for full detail.
 // ─────────────────────────────────────────────────────────────────────────────
-
-import { useState, useEffect, useRef } from 'react'
 
 interface DimPattern {
   dim:        string
@@ -15,20 +13,12 @@ interface DimPattern {
   high_count: number
 }
 
-interface SessionSummary {
-  id:            string
-  decision_text: string
-  created_at:    string
-}
-
 interface Props {
   dimensions:   DimPattern[]
   sessionCount: number
-  sessions?:    SessionSummary[]
 }
 
 const RECURRING_THRESHOLD = 3
-const DECISIONS_PREVIEW   = 2   // show 2, rest behind "Show more"
 
 // Plain language — what the user actually experiences, not the dimension label
 const DIM_PLAIN: Record<string, {
@@ -93,24 +83,7 @@ const DIM_PLAIN: Record<string, {
   },
 }
 
-export default function RecurringConditionCard({ dimensions, sessionCount, sessions }: Props) {
-  const [expanded, setExpanded] = useState(false)
-  const [showAll,  setShowAll]  = useState(false)
-  const cardRef = useRef<HTMLDivElement>(null)
-
-  // Click-outside to collapse — same pattern as PatternSurfaceCard
-  useEffect(() => {
-    if (!expanded) return
-    const handler = (e: MouseEvent) => {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
-        setExpanded(false)
-        setShowAll(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [expanded])
-
+export default function RecurringConditionCard({ dimensions, sessionCount }: Props) {
   const qualifying = dimensions.filter(d => d.high_count >= RECURRING_THRESHOLD)
   if (qualifying.length === 0) return null
 
@@ -118,19 +91,8 @@ export default function RecurringConditionCard({ dimensions, sessionCount, sessi
   const copy = DIM_PLAIN[top.dim]
   if (!copy) return null
 
-  // Cap to high_count — the number of sessions where this dimension actually fired.
-  // Sessions sorted most-recent-first; sliced to high_count so the count matches
-  // the observation sentence ("36 of your 271 decisions" → show 36, not 271).
-  const allSessions = sessions
-    ? [...sessions]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, top.high_count)
-    : []
-  const visibleSessions = showAll ? allSessions : allSessions.slice(0, DECISIONS_PREVIEW)
-  const hiddenCount     = allSessions.length - DECISIONS_PREVIEW
-
   return (
-    <div ref={cardRef} style={{
+    <div style={{
       background:   'var(--bg-card)',
       border:       '1px solid var(--border-dim)',
       borderRadius: 12,
@@ -169,51 +131,31 @@ export default function RecurringConditionCard({ dimensions, sessionCount, sessi
         </p>
       </div>
 
-      {/* Toggle — only shown when sessions exist */}
-      {allSessions.length > 0 && (
-        <button
-          onClick={() => setExpanded(e => !e)}
-          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-4)', letterSpacing: '0.08em', opacity: 0.65, transition: 'opacity 0.2s' }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '0.65')}
-        >
-          {expanded ? 'Hide decisions ↑' : 'See source decisions ↓'}
-        </button>
-      )}
-
-      {/* Source decisions */}
-      {expanded && allSessions.length > 0 && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-dim)' }}>
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px' }}>
-            Decisions where this fired
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {visibleSessions.map(s => (
-              <a
-                key={s.id}
-                href={`/record/${s.id}`}
-                style={{ fontSize: 12, color: 'var(--text-3)', textDecoration: 'none', lineHeight: 1.5, display: 'flex', alignItems: 'flex-start', gap: 8, transition: 'color 0.15s' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-1)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
-              >
-                <span style={{ color: 'var(--text-4)', flexShrink: 0, marginTop: 1 }}>→</span>
-                <span>{s.decision_text.length > 80 ? s.decision_text.slice(0, 80) + '…' : s.decision_text}</span>
-              </a>
-            ))}
-          </div>
-
-          {hiddenCount > 0 && !showAll && (
-            <button
-              onClick={e => { e.stopPropagation(); setShowAll(true) }}
-              style={{ marginTop: 8, background: 'none', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '6px 14px', fontSize: 11, color: 'var(--text-4)', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.2s, color 0.2s' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-mid)'; e.currentTarget.style.color = 'var(--text-3)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-dim)'; e.currentTarget.style.color = 'var(--text-4)' }}
-            >
-              Show {hiddenCount} more
-            </button>
-          )}
-        </div>
-      )}
+      {/* CTA to Mirror — replaces evidence section (session IDs not available per dimension) */}
+      <a
+        href="/mirror#msec-patterns"
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'space-between',
+          marginTop:      4,
+          padding:        '8px 12px',
+          background:     'var(--bg-inset)',
+          border:         '1px solid var(--border-dim)',
+          borderRadius:   8,
+          textDecoration: 'none',
+          transition:     'border-color 0.2s',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-mid)')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-dim)')}
+      >
+        <span style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.4 }}>
+          See all patterns in detail
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--gold)', fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
+          Mirror →
+        </span>
+      </a>
     </div>
   )
 }
