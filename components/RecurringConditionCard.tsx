@@ -6,7 +6,7 @@
 // UX fix: decision evidence follows same toggle pattern as PatternSurfaceCard.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface DimPattern {
   dim:        string
@@ -96,6 +96,20 @@ const DIM_PLAIN: Record<string, {
 export default function RecurringConditionCard({ dimensions, sessionCount, sessions }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [showAll,  setShowAll]  = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  // Click-outside to collapse — same pattern as PatternSurfaceCard
+  useEffect(() => {
+    if (!expanded) return
+    const handler = (e: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setExpanded(false)
+        setShowAll(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expanded])
 
   const qualifying = dimensions.filter(d => d.high_count >= RECURRING_THRESHOLD)
   if (qualifying.length === 0) return null
@@ -104,15 +118,19 @@ export default function RecurringConditionCard({ dimensions, sessionCount, sessi
   const copy = DIM_PLAIN[top.dim]
   if (!copy) return null
 
-  // Most-recent sessions first as evidence — sorted descending by date
+  // Cap to high_count — the number of sessions where this dimension actually fired.
+  // Sessions sorted most-recent-first; sliced to high_count so the count matches
+  // the observation sentence ("36 of your 271 decisions" → show 36, not 271).
   const allSessions = sessions
-    ? [...sessions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    ? [...sessions]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, top.high_count)
     : []
   const visibleSessions = showAll ? allSessions : allSessions.slice(0, DECISIONS_PREVIEW)
   const hiddenCount     = allSessions.length - DECISIONS_PREVIEW
 
   return (
-    <div style={{
+    <div ref={cardRef} style={{
       background:   'var(--bg-card)',
       border:       '1px solid var(--border-dim)',
       borderRadius: 12,
