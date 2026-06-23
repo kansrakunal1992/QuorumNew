@@ -134,6 +134,11 @@ import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer
 import { computePersonaRelevance, buildRelevanceBlock } from '@/lib/persona-relevance'  // Sprint R3
 import { type CouncilContext, EMPTY_COUNCIL_CONTEXT } from '@/lib/council-context'
 import { fetchContinuityContext, EMPTY_CONTINUITY_CONTEXT } from '@/lib/decision-continuity'  // RET-5 Sprint 2
+import {
+  upsertStructuralEdge,            // Sprint G1: live graph edge writes
+  fetchGraphSynthesisContext,      // Sprint G4: synthesis integration
+  EMPTY_GRAPH_SYNTHESIS_CONTEXT,   // Sprint G4
+} from '@/lib/graph-engine'
 import type { OntologyScoreMap }             from '@/lib/bias-scorer'
 import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
@@ -329,6 +334,27 @@ export async function POST(req: Request) {
         )
       : Promise.resolve(EMPTY_USER_BIAS_CONTEXT)
 
+    // ── Sprint G4: graph synthesis context — synthesis only ───────────────────
+    // Fetches edges for the current session from graph_edges, builds a concise
+    // synthesis block naming structural connections, contradictions, and shared
+    // bias triggers to past decisions. Includes a Pattern Analyst weighting
+    // directive when connectedCount >= 2.
+    // Non-fatal: EMPTY_GRAPH_SYNTHESIS_CONTEXT on any error ('' = no-op).
+    // Runs in parallel with biasContextPromise — no dependency between them.
+    const graphContextPromise = isSynthesisCall
+      ? councilContextPromise.then(({ userId, decisionTypePrimary }) =>
+          fetchGraphSynthesisContext(
+            createServiceClient(),
+            userId,
+            sessionId ?? null,
+            decisionTypePrimary,
+          ).catch(err => {
+            console.warn('[Persona] fetchGraphSynthesisContext failed (non-fatal):', err)
+            return EMPTY_GRAPH_SYNTHESIS_CONTEXT
+          })
+        )
+      : Promise.resolve(EMPTY_GRAPH_SYNTHESIS_CONTEXT)
+
     // ── Build chat messages ───────────────────────────────────────────────────
     let chatMessages: { role: 'user' | 'assistant'; content: string }[]
 
@@ -376,10 +402,11 @@ export async function POST(req: Request) {
     }
 
     // ── Resolve council context + bias context + continuity context in parallel ─
-    const [councilResult, biasContext, continuityCtx] = await Promise.all([
+    const [councilResult, biasContext, continuityCtx, graphContext] = await Promise.all([
       councilContextPromise,
       biasContextPromise,
       continuityContextPromise,   // RET-5 Sprint 2
+      graphContextPromise,        // Sprint G4
     ])
     const councilContext = councilResult.councilContextStr
 
@@ -432,6 +459,16 @@ export async function POST(req: Request) {
     if (isSynthesisCall && biasContext.synthesisBlock) {
       basePrompt = `${basePrompt}\n\n${biasContext.synthesisBlock}`
       console.log(`[Persona] Longitudinal bias block injected for synthesis | session ${sessionId}`)
+    }
+
+    // Layer 3.5 (Sprint G4): Decision Graph context — synthesis only
+    // Injected after the bias block and before the relevance directive so it
+    // sits with the other longitudinal/historical context layers, not the
+    // structural/rule-engine signals which belong to Layer 2. Empty string
+    // when no graph edges exist yet for this session (non-fatal no-op).
+    if (isSynthesisCall && graphContext.synthesisBlock) {
+      basePrompt = `${basePrompt}\n\n${graphContext.synthesisBlock}`
+      console.log(`[Persona] Graph context injected for synthesis | ${graphContext.connectedCount} connection(s) | session ${sessionId}`)
     }
 
     // ── Sprint D3: Resubmission context ───────────────────────────────────────

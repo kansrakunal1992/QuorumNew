@@ -482,7 +482,149 @@ export async function runFullBackfill(
   }
 }
 
-// ── decryptGraphEdge ──────────────────────────────────────────────────────────
+// ── fetchGraphSynthesisContext ────────────────────────────────────────────────
+// Sprint G4: feeds the Decision Graph back into synthesis.
+//
+// Called from app/api/persona/route.ts in parallel with fetchUserBiasContext,
+// synthesis calls only. Returns a concise synthesis block summarising what the
+// graph knows about this decision relative to the user's history.
+//
+// Design decisions (KDD G4):
+//   • We query edges for the CURRENT session specifically. There is a race
+//     condition — structural-match may not have written edges for this session
+//     yet when synthesis fires. We handle this with a single 800ms wait-and-retry
+//     if the first query returns zero results (same pattern as
+//     fetchCouncilContextWithRetry's retry loop). Non-fatal: if no edges exist
+//     after the wait, synthesisBlock is '' and the caller no-ops gracefully.
+//   • We also query shared_decision_type edges — these don't depend on the
+//     current session having edges yet (they connect *past* sessions of the
+//     same type, and the current session's type is already resolved from
+//     sessions_ontology by the time synthesis fires).
+//   • Dismissed edges (dismissed_at IS NOT NULL) are excluded — the user
+//     signalled they're not useful.
+//   • synthesisBlock is injected AFTER the bias block and BEFORE the
+//     council-weighting relevance directive in persona/route.ts (Layer 3.5).
+//   • pattern_analyst boost: if connectedCount >= 2, the synthesis block
+//     instructs the council to weight Pattern Analyst signal higher — same
+//     mechanism as the relevance block, but graph-specific and additive.
+
+export interface GraphSynthesisContext {
+  synthesisBlock: string   // injected into synthesis system prompt; '' = no-op
+  connectedCount: number   // number of past decisions connected to this one
+}
+
+export const EMPTY_GRAPH_SYNTHESIS_CONTEXT: GraphSynthesisContext = {
+  synthesisBlock: '',
+  connectedCount: 0,
+}
+
+export async function fetchGraphSynthesisContext(
+  supabase:            ReturnType<typeof createServiceClient>,
+  userId:              string | null,
+  sessionId:           string | null,
+  decisionTypePrimary: string | null,
+): Promise<GraphSynthesisContext> {
+  if (!userId || !sessionId) return EMPTY_GRAPH_SYNTHESIS_CONTEXT
+
+  // ── 1. Try to find edges for this specific session ────────────────────────
+  // structural-match is fire-and-forget from the client, so edges for the
+  // current session may not exist yet. One short wait handles the common case
+  // where structural-match completes just before synthesis fires.
+  let currentEdges: Record<string, unknown>[] = []
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 1) await new Promise(r => setTimeout(r, 800))
+
+    const { data, error } = await supabase
+      .from('graph_edges')
+      .select('id, session_id_a, session_id_b, edge_type, strength, dimension_breakdown, metadata')
+      .eq('user_id', userId)
+      .or(`session_id_a.eq.${sessionId},session_id_b.eq.${sessionId}`)
+      .is('dismissed_at', null)
+      .in('edge_type', ['structural_similarity', 'contradiction', 'shared_bias_trigger'])
+      .order('strength', { ascending: false })
+      .limit(6)
+
+    if (!error && data && data.length > 0) {
+      currentEdges = data as Record<string, unknown>[]
+      break
+    }
+  }
+
+  // ── 2. Count same-decision-type sessions (doesn't need current edges) ────
+  let sameTypeCount = 0
+  if (decisionTypePrimary) {
+    const { count } = await supabase
+      .from('graph_edges')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('edge_type', 'shared_decision_type')
+      .is('dismissed_at', null)
+
+    sameTypeCount = count ?? 0
+  }
+
+  // ── 3. Build synthesis block ──────────────────────────────────────────────
+  const connectedCount = currentEdges.length
+  const hasAnySignal   = connectedCount > 0 || sameTypeCount > 0
+
+  if (!hasAnySignal) return EMPTY_GRAPH_SYNTHESIS_CONTEXT
+
+  const lines: string[] = []
+  lines.push('── DECISION GRAPH CONTEXT (Sprint G4) ──────────────────────────────────')
+  lines.push('The following is drawn from the user\'s personal decision history graph.')
+  lines.push('Use it to ground your synthesis in their demonstrated patterns — not as')
+  lines.push('a constraint on direction, but as evidence about how this decision fits')
+  lines.push('within the arc of their judgment history.')
+  lines.push('')
+
+  // Current-session edges
+  if (connectedCount > 0) {
+    lines.push(`This decision connects to ${connectedCount} past decision${connectedCount !== 1 ? 's' : ''} in the graph:`)
+
+    for (const edge of currentEdges) {
+      const pastId    = edge.session_id_a === sessionId ? edge.session_id_b : edge.session_id_a
+      const edgeType  = edge.edge_type as EdgeType
+      const breakdown = edge.dimension_breakdown as DimensionBreakdown | null
+      const dims      = breakdown?.top_matching_dims ?? []
+      const metadata  = edge.metadata as Record<string, unknown> | null
+
+      if (edgeType === 'structural_similarity' && dims.length > 0) {
+        lines.push(`  • Structural match (${Math.round((edge.strength as number ?? 0) * 100)}% similarity) with session ${(pastId as string).slice(0, 8)}… — shared dimensions: ${dims.map((d: string) => d.replace(/_/g, ' ')).join(', ')}`)
+      } else if (edgeType === 'contradiction') {
+        lines.push(`  • Contradiction detected with session ${(pastId as string).slice(0, 8)}… — a principle stated in a prior decision appears in tension with the current framing`)
+      } else if (edgeType === 'shared_bias_trigger') {
+        const biases = (metadata?.bias_parameters as string[] | undefined) ?? []
+        if (biases.length > 0) {
+          lines.push(`  • Shared bias trigger with session ${(pastId as string).slice(0, 8)}… — ${biases.map(b => b.replace(/_/g, ' ')).join(', ')} has fired in both`)
+        }
+      }
+    }
+
+    lines.push('')
+    if (connectedCount >= 2) {
+      lines.push('SYNTHESIS DIRECTIVE: given multiple structural connections, the Pattern')
+      lines.push('Analyst\'s cross-history signal carries elevated weight. Explicitly name')
+      lines.push('what this decision has in common with the connected ones — and whether')
+      lines.push('the user is applying the same approach or making a different call.')
+    }
+  }
+
+  // Same decision type context (global, not current-session-specific)
+  if (sameTypeCount > 0 && decisionTypePrimary) {
+    lines.push('')
+    lines.push(`Historical context: the user has faced ${sameTypeCount} other "${decisionTypePrimary.replace(/_/g, ' ')}" type decision${sameTypeCount !== 1 ? 's' : ''} in their graph.`)
+    lines.push('Consider whether the current framing differs from how they have approached this decision type before.')
+  }
+
+  lines.push('── END GRAPH CONTEXT ───────────────────────────────────────────────────────')
+
+  return {
+    synthesisBlock: lines.join('\n'),
+    connectedCount,
+  }
+}
+
 // Used by the Sprint G2 query API to decrypt explanation_text on user_asserted
 // edges before serving to the client. All other fields are plaintext/jsonb.
 // Exported here so the API route doesn't import lib/encryption directly
