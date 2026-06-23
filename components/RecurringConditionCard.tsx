@@ -3,8 +3,10 @@
 // ── RecurringConditionCard ────────────────────────────────────────────────────
 // Chunk 4c — "What Keeps Coming Up"
 // Plain language. No behavioral jargon. One actionable line.
-// RET-5 Fix: shows 2 most-recent decision snippets as evidence of the pattern.
+// UX fix: decision evidence follows same toggle pattern as PatternSurfaceCard.
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { useState } from 'react'
 
 interface DimPattern {
   dim:        string
@@ -14,18 +16,19 @@ interface DimPattern {
 }
 
 interface SessionSummary {
-  id:           string
+  id:            string
   decision_text: string
-  created_at:   string
+  created_at:    string
 }
 
 interface Props {
   dimensions:   DimPattern[]
   sessionCount: number
-  sessions?:    SessionSummary[]   // RET-5 Fix: evidence snippets
+  sessions?:    SessionSummary[]
 }
 
 const RECURRING_THRESHOLD = 3
+const DECISIONS_PREVIEW   = 2   // show 2, rest behind "Show more"
 
 // Plain language — what the user actually experiences, not the dimension label
 const DIM_PLAIN: Record<string, {
@@ -91,19 +94,22 @@ const DIM_PLAIN: Record<string, {
 }
 
 export default function RecurringConditionCard({ dimensions, sessionCount, sessions }: Props) {
+  const [expanded, setExpanded] = useState(false)
+  const [showAll,  setShowAll]  = useState(false)
+
   const qualifying = dimensions.filter(d => d.high_count >= RECURRING_THRESHOLD)
   if (qualifying.length === 0) return null
 
-  const top    = qualifying[0]
-  const copy   = DIM_PLAIN[top.dim]
+  const top  = qualifying[0]
+  const copy = DIM_PLAIN[top.dim]
   if (!copy) return null
 
-  // RET-5 Fix: show 2 most-recent decisions as evidence (same pattern as Pattern Surfaced card)
-  const evidenceSessions = sessions
-    ? [...sessions]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 2)
+  // Most-recent sessions first as evidence — sorted descending by date
+  const allSessions = sessions
+    ? [...sessions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     : []
+  const visibleSessions = showAll ? allSessions : allSessions.slice(0, DECISIONS_PREVIEW)
+  const hiddenCount     = allSessions.length - DECISIONS_PREVIEW
 
   return (
     <div style={{
@@ -125,52 +131,17 @@ export default function RecurringConditionCard({ dimensions, sessionCount, sessi
         What keeps coming up
       </p>
 
-      <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.65, margin: '0 0 12px' }}>
+      <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.65, margin: '0 0 10px' }}>
         {copy.observation(top.high_count, sessionCount)}
       </p>
 
-      {/* RET-5 Fix: decision evidence snippets */}
-      {evidenceSessions.length > 0 && (
-        <div style={{ margin: '0 0 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {evidenceSessions.map(s => {
-            const snippet = s.decision_text.length > 110
-              ? s.decision_text.slice(0, 110).replace(/\s+\S*$/, '') + '…'
-              : s.decision_text
-            return (
-              <div key={s.id} style={{
-                display:    'flex',
-                alignItems: 'flex-start',
-                gap:        8,
-              }}>
-                <div style={{
-                  width:        5,
-                  height:       5,
-                  borderRadius: '50%',
-                  background:   'var(--text-4)',
-                  flexShrink:   0,
-                  marginTop:    6,
-                  opacity:      0.5,
-                }} />
-                <p style={{
-                  fontSize:   11.5,
-                  color:      'var(--text-4)',
-                  lineHeight: 1.55,
-                  margin:     0,
-                  fontStyle:  'italic',
-                }}>
-                  {snippet}
-                </p>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
+      {/* Actionable */}
       <div style={{
         background:   'var(--bg-inset)',
         border:       '1px solid var(--border-dim)',
         borderRadius: 8,
         padding:      '10px 14px',
+        marginBottom: 10,
       }}>
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 5px' }}>
           What to do next time
@@ -179,6 +150,52 @@ export default function RecurringConditionCard({ dimensions, sessionCount, sessi
           {copy.actionable}
         </p>
       </div>
+
+      {/* Toggle — only shown when sessions exist */}
+      {allSessions.length > 0 && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-4)', letterSpacing: '0.08em', opacity: 0.65, transition: 'opacity 0.2s' }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = '0.65')}
+        >
+          {expanded ? 'Hide decisions ↑' : 'See source decisions ↓'}
+        </button>
+      )}
+
+      {/* Source decisions */}
+      {expanded && allSessions.length > 0 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-dim)' }}>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px' }}>
+            Decisions where this fired
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {visibleSessions.map(s => (
+              <a
+                key={s.id}
+                href={`/record/${s.id}`}
+                style={{ fontSize: 12, color: 'var(--text-3)', textDecoration: 'none', lineHeight: 1.5, display: 'flex', alignItems: 'flex-start', gap: 8, transition: 'color 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-1)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
+              >
+                <span style={{ color: 'var(--text-4)', flexShrink: 0, marginTop: 1 }}>→</span>
+                <span>{s.decision_text.length > 80 ? s.decision_text.slice(0, 80) + '…' : s.decision_text}</span>
+              </a>
+            ))}
+          </div>
+
+          {hiddenCount > 0 && !showAll && (
+            <button
+              onClick={e => { e.stopPropagation(); setShowAll(true) }}
+              style={{ marginTop: 8, background: 'none', border: '1px solid var(--border-dim)', borderRadius: 8, padding: '6px 14px', fontSize: 11, color: 'var(--text-4)', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.2s, color 0.2s' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-mid)'; e.currentTarget.style.color = 'var(--text-3)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-dim)'; e.currentTarget.style.color = 'var(--text-4)' }}
+            >
+              Show {hiddenCount} more
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
