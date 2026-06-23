@@ -439,7 +439,7 @@ export default async function RecordPage({ params }: Props) {
               {parentLink && (
                 <Link href={`/record/${parentLink.id}`} style={{ textDecoration: 'none' }} title={parentLink.decisionPreview}>
                   <p style={{
-                    fontSize: 11.5, color: 'var(--gold-dim)', marginTop: 6,
+                    fontSize: 11.5, color: 'var(--gold)', marginTop: 6,
                     display: 'flex', alignItems: 'center', gap: 5,
                   }}>
                     ← Revisiting a decision from {formatDate(parentLink.createdAt)}
@@ -449,7 +449,7 @@ export default async function RecordPage({ params }: Props) {
               {childLink && (
                 <Link href={`/record/${childLink.id}`} style={{ textDecoration: 'none' }}>
                   <p style={{
-                    fontSize: 11.5, color: 'var(--gold-dim)', marginTop: 6,
+                    fontSize: 11.5, color: 'var(--gold)', marginTop: 6,
                     display: 'flex', alignItems: 'center', gap: 5,
                   }}>
                     Revisited on {formatDate(childLink.createdAt)}

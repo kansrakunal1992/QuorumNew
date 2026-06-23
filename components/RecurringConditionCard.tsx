@@ -3,6 +3,7 @@
 // ── RecurringConditionCard ────────────────────────────────────────────────────
 // Chunk 4c — "What Keeps Coming Up"
 // Plain language. No behavioral jargon. One actionable line.
+// RET-5 Fix: shows 2 most-recent decision snippets as evidence of the pattern.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface DimPattern {
@@ -12,10 +13,19 @@ interface DimPattern {
   high_count: number
 }
 
+interface SessionSummary {
+  id:           string
+  decision_text: string
+  created_at:   string
+}
+
 interface Props {
   dimensions:   DimPattern[]
   sessionCount: number
+  sessions?:    SessionSummary[]   // RET-5 Fix: evidence snippets
 }
+
+const RECURRING_THRESHOLD = 3
 
 const RECURRING_THRESHOLD = 3
 
@@ -82,13 +92,20 @@ const DIM_PLAIN: Record<string, {
   },
 }
 
-export default function RecurringConditionCard({ dimensions, sessionCount }: Props) {
+export default function RecurringConditionCard({ dimensions, sessionCount, sessions }: Props) {
   const qualifying = dimensions.filter(d => d.high_count >= RECURRING_THRESHOLD)
   if (qualifying.length === 0) return null
 
   const top    = qualifying[0]
   const copy   = DIM_PLAIN[top.dim]
   if (!copy) return null
+
+  // RET-5 Fix: show 2 most-recent decisions as evidence (same pattern as Pattern Surfaced card)
+  const evidenceSessions = sessions
+    ? [...sessions]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 2)
+    : []
 
   return (
     <div style={{
@@ -113,6 +130,43 @@ export default function RecurringConditionCard({ dimensions, sessionCount }: Pro
       <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.65, margin: '0 0 12px' }}>
         {copy.observation(top.high_count, sessionCount)}
       </p>
+
+      {/* RET-5 Fix: decision evidence snippets */}
+      {evidenceSessions.length > 0 && (
+        <div style={{ margin: '0 0 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {evidenceSessions.map(s => {
+            const snippet = s.decision_text.length > 110
+              ? s.decision_text.slice(0, 110).replace(/\s+\S*$/, '') + '…'
+              : s.decision_text
+            return (
+              <div key={s.id} style={{
+                display:    'flex',
+                alignItems: 'flex-start',
+                gap:        8,
+              }}>
+                <div style={{
+                  width:        5,
+                  height:       5,
+                  borderRadius: '50%',
+                  background:   'var(--text-4)',
+                  flexShrink:   0,
+                  marginTop:    6,
+                  opacity:      0.5,
+                }} />
+                <p style={{
+                  fontSize:   11.5,
+                  color:      'var(--text-4)',
+                  lineHeight: 1.55,
+                  margin:     0,
+                  fontStyle:  'italic',
+                }}>
+                  {snippet}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <div style={{
         background:   'var(--bg-inset)',

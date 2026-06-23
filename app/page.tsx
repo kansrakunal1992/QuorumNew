@@ -927,6 +927,7 @@ export default function Home() {
             <RecurringConditionCard
               dimensions={patternDimensions}
               sessionCount={sessions.length}
+              sessions={sessions}
             />
           )}
           

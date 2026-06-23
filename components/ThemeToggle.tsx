@@ -2,13 +2,33 @@
 
 import { useEffect, useState } from 'react'
 
-export default function ThemeToggle() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+// Reads the current theme synchronously from localStorage (same key the
+// inline anti-flash script uses). Falls back to the DOM attribute so that
+// both SSR and CSR paths agree. Never reads 'dark' as a hardcoded default —
+// that caused the button to briefly show the wrong mode on every page load.
+function getPersistedTheme(): 'dark' | 'light' {
+  try {
+    const stored = localStorage.getItem('quorum_theme')
+    if (stored === 'light' || stored === 'dark') return stored
+  } catch { /* ignore */ }
+  // Fallback: read whatever the anti-flash script already stamped on <html>
+  if (typeof document !== 'undefined') {
+    const attr = document.documentElement.getAttribute('data-theme')
+    if (attr === 'light' || attr === 'dark') return attr
+  }
+  return 'dark'
+}
 
-  // Sync with whatever the server-injected script already set
+export default function ThemeToggle() {
+  // Initialise as null to avoid any flash — rendered only after mount
+  const [theme, setTheme] = useState<'dark' | 'light' | null>(null)
+
   useEffect(() => {
-    const current = document.documentElement.getAttribute('data-theme') as 'dark' | 'light'
-    if (current === 'light' || current === 'dark') setTheme(current)
+    // Sync from persisted preference on every mount (covers page navigations)
+    const persisted = getPersistedTheme()
+    setTheme(persisted)
+    // Ensure the DOM attribute is in sync (in case SSR defaulted to 'dark')
+    document.documentElement.setAttribute('data-theme', persisted)
   }, [])
 
   const toggle = () => {
@@ -17,6 +37,11 @@ export default function ThemeToggle() {
     document.documentElement.setAttribute('data-theme', next)
     try { localStorage.setItem('quorum_theme', next) } catch { /* ignore */ }
   }
+
+  // Render nothing until we know the real theme — avoids a dark→light flash
+  // on the button itself. The page background is already correct (anti-flash
+  // inline script ran before paint); only the button label needs to wait.
+  if (theme === null) return null
 
   const isDark = theme === 'dark'
 
