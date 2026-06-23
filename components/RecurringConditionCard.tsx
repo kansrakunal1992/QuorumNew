@@ -27,8 +27,6 @@ interface Props {
 
 const RECURRING_THRESHOLD = 3
 
-const RECURRING_THRESHOLD = 3
-
 // Plain language — what the user actually experiences, not the dimension label
 const DIM_PLAIN: Record<string, {
   observation: (count: number, total: number) => string
