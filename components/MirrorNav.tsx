@@ -22,6 +22,7 @@ const SECTIONS = [
   { key: 'loops',           label: 'Open Loop'      },
   { key: 'timeline',        label: 'Timeline'       },
   { key: 'benchmark',       label: 'Benchmark'      },
+  { key: 'graph',           label: 'Graph'          },
 ] as const
 
 type SectionKey = typeof SECTIONS[number]['key']

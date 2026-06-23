@@ -48,6 +48,7 @@ import AdvisoryUpsellCard      from '@/components/AdvisoryUpsellCard'      // Ph
 import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'             // Phase 4/5
 import { PaymentButton }         from '@/components/PaymentButton'           // Sprint CX-PAY
 import { CancelSubscription }    from '@/components/CancelSubscription'       // Sprint CX-PAY
+import DecisionGraph             from '@/components/DecisionGraph'             // Sprint G3
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -1521,6 +1522,21 @@ function UnlockedView({
 
       <div id="msec-benchmark">
         <BenchmarkModule authToken={authToken} tier={status.tier} />
+      </div>
+
+      {/* Sprint G3: Decision Graph */}
+      <div id="msec-graph" style={{ marginTop: 40 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 400, color: 'var(--text-1)', margin: 0 }}>
+              Decision Graph
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.6 }}>
+              Structural connections across your decision history. Click a node to open the record. Click an edge to see why two decisions connect.
+            </p>
+          </div>
+        </div>
+        <DecisionGraph authToken={authToken} />
       </div>
 
       {/* Subscription management — only for self-serve Mirror subscribers, not Advisory */}
