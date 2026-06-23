@@ -21,12 +21,21 @@
 //   with session_count / min_sessions progress, identical copy pattern to
 //   ContradictionDetector's milestone system.
 //
-// No d3 import statement — d3 loaded at runtime via loadD3() to avoid SSR
-// issues and keep the main bundle unaffected.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+
+// No d3 import at module scope — dynamically imported below to code-split it
+// from the main Mirror bundle. d3 only loads when this component mounts.
+// (The CDN script-tag approach was replaced after it was blocked by the
+// app's CSP in production. Sprint G3 fix, June 2026.)
+
+// ── d3 dynamic loader ─────────────────────────────────────────────────────────
+let d3LoadPromise: Promise<unknown> | null = null
+function loadD3(): Promise<unknown> {
+  if (d3LoadPromise) return d3LoadPromise
+  d3LoadPromise = import('d3').then(mod => mod)
+  return d3LoadPromise
+}
 
 // ── Types (mirror lib/graph-engine.ts, no server import) ─────────────────────
 type EdgeType =
@@ -91,20 +100,6 @@ const EDGE_LABEL: Record<EdgeType, string> = {
 }
 
 // ── d3 dynamic loader ─────────────────────────────────────────────────────────
-let d3LoadPromise: Promise<unknown> | null = null
-function loadD3(): Promise<unknown> {
-  if (typeof window === 'undefined') return Promise.resolve(null)
-  if ((window as unknown as Record<string, unknown>).d3) return Promise.resolve((window as unknown as Record<string, unknown>).d3)
-  if (d3LoadPromise) return d3LoadPromise
-  d3LoadPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script')
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js'
-    s.onload  = () => resolve((window as unknown as Record<string, unknown>).d3)
-    s.onerror = reject
-    document.head.appendChild(s)
-  })
-  return d3LoadPromise
-}
 
 // ── Tooltip state ─────────────────────────────────────────────────────────────
 interface TooltipState {
@@ -203,11 +198,14 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
 
   // ── 5. Render d3 graph ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!d3Ready || !data?.corpus.met || !svgRef.current || !containerRef.current) return
-    if (data.nodes.length === 0) return
+    let cancelled = false
+    async function render() {
+      if (!d3Ready || !data?.corpus.met || !svgRef.current || !containerRef.current) return
+      if (data.nodes.length === 0) return
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const d3 = (window as any).d3
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d3 = await loadD3() as any
+      if (cancelled) return
     const svg = d3.select(svgRef.current)
     svg.selectAll('*').remove()  // clear on re-render
 
@@ -397,6 +395,9 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
     })
 
     return () => { sim.stop() }
+    }
+    render()
+    return () => { cancelled = true }
   }, [d3Ready, data, dismissed, dismissEdge, router])
 
   // ── Render ─────────────────────────────────────────────────────────────────
