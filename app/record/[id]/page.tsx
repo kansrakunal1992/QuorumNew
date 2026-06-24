@@ -62,12 +62,17 @@ export default async function RecordPage({ params }: Props) {
   const { id } = await params
   const supabase = createServiceClient()
 
-  const [sessionResult, messagesResult, outcomeResult, childSessionsResult] = await Promise.all([
+  const [sessionResult, messagesResult, outcomeResult, childSessionsResult, graphEdgeCountResult] = await Promise.all([
     supabase.from('sessions').select('*').eq('id', id).single(),
     supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
     supabase.from('outcomes').select('*').eq('session_id', id).single(),
     // RET-5 Sprint 1: any sessions that revisit THIS one (forward link)
     supabase.from('sessions').select('id, created_at').eq('parent_session_id', id).order('created_at', { ascending: false }),
+    // Sprint G4 breadcrumb: count graph edges touching this session (Mirror-gated, shown only when > 0)
+    supabase.from('graph_edges')
+      .select('*', { count: 'exact', head: true })
+      .or(`session_id_a.eq.${id},session_id_b.eq.${id}`)
+      .is('dismissed_at', null),
   ])
 
   if (sessionResult.error || !sessionResult.data) notFound()
@@ -246,6 +251,20 @@ export default async function RecordPage({ params }: Props) {
     timelineEntries = [rootEntry, ...childEntries]
   }
 
+
+  // Sprint G4 breadcrumb: only shown to Mirror users with actual connections.
+  // hasMirrorAccess is already set above for chain-root sessions. For non-root
+  // sessions it stays false until here — re-check only when a graph edge exists
+  // (avoids an extra DB call for the common case of no connections yet).
+  const rawGraphCount = graphEdgeCountResult.count ?? 0
+  let graphConnectionCount = 0
+  if (rawGraphCount > 0 && session.user_id) {
+    if (!hasMirrorAccess) {
+      const accessState = await getMirrorAccessState(session.user_id, supabase)
+      hasMirrorAccess = accessState === 'unlocked'
+    }
+    if (hasMirrorAccess) graphConnectionCount = rawGraphCount
+  }
 
   // Group by persona, deduplicated.
   // If a session was re-run (e.g. pre-Sprint 24b or via examiner update), multiple assistant
@@ -454,6 +473,22 @@ export default async function RecordPage({ params }: Props) {
                   }}>
                     Revisited on {formatDate(childLink.createdAt)}
                     {childLink.count > 1 ? ` (+${childLink.count - 1} more)` : ''} →
+                  </p>
+                </Link>
+              )}
+
+              {/* Sprint G4: graph breadcrumb — Mirror users with connections only */}
+              {graphConnectionCount > 0 && (
+                <Link href="/mirror#msec-graph" style={{ textDecoration: 'none' }}>
+                  <p style={{
+                    fontSize: 11.5, color: 'var(--text-4)', marginTop: 6,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.6 }}>
+                      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                    Connected to {graphConnectionCount} decision{graphConnectionCount !== 1 ? 's' : ''} in your graph
                   </p>
                 </Link>
               )}
