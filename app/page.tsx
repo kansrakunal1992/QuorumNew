@@ -653,7 +653,7 @@ export default function Home() {
                     margin:        0,
                     transition:    'color 0.3s ease, letter-spacing 0.35s ease',
                   }}>
-                    Tap to begin your first decision
+                    Tap to add to your judgment record
                   </p>
                 </>
               )}
