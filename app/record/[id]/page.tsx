@@ -17,6 +17,7 @@ import TrustBadgeStrip from '@/components/TrustBadgeStrip'
 import DecisionTimeline from '@/components/DecisionTimeline'  // RET-5 Sprint 3
 import type { TimelineEntry } from '@/components/DecisionTimeline'
 import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
+import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
 
 // Strip <lens>, <position>, <realcost> tags stored in DB — rendered separately in PersonaPanel
 // but never cleaned before persistence, so record page must strip them before display
@@ -497,6 +498,7 @@ export default async function RecordPage({ params }: Props) {
             <Link href="/">
               <button
                 className="btn-ghost"
+                data-tour-id="record-new-decision"
                 style={{
                   padding: '10px 18px',
                   fontSize: 12.5,
@@ -519,7 +521,7 @@ export default async function RecordPage({ params }: Props) {
           <TrustBadgeStrip encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY} />
 
           {/* ── Decision Hero Card ─────────────────────────────── */}
-          <div className="rec-hero rec-fade rec-fade-2">
+          <div className="rec-hero rec-fade rec-fade-2" data-tour-id="record-decision">
             <p style={{
               fontFamily: 'var(--font-mono)',
               fontSize: 10,
@@ -556,7 +558,7 @@ export default async function RecordPage({ params }: Props) {
           </div>
 
           {/* ── Outcome Tracker ────────────────────────────────── */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
+          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }} data-tour-id="record-outcome">
             <OutcomeTracker
               sessionId={session.id}
               existingOutcome={outcome}
@@ -778,6 +780,9 @@ export default async function RecordPage({ params }: Props) {
 
         </div>
       </div>
+
+      {/* ── Sprint TOUR-1: First-decision record tour (client component) ── */}
+      <RecordTour />
     </>
   )
 }

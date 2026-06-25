@@ -16,6 +16,41 @@ import RecordReceipt from './RecordReceipt'
 import ContradictionBanner from './ContradictionBanner'
 import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
 import RuleRecallBanner from './RuleRecallBanner'       // Sprint Chunk 1
+import OnboardingTour from './OnboardingTour'
+import type { TourStep } from './OnboardingTour'
+
+// ── Sprint TOUR-1: Council page tour steps ────────────────────────────────────
+// Fires once, 800ms after synthesisDone flips to true for the first time.
+const COUNCIL_STEPS: TourStep[] = [
+  {
+    id:             'council-synthesis',
+    targetSelector: '[data-tour-id="council-synthesis"]',
+    heading:        'The Council\'s integrated verdict',
+    body:           'After all six advisors weigh in, Quorum synthesises their positions into one strategic brief. Dissenting views are preserved, not averaged away. Read this first — it surfaces the sharpest tensions.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'council-personas',
+    targetSelector: '[data-tour-id="council-personas"]',
+    heading:        'Six advisors, six different lenses',
+    body:           'Tap any card to read the full analysis. You can challenge an advisor with a follow-up — and once you\'ve exchanged, a "Share this context with all advisors" button appears. Tap it and every advisor re-analyses with your new context. This is the most powerful feature on this page.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'council-capture',
+    targetSelector: '[data-tour-id="council-capture"]',
+    heading:        'Capture your position before you decide',
+    body:           'After reading the Council, record where you stand — your current lean, what would change your mind, and when you\'ll review this. This is not just a note. Quorum uses it to track how your thinking shifts between decision and outcome.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'council-save',
+    targetSelector: '[data-tour-id="council-save"]',
+    heading:        'Save this as a permanent record',
+    body:           'Once you\'ve absorbed the Council\'s analysis, save this decision. It becomes a permanent entry in your judgment record — synthesis, every advisor\'s position, and your confidence rating. This is how your Judgment OS compounds over time.',
+    preferredSide:  'bottom',
+  },
+]
 
 interface Props {
   session: Session
@@ -117,6 +152,8 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [ontologyReady,      setOntologyReady]      = useState(false)
   const [synthesisStreaming,  setSynthesisStreaming]  = useState(false)
   const [synthesisDone,       setSynthesisDone]       = useState(false)
+  // Sprint TOUR-1: council tour
+  const [showCouncilTour,     setShowCouncilTour]     = useState(false)
   const [contradiction,       setContradiction]       = useState<{
     id: string
     principleText: string
@@ -264,6 +301,20 @@ export default function SessionView({ session: initialSession, initialMessages =
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [synthesisDone, authTokenSV])
+
+  // Sprint TOUR-1: fire council tour once after synthesis completes
+  useEffect(() => {
+    if (!synthesisDone) return
+    try {
+      const done    = localStorage.getItem('quorum_tour.council')
+      const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
+      if (!done && !skipped) {
+        const t = setTimeout(() => setShowCouncilTour(true), 800)
+        return () => clearTimeout(t)
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [synthesisDone])
 
   useEffect(() => {
     let attempt = 0
@@ -805,6 +856,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               className="btn-primary"
               onClick={handleSaveRecord}
               disabled={saving}
+              data-tour-id="council-save"
             >
               {saving ? 'Saving…' : <><span className="sv-save-full">Save Record</span><span className="sv-save-short">Save</span></>}
             </button>
@@ -963,7 +1015,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               </div>
 
               {/* ── 1. Council Synthesis ── */}
-              <div className="sv-fade sv-fade-2">
+              <div className="sv-fade sv-fade-2" data-tour-id="council-synthesis">
                 <SynthesisCard
                   key={`synthesis-${sessionKey}`}
                   sessionId={session.id}
@@ -1016,7 +1068,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Appears after synthesis completes. Captures commitment position,
                   switch conditions, and review date in 3 clubbed fields. */}
               {synthesisDone && (
-                <div className="sv-fade sv-fade-2">
+                <div className="sv-fade sv-fade-2" data-tour-id="council-capture">
                   <DecisionStateCard sessionId={session.id} />
                 </div>
               )}
@@ -1061,6 +1113,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* ── 4. Six persona panels ── */}
               <div
                 className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sv-fade sv-fade-3"
+                data-tour-id="council-personas"
                 style={{
                   paddingTop:    12,
                   opacity:       redirectBlocked ? 0.55 : 1,
@@ -1336,6 +1389,26 @@ export default function SessionView({ session: initialSession, initialMessages =
           </>
         )}
       </div>
+
+      {/* ── Sprint TOUR-1: First-decision council tour ────────────────── */}
+      {showCouncilTour && (
+        <OnboardingTour
+          page="council"
+          steps={COUNCIL_STEPS}
+          active={showCouncilTour}
+          onComplete={() => {
+            try { localStorage.setItem('quorum_tour.council', 'done') } catch {}
+            setShowCouncilTour(false)
+          }}
+          onSkip={() => {
+            try {
+              ;['quorum_tour.council', 'quorum_tour.record']
+                .forEach(k => localStorage.setItem(k, 'skip'))
+            } catch {}
+            setShowCouncilTour(false)
+          }}
+        />
+      )}
     </>
   )
 }

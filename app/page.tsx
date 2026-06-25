@@ -13,6 +13,8 @@ import RecurringConditionCard from '@/components/RecurringConditionCard'
 import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'
 const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })
 import CalibrationRevealCard from '@/components/CalibrationRevealCard'
+import OnboardingTour from '@/components/OnboardingTour'
+import type { TourStep } from '@/components/OnboardingTour'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -68,6 +70,40 @@ interface SessionSummary {
   created_at: string
   outcome: { what_decided: string; council_helped: string } | null
 }
+
+// ── Sprint TOUR-1: Home page tour steps ──────────────────────────────────────
+// Fires once after inputRevealed transitions to true on a first-time user.
+// 4 steps: textarea → voice → context → submit.
+const HOME_STEPS: TourStep[] = [
+  {
+    id:             'home-textarea',
+    targetSelector: '[data-tour-id="home-textarea"]',
+    heading:        'Describe your decision here',
+    body:           'Be specific — not "should I hire someone" but the actual decision with names, numbers, and stakes. The Council reads specificity as signal.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'home-voice',
+    targetSelector: '[data-tour-id="home-voice"]',
+    heading:        'Or speak it out loud',
+    body:           'Tap the microphone and say your decision aloud. Articulating it verbally surfaces things you haven\'t fully formed yet — most users find it sharpens the framing before they even hear the Council.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'home-context',
+    targetSelector: '[data-tour-id="home-context"]',
+    heading:        'Add context if you have it',
+    body:           'Paste relevant background — emails, term sheets, WhatsApp threads. The Council treats context as evidence, not decoration. Optional, but it sharpens the analysis significantly.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'home-submit',
+    targetSelector: '[data-tour-id="home-submit"]',
+    heading:        'Convene the Council',
+    body:           'When ready, bring your decision to the table. Before submitting, rate your current clarity with the confidence slider that appears as you type — Quorum tracks how it compares to the actual outcome over time.',
+    preferredSide:  'top',
+  },
+]
 
 export default function Home() {
   const router      = useRouter()
@@ -133,6 +169,8 @@ export default function Home() {
   const [navScrolled,    setNavScrolled]    = useState(false)
   const [historyShowAll, setHistoryShowAll] = useState(false)
   const HISTORY_PREVIEW = 5
+  // Sprint TOUR-1: home tour
+  const [showHomeTour,   setShowHomeTour]   = useState(false)
 
   // ── Effects ───────────────────────────────────────────
   useEffect(() => {
@@ -154,6 +192,31 @@ export default function Home() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  // Sprint TOUR-1: fire home tour once after the input form is revealed
+  useEffect(() => {
+    if (!inputRevealed) return
+    try {
+      const done    = localStorage.getItem('quorum_tour.home')
+      const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
+      if (!done && !skipped) {
+        const t = setTimeout(() => setShowHomeTour(true), 600)
+        return () => clearTimeout(t)
+      }
+    } catch {}
+  }, [inputRevealed])
+
+  // Sprint TOUR-1: auto-advance panel 2 (QUORUM card) → input reveal after 1800ms
+  // User can still click to fast-forward. This removes the "dead end" on the QUORUM card.
+  useEffect(() => {
+    if (!isOnboarding || onboardingPanel !== 2) return
+    const t = setTimeout(() => {
+      markOnboarded()
+      handleReveal()
+    }, 1800)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnboarding, onboardingPanel])
 
   useEffect(() => {
     const ids = getStoredSessionIds()
@@ -590,7 +653,7 @@ export default function Home() {
                     margin:        0,
                     transition:    'color 0.3s ease, letter-spacing 0.35s ease',
                   }}>
-                    Add to your judgment record
+                    Tap to begin your first decision
                   </p>
                 </>
               )}
@@ -681,15 +744,16 @@ export default function Home() {
                 placeholder="e.g. I am considering whether to sell my 40% stake in the family business to a PE firm at 8× EBITDA. The offer expires in 3 weeks…"
                 value={decision}
                 onChange={e => setDecision(e.target.value)}
+                data-tour-id="home-textarea"
               />
 
-              <div style={{ marginTop: 10 }}>
+              <div style={{ marginTop: 10 }} data-tour-id="home-voice">
                 <VoiceInput onTranscript={(text) => setDecision(text)} />
               </div>
 
               <div style={{ marginTop: 12 }}>
                 {!showContext ? (
-                  <button className="btn-ghost" onClick={() => setShowContext(true)}>
+                  <button className="btn-ghost" onClick={() => setShowContext(true)} data-tour-id="home-context">
                     + Add context · notes, emails, messages
                   </button>
                 ) : (
@@ -799,6 +863,7 @@ export default function Home() {
                 style={{ width: '100%', fontSize: 15, padding: '14px', marginTop: 22, letterSpacing: '0.06em' }}
                 onClick={handleSubmit}
                 disabled={loading || !decision.trim()}
+                data-tour-id="home-submit"
               >
                 {loading ? 'Convening the Council…' : 'Convene the Council'}
               </button>
@@ -1142,6 +1207,26 @@ export default function Home() {
           </p>
         </div>
       </main>
+
+      {/* ── Sprint TOUR-1: First-decision home tour ────────────────────── */}
+      {showHomeTour && (
+        <OnboardingTour
+          page="home"
+          steps={HOME_STEPS}
+          active={showHomeTour}
+          onComplete={() => {
+            try { localStorage.setItem('quorum_tour.home', 'done') } catch {}
+            setShowHomeTour(false)
+          }}
+          onSkip={() => {
+            try {
+              ;['quorum_tour.home', 'quorum_tour.council', 'quorum_tour.record']
+                .forEach(k => localStorage.setItem(k, 'skip'))
+            } catch {}
+            setShowHomeTour(false)
+          }}
+        />
+      )}
     </>
   )
 }
