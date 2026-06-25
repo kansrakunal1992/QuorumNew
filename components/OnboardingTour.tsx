@@ -8,6 +8,8 @@
 // On mobile (<540px) the tooltip anchors to the bottom of the screen.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import type { CSSProperties } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -88,6 +90,12 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
   const currentElRef = useRef<Element | null>(null)
   const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── Drag state ───────────────────────────────────────────────────────────
+  const tooltipRef   = useRef<HTMLDivElement | null>(null)
+  const dragStartRef = useRef<{ mx: number; my: number; tx: number; ty: number } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragged,    setDragged]    = useState<{ x: number; y: number } | null>(null)
+
   const step   = steps[stepIndex]
   const isLast = stepIndex === steps.length - 1
 
@@ -161,6 +169,7 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     el.classList.add('tour-spotlight')
     currentElRef.current = el
+    setDragged(null) // reset any manual drag position on step change
 
     // Wait for scroll to settle before measuring the element's position
     timerRef.current = setTimeout(() => {
@@ -175,6 +184,59 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
   // ── Cleanup on unmount ───────────────────────────────────────────────────
 
   useEffect(() => () => clearSpotlight(), [clearSpotlight])
+
+  // ── Drag: attach move/up listeners only while dragging ───────────────────
+
+  useEffect(() => {
+    if (!isDragging) return
+
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      if (!dragStartRef.current) return
+      const clientX = 'touches' in e
+        ? (e as TouchEvent).touches[0].clientX
+        : (e as MouseEvent).clientX
+      const clientY = 'touches' in e
+        ? (e as TouchEvent).touches[0].clientY
+        : (e as MouseEvent).clientY
+      const x = dragStartRef.current.tx + (clientX - dragStartRef.current.mx)
+      const y = dragStartRef.current.ty + (clientY - dragStartRef.current.my)
+      // Clamp inside viewport
+      const w = tooltipRef.current?.offsetWidth  ?? TOOLTIP_W
+      const h = tooltipRef.current?.offsetHeight ?? 220
+      setDragged({
+        x: Math.max(8, Math.min(x, window.innerWidth  - w - 8)),
+        y: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
+      })
+    }
+
+    const onUp = () => {
+      setIsDragging(false)
+      dragStartRef.current = null
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+    window.addEventListener('touchmove', onMove, { passive: false })
+    window.addEventListener('touchend',  onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup',   onUp)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend',  onUp)
+    }
+  }, [isDragging])
+
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    // Don't intercept button clicks
+    if ((e.target as HTMLElement).closest('button')) return
+    if (!tooltipRef.current) return
+    e.preventDefault()
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const rect = tooltipRef.current.getBoundingClientRect()
+    dragStartRef.current = { mx: clientX, my: clientY, tx: rect.left, ty: rect.top }
+    setIsDragging(true)
+  }
 
   // ── Handlers ────────────────────────────────────────────────────────────
 
@@ -192,30 +254,46 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
     onSkip()
   }
 
-  if (!active || !step) return null
+  const [portalMounted, setPortalMounted] = useState(false)
+  useEffect(() => { setPortalMounted(true) }, [])
+
+  if (!active || !step || !portalMounted) return null
 
   // ── Tooltip position style ───────────────────────────────────────────────
+  // If user has dragged, their position wins over computed position.
 
-  const tooltipStyle: React.CSSProperties = tooltipPos
-    ? tooltipPos.mobile
-      ? { position: 'fixed', bottom: 24, left: 12, right: 12, zIndex: 10002 }
-      : {
-          position: 'fixed',
-          width:    TOOLTIP_W,
-          left:     tooltipPos.left,
-          zIndex:   10002,
-          ...(tooltipPos.top    !== undefined ? { top:    tooltipPos.top    } : {}),
-          ...(tooltipPos.bottom !== undefined ? { bottom: tooltipPos.bottom } : {}),
-        }
-    // Fallback: centre of screen
-    : {
-        position:  'fixed',
-        top:       '50%',
-        left:      '50%',
-        transform: 'translate(-50%, -50%)',
-        width:     TOOLTIP_W,
-        zIndex:    10002,
-      }
+  const tooltipStyle: CSSProperties = (() => {
+    if (dragged) return {
+      position: 'fixed',
+      top:      dragged.y,
+      left:     dragged.x,
+      width:    TOOLTIP_W,
+      zIndex:   10002,
+    }
+    if (!tooltipPos) return {
+      position:  'fixed',
+      top:       '50%',
+      left:      '50%',
+      transform: 'translate(-50%, -50%)',
+      width:     TOOLTIP_W,
+      zIndex:    10002,
+    }
+    if (tooltipPos.mobile) return {
+      position: 'fixed',
+      bottom:   24,
+      left:     12,
+      right:    12,
+      zIndex:   10002,
+    }
+    return {
+      position: 'fixed',
+      width:    TOOLTIP_W,
+      left:     tooltipPos.left,
+      zIndex:   10002,
+      ...(tooltipPos.top    !== undefined ? { top:    tooltipPos.top    } : {}),
+      ...(tooltipPos.bottom !== undefined ? { bottom: tooltipPos.bottom } : {}),
+    }
+  })()
 
   // ── Notch (triangular pointer toward the spotlit element) ────────────────
 
@@ -251,7 +329,7 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
 
   const pageLabel = page === 'home' ? 'Council' : page === 'council' ? 'Council' : 'Record'
 
-  return (
+  return createPortal(
     <>
       {/* ── Dim overlay — blocks background interaction ────────────────── */}
       <div
@@ -265,15 +343,22 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
         onClick={e => e.stopPropagation()}
       />
 
-      {/* ── Tooltip card ──────────────────────────────────────────────── */}
-      <div style={{
-        ...tooltipStyle,
-        background:   'var(--bg-card)',
-        border:       '1px solid var(--gold-dim)',
-        borderRadius: 'var(--radius)',
-        boxShadow:    '0 24px 72px rgba(0,0,0,0.55), 0 0 0 1px var(--gold-dim)',
-        overflow:     'hidden',
-      }}>
+      {/* ── Tooltip card — draggable ──────────────────────────────────── */}
+      <div
+        ref={tooltipRef}
+        style={{
+          ...tooltipStyle,
+          background:   'var(--bg-card)',
+          border:       '1px solid var(--gold-dim)',
+          borderRadius: 'var(--radius)',
+          boxShadow:    '0 24px 72px rgba(0,0,0,0.55), 0 0 0 1px var(--gold-dim)',
+          overflow:     'hidden',
+          cursor:       isDragging ? 'grabbing' : 'grab',
+          userSelect:   'none',
+        }}
+        onMouseDown={handleDragStart}
+        onTouchStart={handleDragStart}
+      >
 
         {/* Notch pointer toward the element */}
         {notchVisible && <div style={notchStyle} />}
@@ -292,7 +377,16 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
             textTransform: 'uppercase',
             color:         'var(--gold)',
             opacity:       0.65,
+            display:       'flex',
+            alignItems:    'center',
+            gap:           5,
           }}>
+            {/* Grip dots — drag hint */}
+            <svg width="8" height="10" viewBox="0 0 8 10" fill="var(--gold)" opacity={0.5}>
+              <circle cx="2" cy="2"  r="1.2"/><circle cx="6" cy="2"  r="1.2"/>
+              <circle cx="2" cy="5"  r="1.2"/><circle cx="6" cy="5"  r="1.2"/>
+              <circle cx="2" cy="8"  r="1.2"/><circle cx="6" cy="8"  r="1.2"/>
+            </svg>
             {pageLabel} · {stepIndex + 1} of {steps.length}
           </span>
 
@@ -371,6 +465,7 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
           </button>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   )
 }
