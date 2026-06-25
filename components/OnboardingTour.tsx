@@ -50,15 +50,23 @@ const SCROLL_MS  = 350
 function computePos(rect: DOMRect, preferredSide: 'top' | 'bottom'): TooltipPos {
   const vw = window.innerWidth
   const vh = window.innerHeight
+  const EST_H = 260   // conservative height estimate for clamping
 
   if (vw < MOBILE_BP) {
     return { bottom: 80, left: 0, notch: 'bottom', mobile: true }
   }
 
+  // Centre the tooltip horizontally on the element, clamped within viewport
   const centerX = rect.left + rect.width / 2
   const left    = Math.max(SIDE_PAD, Math.min(Math.round(centerX - TOOLTIP_W / 2), vw - TOOLTIP_W - SIDE_PAD))
 
-  const EST_H      = 240
+  // When element is taller than 55% of the viewport (e.g. synthesis card,
+  // persona grid) neither above nor below has enough room — anchor to bottom
+  // of screen instead of trying to flank the element.
+  if (rect.height > vh * 0.55) {
+    return { bottom: 100, left, notch: 'bottom', mobile: false }
+  }
+
   const spaceBelow = vh - rect.bottom
   const spaceAbove = rect.top
 
@@ -66,11 +74,21 @@ function computePos(rect: DOMRect, preferredSide: 'top' | 'bottom'): TooltipPos 
   if (side === 'bottom' && spaceBelow < EST_H + GAP + SIDE_PAD) side = 'top'
   if (side === 'top'    && spaceAbove < EST_H + GAP + SIDE_PAD) side = 'bottom'
 
+  let pos: TooltipPos
   if (side === 'bottom') {
-    return { top: Math.round(rect.bottom + GAP), left, notch: 'top', mobile: false }
+    pos = { top: Math.round(rect.bottom + GAP), left, notch: 'top', mobile: false }
   } else {
-    return { bottom: Math.round(vh - rect.top + GAP), left, notch: 'bottom', mobile: false }
+    pos = { bottom: Math.round(vh - rect.top + GAP), left, notch: 'bottom', mobile: false }
   }
+
+  // Hard clamp: if final position would push card off-screen, anchor to bottom
+  const topWouldOverflow    = pos.top    !== undefined && pos.top    + EST_H > vh - SIDE_PAD
+  const bottomWouldOverflow = pos.bottom !== undefined && pos.bottom + EST_H > vh - SIDE_PAD
+  if (topWouldOverflow || bottomWouldOverflow) {
+    return { bottom: 100, left, notch: 'bottom', mobile: false }
+  }
+
+  return pos
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -214,6 +232,28 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
     return () => window.removeEventListener('resize', onResize)
   }, [active, step])
 
+  // ── Desktop skip: any click outside the tooltip triggers skip confirm ──────
+  // Uses capture phase so it fires even when the spotlit element (z-index 10001)
+  // is above the overlay (z-index 10000) and would otherwise absorb the click.
+  // Interactive elements inside the spotlit area (buttons, links) are allowed
+  // through so Challenge / Read aloud / etc. still work normally.
+
+  useEffect(() => {
+    if (!active) return
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Never intercept clicks inside the tour tooltip itself
+      if (tooltipRef.current?.contains(target)) return
+      // Allow interactive elements within the spotlit element to work normally
+      const insideSpotlit = currentElRef.current?.contains(target)
+      if (insideSpotlit && target.closest('button, a, input, [role="button"]')) return
+      // Everything else shows the skip confirmation
+      setShowSkipConfirm(true)
+    }
+    document.addEventListener('mousedown', onMouseDown, true) // capture phase
+    return () => document.removeEventListener('mousedown', onMouseDown, true)
+  }, [active])
+
   // ── Drag: pointer tracking ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -302,7 +342,6 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
       {/* ── Dim overlay ── clicking prompts skip confirmation ────────── */}
       <div
         style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(8,15,28,0.60)', pointerEvents: 'auto' }}
-        onClick={() => setShowSkipConfirm(true)}
       />
 
       {/* ── Tooltip card ─────────────────────────────────────────────── */}
