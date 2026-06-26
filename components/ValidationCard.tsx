@@ -116,7 +116,7 @@ export default function ValidationCard({ sessionId, authToken, userEmail, totalS
       <div style={{
         borderRadius: 14,
         padding: '18px 20px',
-        background: 'var(--bg-raised)',
+        background: 'var(--bg-card)',
         border: '1px solid var(--border-dim)',
         borderLeft: '3px solid var(--gold)',
         marginTop: 20,
@@ -141,7 +141,7 @@ export default function ValidationCard({ sessionId, authToken, userEmail, totalS
       <div style={{
         borderRadius: 14,
         padding: '18px 20px',
-        background: 'var(--bg-raised)',
+        background: 'var(--bg-card)',
         border: '1px solid var(--border-dim)',
         borderLeft: '3px solid #8840c4',
         marginTop: 20,
@@ -159,7 +159,7 @@ export default function ValidationCard({ sessionId, authToken, userEmail, totalS
           rows={3}
           style={{
             width: '100%',
-            background: 'var(--bg)',
+            background: 'var(--bg-inset)',
             border: '1px solid var(--border-dim)',
             borderRadius: 8,
             padding: '10px 12px',
@@ -182,7 +182,7 @@ export default function ValidationCard({ sessionId, authToken, userEmail, totalS
             style={{
               padding: '9px 18px',
               borderRadius: 8,
-              background: correction.trim() ? '#8840c4' : 'var(--bg)',
+              background: correction.trim() ? '#8840c4' : 'var(--bg-inset)',
               border: `1px solid ${correction.trim() ? '#8840c4' : 'var(--border-dim)'}`,
               color: correction.trim() ? '#fff' : 'var(--text-4)',
               fontSize: 13, fontWeight: 600, cursor: correction.trim() ? 'pointer' : 'default',
@@ -212,7 +212,7 @@ export default function ValidationCard({ sessionId, authToken, userEmail, totalS
     <div style={{
       borderRadius: 14,
       padding: '18px 20px',
-      background: 'var(--bg-raised)',
+      background: 'var(--bg-card)',
       border: '1px solid var(--border-dim)',
       borderLeft: '3px solid var(--gold-dim)',
       marginTop: 20,

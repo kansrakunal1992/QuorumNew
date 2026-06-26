@@ -1458,7 +1458,7 @@ function UnlockedView({
         borderRadius: 12,
         border: '1px solid var(--border-dim)',
         borderLeft: '3px solid var(--gold-dim)',
-        background: 'var(--bg-raised)',
+        background: 'var(--bg-card)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: 0 }}>
