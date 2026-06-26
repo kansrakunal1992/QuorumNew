@@ -18,6 +18,8 @@ import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
 import RuleRecallBanner from './RuleRecallBanner'       // Sprint Chunk 1
 import OnboardingTour from './OnboardingTour'
 import type { TourStep } from './OnboardingTour'
+import ValidationCard from './ValidationCard'             // SB-1
+import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
 
 // ── Sprint TOUR-1: Council page tour steps ────────────────────────────────────
 // Fires once, 800ms after synthesisDone flips to true for the first time.
@@ -58,6 +60,8 @@ interface Props {
   totalSessionCount?: number   // real DB count for RecordReceipt, passed from server
   // S2-02 / S2-03: server-side context for trust disclosure
   encryptionEnabled?: boolean  // true if DB_ENCRYPTION_KEY is set
+  // SB-3: bias note computed server-side, shown above persona cards when synthesisDone
+  biasNote?: { label: string; reasoning: string } | null
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -98,7 +102,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, biasNote = null }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -1110,6 +1114,15 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
+              {/* ── SB-3: Bias note — shown above personas once synthesis completes ── */}
+              {/* Surfaces the single strongest distorting bias signal for this session */}
+              {/* while the user is still engaged, not buried in the saved record view. */}
+              {synthesisDone && biasNote && (
+                <div style={{ marginBottom: 8 }}>
+                  <BiasNoteCard note={biasNote} />
+                </div>
+              )}
+
               {/* ── 4. Six persona panels ── */}
               <div
                 className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sv-fade sv-fade-3"
@@ -1145,6 +1158,18 @@ export default function SessionView({ session: initialSession, initialMessages =
                 ))}
               </div>
             </TTSProvider>
+
+            {/* ── SB-1: Validation Card — appears when all personas + synthesis complete ── */}
+            {/* Surfaces Quorum's emotional/archetype inference for user to confirm or correct. */}
+            {/* The correction feeds directly into the council context for the next session.   */}
+            {allPersonasDone && synthesisDone && (
+              <ValidationCard
+                sessionId={session.id}
+                authToken={authTokenSV}
+                userEmail={session.user_email ?? null}
+                totalSessionCount={totalSessionCount}
+              />
+            )}
 
             {/* ── Bottom Action Tray ── */}
             <div className="sv-fade sv-fade-4" style={{ marginTop: 44 }}>

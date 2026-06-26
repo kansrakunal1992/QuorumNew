@@ -449,9 +449,22 @@ export function evaluateRules(sv: ScoredVector): RuleEngineResult {
 // Returns a structured block to append to each persona's system prompt.
 // Keeps it concise — personas receive signal, not full rule logic.
 
+// ── SB-3: Profile + framing types (inline to avoid cross-import) ──────────────
+export interface CouncilUserProfile {
+  archetype?:     string | null
+  primary_fears?: string[] | null
+  mbti_type?:     string | null
+  life_stage?:    string | null
+  risk_stance?:   string | null
+}
+
 export function buildCouncilContext(
-  sv: ScoredVector,
-  result: RuleEngineResult
+  sv:      ScoredVector,
+  result:  RuleEngineResult,
+  // SB-3 additions — all optional for backward compat
+  profile?:             CouncilUserProfile | null,
+  framingIntent?:       string | null,   // 'challenge' | 'clarify' | 'right' | null
+  validationCorrection?: string | null,  // prior session correction text
 ): string {
   const lines: string[] = []
 
@@ -496,6 +509,52 @@ export function buildCouncilContext(
     }
   }
 
+  // ── SB-3: User profile block ──────────────────────────────────────────────
+  // Injected when profile exists. Gives personas awareness of who is bringing
+  // this decision — archetype, fears, life stage, risk stance, MBTI.
+  // Used by: Elder (life stage), Risk Architect (fear), Contrarian (MBTI),
+  // Pattern Analyst (fear), Synthesis directive (inward dimension).
+  if (profile && (profile.archetype || profile.primary_fears?.length || profile.life_stage || profile.risk_stance)) {
+    lines.push('')
+    lines.push('── WHO IS BRINGING THIS DECISION ────────────────────────────')
+    if (profile.archetype)           lines.push(`Decision-maker archetype: ${profile.archetype}`)
+    if (profile.life_stage)          lines.push(`Life stage: ${profile.life_stage}`)
+    if (profile.risk_stance)         lines.push(`Risk stance: ${profile.risk_stance}`)
+    if (profile.primary_fears?.length) lines.push(`Primary fears (self-identified): ${profile.primary_fears.join(', ')}`)
+    if (profile.mbti_type)           lines.push(`MBTI: ${profile.mbti_type}`)
+    lines.push('Use this to calibrate your angle, emphasis, and register. Do not repeat these labels verbatim in your response.')
+  }
+
+  // ── SB-3: Framing intent directive ───────────────────────────────────────
+  // Signals what the user explicitly wants from the Council.
+  // 'right' is the most consequential: the user wants honesty over comfort.
+  if (framingIntent) {
+    lines.push('')
+    lines.push('── FRAMING INTENT ───────────────────────────────────────────')
+    if (framingIntent === 'right') {
+      lines.push("FRAMING: The user has asked to know what is objectively right, not what they want.")
+      lines.push("If there is a divergence between the better option and what the user appears to want — name it directly. Do not soften it into 'considerations to weigh.'")
+    } else if (framingIntent === 'clarify') {
+      lines.push("FRAMING: The user wants to understand what they want, not just what is analytically correct.")
+      lines.push("Weight values, identity, and relational dimensions heavily. The Elder and Stakeholder Mirror perspectives are primary.")
+    } else if (framingIntent === 'challenge') {
+      lines.push("FRAMING: The user wants structural challenge. Prioritise stress-testing over validation.")
+    }
+  }
+
+  // ── SB-3: Prior session correction ───────────────────────────────────────
+  // When user corrected Quorum's emotional inference in a prior session,
+  // that correction feeds this session's council context directly.
+  // This is the learning loop: disagreement in session N improves session N+1.
+  if (validationCorrection?.trim()) {
+    lines.push('')
+    lines.push('── PRIOR SESSION CORRECTION ─────────────────────────────────')
+    lines.push(`In their last session, the user corrected Quorum's read of their emotional state.`)
+    lines.push(`They said: "${validationCorrection.trim()}"`)
+    lines.push('Check whether the same dynamic is present in this decision. If it is, name it explicitly rather than letting it sit as a structural inference.')
+  }
+
+  lines.push('')
   lines.push('─────────────────────────────────────────────────────────────')
   lines.push('Your response must engage with the structural signals above.')
   lines.push('Do not restate them. Let them shape the depth and angle of your analysis.')

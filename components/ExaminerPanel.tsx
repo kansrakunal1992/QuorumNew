@@ -27,6 +27,8 @@ const RULE_HINTS: Record<string, string> = {
   R12: 'Misalignment between decision-makers is often the real risk. Your answer surfaces where that tension sits.',
   // S0 — Subject Orientation: fires when decision brief is thin (< 25 words, no context)
   S0:  'Grounds the Council in what this actually is — context the decision alone couldn\'t supply.',
+  // E0 — Emotional/Gut question: SB-2. Always fires. Surfaces the dimension not named in the brief.
+  E0:  'The Council reads what you wrote. This question asks about what you didn\'t write — what\'s underneath the framing.',
   // C0 — JTBD context question: not a diagnostic flag, a framing input
   C0:  'This isn\'t about predicting the outcome — it captures what you\'re actually trying to achieve, so the Council reasons from your real intent, not assumed goals.',
 }
@@ -373,6 +375,22 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                       background: 'var(--success-bg)',
                     }}>
                       BRIEF
+                    </span>
+                  ) : q.rule_id === 'E0' ? (
+                    // SB-2: E0 — Emotional/inward question. Distinct label in gold-dim so
+                    // it reads as reflective framing, not a structural warning flag.
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 700,
+                      color: 'var(--gold)',
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      marginRight: 8,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      border: '1px solid var(--gold-dim)',
+                      background: 'rgba(201,168,76,0.08)',
+                    }}>
+                      REFLECTION
                     </span>
                   ) : (
                     <span style={{

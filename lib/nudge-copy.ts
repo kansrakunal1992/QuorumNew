@@ -27,6 +27,7 @@ export type NudgeTheme =
   | 'contradictions'
   | 'long_term'
   | 'exec_lens'
+  | 'validation_pending'  // SB-1: re-engagement when a session sits unvalidated
 
 export interface NudgeVariant {
   /** Thematic bucket — useful for analytics / future A/B weighting */
@@ -434,6 +435,47 @@ export const NUDGE_VARIANTS: NudgeVariant[] = [
     email: {
       subject: '{{session_count}} decisions — what they reveal',
       body: "Your record has {{session_count}} decisions in it. That's {{session_count}} data points on how you reason under real pressure — what you weight, what you avoid, where your certainty tends to cluster. The picture only sharpens if you keep building it. What belongs in there today?",
+    },
+  },
+
+  // ── H: Validation Pending — SB-1 ─────────────────────────────────────────
+  // Fires when a session has validation_state = 'pending'.
+  // Re-engagement trigger: one tap to validate, creates Zeigarnik loop closure.
+  // Max one validation nudge per unvalidated session.
+
+  {
+    theme: 'validation_pending',
+    push: {
+      title: 'One thing left from your last session.',
+      body: 'Tell Quorum whether it read you right. Takes 10 seconds.',
+    },
+    email: {
+      subject: 'Did Quorum read your last decision correctly?',
+      body: "After your last session, Quorum inferred something about what was driving the decision. It may have been right. It may have missed. Either way, your answer trains the read for next time — and the correction is more useful than the confirmation. One tap.",
+    },
+  },
+
+  {
+    theme: 'validation_pending',
+    push: {
+      title: 'Your last session is unfinished.',
+      body: 'Validate what Quorum inferred — it sharpens the next read.',
+    },
+    email: {
+      subject: 'Your last Quorum session is still unvalidated',
+      body: "You ran a decision through the Council but didn't tell Quorum whether it read you correctly. That step matters more than it sounds — it's how Quorum builds a model of how you actually decide, not just what you decided. If it got something wrong, that correction directly shapes the next session. Worth 10 seconds.",
+    },
+  },
+
+  {
+    theme: 'validation_pending',
+    push: {
+      title: "Quorum made an inference about you.",
+      body: 'Agree or correct it — either way the Council learns.',
+    },
+    email: {
+      subject: 'The inference Quorum made — is it right?',
+      body: "When you last ran a decision, Quorum inferred something about the emotional weight behind it. Patterns only form if those inferences are tested against what was actually true for you. If it was right, one tap confirms it. If it was wrong, your correction is the most valuable data point it can receive. Open your last session to respond.",
     },
   },
 ]

@@ -49,6 +49,7 @@ import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'             // P
 import { PaymentButton }         from '@/components/PaymentButton'           // Sprint CX-PAY
 import { CancelSubscription }    from '@/components/CancelSubscription'       // Sprint CX-PAY
 import DecisionGraph             from '@/components/DecisionGraph'             // Sprint G3
+import ProfileCaptureOverlay     from '@/components/ProfileCaptureOverlay'    // SB-1
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -1276,12 +1277,16 @@ function UnlockedView({
   authToken,
   initialStyleCue,
   avoidanceAlerts,
+  userProfile,
+  onEditProfile,
 }: {
   status:           MirrorStatus
   sessions:         TimelineSession[]
   authToken:        string
   initialStyleCue?: StyleCue | null
   avoidanceAlerts:  AvoidanceAlertData[]
+  userProfile:      import('@/lib/types').UserProfile | null
+  onEditProfile:    () => void
 }) {
   // Sprint 21: style calibration
   const [showCalibration, setShowCalibration] = useState(() => {
@@ -1446,6 +1451,68 @@ function UnlockedView({
       {/* Sprint M6: Cross-module Mirror Insight — deterministic synthesis, top of module stack */}
       {summaryData && <MirrorInsightCard data={summaryData} />}
 
+      {/* SB-1: Decision-Maker Profile — edit link for profile set on home page */}
+      <div id="msec-profile" style={{
+        marginBottom: 28,
+        padding: '18px 20px',
+        borderRadius: 12,
+        border: '1px solid var(--border-dim)',
+        borderLeft: '3px solid var(--gold-dim)',
+        background: 'var(--bg-raised)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: 0 }}>
+            Your Decision-Maker Profile
+          </p>
+          <button
+            type="button"
+            onClick={() => onEditProfile()}
+            style={{
+              fontSize: 11, fontWeight: 600, color: 'var(--gold)',
+              background: 'none', border: '1px solid var(--gold-dim)',
+              borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {userProfile ? 'Edit' : 'Set up →'}
+          </button>
+        </div>
+        {userProfile && (userProfile.archetype || userProfile.primary_fears || userProfile.life_stage || userProfile.risk_stance || userProfile.mbti_type) ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+            {userProfile.archetype && (
+              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--gold-dim)', color: 'var(--gold)', background: 'rgba(201,168,76,0.08)' }}>
+                {String(userProfile.archetype).charAt(0).toUpperCase() + String(userProfile.archetype).slice(1)}
+              </span>
+            )}
+            {userProfile.life_stage && (
+              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border-dim)', color: 'var(--text-3)' }}>
+                {String(userProfile.life_stage).charAt(0).toUpperCase() + String(userProfile.life_stage).slice(1)}
+              </span>
+            )}
+            {userProfile.risk_stance && (
+              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border-dim)', color: 'var(--text-3)' }}>
+                {String(userProfile.risk_stance).charAt(0).toUpperCase() + String(userProfile.risk_stance).slice(1)} risk
+              </span>
+            )}
+            {userProfile.mbti_type && (
+              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border-dim)', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                {String(userProfile.mbti_type)}
+              </span>
+            )}
+            {(userProfile.primary_fears as string[] | null)?.map((f: string) => (
+              <span key={f} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid rgba(136,64,196,0.3)', color: '#b070e0', background: 'rgba(136,64,196,0.06)' }}>
+                {f}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: 0 }}>
+            Your profile tells the Council who is bringing each decision — archetype, fears, life stage, risk stance.
+            The more complete it is, the more precisely the Council orients to you.
+          </p>
+        )}
+      </div>
+
       <SectionWrapper {...sw('fingerprint')} title="Bias Fingerprint" type="core" animDelay={60}
         desc="The conditions that trigger your patterns — not that you have them, but exactly when and why they show up.">
         <BiasFingerprint authToken={authToken} />
@@ -1570,6 +1637,10 @@ export default function MirrorPage() {
   // Sprint D3: avoidance alerts — fetched alongside alerts route on unlocked
   const [avoidanceAlerts, setAvoidanceAlerts] = useState<AvoidanceAlertData[]>([])
 
+  // SB-1: user profile for profile card + edit overlay
+  const [userProfile,     setUserProfile]     = useState<import('@/lib/types').UserProfile | null>(null)
+  const [showProfileEdit, setShowProfileEdit] = useState(false)
+
   // ── 1. Get auth token ──────────────────────────────────────────────────────
   useEffect(() => {
     const getToken = async () => {
@@ -1636,6 +1707,15 @@ export default function MirrorPage() {
       fetchStatus(authToken)
     }
   }, [authToken, fetchStatus])
+
+  // SB-1: fetch user profile once auth resolves
+  useEffect(() => {
+    if (!authToken) return
+    fetch('/api/profile', { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { profile: import('@/lib/types').UserProfile | null } | null) => setUserProfile(d?.profile ?? null))
+      .catch(() => setUserProfile(null))
+  }, [authToken])
 
   // ── Called when unlock code succeeds ──────────────────────────────────────
   // Re-fetches status so gateState transitions teaser → unlocked in-place.
@@ -1817,12 +1897,31 @@ export default function MirrorPage() {
                   authToken={authToken ?? ''}
                   initialStyleCue={initialStyleCue}
                   avoidanceAlerts={avoidanceAlerts}
+                  userProfile={userProfile}
+                  onEditProfile={() => setShowProfileEdit(true)}
                 />
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* SB-1: Profile edit overlay — opens from "Edit" button in profile section */}
+      {showProfileEdit && (
+        <ProfileCaptureOverlay
+          authToken={authToken}
+          deviceId={null}
+          onDone={() => {
+            setShowProfileEdit(false)
+            if (authToken) {
+              fetch('/api/profile', { headers: { Authorization: `Bearer ${authToken}` } })
+                .then(r => r.ok ? r.json() : null)
+                .then((d: { profile: import('@/lib/types').UserProfile | null } | null) => setUserProfile(d?.profile ?? null))
+                .catch(() => null)
+            }
+          }}
+        />
+      )}
     </>
   )
 }

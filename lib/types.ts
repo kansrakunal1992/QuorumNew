@@ -26,6 +26,49 @@ export interface Message {
 
 export type RegisterMode = 'analytical' | 'clarification'
 
+// ── SB-1: Framing intent ───────────────────────────────────────────────────────
+// Three-way intent captured at session start.
+// Maps to register_mode: 'clarify' → 'clarification', 'challenge'|'right' → 'analytical'.
+// The more nuanced signal (vs. binary register_mode) is injected into council context in SB-3.
+export type FramingIntent = 'challenge' | 'clarify' | 'right'
+
+// ── SB-1: User profile ─────────────────────────────────────────────────────────
+// Archetype values (self-selected, one of 6)
+export type Archetype =
+  | 'builder'      // Creating something that doesn't exist yet
+  | 'steward'      // Protecting and growing what I've been trusted with
+  | 'achiever'     // Optimising for outcomes and keeping score
+  | 'connector'    // Decisions through relationships and what they signal
+  | 'protector'    // Guard against loss before pursuing gain
+  | 'challenger'   // Tests assumptions and questions default paths
+
+// Fear values (multi-select up to 2)
+export type PrimaryFear =
+  | 'wrong'        // Fear of getting it wrong
+  | 'judgment'     // Fear of what others will think
+  | 'loss'         // Fear of losing what I've built
+  | 'missed'       // Fear of missing the better path
+  | 'safe'         // Fear of being the person who played it too safe
+  | 'irreversible' // Fear of the irreversible mistake
+
+export type LifeStage   = 'building' | 'scaling' | 'transition' | 'legacy'
+export type RiskStance  = 'conservative' | 'balanced' | 'bold'
+
+export interface UserProfile {
+  id:            string
+  user_id:       string
+  archetype?:    Archetype | null
+  primary_fears?: PrimaryFear[] | null
+  mbti_type?:    string | null
+  life_stage?:   LifeStage | null
+  risk_stance?:  RiskStance | null
+  created_at:    string
+  updated_at:    string
+}
+
+// ── SB-1: Validation state ─────────────────────────────────────────────────────
+export type ValidationState = 'pending' | 'confirmed' | 'corrected'
+
 export interface Session {
   id: string
   user_id?: string
@@ -54,6 +97,14 @@ export interface Session {
   // Resolved server-side in /api/session POST and validated against the
   // requester's identity — never trust this field if it appears client-side.
   parent_session_id?:       string | null
+  // ── Identity chain ─────────────────────────────────────────────────────────
+  user_email?:              string | null
+  device_id?:               string | null
+  // ── SB-1: Framing intent + validation ──────────────────────────────────────
+  framing_intent?:               FramingIntent | null
+  validation_state?:             ValidationState
+  validation_emotion_confirmed?: boolean | null
+  validation_correction?:        string | null
 }
 
 export interface DecisionRecord {

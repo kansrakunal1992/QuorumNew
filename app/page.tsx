@@ -15,6 +15,7 @@ const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), 
 import CalibrationRevealCard from '@/components/CalibrationRevealCard'
 import OnboardingTour from '@/components/OnboardingTour'
 import type { TourStep } from '@/components/OnboardingTour'
+import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -118,6 +119,8 @@ export default function Home() {
   const [showContext, setShowContext] = useState(false)
   const [error,       setError]       = useState('')
   const [registerMode,          setRegisterMode]          = useState<'analytical'|'clarification'>('analytical')
+  const [framingIntent,         setFramingIntent]         = useState<'challenge'|'clarify'|'right'>('challenge')
+  const [showProfileCapture,    setShowProfileCapture]    = useState(false)
   const [preDecisionConfidence, setPreDecisionConfidence] = useState<number>(5)
 
   // Sprint 6b: read ?em= param written by auth callback
@@ -314,7 +317,8 @@ export default function Home() {
         body: JSON.stringify({
           decision_text:           decision.trim(),
           context_text:            context.trim() || null,
-          register_mode:           registerMode,
+          register_mode:           framingIntent === 'clarify' ? 'clarification' : 'analytical',
+          framing_intent:          framingIntent,
           pre_decision_confidence: preDecisionConfidence,
           user_email:              userEmail ?? null,
           device_id:               getOrCreateDeviceId(),
@@ -331,8 +335,33 @@ export default function Home() {
     }
   }
 
+  // ── SB-1: Show profile capture overlay once for users without a profile ──────
+  // Fires for new users AND existing users who haven't filled in a profile.
+  // 'quorum_profile_overlay_shown' prevents it from re-showing after dismiss.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('quorum_profile_overlay_shown') === 'true') return
+    } catch {}
+    // Don't show during onboarding panels 0 or 1
+    if (isOnboarding) return
+    const checkProfile = async () => {
+      if (!authToken) {
+        // Not authed — show after a brief delay so the page is settled
+        setTimeout(() => setShowProfileCapture(true), 1200)
+        return
+      }
+      try {
+        const res = await fetch('/api/profile', {
+          headers: { Authorization: `Bearer ${authToken}` },
+        })
+        const { profile } = await res.json()
+        if (!profile) setShowProfileCapture(true)
+      } catch {}
+    }
+    checkProfile()
+  }, [authToken, isOnboarding])
+
   const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation()
     if (!window.confirm('Delete this decision? This cannot be undone.')) return
     setSessions(prev => prev.filter(s => s.id !== sessionId))
     removeSessionId(sessionId)
@@ -785,39 +814,59 @@ export default function Home() {
                 <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', marginBottom: 10, letterSpacing: '0.04em' }}>
                   What are you looking for from the Council?
                 </p>
-                <div className="home-two-col" style={{ gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {/* Option 1: Challenge */}
                   <button
                     type="button"
-                    onClick={() => setRegisterMode('analytical')}
+                    onClick={() => { setFramingIntent('challenge'); setRegisterMode('analytical') }}
                     style={{
-                      padding: '12px 14px', borderRadius: 10,
-                      border: `1px solid ${registerMode === 'analytical' ? 'var(--gold)' : 'var(--border-dim)'}`,
-                      background: registerMode === 'analytical' ? 'rgba(201,168,76,0.1)' : 'transparent',
+                      padding: '11px 14px', borderRadius: 10,
+                      border: `1px solid ${framingIntent === 'challenge' ? 'var(--gold)' : 'var(--border-dim)'}`,
+                      background: framingIntent === 'challenge' ? 'rgba(201,168,76,0.1)' : 'transparent',
                       textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
                     }}
                   >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: registerMode === 'analytical' ? 'var(--gold)' : 'var(--text-2)', marginBottom: 3 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: framingIntent === 'challenge' ? 'var(--gold)' : 'var(--text-2)', marginBottom: 3 }}>
                       ⚔ Challenge my thinking
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
                       Stress-test the decision. Find what I am missing.
                     </p>
                   </button>
+                  {/* Option 2: Clarify */}
                   <button
                     type="button"
-                    onClick={() => setRegisterMode('clarification')}
+                    onClick={() => { setFramingIntent('clarify'); setRegisterMode('clarification') }}
                     style={{
-                      padding: '12px 14px', borderRadius: 10,
-                      border: `1px solid ${registerMode === 'clarification' ? 'var(--green-border)' : 'var(--border-dim)'}`,
-                      background: registerMode === 'clarification' ? 'var(--green-soft)' : 'transparent',
+                      padding: '11px 14px', borderRadius: 10,
+                      border: `1px solid ${framingIntent === 'clarify' ? 'var(--green-border)' : 'var(--border-dim)'}`,
+                      background: framingIntent === 'clarify' ? 'var(--green-soft)' : 'transparent',
                       textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
                     }}
                   >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: registerMode === 'clarification' ? 'var(--green-text)' : 'var(--text-2)', marginBottom: 3 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: framingIntent === 'clarify' ? 'var(--green-text)' : 'var(--text-2)', marginBottom: 3 }}>
                       🪞 Help me understand what I want
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
                       Values, identity, what matters most here.
+                    </p>
+                  </button>
+                  {/* Option 3: Right — SB-1 */}
+                  <button
+                    type="button"
+                    onClick={() => { setFramingIntent('right'); setRegisterMode('analytical') }}
+                    style={{
+                      padding: '11px 14px', borderRadius: 10,
+                      border: `1px solid ${framingIntent === 'right' ? '#8840c4' : 'var(--border-dim)'}`,
+                      background: framingIntent === 'right' ? 'rgba(136,64,196,0.1)' : 'transparent',
+                      textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                    }}
+                  >
+                    <p style={{ fontSize: 13, fontWeight: 600, color: framingIntent === 'right' ? '#b070e0' : 'var(--text-2)', marginBottom: 3 }}>
+                      ⚖ Tell me what&apos;s actually right here
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
+                      Even if it&apos;s not what I want to hear.
                     </p>
                   </button>
                 </div>
@@ -1225,6 +1274,14 @@ export default function Home() {
             } catch {}
             setShowHomeTour(false)
           }}
+        />
+      )}
+      {/* ── SB-1: Profile capture overlay — fires once for users without a profile ── */}
+      {showProfileCapture && (
+        <ProfileCaptureOverlay
+          authToken={authToken}
+          deviceId={null}
+          onDone={() => setShowProfileCapture(false)}
         />
       )}
     </>

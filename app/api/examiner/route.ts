@@ -51,26 +51,131 @@ import { encrypt, decrypt }      from '@/lib/encryption'
 // Template banks — deterministic per session, varied across sessions
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SB-2: Full-generation question functions
+// All three (S0, E0, redirect) are generated fresh per session from the
+// decision text + user profile. No template reuse — every question is unique.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * S0 — Subject Orientation question bank (5 variants).
- * Each variant elicits the same three things — what the subject is, its
- * current state, and what triggered the decision — but with genuinely
- * different sentence architecture. personaliseRuleQuestion() injects the
- * specific entity name and decision details on top.
- *
- * Design constraints:
- *   - Purely informational / domain-grounding. Never reflective or values-based
- *     (that is C0's territory). No overlap with success-definition framing.
- *   - Must work whether or not the decision names a specific entity.
- *   - Appropriate register for founders, CXOs, Family Office MDs.
+ * S0 — Subject Orientation. Full generation; no template bank.
+ * Asks the single most load-bearing unspecified thing in the brief.
+ * Passes profile context (archetype + risk_stance) when available.
  */
-const S0_TEMPLATES = [
-  "Brief us on this — what it is, where it stands right now, and what's made this question live for you.",
-  "Before we work on this: what exactly is this, what's its current state, and what's brought this decision to a head?",
-  "Give us the grounding: what is this, where does it sit today, and what triggered this question now?",
-  "We need the context: what exactly is this, what's happened with it recently, and why is this decision surfacing now?",
-  "Walk us through the situation: what is this, where things stand operationally, and what's making this the moment to decide?",
-]
+async function generateS0Question(
+  decision:    string,
+  profileCtx?: string,   // e.g. "Protector archetype, conservative risk stance"
+): Promise<string> {
+  const FALLBACK = "Walk us through the situation: what is this, where things stand operationally, and what's making this the moment to decide?"
+  const prompt = `You are a senior advisor who has just read a decision brief from a high-stakes decision-maker.
+
+Your task: ask the ONE follow-up question you would ask if meeting this person 1:1 — the most important thing that is under-specified, assumed, or load-bearing for how this decision should be approached.
+
+RULES:
+- Do NOT ask them to summarise the whole situation or explain everything
+- Ask about the one specific thing most critical for understanding this correctly
+- Peer register — not an interviewer or a consultant, a trusted advisor
+- Maximum 25 words
+- Return ONLY the question — no quotes, no explanation, no preamble
+${profileCtx ? `\nUSER CONTEXT: ${profileCtx}. Let this subtly shape what angle matters most, but stay anchored to what the brief actually contains.\n` : ''}
+DECISION BRIEF: "${decision.slice(0, 450)}"
+
+QUESTION:`.trim()
+
+  try {
+    const raw   = await createCompletion(prompt, 80, { provider: 'deepseek' })
+    const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
+    if (!clean || clean.split(' ').length > 40) return FALLBACK
+    return clean
+  } catch (err) {
+    console.error('[Examiner SB-2] generateS0Question failed:', err)
+    return FALLBACK
+  }
+}
+
+/**
+ * E0 — Emotional/Gut question. Always fires (non-REDIRECT). Full generation.
+ * Surfaces the emotional or identity dimension NOT explicitly named in the brief.
+ * Uses fear profile (if available) and inferred dominant_emotion to sharpen.
+ */
+async function generateE0Question(
+  decision:       string,
+  fearProfile?:   string,   // e.g. "fear of loss, fear of judgment"
+  dominantEmotion?: string, // e.g. "anxiety"
+  biasHint?:      string,
+): Promise<string> {
+  const FALLBACK = "What's the part of this you haven't said out loud yet — even to yourself?"
+  const prompt = `You are the Quorum Examiner. Read this decision brief carefully.
+
+Your task: generate ONE question that surfaces the emotional or identity dimension this person has NOT explicitly named — the thing present in what they wrote but not said directly.
+
+This is NOT a clarifying question about facts or next steps.
+It is a question that requires the person to look inward — at what they fear, what they're protecting, or what this decision means about who they are.
+
+RULES:
+- Must be specific to THIS brief — not a generic "how do you feel about this?"
+- Should make the person pause. The right question cannot be answered in 5 seconds.
+- Peer register — trusted mentor, not therapist, not coach
+- Maximum 25 words
+- Return ONLY the question — no quotes, no explanation, no preamble
+${fearProfile ? `\nUSER FEAR PROFILE (self-identified): ${fearProfile}. Sharpen the question toward the most active fear visible in the brief.\n` : ''}${dominantEmotion && dominantEmotion !== 'ambivalence' ? `\nINFERRED EMOTIONAL TONE: ${dominantEmotion}.\n` : ''}${biasHint ? `\nUSER PATTERN CONTEXT (prior decisions): ${biasHint}.\n` : ''}
+DECISION BRIEF: "${decision.slice(0, 450)}"
+
+QUESTION:`.trim()
+
+  try {
+    const raw   = await createCompletion(prompt, 80, { provider: 'anthropic' })
+    const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
+    if (!clean || clean.split(' ').length > 40) return FALLBACK
+    return clean
+  } catch (err) {
+    console.error('[Examiner SB-2] generateE0Question failed:', err)
+    return FALLBACK
+  }
+}
+
+/**
+ * Redirect question — generated for both R1 and R7 REDIRECT modes.
+ * Tells the user exactly what they need to resolve before the Council can run cleanly.
+ * Replaces the static banner title as the primary call-to-action.
+ */
+async function generateRedirectQuestion(
+  decision:  string,
+  rule:      'R1' | 'R7',
+  rationale?: string,
+): Promise<string> {
+  const FALLBACK_R1 = "What is the upstream decision or event that must resolve before this one becomes yours to make?"
+  const FALLBACK_R7 = "What specific information — that doesn't yet exist — would materially change which option is right?"
+
+  const prompt = rule === 'R1'
+    ? `A decision has been flagged because it has an upstream dependency that must be resolved first.
+
+Generate ONE specific question that tells this person exactly what they need to resolve before this decision can be properly assessed. Name the specific blocking element — not a generic "what depends on this."
+
+Maximum 25 words. Return ONLY the question — no quotes, no preamble.
+${rationale ? `\nBLOCKING CONTEXT: ${rationale}` : ''}
+DECISION BRIEF: "${decision.slice(0, 450)}"
+
+QUESTION:`
+    : `A decision has been flagged because specific information that doesn't exist yet would materially change the outcome.
+
+Generate ONE specific question naming exactly what information this person needs to gather before this decision can be cleanly assessed.
+
+Maximum 25 words. Return ONLY the question — no quotes, no preamble.
+DECISION BRIEF: "${decision.slice(0, 450)}"
+
+QUESTION:`
+
+  try {
+    const raw   = await createCompletion(prompt.trim(), 80, { provider: 'deepseek' })
+    const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
+    if (!clean || clean.split(' ').length > 40) return rule === 'R1' ? FALLBACK_R1 : FALLBACK_R7
+    return clean
+  } catch (err) {
+    console.error(`[Examiner SB-2] generateRedirectQuestion(${rule}) failed:`, err)
+    return rule === 'R1' ? FALLBACK_R1 : FALLBACK_R7
+  }
+}
 
 /**
  * C0 — JTBD anchor question bank (5 variants).
@@ -81,8 +186,8 @@ const S0_TEMPLATES = [
  *   v4 — asymmetric cost-benefit (what winning points to + what loss costs)
  *   v5 — hidden intent (what the framing doesn't capture)
  *
- * biasHint is still passed to C0 personalisation (diagnostic sharpening).
- * Never overlaps with S0 — always reflective / forward-looking / values-adjacent.
+ * biasHint + profileCtx passed to C0 personalisation (diagnostic sharpening).
+ * Never overlaps with E0 — C0 is forward/outcome-facing, E0 is inward/emotion-facing.
  */
 const C0_TEMPLATES = [
   "What would this decision have to deliver for you to feel it was genuinely the right call — not just in outcome, but in how it unfolded?",
@@ -115,7 +220,7 @@ function pickTemplate(templates: string[], sessionId: string): string {
 // the core diagnostic intent, it reinforces it where evidence warrants.
 // NOT passed to S0 personalisation — S0 is domain-context gathering, not
 // a diagnostic probe; bias sharpening is irrelevant there.
-const PERSONALISE_PROMPT = (ruleId: string, template: string, decision: string, biasHint?: string) => `
+const PERSONALISE_PROMPT = (ruleId: string, template: string, decision: string, biasHint?: string, profileCtx?: string) => `
 You are the Quorum Examiner. Rewrite the diagnostic question below so it is specific to the decision described.
 
 RULES:
@@ -123,7 +228,7 @@ RULES:
 - Replace generic language with concrete details from the decision text (e.g. names, assets, amounts, relationships, domains) wherever they are present
 - Maximum 28 words
 - Return ONLY the rewritten question — no quotes, no explanation, no preamble
-${biasHint ? `\nUSER BIAS PROFILE (confirmed longitudinal patterns from prior decisions): ${biasHint}\nADDITIONAL RULE: If this specific diagnostic question is directly relevant to a documented pattern above, make it harder — sharper and more targeted at that exact blind spot. Otherwise, personalise to the decision text normally.\n` : ''}
+${biasHint ? `\nUSER BIAS PROFILE (confirmed longitudinal patterns from prior decisions): ${biasHint}\nADDITIONAL RULE: If this specific diagnostic question is directly relevant to a documented pattern above, make it harder — sharper and more targeted at that exact blind spot. Otherwise, personalise to the decision text normally.\n` : ''}${profileCtx ? `\nUSER PROFILE: ${profileCtx}. Let this subtly shape the angle of the question where relevant.\n` : ''}
 DECISION: "${decision.slice(0, 450)}"
 
 TEMPLATE QUESTION (${ruleId}): "${template}"
@@ -131,13 +236,14 @@ TEMPLATE QUESTION (${ruleId}): "${template}"
 REWRITTEN QUESTION:`.trim()
 
 async function personaliseRuleQuestion(
-  ruleId:    string,
-  template:  string,
-  decision:  string,
-  biasHint?: string,  // Sprint R_JC
+  ruleId:     string,
+  template:   string,
+  decision:   string,
+  biasHint?:  string,  // Sprint R_JC
+  profileCtx?: string, // SB-2: profile context for C0 sharpening
 ): Promise<string> {
   try {
-    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision, biasHint), 80, { provider: 'deepseek' })
+    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision, biasHint, profileCtx), 80, { provider: 'deepseek' })
     const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return template
     return clean
@@ -198,23 +304,42 @@ export async function GET(req: Request) {
       .single(),
     supabase
       .from('sessions')
-      // Sprint S0: context_text added — needed for S0 trigger (thin-brief detection).
-      // Sprint R_JC: user_id for biasHint fetch.
-      .select('decision_text, context_text, user_id')
+      // SB-2: user_email added for profile fallback when user_id is null
+      .select('decision_text, context_text, user_id, user_email')
       .eq('id', sessionId)
       .single(),
   ])
 
   const data         = ontologyRes.data
   const decisionText = decrypt(sessionRes.data?.decision_text) ?? ''
-  // Sprint S0: decrypt context_text; null-safe (context_text is optional).
   const contextText  = decrypt(sessionRes.data?.context_text ?? '') ?? ''
-  const userId       = (sessionRes.data as { user_id?: string | null } | null)?.user_id ?? null  // Sprint R_JC
+  const userId       = (sessionRes.data as { user_id?: string | null } | null)?.user_id ?? null
 
   // Sprint R_JC: fetch confirmed distorting bias hint for question sharpening.
-  // Lightweight query (bias_library, 1–2 rows). Returns '' for anonymous sessions
-  // or users with no confirmed patterns — safe no-op.
   const biasHint = userId ? await fetchExaminerBiasHint(userId) : ''
+
+  // SB-2: fetch user profile for E0 fear context + S0/C0 profile awareness
+  let fearProfile:   string | null = null
+  let profileCtx:    string | null = null
+  let dominantEmotion: string | null = null
+  if (userId) {
+    const [profileRes, ontologyFullRes] = await Promise.all([
+      supabase.from('user_profiles').select('archetype, primary_fears, risk_stance, life_stage').eq('user_id', userId).single(),
+      supabase.from('sessions_ontology').select('dominant_emotion').eq('session_id', sessionId).maybeSingle(),
+    ])
+    const profile = profileRes.data
+    if (profile) {
+      if (profile.primary_fears?.length) {
+        fearProfile = profile.primary_fears.join(', ')
+      }
+      const parts: string[] = []
+      if (profile.archetype)   parts.push(`${profile.archetype} archetype`)
+      if (profile.risk_stance) parts.push(`${profile.risk_stance} risk stance`)
+      if (profile.life_stage)  parts.push(`${profile.life_stage} stage`)
+      if (parts.length) profileCtx = parts.join(', ')
+    }
+    dominantEmotion = ontologyFullRes?.data?.dominant_emotion ?? null
+  }
 
   if (ontologyRes.error || !data || data.tagger_status !== 'complete') {
     return NextResponse.json({
@@ -246,96 +371,112 @@ export async function GET(req: Request) {
             ?.upstream_dependency?.rationale ?? null
         : null
 
-    // ── S0: Subject Orientation — thin-brief detection ────────────────────────
-    // Fires when decision_text is < 25 words AND no context_text was provided.
-    // Rationale: a brief decision text gives the Council almost no domain context
-    // about the decision subject (e.g. "Should I sell MedML?" tells us nothing
-    // about what MedML is). S0 elicits that context directly from the user —
-    // better evidence than any web search, and it enters the permanent record.
+    // ── SB-2: S0 trigger — thin brief only (context paste no longer suppresses) ─
+    // S0 and context_text serve different purposes:
+    //   context_text = background material the user pasted in (emails, term sheets)
+    //   S0           = a deepening question about what the brief itself doesn't say
+    // Previously suppressing S0 when context was present assumed they were equivalent.
+    // They are not. S0 now fires purely on word count < 25 words, regardless of context.
     //
-    // Suppressed on REDIRECT mode (same as C0 — redirect is the whole point there).
-    // Not triggered by tagger ambiguity score: ambiguity ≥ 4 captures
-    // decision-maker values confusion, not system context deficit — different
-    // diagnostic purpose, different question type. Brevity + no-context is the
-    // precise trigger for missing domain information.
+    // Suppressed in REDIRECT mode (redirect IS the message in that case).
     const decisionWordCount = decisionText.trim().split(/\s+/).filter(Boolean).length
-    const hasContext        = contextText.trim().length > 0
-    const shouldAddS0       = decisionWordCount < 25 && !hasContext && ruleResult.mode !== 'REDIRECT'
+    const shouldAddS0       = decisionWordCount < 25 && ruleResult.mode !== 'REDIRECT'
 
-    // ── Rule slot budget ──────────────────────────────────────────────────────
-    // Max 3 questions total (reduced from 4). Budget:
-    //   S0 fires → 1 rule slot + S0 + C0 = 3
-    //   S0 absent → 2 rule slots + C0    = 3
-    // C0 is never displaced — it feeds fetchUserPrinciplesBlock() longitudinally
-    // (KDD 121) and anchors success definition for synthesis.
-    const ruleSlotBudget = shouldAddS0 ? 1 : 2
-    const allRules = [
-      ...(ruleResult.triggered_rules ?? []),
-      ...(ruleResult.flag_rules ?? []),
-    ].slice(0, ruleSlotBudget)
-
-    // ── Early exit — only when neither rules nor S0 would surface anything ────
-    // Previously: exit when allRules.length === 0 (simple decisions → no questions).
-    // Now: also allow S0 to surface on zero-rule sessions where the brief is thin.
-    if (allRules.length === 0 && !shouldAddS0) {
-      return NextResponse.json({ questions: [], rule_mode: 'OPEN', status: 'no_rules' })
-    }
-
-    // ── Template selection — deterministic per sessionId ──────────────────────
-    // pickTemplate() hashes sessionId to an index into each bank.
-    // S0 and C0 index separate banks — no structural overlap between them.
-    const s0Template  = pickTemplate(S0_TEMPLATES, sessionId)
-    const c0Template  = pickTemplate(C0_TEMPLATES, sessionId)
+    // ── SB-2: Slot budget ─────────────────────────────────────────────────────
+    // Max 3 questions total. New budget:
+    //   Slot 1: E0  — always (emotional/inward question), non-REDIRECT only
+    //   Slot 2: S0  — if brief < 25 words (takes priority over rule slot)
+    //           OR 1 rule question — if S0 doesn't fire and rules exist
+    //   Slot 3: C0  — always, non-REDIRECT only
+    //
+    // Previous budget (2 rule slots) is replaced. Rule questions compete for
+    // slot 2 only when S0 doesn't fire. Maximum 1 rule question per session.
+    const shouldAddE0 = ruleResult.mode !== 'REDIRECT'
     const shouldAddC0 = ruleResult.mode !== 'REDIRECT'
 
-    // ── Parallel personalisation — all AI calls in a single Promise.all ───────
-    // Rule questions, S0, and C0 personalise concurrently (no sequential deps).
-    // S0 does NOT receive biasHint — it is domain-context gathering, not a
-    // diagnostic probe; bias sharpening is inappropriate there.
-    // C0 receives biasHint as before (Sprint R_JC).
-    const [personalisedRuleTexts, s0Text, c0Text] = await Promise.all([
+    // Rule slot: 1 max, only when S0 is not firing
+    const ruleForSlot2 = !shouldAddS0
+      ? [...(ruleResult.triggered_rules ?? []), ...(ruleResult.flag_rules ?? [])].slice(0, 1)
+      : []
+
+    // ── Early exit — only when no questions would fire at all ────────────────
+    // E0 + C0 always fire on non-REDIRECT, so this only applies to REDIRECT with
+    // no questions (which generates its redirect question instead of normal flow).
+    if (ruleResult.mode === 'REDIRECT') {
+      // REDIRECT: generate an exact resolution question and return immediately.
+      // The UI (ExaminerPanel) renders questions[0].text as the call-to-action
+      // in the REDIRECT banner — so we slot the generated question there.
+      const redirectQ = await generateRedirectQuestion(
+        decisionText,
+        (redirectRule ?? 'R1') as 'R1' | 'R7',
+        upstreamRationale ?? undefined,
+      )
+      return NextResponse.json({
+        questions:          [{ order: 1, text: redirectQ, gap: `${redirectRule} — REDIRECT`, rule_id: redirectRule }],
+        rule_mode:          'REDIRECT',
+        redirect_rule:      redirectRule,
+        upstream_rationale: upstreamRationale,
+        status:             'ready',
+      })
+    }
+
+    // ── Parallel generation — E0, S0/rule, C0 all concurrent ─────────────────
+    // E0: full generation (anthropic — better at emotional/identity questions)
+    // S0: full generation (deepseek — domain grounding question)
+    // Rule: template + personalise (deepseek — structural diagnostic)
+    // C0: template + personalise with bias + profile context (deepseek)
+    const [e0Text, s0OrRuleTexts, c0Text] = await Promise.all([
+      // Slot 1: E0 — always generated fresh
       decisionText
-        ? Promise.all(
-            allRules.map(rule =>
-              personaliseRuleQuestion(rule.rule_id, rule.question, decisionText, biasHint)
-            )
-          )
-        : Promise.resolve(allRules.map(r => r.question)),
+        ? generateE0Question(decisionText, fearProfile ?? undefined, dominantEmotion ?? undefined, biasHint || undefined)
+        : Promise.resolve("What's the part of this you haven't said out loud yet — even to yourself?"),
 
+      // Slot 2: S0 (generated) or rule question (personalised), mutually exclusive
       shouldAddS0 && decisionText
-        ? personaliseRuleQuestion('S0', s0Template, decisionText)   // no biasHint
-        : Promise.resolve(s0Template),
+        ? generateS0Question(decisionText, profileCtx ?? undefined).then(q => [q])
+        : ruleForSlot2.length > 0 && decisionText
+          ? Promise.all(ruleForSlot2.map(r => personaliseRuleQuestion(r.rule_id, r.question, decisionText, biasHint || undefined)))
+          : Promise.resolve([] as string[]),
 
-      shouldAddC0 && decisionText
-        ? personaliseRuleQuestion('C0', c0Template, decisionText, biasHint)
-        : Promise.resolve(c0Template),
+      // Slot 3: C0 — always, now receives profileCtx for sharper personalisation
+      decisionText
+        ? personaliseRuleQuestion('C0', pickTemplate(C0_TEMPLATES, sessionId), decisionText, biasHint || undefined, profileCtx ?? undefined)
+        : Promise.resolve(pickTemplate(C0_TEMPLATES, sessionId)),
     ])
 
-    // ── Question assembly: rule questions → S0 → C0 ──────────────────────────
+    // ── Question assembly: E0 → S0 or rule → C0 ──────────────────────────────
     // Order rationale:
-    //   Rules first  — structural flags the system raised (decision-specific)
-    //   S0 second    — orient us on the domain subject
-    //   C0 last      — reflective close: what does success look like here?
+    //   E0 first  — inward/emotional question sets reflective tone before analysis
+    //   S0/rule   — domain grounding (S0) or structural flag (rule)
+    //   C0 last   — reflective close: what does success look like here?
     const questions: Array<{ order: number; text: string; gap: string; rule_id: string | null }> = []
 
-    allRules.forEach((rule, i) => {
-      questions.push({
-        order:   questions.length + 1,
-        text:    personalisedRuleTexts[i],
-        gap:     `${rule.rule_id} — ${rule.mode}`,
-        rule_id: rule.rule_id,
-      })
+    // E0 — slot 1, always
+    questions.push({
+      order:   1,
+      text:    e0Text,
+      gap:     'E0 — EMOTIONAL',
+      rule_id: 'E0',
     })
 
-    if (shouldAddS0) {
+    // S0 or rule — slot 2, conditional
+    if (shouldAddS0 && s0OrRuleTexts.length > 0) {
       questions.push({
-        order:   questions.length + 1,
-        text:    s0Text,
+        order:   2,
+        text:    s0OrRuleTexts[0],
         gap:     'S0 — ORIENTATION',
         rule_id: 'S0',
       })
+    } else if (ruleForSlot2.length > 0 && s0OrRuleTexts.length > 0) {
+      questions.push({
+        order:   2,
+        text:    s0OrRuleTexts[0],
+        gap:     `${ruleForSlot2[0].rule_id} — ${ruleForSlot2[0].mode}`,
+        rule_id: ruleForSlot2[0].rule_id,
+      })
     }
 
+    // C0 — slot 3, always
     if (shouldAddC0) {
       questions.push({
         order:   questions.length + 1,
@@ -346,16 +487,16 @@ export async function GET(req: Request) {
     }
 
     console.log(
-      `[Examiner GET] v2.0 | session ${sessionId} | mode: ${ruleResult.mode} | ` +
+      `[Examiner GET] SB-2 v2.0 | session ${sessionId} | mode: ${ruleResult.mode} | ` +
       `questions: ${questions.map(q => q.rule_id).join(',')} | ` +
-      `s0: ${shouldAddS0} (${decisionWordCount}w, ctx:${hasContext})`
+      `s0: ${shouldAddS0} (${decisionWordCount}w) | profile: ${!!profileCtx} | fears: ${!!fearProfile}`
     )
 
     return NextResponse.json({
       questions,
       rule_mode:          ruleResult.mode,
-      redirect_rule:      redirectRule,       // 'R1' | 'R7' | null — used by UI to select correct banner copy
-      upstream_rationale: upstreamRationale,  // only populated for R1; null for R7
+      redirect_rule:      null,
+      upstream_rationale: null,
       status:             'ready',
     })
   }

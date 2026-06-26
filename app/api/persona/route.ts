@@ -186,12 +186,15 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
         .single(),
       supabase
         .from('sessions')
-        .select('user_id')
+        // SB-3: fetch framing_intent + validation_correction alongside user_id
+        .select('user_id, framing_intent, validation_correction')
         .eq('id', sessionId)
         .single(),
     ])
 
-    const userId = sessionResult.data?.user_id ?? null
+    const userId             = sessionResult.data?.user_id ?? null
+    const framingIntent      = (sessionResult.data as { framing_intent?: string | null } | null)?.framing_intent ?? null
+    const validationCorrection = (sessionResult.data as { validation_correction?: string | null } | null)?.validation_correction ?? null
 
     const { data, error } = ontologyResult
     if (error || !data) return { ...EMPTY_COUNCIL_CONTEXT, userId }
@@ -212,12 +215,26 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
       // matches_json absent or malformed — maxStructuralScore stays null
     }
 
+    // SB-3: fetch user profile for council context injection
+    let userProfile: import('@/lib/rule-engine').CouncilUserProfile | null = null
+    if (userId) {
+      const { data: profileData } = await supabase
+        .from('user_profiles')
+        .select('archetype, primary_fears, mbti_type, life_stage, risk_stance')
+        .eq('user_id', userId)
+        .single()
+      userProfile = profileData ?? null
+    }
+
     const ruleEngineResult = data.rule_engine_result as RuleEngineResult
 
     return {
       councilContextStr: buildCouncilContext(
         data.ontology_vector as ScoredVector,
         ruleEngineResult,
+        userProfile,          // SB-3: profile block
+        framingIntent,        // SB-3: framing intent directive
+        validationCorrection, // SB-3: prior session correction
       ),
       ontologyVector:     data.ontology_vector as OntologyScoreMap,
       userId,
