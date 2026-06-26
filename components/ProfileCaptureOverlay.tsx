@@ -6,6 +6,7 @@
 // Fires for new users AND existing users who haven't filled in a profile.
 
 import { useState, useEffect } from 'react'
+import ThemeToggle from './ThemeToggle'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -143,20 +144,30 @@ export default function ProfileCaptureOverlay({ authToken, deviceId, onDone }: P
   })
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9000,
-        background: 'rgba(0,0,0,0.72)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '16px',
-        opacity: visible ? 1 : 0,
-        transition: 'opacity 0.22s ease',
-      }}
-      onClick={e => { if (e.target === e.currentTarget) dismiss() }}
-    >
+    <>
+      {/*
+        Renders a second ThemeToggle on top of the backdrop. The page's own
+        ThemeToggle sits at the same fixed coordinates and z-index, but this
+        overlay mounts later in the DOM so this instance paints above it —
+        same component, same localStorage key, same data-theme write, so
+        toggling here is identical to toggling on any other page and the
+        choice persists across the whole app exactly as it does elsewhere.
+      */}
+      <ThemeToggle />
       <div
         style={{
-          background: 'var(--bg-raised)',
+          position: 'fixed', inset: 0, zIndex: 9000,
+          background: 'rgba(5,8,14,0.86)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px',
+          opacity: visible ? 1 : 0,
+          transition: 'opacity 0.22s ease',
+        }}
+        onClick={e => { if (e.target === e.currentTarget) dismiss() }}
+      >
+      <div
+        style={{
+          background: 'var(--bg-card)',
           border: '1px solid var(--border-dim)',
           borderRadius: 16,
           padding: '28px 26px 24px',
@@ -164,6 +175,7 @@ export default function ProfileCaptureOverlay({ authToken, deviceId, onDone }: P
           maxWidth: 480,
           maxHeight: '92vh',
           overflowY: 'auto',
+          boxShadow: 'var(--shadow-card)',
           transform: visible ? 'translateY(0)' : 'translateY(12px)',
           transition: 'transform 0.22s ease',
         }}
@@ -266,7 +278,7 @@ export default function ProfileCaptureOverlay({ authToken, deviceId, onDone }: P
             maxLength={4}
             style={{
               width: '100%',
-              background: 'var(--bg)',
+              background: 'var(--bg-inset)',
               border: `1px solid ${mbtiValid === false ? 'var(--error)' : mbtiValid === true ? 'var(--green-border)' : 'var(--border-dim)'}`,
               borderRadius: 8,
               padding: '10px 38px 10px 12px',
@@ -313,6 +325,7 @@ export default function ProfileCaptureOverlay({ authToken, deviceId, onDone }: P
           Set up later from Mirror
         </button>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
