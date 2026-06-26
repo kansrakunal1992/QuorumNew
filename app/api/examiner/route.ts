@@ -135,6 +135,45 @@ QUESTION:`.trim()
 }
 
 /**
+ * Grounding check for generated REDIRECT questions.
+ *
+ * Prompt instructions alone can't guarantee a model won't pull plausible-
+ * sounding specifics from training data (e.g. "the $2B Series C round",
+ * "FAA launch approval" for a brief that just says "building a spaceship").
+ * This is a deterministic backstop: any numeric/monetary figure or ALL-CAPS
+ * acronym in the generated question that doesn't appear verbatim in the
+ * decision brief is treated as fabricated, and the caller falls back to the
+ * safe generic question instead. This can't catch every form of invented
+ * detail (e.g. a fabricated proper noun in plain case), but it closes the
+ * two most common fabrication patterns — invented figures and invented
+ * named entities/regulators — deterministically, without depending on the
+ * model to police itself.
+ */
+function hasUngroundedSpecifics(question: string, brief: string): boolean {
+  const briefLower = brief.toLowerCase()
+
+  // Numbers / monetary figures: $2B, $500K, 40%, 18 months, etc.
+  const numberPattern = /\$?\d[\d,]*\.?\d*\s?(?:%|k|m|b|bn|million|billion|thousand)?/gi
+  const questionNumbers = question.match(numberPattern) ?? []
+  for (const num of questionNumbers) {
+    const cleaned = num.trim().toLowerCase()
+    if (cleaned.length < 2) continue // skip stray single digits ("a 1-1" type false positives)
+    if (!briefLower.includes(cleaned)) return true
+  }
+
+  // ALL-CAPS acronyms (2-6 letters): FAA, SEC, IPO, LLC, NDA, etc. — common
+  // shape for fabricated regulators/orgs/instruments the model invents to
+  // sound concrete.
+  const acronymPattern = /\b[A-Z]{2,6}\b/g
+  const questionAcronyms = question.match(acronymPattern) ?? []
+  for (const acro of questionAcronyms) {
+    if (!brief.includes(acro)) return true
+  }
+
+  return false
+}
+
+/**
  * Redirect question — generated for both R1 and R7 REDIRECT modes.
  * Tells the user exactly what they need to resolve before the Council can run cleanly.
  * Replaces the static banner title as the primary call-to-action.
@@ -147,10 +186,12 @@ async function generateRedirectQuestion(
   const FALLBACK_R1 = "What is the upstream decision or event that must resolve before this one becomes yours to make?"
   const FALLBACK_R7 = "What specific information — that doesn't yet exist — would materially change which option is right?"
 
+  const GROUNDING_RULE = `Use ONLY details that are explicitly present in the decision brief below. Do not invent, infer, or supply names, figures, dates, organisations, regulators, or domain facts that are not stated in the brief — even if they would be realistic for this kind of decision. If the brief doesn't name the specific blocking element, ask about it at the level of generality the brief actually supports (e.g. "the funding round" rather than a dollar figure, "regulatory approval" rather than naming a specific regulator) rather than guessing.`
+
   const prompt = rule === 'R1'
     ? `A decision has been flagged because it has an upstream dependency that must be resolved first.
 
-Generate ONE specific question that tells this person exactly what they need to resolve before this decision can be properly assessed. Name the specific blocking element — not a generic "what depends on this."
+Generate ONE question that tells this person exactly what they need to resolve before this decision can be properly assessed. Name the blocking element as concretely as the brief allows — but ${GROUNDING_RULE}
 
 Maximum 25 words. Return ONLY the question — no quotes, no preamble.
 ${rationale ? `\nBLOCKING CONTEXT: ${rationale}` : ''}
@@ -159,7 +200,7 @@ DECISION BRIEF: "${decision.slice(0, 450)}"
 QUESTION:`
     : `A decision has been flagged because specific information that doesn't exist yet would materially change the outcome.
 
-Generate ONE specific question naming exactly what information this person needs to gather before this decision can be cleanly assessed.
+Generate ONE question naming exactly what information this person needs to gather before this decision can be cleanly assessed. ${GROUNDING_RULE}
 
 Maximum 25 words. Return ONLY the question — no quotes, no preamble.
 DECISION BRIEF: "${decision.slice(0, 450)}"
@@ -170,6 +211,10 @@ QUESTION:`
     const raw   = await createCompletion(prompt.trim(), 80, { provider: 'deepseek' })
     const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return rule === 'R1' ? FALLBACK_R1 : FALLBACK_R7
+    if (hasUngroundedSpecifics(clean, decision)) {
+      console.warn(`[Examiner SB-2] generateRedirectQuestion(${rule}) rejected ungrounded output:`, clean)
+      return rule === 'R1' ? FALLBACK_R1 : FALLBACK_R7
+    }
     return clean
   } catch (err) {
     console.error(`[Examiner SB-2] generateRedirectQuestion(${rule}) failed:`, err)
