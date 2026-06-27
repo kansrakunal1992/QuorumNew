@@ -5,6 +5,7 @@ import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
 import EmailCaptureCard from '@/components/EmailCaptureCard'
 import EarlyEchoCard from '@/components/EarlyEchoCard'
+import ValidationCard from '@/components/ValidationCard'
 import Link from 'next/link'
 import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
 import BackButton from '@/components/BackButton'
@@ -504,6 +505,20 @@ export default async function RecordPage({ params }: Props) {
               </>
             )}
           </div>
+
+          {/* ── Validation prompt — only place a returning user (e.g. from   */}
+          {/* the validation-nudge email) can actually answer this. Lives    */}
+          {/* right after the decision itself, before any secondary asks.    */}
+          {/* Self-hides via its own fetch if already confirmed/corrected.   */}
+          {session.validation_state === 'pending' && (
+            <div className="rec-fade rec-fade-2" style={{ marginBottom: 4 }}>
+              <ValidationCard
+                sessionId={session.id}
+                authToken={null}
+                userEmail={session.user_email ?? null}
+              />
+            </div>
+          )}
 
           {/* ── Outcome Tracker ────────────────────────────────── */}
           <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }} data-tour-id="record-outcome">
