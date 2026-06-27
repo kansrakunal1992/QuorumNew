@@ -21,6 +21,35 @@ export interface TourStep {
   preferredSide:   'top' | 'bottom'
 }
 
+// ── Shared PWA-install step builder ──────────────────────────────────────────
+// Returns the "Add to Home Screen" step only when:
+//   • user is on a mobile browser (not already in standalone / installed)
+//   • user has linked their email (quorum_user_email in localStorage)
+// Returns null when either condition is not met.
+// Called client-side only — safe to call in useEffect.
+
+export function buildPWAInstallStep(): TourStep | null {
+  try {
+    if (typeof window === 'undefined') return null
+    const hasEmail     = !!localStorage.getItem('quorum_user_email')
+    const isMobile     = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (navigator as any).standalone === true
+    if (hasEmail && isMobile && !isStandalone) {
+      return {
+        id:             'install-pwa',
+        targetSelector: null,
+        heading:        'One tap to always have Quorum ready',
+        body:           'Tap Share → "Add to Home Screen" in your browser. Quorum installs as a native-feeling app — full-screen, faster, and able to send you check-ins on open decisions.',
+        preferredSide:  'bottom',
+      }
+    }
+  } catch { /* localStorage unavailable */ }
+  return null
+}
+
 interface Props {
   steps:      TourStep[]
   onComplete: () => void
@@ -308,6 +337,8 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
     else setStepIndex(i => i + 1)
   }
 
+  const handleBack = () => setStepIndex(i => Math.max(0, i - 1))
+
   const handleSkip = () => { clearSpotlight(); onSkip() }
 
   if (!active || !step || !portalMounted) return null
@@ -428,13 +459,24 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
                   <div key={i} style={{ width: i === stepIndex ? 16 : 6, height: 6, borderRadius: 3, background: i <= stepIndex ? 'var(--gold)' : 'var(--border-mid)', opacity: i === stepIndex ? 1 : i < stepIndex ? 0.6 : 0.4, transition: 'width 0.25s ease, background 0.25s ease' }} />
                 ))}
               </div>
-              <button
-                className="btn-primary"
-                style={{ fontSize: 12, padding: '7px 16px', minHeight: 0 }}
-                onClick={handleNext}
-              >
-                {isLast ? 'Finish ✓' : 'Next →'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {stepIndex > 0 && (
+                  <button
+                    className="btn-ghost"
+                    style={{ fontSize: 12, padding: '7px 14px', minHeight: 0 }}
+                    onClick={handleBack}
+                  >
+                    ← Back
+                  </button>
+                )}
+                <button
+                  className="btn-primary"
+                  style={{ fontSize: 12, padding: '7px 16px', minHeight: 0 }}
+                  onClick={handleNext}
+                >
+                  {isLast ? 'Finish ✓' : 'Next →'}
+                </button>
+              </div>
             </div>
           </>
         )}

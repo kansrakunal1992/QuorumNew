@@ -13,6 +13,19 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+// Human-readable labels for ontology decision types.
+// These replace raw taxonomy terms (e.g. "allocation decision") with language
+// that speaks directly to the user about what kind of move they're making.
+const DECISION_TYPE_LABELS: Record<string, string> = {
+  commitment:   'a commitment you\'re locking yourself into',
+  allocation:   'a resource allocation call — deciding where to put your chips',
+  transition:   'a major transition — one chapter closing, another opening',
+  acquisition:  'an acquisition — taking something new into your world',
+  renunciation: 'a letting-go decision',
+  governance:   'a governance question — how control or authority gets structured',
+  delegation:   'a question of trust — who gets the wheel',
+}
+
 function buildValidationLine(
   dominantEmotion: string | null,
   archetype:       string | null,
@@ -23,26 +36,36 @@ function buildValidationLine(
     ? dominantEmotion
     : null
 
-  if (archetype && emotion) {
-    return `Quorum read this as a ${capitalize(archetype)} decision shaped by ${emotion}.`
+  const dtLabel = decisionType
+    ? (DECISION_TYPE_LABELS[decisionType] ?? decisionType)
+    : null
+
+  const arc = archetype ? capitalize(archetype) : null
+
+  // Priority: most specific signal first
+  if (arc && emotion) {
+    return `Quorum read you as a ${arc} making this call through a lens of ${emotion}. Does that track?`
   }
-  if (archetype) {
-    if (reversibility?.includes('irrevers')) {
-      return `Quorum read this as a ${capitalize(archetype)} decision with an irreversible floor.`
-    }
-    if (decisionType) {
-      return `Quorum read this as a ${capitalize(archetype)} decision in ${decisionType} territory.`
-    }
-    return `Quorum read this as a ${capitalize(archetype)} decision.`
+  if (arc && reversibility?.includes('irrevers')) {
+    return `Quorum read you as a ${arc} standing at a one-way door. What you choose here doesn't easily reverse.`
+  }
+  if (arc && dtLabel) {
+    return `Quorum read you as a ${arc} working through ${dtLabel}.`
+  }
+  if (arc) {
+    return `Quorum read this as a ${arc} move — a decision shaped by who you are, not just what's in front of you.`
+  }
+  if (emotion && reversibility?.includes('irrevers')) {
+    return `Quorum read this as ${emotion}-driven — and one of those calls you can't easily undo. Once you move, there's no neutral gear.`
   }
   if (emotion) {
-    return `Quorum read this as ${emotion}-driven. Does that match what you were actually feeling?`
+    return `Quorum read ${emotion} as the real undercurrent here. Was that what you were actually feeling going into this?`
   }
   if (reversibility?.includes('irrevers')) {
-    return `Quorum read this primarily as an irreversibility question, not a trade-off question.`
+    return `Quorum read this as a one-way door. The real weight here isn't the trade-offs — it's what you're permanently closing off.`
   }
-  if (decisionType) {
-    return `Quorum read this primarily as a ${decisionType} decision.`
+  if (dtLabel) {
+    return `Quorum read this at its core as ${dtLabel}.`
   }
   return null
 }

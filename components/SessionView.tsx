@@ -18,12 +18,15 @@ import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
 import RuleRecallBanner from './RuleRecallBanner'       // Sprint Chunk 1
 import OnboardingTour from './OnboardingTour'
 import type { TourStep } from './OnboardingTour'
+import { buildPWAInstallStep } from './OnboardingTour'
 import ValidationCard from './ValidationCard'             // SB-1
 import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
 
 // ── Sprint TOUR-1: Council page tour steps ────────────────────────────────────
 // Fires once, 800ms after synthesisDone flips to true for the first time.
-const COUNCIL_STEPS: TourStep[] = [
+// The final step list is built dynamically at runtime (see the synthesisDone effect)
+// so a PWA install step can be appended when conditions are met.
+const COUNCIL_STEPS_BASE: TourStep[] = [
   {
     id:             'council-synthesis',
     targetSelector: '[data-tour-id="council-synthesis"]',
@@ -35,7 +38,7 @@ const COUNCIL_STEPS: TourStep[] = [
     id:             'council-bias',
     targetSelector: '[data-tour-id="council-bias"]',
     heading:        'Pattern detected in how this was framed',
-    body:           'When bias scoring flags a distorting pattern in this decision, it surfaces here — above the persona cards, while the analysis is fresh. This is not a judgment. It is a signal about a reasoning tendency Quorum has observed across your sessions.',
+    body:           'When Quorum detects a bias pattern in how this decision was framed, it surfaces here — above the persona cards, while the analysis is still fresh. Not every session triggers this. When it does, it\'s a signal about a reasoning tendency in your framing — not a judgment on the decision itself.',
     preferredSide:  'bottom',
   },
   {
@@ -172,6 +175,7 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [biasNote,            setBiasNote]            = useState<{ label: string; reasoning: string } | null>(null)
   // Sprint TOUR-1: council tour
   const [showCouncilTour,     setShowCouncilTour]     = useState(false)
+  const [councilTourSteps,    setCouncilTourSteps]    = useState<TourStep[]>(COUNCIL_STEPS_BASE)
   const [contradiction,       setContradiction]       = useState<{
     id: string
     principleText: string
@@ -340,6 +344,9 @@ export default function SessionView({ session: initialSession, initialMessages =
       const done    = localStorage.getItem('quorum_tour.council')
       const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
       if (!done && !skipped) {
+        // Build step list: base steps + optional PWA install step
+        const pwaStep = buildPWAInstallStep()
+        setCouncilTourSteps(pwaStep ? [...COUNCIL_STEPS_BASE, pwaStep] : COUNCIL_STEPS_BASE)
         const t = setTimeout(() => setShowCouncilTour(true), 800)
         return () => clearTimeout(t)
       }
@@ -1451,7 +1458,7 @@ export default function SessionView({ session: initialSession, initialMessages =
       {showCouncilTour && (
         <OnboardingTour
           page="council"
-          steps={COUNCIL_STEPS}
+          steps={councilTourSteps}
           active={showCouncilTour}
           onComplete={() => {
             try { localStorage.setItem('quorum_tour.council', 'done') } catch {}

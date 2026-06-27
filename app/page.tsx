@@ -15,6 +15,7 @@ const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), 
 import CalibrationRevealCard from '@/components/CalibrationRevealCard'
 import OnboardingTour from '@/components/OnboardingTour'
 import type { TourStep } from '@/components/OnboardingTour'
+import { buildPWAInstallStep } from '@/components/OnboardingTour'
 import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
 
 // ── Icons ────────────────────────────────────────────────
@@ -74,8 +75,9 @@ interface SessionSummary {
 
 // ── Sprint TOUR-1: Home page tour steps ──────────────────────────────────────
 // Fires once after inputRevealed transitions to true on a first-time user.
-// 4 steps: textarea → voice → context → submit.
-const HOME_STEPS: TourStep[] = [
+// A PWA install step is appended dynamically at runtime when the user is on
+// a mobile browser and has already linked their email.
+const HOME_STEPS_BASE: TourStep[] = [
   {
     id:             'home-textarea',
     targetSelector: '[data-tour-id="home-textarea"]',
@@ -174,6 +176,7 @@ export default function Home() {
   const HISTORY_PREVIEW = 5
   // Sprint TOUR-1: home tour
   const [showHomeTour,   setShowHomeTour]   = useState(false)
+  const [homeTourSteps,  setHomeTourSteps]  = useState<TourStep[]>(HOME_STEPS_BASE)
 
   // ── Effects ───────────────────────────────────────────
   useEffect(() => {
@@ -203,6 +206,9 @@ export default function Home() {
       const done    = localStorage.getItem('quorum_tour.home')
       const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
       if (!done && !skipped) {
+        // Build steps: base + optional PWA install step
+        const pwaStep = buildPWAInstallStep()
+        setHomeTourSteps(pwaStep ? [...HOME_STEPS_BASE, pwaStep] : HOME_STEPS_BASE)
         const t = setTimeout(() => setShowHomeTour(true), 600)
         return () => clearTimeout(t)
       }
@@ -1263,7 +1269,7 @@ export default function Home() {
       {showHomeTour && (
         <OnboardingTour
           page="home"
-          steps={HOME_STEPS}
+          steps={homeTourSteps}
           active={showHomeTour}
           onComplete={() => {
             try { localStorage.setItem('quorum_tour.home', 'done') } catch {}
