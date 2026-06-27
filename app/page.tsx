@@ -655,10 +655,10 @@ export default function Home() {
                   }} />
                   <p style={{
                     fontFamily:    'var(--font-display)',
-                    fontSize:      'clamp(52px, 9vw, 80px)',
+                    fontSize:      'clamp(40px, 10vw, 80px)',
                     fontWeight:    400,
                     color:         'var(--gold)',
-                    letterSpacing: '0.38em',
+                    letterSpacing: 'clamp(0.1em, 3.8vw, 0.38em)',
                     margin:        0,
                     lineHeight:    1,
                     textTransform: 'uppercase',
@@ -680,6 +680,8 @@ export default function Home() {
                     textTransform: 'uppercase',
                     color:         'var(--text-4)',
                     margin:        0,
+                    width:         '100%',
+                    textAlign:     'center',
                     transition:    'color 0.3s ease, letter-spacing 0.35s ease',
                   }}>
                     Tap to add to your judgment record

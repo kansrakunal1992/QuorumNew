@@ -28,6 +28,7 @@ interface TeaserData {
   sessionCount:      number
   calibrationDates:  string[]
   teaserBiases:      string[]
+  openLoopCount?:    number
 }
 
 interface Props {
@@ -202,8 +203,8 @@ export default function MirrorOpenLoopCard({ authToken, sessionCount, mirrorUnlo
             letterSpacing: '-0.01em',
           }}>
             {patternCount === 1
-              ? 'A pattern is confirmed in your record'
-              : `${patternCount} patterns confirmed in your record`}
+              ? 'A pattern is forming in your record'
+              : `${patternCount} patterns forming in your record`}
           </p>
 
           <p style={{
@@ -215,6 +216,21 @@ export default function MirrorOpenLoopCard({ authToken, sessionCount, mirrorUnlo
             Your Mirror has been watching every decision you&apos;ve brought here.
             The {patternWord} {patternCount === 1 ? 'is' : 'are'} locked — activate Mirror to see {patternCount === 1 ? 'it' : 'them'}.
           </p>
+
+          {/* ── Open loop count — free tier retention hook ── */}
+          {(teaser.openLoopCount ?? 0) > 0 && (
+            <p style={{
+              fontSize:      11.5,
+              color:         'var(--text-4)',
+              margin:        '0 0 14px',
+              lineHeight:    1.55,
+              fontFamily:    'var(--font-mono)',
+              letterSpacing: '0.04em',
+            }}>
+              {teaser.openLoopCount} {teaser.openLoopCount === 1 ? 'decision' : 'decisions'} still open — no outcome logged.{' '}
+              <a href="/mirror" style={{ color: 'var(--gold)', textDecoration: 'none' }}>Close the loop →</a>
+            </p>
+          )}
 
           {/* ── Blurred bias labels — the tease ── */}
           {teaserBiases.length > 0 && (

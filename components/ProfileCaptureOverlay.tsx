@@ -153,7 +153,10 @@ export default function ProfileCaptureOverlay({ authToken, deviceId, onDone }: P
         toggling here is identical to toggling on any other page and the
         choice persists across the whole app exactly as it does elsewhere.
       */}
-      <ThemeToggle />
+      {/* z-9100 lifts the toggle above the backdrop (z-9000, later in DOM = normally wins) */}
+      <div style={{ position: 'fixed', top: 0, right: 0, zIndex: 9100 }}>
+        <ThemeToggle />
+      </div>
       <div
         style={{
           position: 'fixed', inset: 0, zIndex: 9000,

@@ -32,6 +32,20 @@ const COUNCIL_STEPS: TourStep[] = [
     preferredSide:  'bottom',
   },
   {
+    id:             'council-bias',
+    targetSelector: '[data-tour-id="council-bias"]',
+    heading:        'Pattern detected in how this was framed',
+    body:           'When bias scoring flags a distorting pattern in this decision, it surfaces here — above the persona cards, while the analysis is fresh. This is not a judgment. It is a signal about a reasoning tendency Quorum has observed across your sessions.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'council-validation',
+    targetSelector: '[data-tour-id="council-validation"]',
+    heading:        'Confirm or correct Quorum\'s read',
+    body:           'After synthesis, Quorum surfaces the emotional and identity shape it inferred for this decision. Confirming it trains your Council. Correcting it is even more valuable — a correction feeds directly into how the next session\'s council is framed for you.',
+    preferredSide:  'top',
+  },
+  {
     id:             'council-personas',
     targetSelector: '[data-tour-id="council-personas"]',
     heading:        'Six advisors, six different lenses',
@@ -60,8 +74,6 @@ interface Props {
   totalSessionCount?: number   // real DB count for RecordReceipt, passed from server
   // S2-02 / S2-03: server-side context for trust disclosure
   encryptionEnabled?: boolean  // true if DB_ENCRYPTION_KEY is set
-  // SB-3: bias note computed server-side, shown above persona cards when synthesisDone
-  biasNote?: { label: string; reasoning: string } | null
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -102,7 +114,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, biasNote = null }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -156,6 +168,8 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [ontologyReady,      setOntologyReady]      = useState(false)
   const [synthesisStreaming,  setSynthesisStreaming]  = useState(false)
   const [synthesisDone,       setSynthesisDone]       = useState(false)
+  // Client-side: fetched after synthesisDone — bias scoring is complete by then.
+  const [biasNote,            setBiasNote]            = useState<{ label: string; reasoning: string } | null>(null)
   // Sprint TOUR-1: council tour
   const [showCouncilTour,     setShowCouncilTour]     = useState(false)
   const [contradiction,       setContradiction]       = useState<{
@@ -302,6 +316,19 @@ export default function SessionView({ session: initialSession, initialMessages =
           category:           pick.category ?? '',
         })
       })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [synthesisDone, authTokenSV])
+
+  // Fetch bias note client-side after synthesis completes.
+  // Bias scoring runs in /api/examiner POST so data is guaranteed in DB by synthesisDone.
+  useEffect(() => {
+    if (!synthesisDone || !authTokenSV) return
+    fetch(`/api/session/${session.id}/bias-note`, {
+      headers: { Authorization: `Bearer ${authTokenSV}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.biasNote) setBiasNote(data.biasNote) })
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [synthesisDone, authTokenSV])
@@ -1114,11 +1141,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
-              {/* ── SB-3: Bias note — shown above personas once synthesis completes ── */}
-              {/* Surfaces the single strongest distorting bias signal for this session */}
-              {/* while the user is still engaged, not buried in the saved record view. */}
-              {synthesisDone && biasNote && (
-                <div style={{ marginBottom: 8 }}>
+              {/* ── SB-3: Bias note — fetched client-side after synthesis completes ── */}
+              {/* biasNote is only set once /api/session/[id]/bias-note resolves, so the  */}
+              {/* synthesisDone gate is implicit — no extra condition needed here.         */}
+              {biasNote && (
+                <div data-tour-id="council-bias" style={{ marginBottom: 8 }}>
                   <BiasNoteCard note={biasNote} />
                 </div>
               )}
@@ -1163,12 +1190,14 @@ export default function SessionView({ session: initialSession, initialMessages =
             {/* Surfaces Quorum's emotional/archetype inference for user to confirm or correct. */}
             {/* The correction feeds directly into the council context for the next session.   */}
             {allPersonasDone && synthesisDone && (
+              <div data-tour-id="council-validation">
               <ValidationCard
                 sessionId={session.id}
                 authToken={authTokenSV}
                 userEmail={session.user_email ?? null}
                 totalSessionCount={totalSessionCount}
               />
+              </div>
             )}
 
             {/* ── Bottom Action Tray ── */}
