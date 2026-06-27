@@ -1095,14 +1095,29 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
-              {/* ── 1d. Decision State Card (Sprint Chunk 1) ─────────────── */}
-              {/* Appears after synthesis completes. Captures commitment position,
-                  switch conditions, and review date in 3 clubbed fields. */}
-              {synthesisDone && (
-                <div className="sv-fade sv-fade-2" data-tour-id="council-capture">
-                  <DecisionStateCard sessionId={session.id} />
+              {/* ── Bias note — client-side, fires independently once bias scoring completes ── */}
+              {/* Renders as soon as /api/session/[id]/bias-note resolves after synthesisDone. */}
+              {/* All other elements (personas, validation) render in parallel — not blocked.  */}
+              {biasNote && (
+                <div className="sv-fade sv-fade-2" data-tour-id="council-bias" style={{ marginBottom: 8 }}>
+                  <BiasNoteCard note={biasNote} />
                 </div>
               )}
+
+              {/* ── Validation Card — fires after synthesis (not gated on all personas) ── */}
+              {/* Quorum's emotional/archetype read of this decision. Confirming sharpens    */}
+              {/* the next session's council. Correcting is even more valuable.              */}
+              {synthesisDone && (
+                <div className="sv-fade sv-fade-2" data-tour-id="council-validation">
+                  <ValidationCard
+                    sessionId={session.id}
+                    authToken={authTokenSV}
+                    userEmail={session.user_email ?? null}
+                    totalSessionCount={totalSessionCount}
+                  />
+                </div>
+              )}
+
 
               {/* ── 2b. Rule Recall Banner (Sprint Chunk 1 fix) ──────────── */}
               {/* Fires when ontologyReady — BEFORE examiner submission so the
@@ -1141,14 +1156,6 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
-              {/* ── SB-3: Bias note — fetched client-side after synthesis completes ── */}
-              {/* biasNote is only set once /api/session/[id]/bias-note resolves, so the  */}
-              {/* synthesisDone gate is implicit — no extra condition needed here.         */}
-              {biasNote && (
-                <div data-tour-id="council-bias" style={{ marginBottom: 8 }}>
-                  <BiasNoteCard note={biasNote} />
-                </div>
-              )}
 
               {/* ── 4. Six persona panels ── */}
               <div
@@ -1184,21 +1191,17 @@ export default function SessionView({ session: initialSession, initialMessages =
                   </div>
                 ))}
               </div>
+
+              {/* ── Capture Position — after personas, giving time to read all six advisors ── */}
+              {/* Originally between synthesis and personas; moved here so the user records   */}
+              {/* their stance after absorbing the full Council, not just the synthesis.      */}
+              {synthesisDone && (
+                <div className="sv-fade sv-fade-3" data-tour-id="council-capture" style={{ marginTop: 8 }}>
+                  <DecisionStateCard sessionId={session.id} />
+                </div>
+              )}
             </TTSProvider>
 
-            {/* ── SB-1: Validation Card — appears when all personas + synthesis complete ── */}
-            {/* Surfaces Quorum's emotional/archetype inference for user to confirm or correct. */}
-            {/* The correction feeds directly into the council context for the next session.   */}
-            {allPersonasDone && synthesisDone && (
-              <div data-tour-id="council-validation">
-              <ValidationCard
-                sessionId={session.id}
-                authToken={authTokenSV}
-                userEmail={session.user_email ?? null}
-                totalSessionCount={totalSessionCount}
-              />
-              </div>
-            )}
 
             {/* ── Bottom Action Tray ── */}
             <div className="sv-fade sv-fade-4" style={{ marginTop: 44 }}>
