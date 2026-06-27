@@ -171,7 +171,7 @@ export default function PushEnablePrompt({ authToken }: Props) {
             Enable notifications
           </p>
           <p style={{ margin: 0, fontSize: 12, color: '#666', lineHeight: 1.55 }}>
-            Tap <strong style={{ color: '#888' }}>Share</strong> → <strong style={{ color: '#888' }}>Add to Home Screen</strong>, then open from there to receive nudges on open decisions.
+            Tap <strong style={{ color: '#888' }}>Share</strong> → <strong style={{ color: '#888' }}>Add to Home Screen</strong>, then open from there to receive occasional check-ins, spaced out — never back-to-back.
           </p>
         </div>
         <button
@@ -200,7 +200,7 @@ export default function PushEnablePrompt({ authToken }: Props) {
       }}>
         <span style={{ color: '#4caf72', fontSize: 15 }}>✓</span>
         <p style={{ margin: 0, fontSize: 13, color: '#4caf72' }}>
-          Notifications enabled — you'll be nudged when open decisions need closure.
+          Notifications enabled — you'll get occasional check-ins, never back-to-back.
         </p>
       </div>
     )
@@ -222,10 +222,10 @@ export default function PushEnablePrompt({ authToken }: Props) {
       <span style={{ fontSize: 17, lineHeight: 1, flexShrink: 0 }}>🔔</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#c0b89a', fontFamily: 'var(--font-sans, DM Sans, sans-serif)' }}>
-          Get nudged on open decisions
+          Get occasional check-ins
         </p>
         <p style={{ margin: 0, fontSize: 12, color: '#666', lineHeight: 1.5 }}>
-          A single notification at 7, 14, and 30 days — nothing else.
+          Spaced out, never back-to-back — turn off anytime.
         </p>
       </div>
       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>

@@ -106,7 +106,7 @@ function buildInsightEmailHtml({
     const label    = getBiasLabel(key)
     const oneLiner = getBiasOneLiner(key)
     return `
-      <div style="margin-bottom:20px;padding-left:14px;border-left:2px solid #2a2820">
+      <div style="margin-bottom:20px;padding-left:14px;border-left:2px solid #dddad0">
         <p style="color:#c9a84c;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;
                   font-family:monospace;margin:0 0 5px">${label}</p>
         <p style="color:#888;font-size:14px;line-height:1.65;margin:0">${oneLiner}</p>
@@ -120,18 +120,18 @@ function buildInsightEmailHtml({
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Your Mirror detected ${biasKeys.length} ${patternWord}</title>
 </head>
-<body style="background:#0a0a0a;margin:0;padding:48px 20px;
+<body style="background:#f5f4f0;margin:0;padding:48px 20px;
              font-family:'DM Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
   <div style="max-width:480px;margin:0 auto">
 
     <!-- Wordmark -->
-    <p style="color:#555;font-size:10px;letter-spacing:0.22em;text-transform:uppercase;
+    <p style="color:#999;font-size:10px;letter-spacing:0.22em;text-transform:uppercase;
               margin:0 0 40px;font-family:monospace">
       Quorum &middot; Mirror
     </p>
 
     <!-- Hook -->
-    <p style="color:#c0b89a;font-size:19px;line-height:1.45;margin:0 0 6px;font-weight:400">
+    <p style="color:#1a1a1a;font-size:19px;line-height:1.45;margin:0 0 6px;font-weight:400">
       Over your ${sessionCount} decisions, Mirror has been building a picture of how you think.
     </p>
     <p style="color:#666;font-size:13px;margin:0 0 32px;line-height:1.6">
@@ -142,7 +142,7 @@ function buildInsightEmailHtml({
     ${biasRows}
 
     <!-- Trust line -->
-    <p style="color:#555;font-size:13px;margin:28px 0 32px;line-height:1.65">
+    <p style="color:#666;font-size:13px;margin:28px 0 32px;line-height:1.65">
       These are your actual patterns &mdash; derived from decisions you&rsquo;ve brought here,
       not a questionnaire.
     </p>
@@ -156,9 +156,9 @@ function buildInsightEmailHtml({
     </a>
 
     <!-- Footer -->
-    <p style="color:#333;font-size:11px;margin:48px 0 0;line-height:1.7">
+    <p style="color:#bbb;font-size:11px;margin:48px 0 0;line-height:1.7">
       Weekly insight from your Judgment Record.<br>
-      <a href="${appUrl}" style="color:#3a3a3a;text-decoration:none">Quorum</a>
+      <a href="${appUrl}" style="color:#aaa;text-decoration:none">Quorum</a>
     </p>
 
   </div>
