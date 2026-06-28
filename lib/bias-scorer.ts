@@ -403,10 +403,13 @@ export function classifyBiasSignal(
     switch (biasKey) {
       // fomo_urgency: distorting when urgency is manufactured (low real time pressure).
       // Adaptive when genuine deadline + irreversible stakes — acting fast is correct.
+      // Mid-range timePressure (3) is NOT a reason to suppress — if the scorer flagged
+      // urgency bias at a mid-pressure context, the manufacturing is still present.
+      // The only suppression case is confirmed genuine urgency (timePressure ≥ 4)
+      // combined with high irreversibility (reversibility ≥ 4).
       case 'fomo_urgency':
-        if (timePressure <= 2) return 'distorting'
         if (timePressure >= 4 && reversibility >= 4) return 'adaptive'
-        return 'neutral'
+        return 'distorting'
 
       // overconfidence: distorting when get-able information exists that they're ignoring.
       // Neutral when no new information would change the answer.
@@ -469,16 +472,16 @@ export function classifyBiasSignal(
   })()
 
   // ── Strong-detection override ─────────────────────────────────────────────
-  // When a bias was strongly detected (asymmetry ≥ 4) but the ontology-context
+  // When a bias was strongly detected (asymmetry ≥ 3) but the ontology-context
   // classification returned 'neutral', surface it as 'distorting' anyway.
   //
   // Rationale: context classification uses ontology defaults (e.g. reversibility = 3)
   // which are conservative mid-range values — detection fires at asymmetry ≥ 2.5.
-  // A threshold of 5 left a wide neutral band (2.5–4.9) where clear detections were
-  // silently dropped for first-time / anonymous users with thin ontology context.
-  // Asymmetry ≥ 4 = prosecutor beat defense by 4+ points on a 0–10 scale: a
-  // clear adversarial signal. Context should refine severity, not bury hard evidence.
-  if (contextualResult === 'neutral' && score.asymmetry >= 4) return 'distorting'
+  // A threshold of 4 left a wide neutral band (2.5–3.9) where clear detections were
+  // silently dropped, particularly for allocation decisions with mid-range ontology scores.
+  // Asymmetry ≥ 3 = prosecutor beat defense by 3+ points on a 0–10 scale: a clear
+  // adversarial signal. Context should refine severity, not bury confirmed evidence.
+  if (contextualResult === 'neutral' && score.asymmetry >= 3) return 'distorting'
 
   return contextualResult
 }
