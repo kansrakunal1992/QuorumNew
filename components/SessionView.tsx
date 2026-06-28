@@ -1106,7 +1106,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Renders as soon as /api/session/[id]/bias-note resolves after synthesisDone. */}
               {/* All other elements (personas, validation) render in parallel — not blocked.  */}
               {biasNote && (
-                <div className="sv-fade sv-fade-2" data-tour-id="council-bias" style={{ marginBottom: 8 }}>
+                <div className="sv-fade sv-fade-2" data-tour-id="council-bias" style={{ marginTop: 16, marginBottom: 8 }}>
                   <BiasNoteCard note={biasNote} />
                 </div>
               )}

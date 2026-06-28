@@ -52,7 +52,39 @@ export async function GET(
   const identityVal =
     session.user_id ?? session.user_email ?? session.device_id ?? null
 
-  if (!identityCol || !identityVal) return NextResponse.json({ biasNote: null })
+  if (!identityCol || !identityVal) {
+    // Anonymous session: attempt retrieval using the synthetic device_id written
+    // by bias-score for anonymous identity (format: 'anon:<sessionId>').
+    const { data: anonRows } = await supabase
+      .from('bias_library')
+      .select('bias_parameter, activation_contexts')
+      .eq('device_id', `anon:${sessionId}`)
+      .contains('session_ids', [sessionId])
+
+    if (!anonRows || anonRows.length === 0) return NextResponse.json({ biasNote: null })
+
+    // Reuse the same candidate-ranking logic below via fallthrough
+    const anonCandidates = (anonRows ?? [])
+      .map(row => {
+        const ctx = (row.activation_contexts as Record<string, SessionBiasCtx> | null)?.[sessionId]
+        return ctx ? { biasKey: row.bias_parameter as string, ctx } : null
+      })
+      .filter((c): c is { biasKey: string; ctx: SessionBiasCtx } => c !== null)
+      .filter(c => c.ctx.signal_type === 'distorting' && !!c.ctx.reasoning)
+      .sort((a, b) => (b.ctx.prosecutor_score ?? 0) - (a.ctx.prosecutor_score ?? 0))
+
+    const anonTop = anonCandidates[0]
+    if (!anonTop) return NextResponse.json({ biasNote: null })
+
+    const anonParam     = BIAS_PARAMETERS.find(b => b.key === anonTop.biasKey)
+    const anonLabel     = anonParam?.label ?? anonTop.biasKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    const anonRaw       = anonTop.ctx.reasoning!.trim()
+    const anonReasoning = anonRaw.length > 220
+      ? anonRaw.slice(0, 220).replace(/\s+\S*$/, '') + '…'
+      : anonRaw
+
+    return NextResponse.json({ biasNote: { label: anonLabel, reasoning: anonReasoning } })
+  }
 
   // Query bias_library for entries tagged to this specific session
   const { data: biasRows } = await supabase

@@ -219,6 +219,18 @@ export async function POST(req: Request) {
           .limit(1)
           .maybeSingle()
         existingBias = data
+      } else {
+        // Anonymous session: use synthetic device_id keyed to this session so
+        // the row is retrievable by bias-note GET even with no persistent identity.
+        // Format 'anon:<sessionId>' is distinguishable from real device IDs.
+        const { data } = await supabase
+          .from('bias_library')
+          .select('id, detection_count, confidence_weight, asymmetry_score_avg, session_ids, activation_contexts')
+          .eq('bias_parameter', score.bias_key)
+          .eq('device_id', `anon:${sessionId}`)
+          .limit(1)
+          .maybeSingle()
+        existingBias = data
       }
 
       if (existingBias) {
@@ -246,7 +258,9 @@ export async function POST(req: Request) {
         await supabase.from('bias_library').insert({
           user_id:             resolvedUserId,
           user_email:          resolvedUserEmail,
-          device_id:           resolvedDeviceId,
+          // Anonymous sessions get a synthetic device_id so the row is
+          // retrievable by bias-note GET; real device IDs are used as-is.
+          device_id:           resolvedDeviceId ?? (identityTier === 'anonymous' ? `anon:${sessionId}` : null),
           session_ids:         [sessionId],
           bias_parameter:      score.bias_key,
           detection_count:     1,

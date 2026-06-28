@@ -257,6 +257,27 @@ RESPONSE FORMAT — return ONLY this JSON, nothing else:
 Score all 15 bias parameters. Return the array in the same order as the parameters listed above.`
 }
 
+// ── JSON repair utility ───────────────────────────────────────────────────
+// DeepSeek occasionally returns JavaScript-style object literals instead of
+// strict JSON — single-quoted keys, trailing commas, or JS comments.
+// Standard JSON.parse() rejects these. This function normalises the most
+// common failure modes before parsing. Applied only to bias-scorer output
+// which is tightly structured; not a general-purpose JSON repair.
+function repairJSON(raw: string): string {
+  return raw
+    // Strip JS block comments: /* ... */
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    // Strip JS line comments: // ...
+    .replace(/\/\/[^\n\r]*/g, '')
+    // Single-quoted keys → double-quoted: {'key': → {"key":
+    .replace(/([{,]\s*)'([^'\\]+)'\s*:/g, '$1"$2":')
+    // Single-quoted string values → double-quoted: : 'val' → : "val"
+    .replace(/:\s*'([^'\\]*)'/g, ': "$1"')
+    // Remove trailing commas before closing brace or bracket
+    .replace(/,(\s*[}\]])/g, '$1')
+    .trim()
+}
+
 // ── Main scorer function ──────────────────────────────────────────────────
 // Sprint R2: param renamed from personaResponses → pushbackTexts.
 export async function scoreBiasesForSession(params: {
@@ -277,7 +298,7 @@ export async function scoreBiasesForSession(params: {
 
   const raw   = await createCompletion(prompt, 4000, { provider: 'anthropic' })
   const clean = raw.replace(/```json|```/g, '').trim()
-  const parsed = JSON.parse(clean) as { scores: BiasScore[] }
+  const parsed = JSON.parse(repairJSON(clean)) as { scores: BiasScore[] }
   const { provider, model } = getProviderInfo()
 
   return {
@@ -321,69 +342,88 @@ export function classifyBiasSignal(
   const timePressure  = ontologyVector?.time_pressure?.score ?? 3
   const reversibility = ontologyVector?.reversibility?.score ?? 3
 
-  switch (biasKey) {
-    // fomo_urgency: distorting when urgency is manufactured (low real time pressure).
-    // Adaptive when genuine deadline + irreversible stakes — acting fast is correct.
-    case 'fomo_urgency':
-      if (timePressure <= 2) return 'distorting'
-      if (timePressure >= 4 && reversibility >= 4) return 'adaptive'
-      return 'neutral'
+  const contextualResult = ((): BiasSignalType => {
+    switch (biasKey) {
+      // fomo_urgency: distorting when urgency is manufactured (low real time pressure).
+      // Adaptive when genuine deadline + irreversible stakes — acting fast is correct.
+      case 'fomo_urgency':
+        if (timePressure <= 2) return 'distorting'
+        if (timePressure >= 4 && reversibility >= 4) return 'adaptive'
+        return 'neutral'
 
-    // overconfidence: distorting when get-able information exists that they're ignoring.
-    // Neutral when no new information would change the answer.
-    case 'overconfidence':
-      if (ddInfo >= 4) return 'distorting'
-      return 'neutral'
+      // overconfidence: distorting when get-able information exists that they're ignoring.
+      // Neutral when no new information would change the answer.
+      case 'overconfidence':
+        if (ddInfo >= 4) return 'distorting'
+        return 'neutral'
 
-    // speed_bias: distorting when the rush is self-imposed (no real external deadline).
-    // Neutral or adaptive when a genuine deadline exists.
-    case 'speed_bias':
-      if (timePressure <= 2) return 'distorting'
-      return 'neutral'
+      // speed_bias: distorting when the rush is self-imposed (no real external deadline).
+      // Neutral or adaptive when a genuine deadline exists.
+      case 'speed_bias':
+        if (timePressure <= 2) return 'distorting'
+        return 'neutral'
 
-    // loss_aversion_reversal: distorting when it pushes excess risk-taking.
-    // Neutral when the decision is highly irreversible — appropriate caution is warranted.
-    case 'loss_aversion_reversal':
-      if (reversibility >= 4) return 'neutral'
-      return 'distorting'
+      // loss_aversion_reversal: distorting when it pushes excess risk-taking.
+      // Neutral when the decision is highly irreversible — appropriate caution is warranted.
+      case 'loss_aversion_reversal':
+        if (reversibility >= 4) return 'neutral'
+        return 'distorting'
 
-    // exit_optionality_mispricing: distorting when the decision is hard to undo
-    // and exit hasn't been structured. Neutral when the decision is reversible.
-    case 'exit_optionality_mispricing':
-      if (reversibility >= 4) return 'distorting'
-      return 'neutral'
+      // exit_optionality_mispricing: distorting when the decision is hard to undo
+      // and exit hasn't been structured. Neutral when the decision is reversible.
+      case 'exit_optionality_mispricing':
+        if (reversibility >= 4) return 'distorting'
+        return 'neutral'
 
-    // recency_bias: Sprint R2 fix — distorting when high ambiguity exists (ddInfo >= 4).
-    // High DDI means there is knowable information the user isn't gathering — they're
-    // pattern-matching from memory in a context where conditions have materially shifted.
-    // Neutral when the decision environment is stable.
-    case 'recency_bias':
-      if (ddInfo >= 4) return 'distorting'
-      return 'neutral'
+      // recency_bias: Sprint R2 fix — distorting when high ambiguity exists (ddInfo >= 4).
+      // High DDI means there is knowable information the user isn't gathering — they're
+      // pattern-matching from memory in a context where conditions have materially shifted.
+      // Neutral when the decision environment is stable.
+      case 'recency_bias':
+        if (ddInfo >= 4) return 'distorting'
+        return 'neutral'
 
-    // social_proof: distorting when ample discriminating info exists — you should form
-    // your own view rather than defer to peers.
-    case 'social_proof':
-      if (ddInfo >= 4) return 'distorting'
-      return 'neutral'
+      // social_proof: distorting when ample discriminating info exists — you should form
+      // your own view rather than defer to peers.
+      case 'social_proof':
+        if (ddInfo >= 4) return 'distorting'
+        return 'neutral'
 
-    // deference_distortion: always distorting when detected — filtered information
-    // is harmful regardless of context.
-    case 'deference_distortion':
-      return 'distorting'
+      // deference_distortion: always distorting when detected — filtered information
+      // is harmful regardless of context.
+      case 'deference_distortion':
+        return 'distorting'
 
-    // control_illusion: distorting when irreversibility is high — believing you can
-    // undo what you cannot is dangerous. Neutral in more reversible contexts.
-    case 'control_illusion':
-      if (reversibility >= 4) return 'distorting'
-      return 'neutral'
+      // control_illusion: distorting when irreversibility is high — believing you can
+      // undo what you cannot is dangerous. Neutral in more reversible contexts.
+      case 'control_illusion':
+        if (reversibility >= 4) return 'distorting'
+        return 'neutral'
 
-    // Default for all other biases: use asymmetry strength.
-    // High asymmetry (prosecutor >> defense) = distorting. Lower = neutral.
-    default:
-      if (score.asymmetry >= 5) return 'distorting'
-      return 'neutral'
-  }
+      // Default for all other biases: use asymmetry strength.
+      // High asymmetry (prosecutor >> defense) = distorting. Lower = neutral.
+      default:
+        if (score.asymmetry >= 5) return 'distorting'
+        return 'neutral'
+    }
+  })()
+
+  // ── Strong-detection override ─────────────────────────────────────────────
+  // When a bias was strongly detected (asymmetry ≥ 5) but the ontology-context
+  // classification returned 'neutral', surface it as 'distorting' anyway.
+  //
+  // Rationale: context classification uses ontology defaults (e.g. reversibility = 3)
+  // which are conservative mid-range values. For allocation decisions or sessions
+  // where the ontology vector has low specificity, this causes clearly-detected biases
+  // to be silently downgraded and never shown — including to first-time users where
+  // the bias note is the primary value hook for session 2.
+  //
+  // Asymmetry ≥ 5 means prosecutor_score − defense_score ≥ 5 on a 0–10 scale:
+  // this is a strong adversarial signal, not a marginal detection. Context should
+  // refine severity, not override strong evidence entirely.
+  if (contextualResult === 'neutral' && score.asymmetry >= 5) return 'distorting'
+
+  return contextualResult
 }
 
 // ── Predominant signal helper (used in mirror-fingerprint.ts) ────────────────
