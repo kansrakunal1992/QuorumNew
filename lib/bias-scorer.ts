@@ -363,11 +363,14 @@ export function classifyBiasSignal(
         if (timePressure <= 2) return 'distorting'
         return 'neutral'
 
-      // loss_aversion_reversal: distorting when it pushes excess risk-taking.
-      // Neutral when the decision is highly irreversible — appropriate caution is warranted.
+      // loss_aversion_reversal: distorting when excess risk-taking meets an irreversible
+      // decision — you can't walk back the consequences. Neutral when the decision is
+      // easily reversible: taking some risk is acceptable because course-correction is cheap.
+      // Aligns with control_illusion and exit_optionality_mispricing: all three become
+      // more concerning as irreversibility rises.
       case 'loss_aversion_reversal':
-        if (reversibility >= 4) return 'neutral'
-        return 'distorting'
+        if (reversibility >= 4) return 'distorting'  // hard to undo → flag it
+        return 'neutral'                              // easily reversible → acceptable risk
 
       // exit_optionality_mispricing: distorting when the decision is hard to undo
       // and exit hasn't been structured. Neutral when the decision is reversible.
@@ -409,19 +412,16 @@ export function classifyBiasSignal(
   })()
 
   // ── Strong-detection override ─────────────────────────────────────────────
-  // When a bias was strongly detected (asymmetry ≥ 5) but the ontology-context
+  // When a bias was strongly detected (asymmetry ≥ 4) but the ontology-context
   // classification returned 'neutral', surface it as 'distorting' anyway.
   //
   // Rationale: context classification uses ontology defaults (e.g. reversibility = 3)
-  // which are conservative mid-range values. For allocation decisions or sessions
-  // where the ontology vector has low specificity, this causes clearly-detected biases
-  // to be silently downgraded and never shown — including to first-time users where
-  // the bias note is the primary value hook for session 2.
-  //
-  // Asymmetry ≥ 5 means prosecutor_score − defense_score ≥ 5 on a 0–10 scale:
-  // this is a strong adversarial signal, not a marginal detection. Context should
-  // refine severity, not override strong evidence entirely.
-  if (contextualResult === 'neutral' && score.asymmetry >= 5) return 'distorting'
+  // which are conservative mid-range values — detection fires at asymmetry ≥ 2.5.
+  // A threshold of 5 left a wide neutral band (2.5–4.9) where clear detections were
+  // silently dropped for first-time / anonymous users with thin ontology context.
+  // Asymmetry ≥ 4 = prosecutor beat defense by 4+ points on a 0–10 scale: a
+  // clear adversarial signal. Context should refine severity, not bury hard evidence.
+  if (contextualResult === 'neutral' && score.asymmetry >= 4) return 'distorting'
 
   return contextualResult
 }
