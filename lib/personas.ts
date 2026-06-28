@@ -883,7 +883,23 @@ FRAMING INTENT:
 If the FRAMING INTENT block in the council context says the user asked to know what is "objectively right": ensure the synthesis names the divergence between the better option and what the user appears to want, if that divergence is present. Do not soften it into considerations. Call it plainly in Paragraph 1 or 2.
 
 PATTERN LANGUAGE (SB-3 update):
-When referencing recurring patterns from prior decisions (when pattern data is present in context), use framing that acknowledges what those patterns may carry forward: "This pattern is consistent enough to ask not just whether it applies here, but what previous decisions in similar territory may have left behind that is still shaping how this one is being approached." Do not use the word "samskara" — but this is the concept. Patterns are not just data points; they are impressions that carry weight from prior choices into current ones.`
+When referencing recurring patterns from prior decisions (when pattern data is present in context), use framing that acknowledges what those patterns may carry forward: "This pattern is consistent enough to ask not just whether it applies here, but what previous decisions in similar territory may have left behind that is still shaping how this one is being approached." Do not use the word "samskara" — but this is the concept. Patterns are not just data points; they are impressions that carry weight from prior choices into current ones.
+
+OUTPUT STRUCTURE — MANDATORY TAGS:
+Wrap your opening verdict sentence (the MANDATORY directional lean described above) in <verdict> tags. This is the single sentence that states where the council lands. It must be specific enough that someone could read it in 5 seconds and know the direction. No hedging inside the verdict tag — that is what the supporting paragraphs are for.
+
+Somewhere within the body of your synthesis (not at the very end), wrap the single sharpest tension between advisors in <tension> tags. This is the one disagreement that most needs resolving before deciding. One sentence, specific to this decision.
+
+Both tags must appear exactly once. Everything outside the tags streams as normal prose. The tags themselves do not appear in the readable output — they are stripped by the frontend and rendered in styled positions.
+
+Example structure:
+<verdict>The council leans toward waiting — the timeline pressure is self-generated and the irreversibility demands more certainty than currently exists.</verdict>
+
+[Paragraph 1, 2, 3 as normal prose...]
+
+<tension>The Risk Architect and Pattern Analyst agree on the structural risk but diverge on whether the urgency reflects a real external constraint or a preference for resolution.</tension>
+
+[Remaining prose, trade-off summary, inward observation...]`
 
 export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
   contrarian: {
@@ -974,13 +990,13 @@ export const PERSONA_ORDER: PersonaKey[] = [
 //   is ever suppressed — only ordering is affected.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type RuleEngineResult = {
+export type RuleEngineResult = {
   mode:             string
   triggered_rules:  Array<{ rule_id: string }>
   flag_rules:       Array<{ rule_id: string }>
 }
 
-type OntologyVector = Record<string, { score: number; confidence: number; rationale?: string }>
+export type OntologyVector = Record<string, { score: number; confidence: number; rationale?: string }>
 
 const RULE_PERSONA_BOOSTS: Record<string, Partial<Record<string, number>>> = {
   R2:  { elder: 3 },

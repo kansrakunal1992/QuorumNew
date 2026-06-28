@@ -44,6 +44,13 @@ export default function SynthesisCard({
   const [briefState,   setBriefState]  = useState<'idle'|'streaming'|'done'|'error'>('idle')
   const [showBrief,    setShowBrief]   = useState(false)
 
+  // S1-03: verdict + tension extracted from synthesis stream
+  const [verdictText,  setVerdictText]  = useState('')
+  const [tensionText,  setTensionText]  = useState('')
+  const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
+  const verdictAccRef  = useRef('')
+  const tensionAccRef  = useRef('')
+
   // ── TTS ───────────────────────────────────────────────────────────────────
   const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === 'synthesis'
@@ -79,6 +86,12 @@ export default function SynthesisCard({
     setBriefText('')
     setBriefState('idle')
     setShowBrief(false)
+    // Reset verdict/tension accumulators on each new synthesis run
+    setVerdictText('')
+    setTensionText('')
+    parseModeRef.current  = 'prose'
+    verdictAccRef.current = ''
+    tensionAccRef.current = ''
 
     const run = async () => {
       const latest = responsesRef.current
@@ -124,8 +137,69 @@ export default function SynthesisCard({
           const { done, value } = await reader.read()
           if (done) break
           if (ctrl.signal.aborted) return
-          acc += dec.decode(value, { stream: true })
-          setSynthesis(acc)
+          const chunk = dec.decode(value, { stream: true })
+          acc += chunk
+          // S1-03: parse <verdict> and <tension> tags in real-time
+          {
+            let remaining = chunk  // process only the NEW chunk for delta parsing
+            let mode    = parseModeRef.current
+            let verdict = verdictAccRef.current
+            let tension = tensionAccRef.current
+            let prose   = ''
+
+            while (remaining.length > 0) {
+              if (mode === 'prose') {
+                const vIdx = remaining.indexOf('<verdict>')
+                const tIdx = remaining.indexOf('<tension>')
+                if (vIdx !== -1 && (tIdx === -1 || vIdx < tIdx)) {
+                  prose    += remaining.slice(0, vIdx)
+                  remaining = remaining.slice(vIdx + '<verdict>'.length)
+                  mode      = 'verdict'
+                } else if (tIdx !== -1) {
+                  prose    += remaining.slice(0, tIdx)
+                  remaining = remaining.slice(tIdx + '<tension>'.length)
+                  mode      = 'tension'
+                } else {
+                  prose    += remaining
+                  remaining = ''
+                }
+              } else if (mode === 'verdict') {
+                const end = remaining.indexOf('</verdict>')
+                if (end !== -1) {
+                  verdict  += remaining.slice(0, end)
+                  remaining = remaining.slice(end + '</verdict>'.length)
+                  mode      = 'prose'
+                } else {
+                  verdict  += remaining
+                  remaining = ''
+                }
+              } else {
+                const end = remaining.indexOf('</tension>')
+                if (end !== -1) {
+                  tension  += remaining.slice(0, end)
+                  remaining = remaining.slice(end + '</tension>'.length)
+                  mode      = 'prose'
+                } else {
+                  tension  += remaining
+                  remaining = ''
+                }
+              }
+            }
+
+            parseModeRef.current  = mode
+            verdictAccRef.current = verdict
+            tensionAccRef.current = tension
+            if (verdict) setVerdictText(verdict.trim())
+            if (tension) setTensionText(tension.trim())
+          }
+          // Strip tags from the display prose — regex on full acc is clean
+          setSynthesis(
+            acc
+              .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
+              .replace(/<tension>[\s\S]*?<\/tension>\n*/g, '')
+              .replace(/<verdict>[\s\S]*/g, '')   // partial open tag at stream edge
+              .replace(/<tension>[\s\S]*/g, '')
+          )
         }
         setState('done')
         onSynthesisComplete?.()
@@ -329,7 +403,7 @@ export default function SynthesisCard({
               {state === 'waiting' && !allDone ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
                 : state === 'waiting' && allDone && !examinerReady ? 'Answer the Examiner questions to unlock synthesis'
                 : state === 'streaming' && isRecalibrating ? 'Recalibrating after pushback…'
-                : state === 'streaming' ? 'Synthesising across all perspectives…'
+                : state === 'streaming' ? 'Writing the Council\'s conclusion…'
                 : 'What the council collectively surfaced'}
             </p>
           </div>
@@ -509,11 +583,74 @@ export default function SynthesisCard({
             Synthesis will appear once all six advisors complete their assessment.
           </p>
         )}
-        {(state === 'streaming' || state === 'done') && synthesis && (
-          <p style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--text-1)', whiteSpace: 'pre-wrap', letterSpacing: '0.01em' }}
-            className={state === 'streaming' ? 'cursor' : ''}>
-            {synthesis}
-          </p>
+        {(state === 'streaming' || state === 'done') && synthesis !== undefined && (
+          <>
+            {/* S1-03: Verdict block — gold left-border, display font */}
+            {verdictText && (
+              <div style={{
+                borderLeft:   '3px solid var(--gold)',
+                background:   'var(--gold-glow)',
+                borderRadius: '0 8px 8px 0',
+                padding:      '10px 15px',
+                marginBottom: 16,
+              }}>
+                <p style={{
+                  fontFamily:  'var(--font-display)',
+                  fontSize:    15,
+                  fontWeight:  500,
+                  color:       'var(--text-1)',
+                  lineHeight:  1.6,
+                  margin:      0,
+                }}>
+                  {verdictText}
+                  {parseModeRef.current === 'verdict' && (
+                    <span style={{ opacity: 0.4, marginLeft: 2 }}>▊</span>
+                  )}
+                </p>
+              </div>
+            )}
+            {/* Main prose */}
+            {synthesis && (
+              <p style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--text-1)', whiteSpace: 'pre-wrap', letterSpacing: '0.01em' }}
+                className={state === 'streaming' ? 'cursor' : ''}>
+                {synthesis}
+              </p>
+            )}
+            {/* S1-03: Tension callout — gold-bordered inline box */}
+            {tensionText && (
+              <div style={{
+                border:       '1px solid var(--gold-dim)',
+                borderRadius: 8,
+                padding:      '10px 14px',
+                marginTop:    16,
+                background:   'var(--bg-inset)',
+              }}>
+                <p style={{
+                  fontFamily:    'var(--font-mono)',
+                  fontSize:      10,
+                  fontWeight:    700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color:         'var(--gold)',
+                  margin:        '0 0 5px',
+                }}>
+                  Core tension
+                </p>
+                <p style={{
+                  fontSize:   12.5,
+                  color:      'var(--text-2)',
+                  lineHeight: 1.6,
+                  fontStyle:  'italic',
+                  margin:     0,
+                }}>
+                  {tensionText}
+                  {parseModeRef.current === 'tension' && (
+                    <span style={{ opacity: 0.4, marginLeft: 2 }}>▊</span>
+                  )}
+                </p>
+              </div>
+            )}
+          </>
         )}
 
         {/* Mirror nudge — shown once synthesis completes (Sprint 19) */}

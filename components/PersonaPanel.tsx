@@ -72,11 +72,17 @@ interface Props {
   canStream?: boolean
   /** C0 + rule answers baked into the initial persona call — set by SessionView after examiner submit */
   initialExaminerContext?: string
+  /** S1-02: fires when this persona transitions to 'done' — used by SessionView for sequential streaming */
+  onPersonaComplete?: () => void
+  /** S1-07: true when structural memory is active for this persona */
+  structuralContextActive?: boolean
+  /** S1-07: ISO date string of the best structural match */
+  structuralMatchDate?: string | null
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralContextActive, structuralMatchDate }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -100,9 +106,16 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const responseRef   = useRef(initialContent ?? '')
   const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
+  const onPersonaCompleteRef = useRef(onPersonaComplete)
 
-  useEffect(() => { exchangesRef.current  = exchanges  }, [exchanges])
-  useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
+  useEffect(() => { exchangesRef.current        = exchanges       }, [exchanges])
+  useEffect(() => { onCompleteRef.current       = onComplete      }, [onComplete])
+  useEffect(() => { onPersonaCompleteRef.current = onPersonaComplete }, [onPersonaComplete])
+
+  // S1-02: Sequential streaming — fire when this persona transitions to done
+  useEffect(() => {
+    if (panelState === 'done') onPersonaCompleteRef.current?.()
+  }, [panelState])
 
   const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
   const icon = ICONS[persona.key]
@@ -327,6 +340,24 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           />
         </div>
       )}
+
+      {/* S1-07: Structural echo banner — pattern_analyst only, when memory is active */}
+      {structuralContextActive && structuralMatchDate && (
+        <div style={{
+          padding:      '7px 16px',
+          background:   'var(--success-bg)',
+          borderBottom: '1px solid var(--success-border)',
+          fontSize:     11,
+          color:        'var(--success-text)',
+          lineHeight:   1.4,
+        }}>
+          Pattern Analyst is drawing on a decision you brought in{' '}
+          {new Date(structuralMatchDate).toLocaleDateString('en-IN', {
+            month: 'long', year: 'numeric',
+          })}.
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-card-alt)', borderRadius: '14px 14px 0 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

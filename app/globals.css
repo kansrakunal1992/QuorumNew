@@ -23,7 +23,8 @@
   --bg-inset:    #080e19;
   --border-dim:  #202b40;
   --border-mid:  #2b3a55;
-  --border-hi:   #3a4a68;
+  --border-hi:     #3a4a68;
+  --border-subtle: rgba(255,255,255,0.06);
   --gold:        #d4a843;
   --gold-bright: #eaca78;
   --gold-dim:    #5a3f1a;
@@ -85,7 +86,8 @@
   --bg-inset:    #edeae2;
   --border-dim:  #c0c8d6;
   --border-mid:  #a4b0c4;
-  --border-hi:   #7a90b0;
+  --border-hi:     #7a90b0;
+  --border-subtle: rgba(0,0,0,0.07);
   --gold:        #c08c18;
   --gold-bright: #d4a020;
   --gold-dim:    #c8a030;

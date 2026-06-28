@@ -8,7 +8,10 @@ import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
 import CouncilStatusBar from './CouncilStatusBar'
 import { TTSProvider } from '@/context/TTSContext'
-import { PERSONAS, PERSONA_ORDER, computePersonaOrder } from '@/lib/personas'
+import {
+  PERSONAS, PERSONA_ORDER, computePersonaOrder,
+  type RuleEngineResult, type OntologyVector,
+} from '@/lib/personas'
 import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
@@ -21,6 +24,13 @@ import type { TourStep } from './OnboardingTour'
 import { buildPWAInstallStep } from './OnboardingTour'
 import ValidationCard from './ValidationCard'             // SB-1
 import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
+import OntologyRevealCard   from './OntologyRevealCard'   // S1-01: Decision X-Ray (sessions 1–3)
+import SessionCompleteBadge from './SessionCompleteBadge' // S1-06: Council complete timestamp
+import {
+  DECISION_TYPE_LABELS,
+  REVERSIBILITY_LABELS,
+  FRAMING_INTENT_LABELS,
+} from '@/lib/session-labels'                             // S1-05: profile strip labels
 
 // ── Sprint TOUR-1: Council page tour steps ────────────────────────────────────
 // Fires once, 800ms after synthesisDone flips to true for the first time.
@@ -202,6 +212,29 @@ export default function SessionView({ session: initialSession, initialMessages =
   const appliedRuleRef = useRef<string | null>(null)
   const styleCueRef          = useRef<string | null>(null)
 
+  // S1-08: Race fix — track when style cue has resolved (or timed out)
+  // Mirror preferences fetch can be slow; 4s timeout gives ample opportunity
+  // before we fall back to ordering without personal style calibration.
+  const [styleCueReady, setStyleCueReady] = useState(false)
+
+  // S1-01: Decision X-Ray — ontology vector + dismiss flag
+  const [ontologyVector, setOntologyVector] = useState<Record<string, { score: number; confidence: number }> | null>(null)
+  const [xRayDismissed,  setXRayDismissed]  = useState(false)
+
+  // S1-07: Structural echo banner — pattern_analyst card
+  const [structuralContextActive, setStructuralContextActive] = useState(false)
+  const [structuralMatchDate,     setStructuralMatchDate]     = useState<string | null>(null)
+
+  // S1-02: Sequential streaming — unlocks one persona at a time as each completes
+  const [streamUnlockedUpTo, setStreamUnlockedUpTo] = useState<number>(0)
+
+  // S1-06: Council complete badge — timestamp captured when synthesis finishes
+  const [synthesisCompletedAt, setSynthesisCompletedAt] = useState<Date | null>(null)
+
+  // S1-08: Race fix — stores rule_engine_result + ontology_vector from structural match
+  // so computePersonaOrder can run once BOTH ontologyReady and styleCueReady are true
+  const ontologyDataRef = useRef<{ rule_engine_result: RuleEngineResult | null; ontology_vector: OntologyVector | null } | null>(null)
+
   // ── FLIP animation refs ──────────────────────────────────────────────────
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const snapRef  = useRef<Record<string, DOMRect>>({})
@@ -268,22 +301,39 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [gridReordered])
 
   useEffect(() => {
+    let settled = false
+    // 4-second timeout — gives Mirror preferences API ample opportunity to respond
+    // before we fall back to ordering without personal style calibration.
+    // Deliberately generous: style cue affects persona ordering quality, not just speed.
+    const timeout = setTimeout(() => {
+      if (!settled) { settled = true; setStyleCueReady(true) }
+    }, 4000)
+
     async function fetchStyleCue() {
       try {
         const supabase = createClient()
         const { data: { session: authSession } } = await supabase.auth.getSession()
-        if (!authSession?.access_token) return
+        if (!authSession?.access_token) {
+          if (!settled) { settled = true; setStyleCueReady(true) }
+          return
+        }
         const res = await fetch('/api/mirror/preferences', {
           headers: { Authorization: `Bearer ${authSession.access_token}` },
         })
-        if (!res.ok) return
+        if (!res.ok) {
+          if (!settled) { settled = true; setStyleCueReady(true) }
+          return
+        }
         const { style_cue } = await res.json()
         if (style_cue) styleCueRef.current = style_cue
       } catch {
         // Non-critical
+      } finally {
+        if (!settled) { settled = true; setStyleCueReady(true) }
       }
     }
     fetchStyleCue()
+    return () => clearTimeout(timeout)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -369,22 +419,23 @@ export default function SessionView({ session: initialSession, initialMessages =
         .then(data => {
           if (data.ontology_ready && !pendingOrderRef.current) {
             setOntologyReady(true)
-            const ordered = computePersonaOrder(
-              data.rule_engine_result ?? null,
-              data.ontology_vector    ?? null,
-              styleCueRef.current,
-            )
-            pendingOrderRef.current = ordered as PersonaKey[]
-            if (allPersonasDoneRef.current && examinerSubmittedRef.current) {
-              const isDifferent = ordered.some((k: string, i: number) => k !== PERSONA_ORDER[i])
-              if (isDifferent) {
-                applyOrderWithFlip(ordered as PersonaKey[])
-              }
-              pendingOrderRef.current = null
+            // S1-08: Store ontology data in ref — computePersonaOrder runs in
+            // a dedicated useEffect once BOTH ontologyReady and styleCueReady
+            // are true, ensuring style cue always informs ordering.
+            ontologyDataRef.current = {
+              rule_engine_result: (data.rule_engine_result as RuleEngineResult) ?? null,
+              ontology_vector:    (data.ontology_vector    as OntologyVector)    ?? null,
+            }
+            // S1-01: Capture ontology vector for Decision X-Ray card (sessions 1–3)
+            if (data.ontology_vector && typeof data.ontology_vector === 'object') {
+              setOntologyVector(data.ontology_vector)
             }
           }
           if (data.threshold_met && data.context_block) {
             setStructuralContext(data.context_block)
+            // S1-07: Structural echo banner — show on Pattern Analyst card
+            setStructuralContextActive(true)
+            setStructuralMatchDate(data.best_match_date ?? null)
             return
           }
           if (!data.ontology_ready && attempt < MAX_ATTEMPTS) {
@@ -398,6 +449,33 @@ export default function SessionView({ session: initialSession, initialMessages =
     fetchStructuralContext()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSession.id])
+
+  // S1-08: Deferred persona ordering — runs once BOTH signals are ready.
+  // Using a dedicated effect (not inside fetchStructuralContext callback) ensures
+  // styleCueRef.current is populated before computePersonaOrder is called.
+  // The 4-second styleCueReady timeout above guarantees this effect always fires.
+  useEffect(() => {
+    if (!ontologyReady || !styleCueReady) return
+    if (pendingOrderRef.current) return // already computed
+    const stored = ontologyDataRef.current
+    if (!stored) return
+
+    const ordered = computePersonaOrder(
+      stored.rule_engine_result ?? null,
+      stored.ontology_vector    ?? null,
+      styleCueRef.current,
+    )
+    pendingOrderRef.current = ordered as PersonaKey[]
+
+    if (allPersonasDoneRef.current && examinerSubmittedRef.current) {
+      const isDifferent = ordered.some((k: string, i: number) => k !== PERSONA_ORDER[i])
+      if (isDifferent) {
+        applyOrderWithFlip(ordered as PersonaKey[])
+        pendingOrderRef.current = null
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ontologyReady, styleCueReady])
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
     setCompletedResponses(prev => {
@@ -561,12 +639,11 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [drawerOpen,     setDrawerOpen]     = useState(false)
   const [reDecision,     setReDecision]     = useState(initialSession.decision_text)
   const [reContext,      setReContext]       = useState(initialSession.context_text ?? '')
-  // Root-cause fix (Sprint RET-4 follow-up, June 21, 2026): reanalyzed decisions previously
-  // never captured entry confidence, so they were silently invisible to the calibration
-  // record (KDD 194). Defaults to 5, same as the homepage form's slider.
   const [rePreConfidence, setRePreConfidence] = useState(5)
   const [reanalyzing,    setReanalyzing]     = useState(false)
   const [reanalyzeError, setReanalyzeError] = useState('')
+  // S1-04: third framing mode for reanalyze — 'right' matches home page option
+  const [reFramingIntent, setReFramingIntent] = useState<'challenge' | 'clarify' | 'right'>('challenge')
 
   const handleNewDecision = () => {
     if (!saved) {
@@ -623,6 +700,12 @@ export default function SessionView({ session: initialSession, initialMessages =
           context_text:  reContext.trim() || null,
           register_mode: reRegisterMode,
           pre_decision_confidence: rePreConfidence,
+          // S1-04: framing_intent from third mode option ('right' = objective analysis)
+          framing_intent: reFramingIntent === 'right'
+            ? 'right'
+            : reFramingIntent === 'clarify'
+              ? 'clarify'
+              : 'challenge',
           // user_id intentionally omitted — server derives from Bearer token (S4-02)
           device_id:     getOrCreateDeviceId(),
           parent_session_id: session.id,    // ← RET-5 Sprint 1: link back to origin
@@ -659,6 +742,14 @@ export default function SessionView({ session: initialSession, initialMessages =
       setOntologyReady(false)
       setSynthesisStreaming(false)
       setSynthesisDone(false)
+      // S1: Reset all sprint 1 state on reanalyze
+      setOntologyVector(null)
+      setXRayDismissed(false)
+      setStructuralContextActive(false)
+      setStructuralMatchDate(null)
+      setStreamUnlockedUpTo(0)
+      setSynthesisCompletedAt(null)
+      ontologyDataRef.current = null
       window.history.replaceState(null, '', `/session/${id}`)
     } catch {
       setReanalyzeError('Something went wrong. Please try again.')
@@ -866,6 +957,13 @@ export default function SessionView({ session: initialSession, initialMessages =
         [data-theme="light"] .sv-mode-btn.active-clarification {
           background: var(--green-soft);
         }
+        .sv-mode-btn.active-right {
+          border-color: #8840c4;
+          background: rgba(136,64,196,0.10);
+        }
+        [data-theme="light"] .sv-mode-btn.active-right {
+          background: rgba(136,64,196,0.08);
+        }
       `}</style>
 
       <div style={{ minHeight: '100vh', background: 'var(--bg-void)' }}>
@@ -931,6 +1029,30 @@ export default function SessionView({ session: initialSession, initialMessages =
               >
                 {session.decision_text}
               </p>
+
+              {/* S1-05: Decision profile strip — plain-English metadata tags */}
+              {(() => {
+                const parts: string[] = []
+                const dt  = session.decision_type_primary
+                const rev = session.stakes_reversibility
+                const fi  = session.framing_intent
+                if (dt  && DECISION_TYPE_LABELS[dt])   parts.push(DECISION_TYPE_LABELS[dt])
+                if (rev && REVERSIBILITY_LABELS[rev])  parts.push(REVERSIBILITY_LABELS[rev])
+                if (fi  && FRAMING_INTENT_LABELS[fi])  parts.push(FRAMING_INTENT_LABELS[fi])
+                if (parts.length < 2) return null
+                return (
+                  <p style={{
+                    fontSize:      11,
+                    color:         'var(--text-4)',
+                    margin:        '6px 0 0',
+                    letterSpacing: '0.02em',
+                    lineHeight:    1.4,
+                    fontFamily:    'var(--font-mono)',
+                  }}>
+                    {parts.join(' · ')}
+                  </p>
+                )
+              })()}
               {session.decision_text.length > 220 && (
                 <button
                   onClick={() => setDecisionExpanded(v => !v)}
@@ -1052,6 +1174,28 @@ export default function SessionView({ session: initialSession, initialMessages =
                 />
               </div>
 
+              {/* S1-01: Decision X-Ray — shown sessions 1–3, auto-dismisses after 5s */}
+              {/* Deliberately generous window: gives user time to read all 3 dimensions */}
+              {ontologyReady
+                && !xRayDismissed
+                && (totalSessionCount ?? 0) <= 3
+                && ontologyVector
+                && (
+                  <OntologyRevealCard
+                    ontologyVector={ontologyVector}
+                    onDismiss={() => setXRayDismissed(true)}
+                  />
+                )
+              }
+
+              {/* S1-06: Council complete badge — permanent timestamp after synthesis */}
+              {synthesisDone && synthesisCompletedAt && (
+                <SessionCompleteBadge
+                  decisionTypePrimary={session.decision_type_primary}
+                  completedAt={synthesisCompletedAt}
+                />
+              )}
+
               {/* ── 1. Council Synthesis ── */}
               <div className="sv-fade sv-fade-2" data-tour-id="council-synthesis">
                 <SynthesisCard
@@ -1068,7 +1212,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                   redirectQuestion={redirectQuestion}
                   onOverrideRedirect={handleOverrideRedirect}
                   onSynthesisStart={() => setSynthesisStreaming(true)}
-                  onSynthesisComplete={() => { setSynthesisStreaming(false); setSynthesisDone(true) }}
+                  onSynthesisComplete={() => {
+                    setSynthesisStreaming(false)
+                    setSynthesisDone(true)
+                    setSynthesisCompletedAt(new Date())  // S1-06: timestamp for badge
+                  }}
                   examinerContext={synthExaminerContext}
                 />
               </div>
@@ -1174,7 +1322,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                   pointerEvents: redirectBlocked ? 'none' : 'auto',
                 }}
               >
-                {orderedPersonaKeys.map((key) => (
+                {orderedPersonaKeys.map((key, personaIndex) => (
                   <div
                     key={`${key}-${sessionKey}`}
                     ref={el => { cardRefs.current[key] = el }}
@@ -1192,8 +1340,21 @@ export default function SessionView({ session: initialSession, initialMessages =
                       onShareContext={(text) => handleShareContext(key, text)}
                       onExaminerUpdateComplete={handleExaminerUpdateComplete}
                       initialContent={initialMessages[key]}
-                      canStream={examinerSubmitted || !!initialMessages[key]}
+                      // S1-02: Sequential streaming — each persona unlocks only after
+                      // the previous one completes. initialContent (DB load) bypasses
+                      // the gate so re-reads render instantly without cascading delays.
+                      canStream={
+                        !!initialMessages[key] ||
+                        (examinerSubmitted && personaIndex <= streamUnlockedUpTo)
+                      }
                       initialExaminerContext={examinerInitialContext[key]}
+                      // S1-02: fires when this persona reaches 'done', unlocking the next
+                      onPersonaComplete={() =>
+                        setStreamUnlockedUpTo(prev => Math.max(prev, personaIndex + 1))
+                      }
+                      // S1-07: structural echo banner — only pattern_analyst gets the prominent banner
+                      structuralContextActive={structuralContextActive && key === 'pattern_analyst'}
+                      structuralMatchDate={structuralMatchDate}
                     />
                   </div>
                 ))}
@@ -1367,20 +1528,20 @@ export default function SessionView({ session: initialSession, initialMessages =
               </label>
               <div className="home-two-col" style={{ gap: 8, marginBottom: 20 }}>
                 {([
-                  { value: 'analytical',    icon: '⚔',  label: 'Challenge my thinking',        sub: 'Stress-test the decision' },
-                  { value: 'clarification', icon: '🪞', label: 'Help me understand what I want', sub: 'Values and identity' },
+                  { value: 'analytical',    framing: 'challenge' as const, icon: '⚔',  label: 'Challenge my thinking',        sub: 'Stress-test the decision' },
+                  { value: 'clarification', framing: 'clarify'  as const,  icon: '🪞', label: 'Help me understand what I want', sub: 'Values and identity' },
                 ] as const).map(opt => (
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setReRegisterMode(opt.value)}
-                    className={`sv-mode-btn${reRegisterMode === opt.value ? ` active-${opt.value}` : ''}`}
+                    onClick={() => { setReRegisterMode(opt.value); setReFramingIntent(opt.framing) }}
+                    className={`sv-mode-btn${reRegisterMode === opt.value && reFramingIntent !== 'right' ? ` active-${opt.value}` : ''}`}
                     style={{ minHeight: 44 }}
                   >
                     <p style={{
                       fontSize: 12,
                       fontWeight: 600,
-                      color: reRegisterMode === opt.value
+                      color: reRegisterMode === opt.value && reFramingIntent !== 'right'
                         ? (opt.value === 'analytical' ? 'var(--gold)' : 'var(--green-text)')
                         : 'var(--text-2)',
                       marginBottom: 3,
@@ -1390,6 +1551,29 @@ export default function SessionView({ session: initialSession, initialMessages =
                     <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic' }}>{opt.sub}</p>
                   </button>
                 ))}
+                {/* S1-04: Third framing mode — matches home page option exactly */}
+                <button
+                  type="button"
+                  onClick={() => { setReRegisterMode('analytical'); setReFramingIntent('right') }}
+                  className={`sv-mode-btn${reFramingIntent === 'right' ? ' active-right' : ''}`}
+                  style={{
+                    minHeight:   44,
+                    borderColor: reFramingIntent === 'right' ? '#8840c4'               : undefined,
+                    background:  reFramingIntent === 'right' ? 'rgba(136,64,196,0.10)' : undefined,
+                  }}
+                >
+                  <p style={{
+                    fontSize:     12,
+                    fontWeight:   600,
+                    color:        reFramingIntent === 'right' ? '#b070e0' : 'var(--text-2)',
+                    marginBottom: 3,
+                  }}>
+                    ⚖ Tell me what&apos;s actually right here
+                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic' }}>
+                    Objective analysis — challenge any assumptions in the framing
+                  </p>
+                </button>
               </div>
 
               {/* Confidence slider — closes the gap that left reanalyzed decisions

@@ -98,6 +98,7 @@ export async function POST(req: Request) {
         ontology_ready:     true,
         rule_engine_result: cachedSignals?.rule_engine_result ?? null,
         ontology_vector:    cachedSignals?.ontology_vector    ?? null,
+        best_match_date:    null,  // not stored in structural_matches — acceptable for cache hits
       })
     }
 
@@ -389,6 +390,9 @@ export async function POST(req: Request) {
       ontology_ready:     true,
       rule_engine_result: currentOntology.rule_engine_result ?? null,
       ontology_vector:    currentOntology.ontology_vector    ?? null,
+      best_match_date:    result.threshold_met && result.matches.length > 0
+        ? result.matches[0].created_at
+        : null,
     })
 
   } catch (err) {
