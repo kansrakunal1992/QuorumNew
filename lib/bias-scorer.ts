@@ -258,24 +258,81 @@ Score all 15 bias parameters. Return the array in the same order as the paramete
 }
 
 // ── JSON repair utility ───────────────────────────────────────────────────
-// DeepSeek occasionally returns JavaScript-style object literals instead of
-// strict JSON — single-quoted keys, trailing commas, or JS comments.
-// Standard JSON.parse() rejects these. This function normalises the most
-// common failure modes before parsing. Applied only to bias-scorer output
-// which is tightly structured; not a general-purpose JSON repair.
+// DeepSeek returns non-standard JSON in two distinct failure modes.
+// This function handles both in two sequential phases.
+//
+// Phase 1 (structural) — handles the "Expected double-quoted property name"
+//   class of error: single-quoted keys/values, JS comments, trailing commas.
+//
+// Phase 2 (string content) — handles the "Expected ',' or '}' after property
+//   value" class of error: unescaped newlines / tabs / embedded double-quotes
+//   inside string values (typically in long `reasoning` fields).
+//   Uses a character-by-character scan. Peek-ahead heuristic on `"` chars:
+//   if the next non-whitespace character is a JSON structural character
+//   (',', '}', ']', ':') then the quote ends the string; otherwise it is an
+//   embedded unescaped quote and we escape it.
+
 function repairJSON(raw: string): string {
-  return raw
-    // Strip JS block comments: /* ... */
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    // Strip JS line comments: // ...
-    .replace(/\/\/[^\n\r]*/g, '')
-    // Single-quoted keys → double-quoted: {'key': → {"key":
-    .replace(/([{,]\s*)'([^'\\]+)'\s*:/g, '$1"$2":')
-    // Single-quoted string values → double-quoted: : 'val' → : "val"
-    .replace(/:\s*'([^'\\]*)'/g, ': "$1"')
-    // Remove trailing commas before closing brace or bracket
-    .replace(/,(\s*[}\]])/g, '$1')
+  // ── Phase 1: structural fixes ──────────────────────────────────────────
+  let s = raw
+    .replace(/\/\*[\s\S]*?\*\//g, '')                  // block comments
+    .replace(/\/\/[^\n\r]*/g, '')                       // line comments
+    .replace(/([{,]\s*)'([^'\\]+)'\s*:/g, '$1"$2":')  // single-quoted keys
+    .replace(/:\s*'([^'\\]*)'/g, ': "$1"')             // single-quoted values
+    .replace(/,(\s*[}\]])/g, '$1')                      // trailing commas
     .trim()
+
+  // Fast path: Phase 1 was sufficient
+  try { JSON.parse(s); return s } catch { /* fall through to Phase 2 */ }
+
+  // ── Phase 2: string content repair ────────────────────────────────────
+  // Walk character by character; when inside a string, escape illegal raw
+  // control characters and detect embedded unescaped double-quotes via
+  // structural peek-ahead.
+  const STRUCTURAL = new Set([',', '}', ']', ':'])
+  let out = ''
+  let i   = 0
+
+  while (i < s.length) {
+    const ch = s[i]
+
+    if (ch !== '"') { out += ch; i++; continue }
+
+    // ── Entering a string ──
+    out += '"'
+    i++
+
+    while (i < s.length) {
+      const c = s[i]
+
+      // Already-escaped sequence: copy both characters verbatim
+      if (c === '\\') {
+        out += c; i++
+        if (i < s.length) { out += s[i]; i++ }
+        continue
+      }
+
+      // Quote character: decide if it ends the string or is embedded
+      if (c === '"') {
+        // Peek past whitespace to find the next meaningful character
+        let j = i + 1
+        while (j < s.length && (s[j] === ' ' || s[j] === '\r' || s[j] === '\n')) j++
+        if (j >= s.length || STRUCTURAL.has(s[j])) {
+          out += '"'; i++; break        // genuine end-of-string
+        }
+        out += '\\"'; i++; continue    // embedded quote — escape and stay inside string
+      }
+
+      // Illegal raw control characters inside a JSON string
+      if (c === '\n') { out += '\\n'; i++; continue }
+      if (c === '\r') { out += '\\r'; i++; continue }
+      if (c === '\t') { out += '\\t'; i++; continue }
+
+      out += c; i++
+    }
+  }
+
+  return out
 }
 
 // ── Main scorer function ──────────────────────────────────────────────────
