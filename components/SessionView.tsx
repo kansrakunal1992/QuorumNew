@@ -376,10 +376,12 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   // Fetch bias note client-side after synthesis completes.
   // Bias scoring runs in /api/examiner POST so data is guaranteed in DB by synthesisDone.
+  // Auth header is included when available but is NOT required — bias-note route
+  // accepts anonymous sessions via session UUID. Do not gate on authTokenSV.
   useEffect(() => {
-    if (!synthesisDone || !authTokenSV) return
+    if (!synthesisDone) return
     fetch(`/api/session/${session.id}/bias-note`, {
-      headers: { Authorization: `Bearer ${authTokenSV}` },
+      headers: authTokenSV ? { Authorization: `Bearer ${authTokenSV}` } : {},
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data?.biasNote) setBiasNote(data.biasNote) })
