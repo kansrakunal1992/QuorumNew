@@ -29,6 +29,8 @@
   --gold-bright: #eaca78;
   --gold-dim:    #5a3f1a;
   --gold-glow:   rgba(201,168,76,0.14);
+  --tension-highlight-bg:     rgba(201,168,76,0.13);
+  --tension-highlight-border: rgba(201,168,76,0.38);
   --text-1:      #f5f7fb;
   --text-2:      #d2dbe8;
   --text-3:      #a3a8b2;
@@ -92,6 +94,8 @@
   --gold-bright: #d4a020;
   --gold-dim:    #c8a030;
   --gold-glow:   rgba(192,140,24,0.10);
+  --tension-highlight-bg:     rgba(160,100,0,0.09);
+  --tension-highlight-border: rgba(160,100,0,0.28);
   --text-1:      #060d1c;
   --text-2:      #1a2a44;
   --text-3:      #364e70;

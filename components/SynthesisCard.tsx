@@ -44,12 +44,43 @@ export default function SynthesisCard({
   const [briefState,   setBriefState]  = useState<'idle'|'streaming'|'done'|'error'>('idle')
   const [showBrief,    setShowBrief]   = useState(false)
 
-  // S1-03: verdict + tension extracted from synthesis stream
+  // S1-03: verdict + tension — extracted from synthesis stream via tag parser
   const [verdictText,  setVerdictText]  = useState('')
   const [tensionText,  setTensionText]  = useState('')
   const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
   const verdictAccRef  = useRef('')
   const tensionAccRef  = useRef('')
+
+  // Truncates to the first complete sentence — guards against the model putting
+  // multiple sentences inside <verdict>. Applied only at render time; the full
+  // accumulated text is kept in state so partial-stream cursors work correctly.
+  const firstSentence = (text: string): string => {
+    const m = text.match(/^[^.!?]*[.!?]/)
+    return m ? m[0].trim() : text.trim()
+  }
+
+  // Renders synthesis prose with the tension sentence highlighted inline.
+  // During streaming: plain text (tensionText is accumulating, match unreliable).
+  // After done: finds the exact tension string and wraps it with a theme-aware highlight.
+  const renderProse = (prose: string, tension: string, isDone: boolean) => {
+    if (!tension || !isDone) return <>{prose}</>
+    const idx = prose.indexOf(tension)
+    if (idx === -1) return <>{prose}</>
+    return (
+      <>
+        {prose.slice(0, idx)}
+        <span style={{
+          background:    'var(--tension-highlight-bg)',
+          borderBottom:  '1px solid var(--tension-highlight-border)',
+          paddingBottom: 1,
+          borderRadius:  2,
+        }}>
+          {tension}
+        </span>
+        {prose.slice(idx + tension.length)}
+      </>
+    )
+  }
 
   // ── TTS ───────────────────────────────────────────────────────────────────
   const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
@@ -139,28 +170,26 @@ export default function SynthesisCard({
           if (ctrl.signal.aborted) return
           const chunk = dec.decode(value, { stream: true })
           acc += chunk
-          // S1-03: parse <verdict> and <tension> tags in real-time
+          // S1-03: tag parser — processes NEW chunk only, accumulates via refs.
+          // Verdict → extracted OUT of prose, shown in gold box above.
+          // Tension → content STAYS in prose (tags stripped); highlighted inline after done.
           {
-            let remaining = chunk  // process only the NEW chunk for delta parsing
+            let remaining = chunk
             let mode    = parseModeRef.current
             let verdict = verdictAccRef.current
             let tension = tensionAccRef.current
-            let prose   = ''
 
             while (remaining.length > 0) {
               if (mode === 'prose') {
                 const vIdx = remaining.indexOf('<verdict>')
                 const tIdx = remaining.indexOf('<tension>')
                 if (vIdx !== -1 && (tIdx === -1 || vIdx < tIdx)) {
-                  prose    += remaining.slice(0, vIdx)
                   remaining = remaining.slice(vIdx + '<verdict>'.length)
                   mode      = 'verdict'
                 } else if (tIdx !== -1) {
-                  prose    += remaining.slice(0, tIdx)
                   remaining = remaining.slice(tIdx + '<tension>'.length)
                   mode      = 'tension'
                 } else {
-                  prose    += remaining
                   remaining = ''
                 }
               } else if (mode === 'verdict') {
@@ -189,16 +218,18 @@ export default function SynthesisCard({
             parseModeRef.current  = mode
             verdictAccRef.current = verdict
             tensionAccRef.current = tension
-            if (verdict) setVerdictText(verdict.trim())
+            if (verdict) setVerdictText(verdict)
             if (tension) setTensionText(tension.trim())
           }
-          // Strip tags from the display prose — regex on full acc is clean
+          // Display prose:
+          // • Complete verdict block → stripped (shown in gold box above prose)
+          // • Partial open verdict at stream edge → stripped (closes on next chunk)
+          // • Tension tags → stripped; tension TEXT stays inline for highlight after done
           setSynthesis(
             acc
               .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
-              .replace(/<tension>[\s\S]*?<\/tension>\n*/g, '')
-              .replace(/<verdict>[\s\S]*/g, '')   // partial open tag at stream edge
-              .replace(/<tension>[\s\S]*/g, '')
+              .replace(/<verdict>[\s\S]*/g, '')
+              .replace(/<\/?tension>/g, '')
           )
         }
         setState('done')
@@ -585,70 +616,57 @@ export default function SynthesisCard({
         )}
         {(state === 'streaming' || state === 'done') && synthesis !== undefined && (
           <>
-            {/* S1-03: Verdict block — gold left-border, display font */}
+            {/* S1-03: Verdict block — one sentence, display font, prominent */}
             {verdictText && (
               <div style={{
-                borderLeft:   '3px solid var(--gold)',
+                borderLeft:   '4px solid var(--gold)',
                 background:   'var(--gold-glow)',
-                borderRadius: '0 8px 8px 0',
-                padding:      '10px 15px',
-                marginBottom: 16,
-              }}>
-                <p style={{
-                  fontFamily:  'var(--font-display)',
-                  fontSize:    15,
-                  fontWeight:  500,
-                  color:       'var(--text-1)',
-                  lineHeight:  1.6,
-                  margin:      0,
-                }}>
-                  {verdictText}
-                  {parseModeRef.current === 'verdict' && (
-                    <span style={{ opacity: 0.4, marginLeft: 2 }}>▊</span>
-                  )}
-                </p>
-              </div>
-            )}
-            {/* Main prose */}
-            {synthesis && (
-              <p style={{ fontSize: 14, lineHeight: 1.85, color: 'var(--text-1)', whiteSpace: 'pre-wrap', letterSpacing: '0.01em' }}
-                className={state === 'streaming' ? 'cursor' : ''}>
-                {synthesis}
-              </p>
-            )}
-            {/* S1-03: Tension callout — gold-bordered inline box */}
-            {tensionText && (
-              <div style={{
-                border:       '1px solid var(--gold-dim)',
-                borderRadius: 8,
-                padding:      '10px 14px',
-                marginTop:    16,
-                background:   'var(--bg-inset)',
+                borderRadius: '0 10px 10px 0',
+                padding:      '13px 18px',
+                marginBottom: 20,
               }}>
                 <p style={{
                   fontFamily:    'var(--font-mono)',
-                  fontSize:      10,
+                  fontSize:      9,
                   fontWeight:    700,
-                  letterSpacing: '0.08em',
+                  letterSpacing: '0.14em',
                   textTransform: 'uppercase',
                   color:         'var(--gold)',
-                  margin:        '0 0 5px',
+                  margin:        '0 0 7px',
+                  opacity:       0.85,
                 }}>
-                  Core tension
+                  Council verdict
                 </p>
                 <p style={{
-                  fontSize:   12.5,
-                  color:      'var(--text-2)',
-                  lineHeight: 1.6,
-                  fontStyle:  'italic',
-                  margin:     0,
+                  fontFamily:    'var(--font-display)',
+                  fontSize:      17,
+                  fontWeight:    500,
+                  color:         'var(--text-1)',
+                  lineHeight:    1.65,
+                  letterSpacing: '-0.01em',
+                  margin:        0,
                 }}>
-                  {tensionText}
-                  {parseModeRef.current === 'tension' && (
-                    <span style={{ opacity: 0.4, marginLeft: 2 }}>▊</span>
+                  {/* Truncate to one sentence — guards against multi-sentence model output */}
+                  {firstSentence(verdictText)}
+                  {parseModeRef.current === 'verdict' && (
+                    <span style={{ opacity: 0.35, marginLeft: 2 }}>▊</span>
                   )}
                 </p>
               </div>
+            )}
+            {/* Main prose — tension highlighted inline once streaming completes */}
+            {synthesis && (
+              <p style={{
+                fontSize:    14,
+                lineHeight:  1.85,
+                color:       'var(--text-1)',
+                whiteSpace:  'pre-wrap',
+                letterSpacing: '0.01em',
+              }}
+                className={state === 'streaming' ? 'cursor' : ''}
+              >
+                {renderProse(synthesis, tensionText, state === 'done')}
+              </p>
             )}
           </>
         )}
