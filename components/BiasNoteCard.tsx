@@ -1,3 +1,4 @@
+'use client'
 // components/BiasNoteCard.tsx
 // Sprint: Item A — first-session bias feedback
 //
@@ -27,7 +28,18 @@ export default function BiasNoteCard({ note }: Props) {
   if (!note) return null
 
   return (
-    <div style={{
+    <>
+      <style>{`
+        @keyframes bias-pulse {
+          0%   { box-shadow: 0 0 0 0   rgba(201,138,76,0.55); }
+          60%  { box-shadow: 0 0 0 6px rgba(201,138,76,0.08); }
+          100% { box-shadow: 0 0 0 8px rgba(201,138,76,0);    }
+        }
+        .bias-dot {
+          animation: bias-pulse 2s ease-out infinite;
+        }
+      `}</style>
+      <div style={{
       borderRadius: 12,
       padding:      '13px 18px',
       background:   'var(--bg-card)',
@@ -36,17 +48,18 @@ export default function BiasNoteCard({ note }: Props) {
       gap:          12,
       alignItems:   'flex-start',
     }}>
-      {/* Amber dot — consistent with EarlyEchoCard's gold pulse, distinct color
-          so the two don't read as the same signal type */}
-      <div style={{
+        {/* Amber pulsating dot */}
+        <div
+          className="bias-dot"
+          style={{
         width:        7,
         height:       7,
         borderRadius: '50%',
         background:   '#c98a4c',
         marginTop:    5,
         flexShrink:   0,
-        boxShadow:    '0 0 0 3px rgba(201,138,76,0.12)',
-      }} />
+        }}
+        />
       <div>
         <p style={{
           fontSize:   12.5,
@@ -67,5 +80,6 @@ export default function BiasNoteCard({ note }: Props) {
         </p>
       </div>
     </div>
+    </>
   )
 }
