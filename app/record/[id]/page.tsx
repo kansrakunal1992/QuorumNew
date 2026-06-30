@@ -25,6 +25,11 @@ function stripHeaderTags(raw: string): string {
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+    // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
+    .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
+    .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close
+    // Strip tension wrapper tags but keep the sentence text inline
+    .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
 }
 

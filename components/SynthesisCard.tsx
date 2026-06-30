@@ -50,34 +50,43 @@ export default function SynthesisCard({
   const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
   const verdictAccRef  = useRef('')
   const tensionAccRef  = useRef('')
+  // Raw accumulated stream text — used by renderProse to locate tension tags
+  // without relying on trimmed state strings (avoids whitespace indexOf mismatches).
+  const rawAccRef = useRef('')
 
   // Truncates to the first complete sentence — guards against the model putting
-  // multiple sentences inside <verdict>. Applied only at render time; the full
-  // accumulated text is kept in state so partial-stream cursors work correctly.
+  // multiple sentences inside <verdict>. Applied only at render time.
   const firstSentence = (text: string): string => {
     const m = text.match(/^[^.!?]*[.!?]/)
     return m ? m[0].trim() : text.trim()
   }
 
   // Renders synthesis prose with the tension sentence highlighted inline.
-  // During streaming: plain text (tensionText is accumulating, match unreliable).
-  // After done: finds the exact tension string and wraps it with a theme-aware highlight.
-  const renderProse = (prose: string, tension: string, isDone: boolean) => {
-    if (!tension || !isDone) return <>{prose}</>
-    const idx = prose.indexOf(tension)
-    if (idx === -1) return <>{prose}</>
+  // During streaming: plain text. After done: splits rawAccRef on <tension> tags
+  // directly — avoids the indexOf whitespace-mismatch problem entirely.
+  const renderProse = (prose: string, isDone: boolean): React.ReactNode => {
+    if (!isDone) return <>{prose}</>
+    const raw = rawAccRef.current
+    // Strip the verdict block first, then look for tension tags
+    const rawNoVerdict = raw
+      .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
+      .replace(/<verdict>[\s\S]*/g, '')
+    const tStart = rawNoVerdict.indexOf('<tension>')
+    const tEnd   = rawNoVerdict.indexOf('</tension>')
+    if (tStart === -1 || tEnd === -1 || tEnd <= tStart) return <>{prose}</>
+    const before  = rawNoVerdict.slice(0, tStart)
+    const content = rawNoVerdict.slice(tStart + '<tension>'.length, tEnd)
+    const after   = rawNoVerdict.slice(tEnd + '</tension>'.length).trimStart()
     return (
       <>
-        {prose.slice(0, idx)}
+        {before}
         <span style={{
           background:    'var(--tension-highlight-bg)',
           borderBottom:  '1px solid var(--tension-highlight-border)',
           paddingBottom: 1,
           borderRadius:  2,
-        }}>
-          {tension}
-        </span>
-        {prose.slice(idx + tension.length)}
+        }}>{content}</span>
+        {after}
       </>
     )
   }
@@ -123,6 +132,7 @@ export default function SynthesisCard({
     parseModeRef.current  = 'prose'
     verdictAccRef.current = ''
     tensionAccRef.current = ''
+    rawAccRef.current     = ''
 
     const run = async () => {
       const latest = responsesRef.current
@@ -170,6 +180,7 @@ export default function SynthesisCard({
           if (ctrl.signal.aborted) return
           const chunk = dec.decode(value, { stream: true })
           acc += chunk
+          rawAccRef.current = acc   // keep ref in sync for renderProse
           // S1-03: tag parser — processes NEW chunk only, accumulates via refs.
           // Verdict → extracted OUT of prose, shown in gold box above.
           // Tension → content STAYS in prose (tags stripped); highlighted inline after done.
@@ -232,6 +243,23 @@ export default function SynthesisCard({
               .replace(/<\/?tension>/g, '')
           )
         }
+        // Final extraction pass — guarantees verdict and tension are captured even
+        // if a chunk boundary left the per-chunk parser in an open state (e.g. stream
+        // ended with parseModeRef === 'verdict' and no closing tag arrived).
+        const finalAcc = acc
+        const fv = finalAcc.match(/<verdict>([\s\S]*?)<\/verdict>/)
+        const ft = finalAcc.match(/<tension>([\s\S]*?)<\/tension>/)
+        if (fv?.[1]?.trim()) setVerdictText(fv[1].trim())
+        if (ft?.[1]?.trim()) setTensionText(ft[1].trim())
+        // One final setSynthesis so the prose is fully clean regardless of
+        // whether the last setSynthesis inside the loop was on a partial chunk.
+        setSynthesis(
+          finalAcc
+            .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
+            .replace(/<verdict>[\s\S]*/g, '')
+            .replace(/<\/?tension>/g, '')
+            .trimStart()
+        )
         setState('done')
         onSynthesisComplete?.()
       } catch (e: unknown) {
@@ -619,11 +647,12 @@ export default function SynthesisCard({
             {/* S1-03: Verdict block — one sentence, display font, prominent */}
             {verdictText && (
               <div style={{
-                borderLeft:   '4px solid var(--gold)',
-                background:   'var(--gold-glow)',
+                borderLeft:   '5px solid var(--gold)',
+                background:   'var(--verdict-bg)',
                 borderRadius: '0 10px 10px 0',
-                padding:      '13px 18px',
-                marginBottom: 20,
+                padding:      '14px 20px',
+                marginBottom: 22,
+                boxShadow:    '0 0 0 1px rgba(201,168,76,0.22)',
               }}>
                 <p style={{
                   fontFamily:    'var(--font-mono)',
@@ -632,8 +661,7 @@ export default function SynthesisCard({
                   letterSpacing: '0.14em',
                   textTransform: 'uppercase',
                   color:         'var(--gold)',
-                  margin:        '0 0 7px',
-                  opacity:       0.85,
+                  margin:        '0 0 8px',
                 }}>
                   Council verdict
                 </p>
@@ -646,7 +674,6 @@ export default function SynthesisCard({
                   letterSpacing: '-0.01em',
                   margin:        0,
                 }}>
-                  {/* Truncate to one sentence — guards against multi-sentence model output */}
                   {firstSentence(verdictText)}
                   {parseModeRef.current === 'verdict' && (
                     <span style={{ opacity: 0.35, marginLeft: 2 }}>▊</span>
@@ -665,7 +692,7 @@ export default function SynthesisCard({
               }}
                 className={state === 'streaming' ? 'cursor' : ''}
               >
-                {renderProse(synthesis, tensionText, state === 'done')}
+                {renderProse(synthesis, state === 'done')}
               </p>
             )}
           </>

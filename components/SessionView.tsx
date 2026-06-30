@@ -219,6 +219,14 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   // S1-01: Decision X-Ray — ontology vector + dismiss flag
   const [ontologyVector, setOntologyVector] = useState<Record<string, { score: number; confidence: number }> | null>(null)
+  // S1-05 fix: decision_type_primary + stakes_reversibility arrive from the
+  // structural-match response once ontology is ready. Stored here so the profile
+  // strip renders even on first load (server-side session has nulls until ontology
+  // completes async). Falls back to session prop for returning users.
+  const [profileMeta, setProfileMeta] = useState<{
+    decision_type_primary: string | null
+    stakes_reversibility:  string | null
+  } | null>(null)
   const [xRayDismissed,  setXRayDismissed]  = useState(false)
 
   // S1-07: Structural echo banner — pattern_analyst card
@@ -432,6 +440,13 @@ export default function SessionView({ session: initialSession, initialMessages =
             if (data.ontology_vector && typeof data.ontology_vector === 'object') {
               setOntologyVector(data.ontology_vector)
             }
+            // S1-05: Capture metadata labels for the decision profile strip.
+            // The server-side session prop may have nulls on first load; this
+            // is the authoritative post-ontology source.
+            setProfileMeta({
+              decision_type_primary: (data.decision_type_primary as string) ?? null,
+              stakes_reversibility:  (data.stakes_reversibility  as string) ?? null,
+            })
           }
           if (data.threshold_met && data.context_block) {
             setStructuralContext(data.context_block)
@@ -1035,13 +1050,17 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* S1-05: Decision profile strip — plain-English metadata tags */}
               {(() => {
                 const parts: string[] = []
-                const dt  = session.decision_type_primary
-                const rev = session.stakes_reversibility
+                // Use profileMeta once ontology is ready; fall back to session prop
+                // (pre-populated for returning users whose session already has these fields).
+                const dt  = profileMeta?.decision_type_primary  ?? session.decision_type_primary
+                const rev = profileMeta?.stakes_reversibility   ?? session.stakes_reversibility
                 const fi  = session.framing_intent
                 if (dt  && DECISION_TYPE_LABELS[dt])   parts.push(DECISION_TYPE_LABELS[dt])
                 if (rev && REVERSIBILITY_LABELS[rev])  parts.push(REVERSIBILITY_LABELS[rev])
                 if (fi  && FRAMING_INTENT_LABELS[fi])  parts.push(FRAMING_INTENT_LABELS[fi])
-                if (parts.length < 2) return null
+                // Show strip as long as at least one label is available — framing_intent
+                // is always set on session creation so the strip is never empty.
+                if (parts.length < 1) return null
                 return (
                   <p style={{
                     fontSize:      11,

@@ -35,6 +35,20 @@ function parseInline(line: string): Segment[] {
 }
 
 // Strip markdown for plain-text contexts
+// Strip verdict/tension/persona tags that should never appear in the PDF.
+// Verdict is removed entirely (it's a UI-only gold box on the session page).
+// Tension wrapper tags are stripped; the sentence text is kept inline.
+function stripSynthesisTags(raw: string): string {
+  return raw
+    .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
+    .replace(/<verdict>[\s\S]*/g, '')     // guard: open tag without close
+    .replace(/<\/?tension>/g, '')
+    .replace(/<lens>[\s\S]*?<\/lens>/g, '')
+    .replace(/<position>[\s\S]*?<\/position>/g, '')
+    .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+    .replace(/^\s+/, '')
+}
+
 function stripMd(s: string): string {
   return s
     .replace(/\*\*(.+?)\*\*/g, '$1')
@@ -389,7 +403,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
             doc.text(pbLines.slice(0, 2), ML + 1, y + 2)
             y += 12
           }
-          renderContent(briefMsgs.assistant[i], 9.5)
+          renderContent(stripSynthesisTags(briefMsgs.assistant[i]), 9.5)
           y += 3
         }
       }
@@ -481,7 +495,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
               doc.text(pbLines.slice(0, 2), ML + 1, y + 2)
               y += 12
             }
-            renderContent(msgs.assistant[i], 9.5)
+            renderContent(isSynthesis ? stripSynthesisTags(msgs.assistant[i]) : msgs.assistant[i], 9.5)
             y += 3
           }
         }

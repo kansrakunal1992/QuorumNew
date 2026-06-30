@@ -82,12 +82,15 @@ function cleanPushbackText(raw: string): string {
     .trim()
 }
 
-// Strip <lens>, <position>, <realcost> tags from advisor pushback reply text
+// Strip <lens>, <position>, <realcost>, <verdict>, <tension> tags from advisor text
 function stripAdvisorTags(raw: string): string {
   return raw
     .replace(/<lens>[\s\S]*?<\/lens>/gi, '')
     .replace(/<position>[\s\S]*?<\/position>/gi, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/gi, '')
+    .replace(/<verdict>[\s\S]*?<\/verdict>\n*/gi, '')
+    .replace(/<verdict>[\s\S]*/gi, '')           // guard: open tag without close
+    .replace(/<\/?tension>/gi, '')
     .replace(/^\s+/, '')
 }
 

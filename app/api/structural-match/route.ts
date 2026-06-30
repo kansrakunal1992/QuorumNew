@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       // Fast single-row read for grid reorder signals (not stored in structural_matches)
       const { data: cachedSignals } = await supabase
         .from('sessions_ontology')
-        .select('rule_engine_result, ontology_vector')
+        .select('rule_engine_result, ontology_vector, decision_type_primary, stakes_reversibility')
         .eq('session_id', sessionId)
         .maybeSingle()
       return NextResponse.json({
@@ -98,6 +98,8 @@ export async function POST(req: Request) {
         ontology_ready:     true,
         rule_engine_result: cachedSignals?.rule_engine_result ?? null,
         ontology_vector:    cachedSignals?.ontology_vector    ?? null,
+        decision_type_primary:  cachedSignals?.decision_type_primary  ?? null,
+        stakes_reversibility:   cachedSignals?.stakes_reversibility   ?? null,
         best_match_date:    null,  // not stored in structural_matches — acceptable for cache hits
       })
     }
@@ -166,6 +168,8 @@ export async function POST(req: Request) {
         session_count_used: 0, ontology_ready: true,
         rule_engine_result: currentOntology.rule_engine_result ?? null,
         ontology_vector:    currentOntology.ontology_vector    ?? null,
+        decision_type_primary:  currentOntology.decision_type_primary  ?? null,
+        stakes_reversibility:   currentOntology.stakes_reversibility   ?? null,
       })
     }
 
@@ -390,6 +394,8 @@ export async function POST(req: Request) {
       ontology_ready:     true,
       rule_engine_result: currentOntology.rule_engine_result ?? null,
       ontology_vector:    currentOntology.ontology_vector    ?? null,
+      decision_type_primary:  currentOntology.decision_type_primary  ?? null,
+      stakes_reversibility:   currentOntology.stakes_reversibility   ?? null,
       best_match_date:    result.threshold_met && result.matches.length > 0
         ? result.matches[0].created_at
         : null,

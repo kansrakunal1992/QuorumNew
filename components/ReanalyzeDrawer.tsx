@@ -18,6 +18,7 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
   const [reDecision,     setReDecision]     = useState(decisionText)
   const [reContext,      setReContext]       = useState(contextText ?? '')
   const [reRegisterMode, setReRegisterMode] = useState<'analytical' | 'clarification'>('analytical')
+  const [reFramingIntent, setReFramingIntent] = useState<'right' | null>(null)
   // Root-cause fix (Sprint RET-4 follow-up, June 21, 2026): reanalyzed decisions previously
   // never captured entry confidence, so they were silently invisible to the calibration
   // record (KDD 194). Defaults to 5, same as the homepage form's slider.
@@ -52,7 +53,8 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
         body: JSON.stringify({
           decision_text: reDecision.trim(),
           context_text:  reContext.trim() || null,
-          register_mode: reRegisterMode,
+          register_mode: reFramingIntent === 'right' ? 'analytical' : reRegisterMode,
+          framing_intent: reFramingIntent ?? undefined,
           pre_decision_confidence: rePreConfidence,
           // user_id intentionally omitted — server derives from Bearer token (S4-02)
           device_id:     getOrCreateDeviceId(), // ← device fallback
@@ -66,7 +68,7 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
       setReanalyzeError('Something went wrong. Please try again.')
       setReanalyzing(false)
     }
-  }, [reDecision, reContext, reRegisterMode, rePreConfidence, router])
+  }, [reDecision, reContext, reRegisterMode, reFramingIntent, rePreConfidence, router])
 
   return (
     <>
@@ -139,41 +141,60 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
               placeholder="Add new information that has emerged…"
             />
 
-            {/* Register mode toggle */}
+            {/* Register mode / framing toggle */}
             <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 8, fontWeight: 500 }}>
               What are you looking for this time?
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
               {([
-                { value: 'analytical',   icon: '⚔', label: 'Challenge my thinking',          sub: 'Stress-test the decision' },
-                { value: 'clarification', icon: '🪞', label: 'Help me understand what I want', sub: 'Values and identity' },
-              ] as const).map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setReRegisterMode(opt.value)}
-                  style={{
-                    padding: '10px 12px', borderRadius: 9, textAlign: 'left',
-                    cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-                    border: `1px solid ${reRegisterMode === opt.value
-                      ? (opt.value === 'analytical' ? 'var(--gold)' : 'var(--success-border)')
-                      : 'var(--border-dim)'}`,
-                    background: reRegisterMode === opt.value
-                      ? (opt.value === 'analytical' ? 'rgba(201,168,76,0.1)' : 'var(--success-bg)')
-                      : 'transparent',
-                  }}
-                >
-                  <p style={{
-                    fontSize: 12, fontWeight: 600, marginBottom: 2,
-                    color: reRegisterMode === opt.value
-                      ? (opt.value === 'analytical' ? 'var(--gold)' : 'var(--success-text)')
-                      : 'var(--text-2)',
-                  }}>
-                    {opt.icon} {opt.label}
-                  </p>
-                  <p style={{ fontSize: 11, color: 'var(--text-4)' }}>{opt.sub}</p>
-                </button>
-              ))}
+                {
+                  id: 'analytical', icon: '⚔', label: 'Challenge my thinking',
+                  sub: 'Stress-test the decision', activeColor: 'var(--gold)',
+                  activeBg: 'rgba(201,168,76,0.1)', activeText: 'var(--gold)',
+                },
+                {
+                  id: 'clarification', icon: '🪞', label: 'Help me understand what I want',
+                  sub: 'Values and identity', activeColor: 'var(--success-border)',
+                  activeBg: 'var(--success-bg)', activeText: 'var(--success-text)',
+                },
+                {
+                  id: 'right', icon: '⚖', label: "Tell me what's actually right here",
+                  sub: 'Give me a clear call, not just perspectives', activeColor: '#9b7fd4',
+                  activeBg: 'rgba(155,127,212,0.10)', activeText: '#9b7fd4',
+                },
+              ] as const).map(opt => {
+                const isActive = opt.id === 'right'
+                  ? reFramingIntent === 'right'
+                  : reFramingIntent !== 'right' && reRegisterMode === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      if (opt.id === 'right') {
+                        setReFramingIntent('right')
+                      } else {
+                        setReFramingIntent(null)
+                        setReRegisterMode(opt.id as 'analytical' | 'clarification')
+                      }
+                    }}
+                    style={{
+                      padding: '10px 14px', borderRadius: 9, textAlign: 'left',
+                      cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                      border: `1px solid ${isActive ? opt.activeColor : 'var(--border-dim)'}`,
+                      background: isActive ? opt.activeBg : 'transparent',
+                    }}
+                  >
+                    <p style={{
+                      fontSize: 12, fontWeight: 600, marginBottom: 2,
+                      color: isActive ? opt.activeText : 'var(--text-2)',
+                    }}>
+                      {opt.icon} {opt.label}
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--text-4)' }}>{opt.sub}</p>
+                  </button>
+                )
+              })}
             </div>
 
             {/* Confidence slider — closes the gap that left reanalyzed decisions
