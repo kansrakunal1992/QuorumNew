@@ -309,12 +309,20 @@ async function buildPdf(
   }
 
   const renderVerdictBoxPdf = (verdictText: string) => {
-    const padTop = 13, padBottom = 13, padX = 16, labelGap = 13
-    doc.setFont('Helvetica', 'bold')
+    // Layout is computed top-down with explicit baseline math (label baseline,
+    // then verdict baseline) instead of a fixed labelGap — the previous fixed
+    // gap (13pt) was tuned for the label's old font size and didn't account for
+    // VERDICT_SIZE's actual ascent, so the verdict text's cap-height crept up
+    // into the "COUNCIL VERDICT" label above it.
+    const padTop = 14, padBottom = 14, padX = 16
+    const labelSize = 7.5
+    const labelToVerdictGap = labelSize * 1.9   // generous clearance below label
+
+    doc.setFont('Helvetica', 'normal')   // verdict sentence is not bold (display weight, not heavy)
     doc.setFontSize(VERDICT_SIZE)
     const wrapped: string[] = doc.splitTextToSize(verdictText, TW - padX * 2) as string[]
-    const lh   = VERDICT_SIZE * 1.32
-    const boxH = padTop + labelGap + (wrapped.length * lh) + padBottom
+    const lh   = VERDICT_SIZE * 1.4
+    const boxH = padTop + labelToVerdictGap + (wrapped.length * lh) + padBottom
     ensure(boxH + 14)
     const boxY = Y
     doc.setFillColor(...C.verdictBg)
@@ -323,14 +331,14 @@ async function buildPdf(
     doc.rect(ML, boxY, 3, boxH, 'F')
 
     doc.setFont('Helvetica', 'bold')
-    doc.setFontSize(7.5)
+    doc.setFontSize(labelSize)
     doc.setTextColor(...C.verdictAccent)
     doc.setCharSpace(0.8)
-    doc.text('COUNCIL VERDICT', ML + padX, boxY + padTop + 4)
+    doc.text('COUNCIL VERDICT', ML + padX, boxY + padTop + labelSize * 0.75)
     doc.setCharSpace(0)
 
-    let ty = boxY + padTop + labelGap
-    doc.setFont('Helvetica', 'bold')
+    let ty = boxY + padTop + labelToVerdictGap + VERDICT_SIZE * 0.75
+    doc.setFont('Helvetica', 'normal')
     doc.setFontSize(VERDICT_SIZE)
     doc.setTextColor(...C.bodyText)
     for (const wl of wrapped) {
@@ -824,7 +832,7 @@ async function buildPdf(
 
   drawFooter()
 
-  // ── Decision block (line-by-line, no pre-calc box height) ───────────────────
+  // ── Decision block (box height computed upfront, then drawn) ────────────────
 
   // "THE DECISION" eyebrow label
   doc.setFont('Helvetica', 'bold')
@@ -838,31 +846,28 @@ async function buildPdf(
   const decText = sanitise(session.decision_text)
   const decSize = 10.5
   const decLH   = decSize * 1.58
-  // Set font BEFORE split
+  const decPadTop = 11, decPadBottom = 11, decPadX = 14
   doc.setFont('Helvetica', 'normal')
   doc.setFontSize(decSize)
-  const decLines = doc.splitTextToSize(decText, TW - 18) as string[]
-  const decStartY = Y
+  const decLines = doc.splitTextToSize(decText, TW - decPadX * 2) as string[]
+  const decBoxH  = decPadTop + (decLines.length * decLH) + decPadBottom
+  ensure(decBoxH + 10)
 
-  for (const dl of decLines) {
-    ensure(decLH + 2)
-    // Draw bg rect for this line (left-to-right fill per line)
-    doc.setFillColor(...C.decisionBg)
-    doc.rect(ML, Y - decLH + 3, TW, decLH + 1, 'F')
-    doc.setFont('Helvetica', 'normal')
-    doc.setFontSize(decSize)
-    doc.setTextColor(...C.bodyText)
-    doc.text(dl, ML + 14, Y)
-    Y += decLH
-  }
-  // Close the box with a bottom pad
+  const decBoxTop = Y
   doc.setFillColor(...C.decisionBg)
-  doc.rect(ML, Y, TW, 6, 'F')
-  Y += 6
-  // Gold left accent bar (drawn after, over the bg)
-  const decEndY = Y
+  doc.rect(ML, decBoxTop, TW, decBoxH, 'F')
   doc.setFillColor(...C.gold)
-  doc.rect(ML, decStartY - decLH + 3, 3, decEndY - decStartY + decLH - 3, 'F')
+  doc.rect(ML, decBoxTop, 3, decBoxH, 'F')
+
+  let decTy = decBoxTop + decPadTop + decSize * 0.75
+  doc.setFont('Helvetica', 'normal')
+  doc.setFontSize(decSize)
+  doc.setTextColor(...C.bodyText)
+  for (const dl of decLines) {
+    doc.text(dl, ML + decPadX, decTy)
+    decTy += decLH
+  }
+  Y = decBoxTop + decBoxH + 6
 
   if (session.context_text?.trim()) {
     ensure(20)
@@ -1051,9 +1056,13 @@ async function buildPdf(
         doc.addPage(); fillPage(); page++; Y = ML; drawFooter()
       }
 
-      // Persona header band
+      // Persona header band — height now has enough bottom margin under the
+      // tagline baseline so the colored band background fully covers both
+      // lines of text (previously the tagline's descenders sat right at, or
+      // past, the band's bottom edge, making the fill look like it "cut off"
+      // before the text ended).
       const hBg  = isSynthesis ? C.synthBg : accentRgb
-      const hH   = isSynthesis ? 26 : 22
+      const hH   = isSynthesis ? 30 : 26
       doc.setFillColor(...hBg)
       doc.rect(0, Y - 4, PW, hH, 'F')
       doc.setDrawColor(...C.gold)
@@ -1063,12 +1072,12 @@ async function buildPdf(
       doc.setFont('Helvetica', 'bold')
       doc.setFontSize(isSynthesis ? 13 : 11)
       doc.setTextColor(...C.gold)
-      doc.text(sanitise(persona.label.toUpperCase()), ML, Y + 8)
+      doc.text(sanitise(persona.label.toUpperCase()), ML, Y + 7)
 
       doc.setFont('Helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(...C.mutedText)
-      doc.text(sanitise(persona.tagline ?? ''), ML, Y + 18)
+      doc.text(sanitise(persona.tagline ?? ''), ML, Y + 17)
 
       Y += hH + 6
 

@@ -33,6 +33,103 @@ function stripHeaderTags(raw: string): string {
     .replace(/^\s+/, '')
 }
 
+// Truncates to the first complete sentence — same rule as SynthesisCard.tsx (S1-03),
+// guards against the model writing more than one sentence inside <verdict>.
+function firstSentence(text: string): string {
+  const m = text.match(/^[^.!?]*[.!?]/)
+  return m ? m[0].trim() : text.trim()
+}
+
+// Synthesis-only: pulls the <verdict> sentence out separately (rendered in the
+// gold box) and returns the remaining prose with <verdict> removed but
+// <tension> tags still in place, so renderSynthesisProse can locate and
+// highlight the tension sentence inline — mirrors SynthesisCard.tsx exactly,
+// so the static record page matches what was shown live on the session page.
+function parseVerdictTension(raw: string): { verdict: string | null; rest: string } {
+  const vMatch  = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
+  const verdict = vMatch?.[1]?.trim() ? firstSentence(vMatch[1].trim()) : null
+  const rest = raw
+    .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
+    .replace(/<verdict>[\s\S]*/g, '')   // guard: open tag without close
+    .replace(/<lens>[\s\S]*?<\/lens>/g, '')
+    .replace(/<position>[\s\S]*?<\/position>/g, '')
+    .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+    .trimStart()
+  return { verdict, rest }
+}
+
+// Renders synthesis prose with the <tension> sentence highlighted inline —
+// same visual treatment (background + underline) as SynthesisCard.tsx.
+function renderSynthesisProse(rest: string): React.ReactNode {
+  const tStart = rest.indexOf('<tension>')
+  const tEnd   = rest.indexOf('</tension>')
+  if (tStart === -1 || tEnd === -1 || tEnd <= tStart) {
+    return <>{rest.replace(/<\/?tension>/g, '')}</>
+  }
+  const before  = rest.slice(0, tStart)
+  const content = rest.slice(tStart + '<tension>'.length, tEnd)
+  const after   = rest.slice(tEnd + '</tension>'.length)
+  return (
+    <>
+      {before}
+      <span style={{
+        background:    'var(--tension-highlight-bg)',
+        borderBottom:  '1px solid var(--tension-highlight-border)',
+        paddingBottom: 1,
+        borderRadius:  2,
+      }}>{content}</span>
+      {after}
+    </>
+  )
+}
+
+// Full synthesis message: verdict in a gold box (if present) + prose below
+// with the tension sentence highlighted inline. Used for both the initial
+// synthesis message and any reanalysis/pushback synthesis responses.
+function renderSynthesisMessage(raw: string): React.ReactNode {
+  const { verdict, rest } = parseVerdictTension(raw)
+  return (
+    <>
+      {verdict && (
+        <div style={{
+          borderLeft:   '5px solid var(--verdict-accent)',
+          background:   'var(--verdict-bg)',
+          borderRadius: '0 10px 10px 0',
+          padding:      '14px 20px',
+          marginBottom: 16,
+          boxShadow:    'var(--verdict-shadow)',
+        }}>
+          <p style={{
+            fontFamily:    'var(--font-mono)',
+            fontSize:      9,
+            fontWeight:    700,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color:         'var(--verdict-accent)',
+            margin:        '0 0 8px',
+          }}>
+            Council verdict
+          </p>
+          <p style={{
+            fontFamily:    'var(--font-display)',
+            fontSize:      17,
+            fontWeight:    500,
+            color:         'var(--text-1)',
+            lineHeight:    1.65,
+            letterSpacing: '-0.01em',
+            margin:        0,
+          }}>
+            {verdict}
+          </p>
+        </div>
+      )}
+      <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap', margin: 0 }}>
+        {renderSynthesisProse(rest)}
+      </p>
+    </>
+  )
+}
+
 // Strip the examiner-style wrapper that "share to all advisors" prepends to user
 // pushback messages before they are saved to the DB — mirrors the same function
 // in the brief PDF route so both surfaces show only the raw pushback text.
@@ -669,14 +766,18 @@ export default async function RecordPage({ params }: Props) {
                           /* If this assistant message follows a user pushback, indent it */
                           i > 0 && msgs[i - 1]?.role === 'user' ? (
                             <div className="rec-pushback-response">
+                              {isSynthesis ? renderSynthesisMessage(msg.content) : (
+                                <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
+                                  {stripHeaderTags(msg.content)}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            isSynthesis ? renderSynthesisMessage(msg.content) : (
                               <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
                                 {stripHeaderTags(msg.content)}
                               </p>
-                            </div>
-                          ) : (
-                            <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
-                              {stripHeaderTags(msg.content)}
-                            </p>
+                            )
                           )
                         )}
                       </div>
