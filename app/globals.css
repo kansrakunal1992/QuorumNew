@@ -29,9 +29,11 @@
   --gold-bright: #eaca78;
   --gold-dim:    #5a3f1a;
   --gold-glow:   rgba(201,168,76,0.14);
-  --verdict-bg:  rgba(201,168,76,0.18);
-  --tension-highlight-bg:     rgba(201,168,76,0.13);
-  --tension-highlight-border: rgba(201,168,76,0.38);
+  --verdict-bg:  linear-gradient(135deg, rgba(234,202,120,0.16), rgba(201,168,76,0.24));
+  --verdict-accent: var(--gold-bright);
+  --verdict-shadow: 0 0 0 1px rgba(234,202,120,0.32), inset 0 0 24px rgba(201,168,76,0.06);
+  --tension-highlight-bg:     rgba(234,202,120,0.20);
+  --tension-highlight-border: rgba(234,202,120,0.55);
   --text-1:      #f5f7fb;
   --text-2:      #d2dbe8;
   --text-3:      #a3a8b2;
@@ -96,6 +98,8 @@
   --gold-dim:    #c8a030;
   --gold-glow:   rgba(192,140,24,0.10);
   --verdict-bg:  rgba(192,140,24,0.16);
+  --verdict-accent: var(--gold);
+  --verdict-shadow: 0 0 0 1px rgba(192,140,24,0.22);
   --tension-highlight-bg:     rgba(160,100,0,0.09);
   --tension-highlight-border: rgba(160,100,0,0.28);
   --text-1:      #060d1c;

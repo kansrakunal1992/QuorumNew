@@ -647,12 +647,12 @@ export default function SynthesisCard({
             {/* S1-03: Verdict block — one sentence, display font, prominent */}
             {verdictText && (
               <div style={{
-                borderLeft:   '5px solid var(--gold)',
+                borderLeft:   '5px solid var(--verdict-accent)',
                 background:   'var(--verdict-bg)',
                 borderRadius: '0 10px 10px 0',
                 padding:      '14px 20px',
                 marginBottom: 22,
-                boxShadow:    '0 0 0 1px rgba(201,168,76,0.22)',
+                boxShadow:    'var(--verdict-shadow)',
               }}>
                 <p style={{
                   fontFamily:    'var(--font-mono)',
@@ -660,7 +660,7 @@ export default function SynthesisCard({
                   fontWeight:    700,
                   letterSpacing: '0.14em',
                   textTransform: 'uppercase',
-                  color:         'var(--gold)',
+                  color:         'var(--verdict-accent)',
                   margin:        '0 0 8px',
                 }}>
                   Council verdict

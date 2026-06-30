@@ -118,6 +118,9 @@ type Palette = {
   white:        [number, number, number]
   goldLight:    [number, number, number]
   pushbackText: [number, number, number]
+  verdictBg:           [number, number, number]
+  verdictAccent:       [number, number, number]
+  tensionHighlightBg:  [number, number, number]
 }
 
 const DARK_PALETTE: Palette = {
@@ -138,6 +141,9 @@ const DARK_PALETTE: Palette = {
   white:        [232, 234, 240],
   goldLight:    [180, 148, 60],
   pushbackText: [160, 172, 198],
+  verdictBg:           [44, 36, 15],
+  verdictAccent:       [222, 184, 96],
+  tensionHighlightBg:  [56, 47, 21],
 }
 
 // Light palette — warm off-white pages, deep bronze gold, near-black text.
@@ -160,6 +166,9 @@ const LIGHT_PALETTE: Palette = {
   white:        [30,  28,  24],   // unused in practice; kept for key parity
   goldLight:    [140, 100, 40],   // pushback label
   pushbackText: [55,  65,  90],   // pushback body — readable on light
+  verdictBg:           [249, 238, 211],
+  verdictAccent:       [150, 108, 20],
+  tensionHighlightBg:  [251, 243, 222],
 }
 
 // Persona accent backgrounds — dark vs light
@@ -273,7 +282,160 @@ async function buildPdf(
     Y += 5
   }
 
-  // ── Inline segment renderer (for markdown bold/italic within a line) ──────────
+  // ── Synthesis verdict + tension rendering ──────────────────────────────────
+  // Mirrors the live session view (components/SynthesisCard.tsx): the verdict
+  // is pulled out into a gold accent box; the tension sentence stays inline in
+  // the prose with a highlighted background. Both use theme-aware palette colors.
+
+  const VERDICT_SIZE = 12.5
+
+  // Truncate to first complete sentence — guards against the model writing
+  // more than one sentence inside <verdict>, same rule as the web renderer.
+  const firstSentencePdf = (text: string): string => {
+    const m = text.match(/^[^.!?]*[.!?]/)
+    return m ? m[0].trim() : text.trim()
+  }
+
+  // Strips verdict (returns it separately) and leaves tension tags intact in
+  // `rest` for renderSynthesisBody to locate per-paragraph.
+  const parseVerdictTension = (raw: string): { verdict: string | null; rest: string } => {
+    const vMatch = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
+    const verdict = vMatch?.[1]?.trim() ? firstSentencePdf(vMatch[1].trim()) : null
+    const rest = raw
+      .replace(/<verdict>[\s\S]*?<\/verdict>\n*/, '')
+      .replace(/<verdict>[\s\S]*/, '')   // guard: open tag without close
+      .trimStart()
+    return { verdict, rest }
+  }
+
+  const renderVerdictBoxPdf = (verdictText: string) => {
+    const padTop = 13, padBottom = 13, padX = 16, labelGap = 13
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(VERDICT_SIZE)
+    const wrapped: string[] = doc.splitTextToSize(verdictText, TW - padX * 2) as string[]
+    const lh   = VERDICT_SIZE * 1.32
+    const boxH = padTop + labelGap + (wrapped.length * lh) + padBottom
+    ensure(boxH + 14)
+    const boxY = Y
+    doc.setFillColor(...C.verdictBg)
+    doc.rect(ML, boxY, TW, boxH, 'F')
+    doc.setFillColor(...C.verdictAccent)
+    doc.rect(ML, boxY, 3, boxH, 'F')
+
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...C.verdictAccent)
+    doc.setCharSpace(0.8)
+    doc.text('COUNCIL VERDICT', ML + padX, boxY + padTop + 4)
+    doc.setCharSpace(0)
+
+    let ty = boxY + padTop + labelGap
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(VERDICT_SIZE)
+    doc.setTextColor(...C.bodyText)
+    for (const wl of wrapped) {
+      doc.text(wl, ML + padX, ty)
+      ty += lh
+    }
+    Y = boxY + boxH + 14
+  }
+
+  // Renders one paragraph as continuous prose with a highlighted background
+  // run behind the [hlStart, hlEnd) character range — used for the sentence
+  // wrapped in <tension> tags. Word-level wrap with manual width measurement
+  // since jsPDF has no native inline-span styling.
+  const renderTensionParagraph = (full: string, hlStart: number, hlEnd: number, size: number, lh: number) => {
+    doc.setFont('Helvetica', 'normal')
+    doc.setFontSize(size)
+    const rawTokens = full.split(/(\s+)/)
+    let charPos = 0
+    const tokens: { text: string; hl: boolean }[] = []
+    for (const t of rawTokens) {
+      const start = charPos, end = charPos + t.length
+      tokens.push({ text: t, hl: t.trim().length > 0 && start < hlEnd && end > hlStart })
+      charPos = end
+    }
+    const lines: (typeof tokens)[] = []
+    let line: typeof tokens = []
+    let lineW = 0
+    for (const tok of tokens) {
+      const w = doc.getTextWidth(tok.text)
+      if (lineW + w > TW && line.length > 0) {
+        lines.push(line); line = []; lineW = 0
+        if (tok.text.trim().length === 0) continue   // drop leading space on wrapped line
+      }
+      line.push(tok); lineW += w
+    }
+    if (line.length) lines.push(line)
+
+    for (const ln of lines) {
+      ensure(lh + 4)
+      // Pass 1 — highlight background runs (contiguous hl tokens share one rect)
+      let cx = ML, runStart = -1, runX = ML
+      for (let i = 0; i < ln.length; i++) {
+        const w = doc.getTextWidth(ln[i].text)
+        if (ln[i].hl) {
+          if (runStart === -1) { runStart = i; runX = cx }
+        } else if (runStart !== -1) {
+          doc.setFillColor(...C.tensionHighlightBg)
+          doc.rect(runX, Y - size * 0.82, cx - runX, size * 1.12, 'F')
+          runStart = -1
+        }
+        cx += w
+      }
+      if (runStart !== -1) {
+        doc.setFillColor(...C.tensionHighlightBg)
+        doc.rect(runX, Y - size * 0.82, cx - runX, size * 1.12, 'F')
+      }
+      // Pass 2 — text on top
+      cx = ML
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(size)
+      doc.setTextColor(...C.bodyText)
+      for (const tok of ln) {
+        doc.text(tok.text, cx, Y)
+        cx += doc.getTextWidth(tok.text)
+      }
+      Y += lh
+    }
+  }
+
+  // Synthesis prose body — same paragraph/blank-line handling as bodyBlock,
+  // but detects the paragraph containing <tension>...</tension> and routes it
+  // through renderTensionParagraph for the inline highlight; all other
+  // paragraphs render with the standard wrap.
+  const renderSynthesisBody = (raw: string) => {
+    const size = 10.5, lh = size * 1.58
+    const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    for (const para of text.split('\n')) {
+      if (!para.trim()) { Y += lh * 0.4; continue }
+      const tStart = para.indexOf('<tension>')
+      const tEnd   = para.indexOf('</tension>')
+      if (tStart !== -1 && tEnd !== -1 && tEnd > tStart) {
+        const before  = para.slice(0, tStart)
+        const content = para.slice(tStart + '<tension>'.length, tEnd)
+        const after   = para.slice(tEnd + '</tension>'.length)
+        const full    = before + content + after
+        renderTensionParagraph(full, before.length, before.length + content.length, size, lh)
+      } else {
+        const cleanPara = para.replace(/<\/?tension>/g, '')
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(size)
+        const wrapped: string[] = doc.splitTextToSize(cleanPara, TW) as string[]
+        for (const wl of wrapped) {
+          ensure(lh + 2)
+          doc.setFont('Helvetica', 'normal')
+          doc.setFontSize(size)
+          doc.setTextColor(...C.bodyText)
+          doc.text(wl, ML, Y)
+          Y += lh
+        }
+      }
+    }
+    Y += 5
+  }
+
+
   type Seg = { text: string; bold: boolean; italic: boolean }
   const parseInline = (raw: string): Seg[] => {
     const segs: Seg[] = []
@@ -928,6 +1090,10 @@ async function buildPdf(
           doc.setCharSpace(0)
           Y += 10
           bodyBlock(cleanPushbackText(msg.content), 0, 9.5, C.pushbackText)
+        } else if (isSynthesis) {
+          const { verdict, rest } = parseVerdictTension(msg.content)
+          if (verdict) renderVerdictBoxPdf(verdict)
+          renderSynthesisBody(rest)
         } else {
           bodyBlock(stripAdvisorTags(msg.content))
         }
