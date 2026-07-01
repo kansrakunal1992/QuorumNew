@@ -272,7 +272,7 @@ export default function BiasFingerprint({ authToken }: Props) {
     return (
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '20px 22px' }}>
         <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 12px', lineHeight: 1.65 }}>
-          No patterns detected yet. Complete the Examiner phase in your next session —
+          No patterns detected yet. Answer the follow-up questions in your next session —
           those answers are what Mirror uses to build your fingerprint.
         </p>
         <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, color: 'var(--gold)', fontWeight: 600, textDecoration: 'none' }}

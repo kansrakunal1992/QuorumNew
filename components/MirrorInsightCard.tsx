@@ -58,7 +58,7 @@ function synthesise(d: SummaryData): string | null {
 
   // G. Score rising, generic directional positive
   if (scoreDelta !== null && scoreDelta > 0 && independenceScore >= 60) {
-    return `Your Independence Score continues to strengthen. The most reliable predictor of continued growth: complete Examiner questions in full on every session, especially the parts that feel uncomfortable to answer.`
+    return `Your Independence Score continues to strengthen. The most reliable predictor of continued growth: answer the follow-up questions in full on every session, especially the parts that feel uncomfortable to answer.`
   }
 
   return null

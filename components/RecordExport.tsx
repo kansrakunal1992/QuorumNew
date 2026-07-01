@@ -324,7 +324,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(9)
         doc.setTextColor(201, 168, 76)
-        doc.text('EXAMINER — QUESTIONS & ANSWERS', ML, y)
+        doc.text('FOLLOW-UP QUESTIONS & ANSWERS', ML, y)
         y += 6
         doc.setDrawColor(42, 38, 18)
         doc.setLineWidth(0.3)

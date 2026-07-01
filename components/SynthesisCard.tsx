@@ -1,7 +1,10 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useTTSContext } from '@/context/TTSContext'
+import CouncilWeightingStrip from './CouncilWeightingStrip'   // S2-02
+import type { PersonaRelevanceMap } from '@/lib/persona-relevance'  // S2-02
+import { getOrCreateDeviceId } from '@/lib/storage'                  // S2-01
 
 interface Props {
   sessionId:         string
@@ -11,18 +14,17 @@ interface Props {
   totalPersonas:     number
   version:           number
   registerMode?:     'analytical' | 'clarification'
-  examinerReady?:    boolean   // Sprint 3: synthesis only fires after Examiner Phase 1 completes
-  redirectBlocked?:  boolean   // Sprint 11b: R1 upstream block — shows redirect card, synthesis never fires
-  /** Sprint 16b: the exact R1 question the user must resolve before Reanalyzing */
+  examinerReady?:    boolean
+  redirectBlocked?:  boolean
   redirectQuestion?: string
-  /** Sprint 16b Fix 1: callback fired when user overrides the R1 REDIRECT and chooses to proceed to Council */
   onOverrideRedirect?: () => void
-  /** Council status bar: fires when synthesis stream begins */
   onSynthesisStart?: () => void
-  /** Council status bar: fires when synthesis stream completes */
   onSynthesisComplete?: () => void
-  /** C0 + all examiner answers — injected into synthesis as USER STATED INTENT framing block */
   examinerContext?: string
+  /** S2-02: persona relevance weights computed in SessionView — drives CouncilWeightingStrip */
+  personaWeights?:   PersonaRelevanceMap | null
+  /** S2-05: true when prior session's validation correction was carried into this council */
+  hasValidationCorrection?: boolean
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -31,12 +33,14 @@ export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
   registerMode, examinerReady,
-  redirectBlocked,    // Sprint 11b
-  redirectQuestion,   // Sprint 16b
-  onOverrideRedirect, // Sprint 16b Fix 1
-  onSynthesisStart,   // Council status bar
-  onSynthesisComplete,// Council status bar
-  examinerContext,    // C0 + rule answers → framing block in synthesis
+  redirectBlocked,
+  redirectQuestion,
+  onOverrideRedirect,
+  onSynthesisStart,
+  onSynthesisComplete,
+  examinerContext,
+  personaWeights,          // S2-02
+  hasValidationCorrection, // S2-05
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -44,7 +48,15 @@ export default function SynthesisCard({
   const [briefState,   setBriefState]  = useState<'idle'|'streaming'|'done'|'error'>('idle')
   const [showBrief,    setShowBrief]   = useState(false)
 
-  // S1-03: verdict + tension — extracted from synthesis stream via tag parser
+  // S2-01: post-synthesis confidence re-rate
+  const [confidenceRated,     setConfidenceRated]     = useState(false)
+  const [ratedValue,          setRatedValue]          = useState<number | null>(null)
+
+  // S2-02: persona relevance weights — read from X-Persona-Relevance response header,
+  // the exact map used in the synthesis directive (not a client-side recomputation).
+  const [fetchedWeights, setFetchedWeights] = useState<PersonaRelevanceMap | null>(null)
+
+  // S1-03: verdict + tension
   const [verdictText,  setVerdictText]  = useState('')
   const [tensionText,  setTensionText]  = useState('')
   const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
@@ -94,6 +106,22 @@ export default function SynthesisCard({
   // ── TTS ───────────────────────────────────────────────────────────────────
   const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === 'synthesis'
+
+  // S2-01: post-synthesis confidence re-rate — fire-and-forget PATCH
+  const handleRateConfidence = useCallback(async (value: number) => {
+    setConfidenceRated(true)
+    setRatedValue(value)
+    try {
+      await fetch(`/api/session/${sessionId}/confidence`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          post_decision_confidence: value,
+          device_id: getOrCreateDeviceId(),
+        }),
+      })
+    } catch { /* non-blocking — UI already updated */ }
+  }, [sessionId])
 
   const completedCount = Object.keys(personaResponses).length
   const allDone        = completedCount >= totalPersonas
@@ -171,6 +199,11 @@ export default function SynthesisCard({
           }),
         })
         if (!res.ok || !res.body) { setState('error'); return }
+        // S2-02: capture the exact relevance map used in this synthesis run
+        const relevanceHeader = res.headers.get('X-Persona-Relevance')
+        if (relevanceHeader) {
+          try { setFetchedWeights(JSON.parse(relevanceHeader)) } catch { /* non-blocking */ }
+        }
         const reader = res.body.getReader()
         const dec    = new TextDecoder()
         let acc = ''
@@ -460,11 +493,29 @@ export default function SynthesisCard({
             </div>
             <p style={{ fontSize: 11, color: 'var(--synthesis-text-sub)', marginTop: 0 }}>
               {state === 'waiting' && !allDone ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
-                : state === 'waiting' && allDone && !examinerReady ? 'Answer the Examiner questions to unlock synthesis'
+                : state === 'waiting' && allDone && !examinerReady ? 'Answer the questions to unlock synthesis'
                 : state === 'streaming' && isRecalibrating ? 'Recalibrating after pushback…'
                 : state === 'streaming' ? 'Writing the Council\'s conclusion…'
                 : 'What the council collectively surfaced'}
             </p>
+            {/* S2-05: passive signal — shown when prior correction was carried into this council */}
+            {hasValidationCorrection && (
+              <p style={{
+                fontSize:   10.5,
+                color:      'var(--gold)',
+                marginTop:  3,
+                display:    'flex',
+                alignItems: 'center',
+                gap:        5,
+                lineHeight: 1.3,
+              }}>
+                <span style={{
+                  width: 5, height: 5, borderRadius: '50%',
+                  background: 'var(--gold)', display: 'inline-block', flexShrink: 0,
+                }} />
+                Your correction from your last session was shared with this Council.
+              </p>
+            )}
           </div>
         </div>
 
@@ -700,32 +751,111 @@ export default function SynthesisCard({
 
         {/* Mirror nudge — shown once synthesis completes (Sprint 19) */}
         {state === 'done' && synthesis && (
-          <div style={{
-            marginTop:    16,
-            paddingTop:   14,
-            borderTop:    '1px solid var(--border-dim)',
-            display:      'flex',
-            alignItems:   'center',
-            justifyContent: 'space-between',
-          }}>
-            <span style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
-              This decision has been added to your Mirror profile.
-            </span>
-            <a
-              href="/mirror"
-              style={{
-                fontSize:       12,
-                color:          'var(--gold)',
-                textDecoration: 'none',
-                fontWeight:     600,
-                whiteSpace:     'nowrap',
-                marginLeft:     16,
-                flexShrink:     0,
-              }}
-            >
-              View Mirror →
-            </a>
-          </div>
+          <>
+            {/* S2-02: Council Weighting Strip — shows advisor weighting for this decision.
+                Same for all tiers (locked, teaser, unlocked) — explains the synthesis they
+                already received. Only renders when at least one advisor is elevated above baseline. */}
+            {(fetchedWeights ?? personaWeights) && (
+              <CouncilWeightingStrip weights={(fetchedWeights ?? personaWeights)!} />
+            )}
+
+            {/* S2-01: Post-synthesis confidence re-rate — 3-tap widget.
+                Measures clarity delta vs pre_decision_confidence.
+                Shows low-confidence action hint if user rates ≤5. */}
+            {!confidenceRated ? (
+              <div style={{
+                marginTop:  16,
+                paddingTop: 14,
+                borderTop:  '1px solid var(--border-dim)',
+              }}>
+                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px', lineHeight: 1.4 }}>
+                  Where does your clarity sit now?
+                </p>
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                  {[
+                    { label: '1–5 · Still unclear',      value: 3  },
+                    { label: '6–8 · Somewhat clearer',   value: 7  },
+                    { label: '9–10 · Clear now',          value: 9  },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleRateConfidence(opt.value)}
+                      style={{
+                        padding:      '7px 14px',
+                        borderRadius:  8,
+                        border:        '1px solid var(--border-mid)',
+                        background:    'transparent',
+                        color:         'var(--text-3)',
+                        fontSize:      12,
+                        cursor:        'pointer',
+                        fontFamily:    'inherit',
+                        transition:    'all 0.15s',
+                        lineHeight:    1.3,
+                      }}
+                      onMouseEnter={e => {
+                        const b = e.currentTarget as HTMLButtonElement
+                        b.style.borderColor = 'var(--gold-dim)'
+                        b.style.color = 'var(--text-1)'
+                      }}
+                      onMouseLeave={e => {
+                        const b = e.currentTarget as HTMLButtonElement
+                        b.style.borderColor = 'var(--border-mid)'
+                        b.style.color = 'var(--text-3)'
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                marginTop:  16,
+                paddingTop: 14,
+                borderTop:  '1px solid var(--border-dim)',
+                display:    'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <span style={{ fontSize: 12, color: 'var(--success-text)' }}>
+                  Noted ✓
+                </span>
+                {ratedValue !== null && ratedValue <= 5 && (
+                  <span style={{ fontSize: 12, color: 'var(--text-4)', marginLeft: 12 }}>
+                    Still foggy — try reanalyzing once you have more clarity.
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Mirror nudge row */}
+            <div style={{
+              marginTop:    12,
+              paddingTop:   12,
+              borderTop:    '1px solid var(--border-dim)',
+              display:      'flex',
+              alignItems:   'center',
+              justifyContent: 'space-between',
+            }}>
+              <span style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
+                This decision has been added to your Mirror profile.
+              </span>
+              <a
+                href="/mirror"
+                style={{
+                  fontSize:       12,
+                  color:          'var(--gold)',
+                  textDecoration: 'none',
+                  fontWeight:     600,
+                  whiteSpace:     'nowrap',
+                  marginLeft:     16,
+                  flexShrink:     0,
+                }}
+              >
+                View Mirror →
+              </a>
+            </div>
+          </>
         )}
         {state === 'streaming' && !synthesis && (
           <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>Reading all perspectives…</p>

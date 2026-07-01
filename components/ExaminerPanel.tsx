@@ -61,6 +61,13 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
   const [dismissed,         setDismissed]          = useState(false)                // local dismiss state for REDIRECT banner
   const [glowing,           setGlowing]            = useState(false)               // one-time entry glow
 
+  // S2-03: stepper — one question at a time. 'intro' is a brief auto-advancing beat
+  // (1.5s, no interaction) shown once questions are ready; 'stepping' shows exactly
+  // one question per screen, advancing only on Continue/Submit click — never on a timer.
+  const [flowStage, setFlowStage] = useState<'intro' | 'stepping'>('intro')
+  const [stepIndex, setStepIndex] = useState(0)
+  const introTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Fire one-time glow on mount — component only mounts when visible becomes true
   useEffect(() => {
     const t1 = setTimeout(() => setGlowing(true),  100)
@@ -78,6 +85,21 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
   }, [visible]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // S2-03: intro auto-advances to the first question after 1.5s — no click required.
+  // Every question after that advances only via the Continue/Submit button (constraint e).
+  useEffect(() => {
+    if (fetchStatus !== 'ready' || ruleMode === 'REDIRECT') return
+    if (flowStage !== 'intro') return
+    introTimerRef.current = setTimeout(() => {
+      setFlowStage('stepping')
+      setStepIndex(0)
+    }, 1500)
+    return () => {
+      if (introTimerRef.current) clearTimeout(introTimerRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchStatus, ruleMode])
 
   const fetchQuestions = async () => {
     setFetchStatus('loading')
@@ -185,6 +207,16 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
     )
   }
 
+  // S2-03: advances one step. On the last question, submits everything collected so far.
+  const handleStepAdvance = () => {
+    const isLastStep = stepIndex >= questions.length - 1
+    if (isLastStep) {
+      handleSubmit()
+    } else {
+      setStepIndex(i => i + 1)
+    }
+  }
+
   // Don't render while hidden or already resolved without UI
   if (!visible) return null
   if (fetchStatus === 'idle' || fetchStatus === 'no_gaps' || fetchStatus === 'error') return null
@@ -231,7 +263,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
           </div>
           <div>
             <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em' }}>
-              The Examiner
+              A Few Quick Questions
             </p>
             <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
               {isLoading
@@ -240,6 +272,8 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                 ? 'Synthesis held — specific information needed first'
                 : isRedirect
                 ? 'Upstream decision unresolved — synthesis blocked'
+                : fetchStatus === 'ready' && flowStage === 'stepping' && questions.length > 0
+                ? `Question ${stepIndex + 1} of ${questions.length}`
                 : 'Key questions the council couldn\'t answer without you'}
             </p>
           </div>
@@ -332,11 +366,46 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
           </div>
         )}
 
-        {/* ── Normal question flow (GATE / OPEN) ──────────────────────────── */}
-        {fetchStatus === 'ready' && submitStatus === 'idle' && !isRedirect && (
+        {/* ── S2-03: Intro screen — brief, auto-advances after 1.5s, no interaction ── */}
+        {fetchStatus === 'ready' && submitStatus === 'idle' && !isRedirect && flowStage === 'intro' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: 'var(--gold)',
+              display: 'inline-block',
+              animation: 'blink 1s step-end infinite',
+            }} />
+            <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
+              The Council has {questions.length === 1 ? 'one follow-up question' : `${questions.length} follow-up questions`} based on what it read.
+            </p>
+          </div>
+        )}
+
+        {/* ── S2-03: Stepper — one question at a time, advances only on click (constraint e) ── */}
+        {fetchStatus === 'ready' && submitStatus === 'idle' && !isRedirect && flowStage === 'stepping' && questions[stepIndex] && (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {questions.map((q) => (
+            {/* (a) Stepper dots — sized exactly to questions.length, hidden entirely for a single question */}
+            {questions.length >= 2 && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+                {questions.map((q, i) => (
+                  <div
+                    key={q.order}
+                    style={{
+                      flex:         1,
+                      height:       3,
+                      borderRadius: 2,
+                      background:   i <= stepIndex ? 'var(--gold)' : 'var(--border-dim)',
+                      opacity:      i <= stepIndex ? 0.85 : 1,
+                      transition:   'background 0.2s ease',
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
+            {(() => {
+              const q = questions[stepIndex]
+              return (
                 <div key={q.order}>
                   <label style={{
                     display: 'block',
@@ -377,8 +446,10 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                       BRIEF
                     </span>
                   ) : q.rule_id === 'E0' ? (
-                    // SB-2: E0 — Emotional/inward question. Distinct label in gold-dim so
-                    // it reads as reflective framing, not a structural warning flag.
+                    // SB-2 + S2-04: E0 — Emotional/inward question. Distinct label in gold-dim
+                    // so it reads as reflective framing, not a structural warning flag. The
+                    // stepper's one-question-per-screen layout already isolates E0 as its own
+                    // step rather than mixing it into a page of structural questions.
                     <span style={{
                       fontSize: 9.5, fontWeight: 700,
                       color: 'var(--gold)',
@@ -415,6 +486,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                   </p>
                   <textarea
                     rows={3}
+                    autoFocus
                     value={answers[q.order] ?? ''}
                     onChange={e => setAnswers(prev => ({ ...prev, [q.order]: e.target.value }))}
                     placeholder="Your answer (or leave blank to skip this question)…"
@@ -428,12 +500,12 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                     }}
                   />
                 </div>
-              ))}
-            </div>
+              )
+            })()}
 
             <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
-                onClick={handleSubmit}
+                onClick={handleStepAdvance}
                 disabled={isSubmitting}
                 style={{
                   padding: '11px 28px',
@@ -451,7 +523,11 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.22)' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.12)' }}
               >
-                {isSubmitting ? 'Sending to council…' : 'Submit to Council →'}
+                {isSubmitting
+                  ? 'Sending to council…'
+                  : stepIndex >= questions.length - 1
+                  ? 'Submit to Council →'
+                  : 'Continue →'}
               </button>
               <p style={{ fontSize: 11, color: 'var(--text-4)' }}>
                 Answers are optional — blank fields are skipped
@@ -461,5 +537,6 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
         )}
       </div>
     </div>
+
   )
 }

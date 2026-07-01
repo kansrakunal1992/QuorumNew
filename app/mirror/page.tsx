@@ -787,7 +787,7 @@ function TeaserView({
             ? teaser.sessionCount >= teaser.rulesThreshold
               ? `Enough decisions logged to extract your implicit operating principles. Activate Mirror to read them.`
               : `${teaser.sessionCount} of ${teaser.rulesThreshold} decisions — Quorum extracts your first-person operating principles once you cross ${teaser.rulesThreshold}.`
-            : 'Reads back the implicit rules you actually operate by, extracted from how you\u2019ve answered the Examiner across your decisions. Visible after subscribing.'
+            : 'Reads back the implicit rules you actually operate by, extracted from how you\u2019ve answered the follow-up questions across your decisions. Visible after subscribing.'
         }
       />
 
@@ -1156,7 +1156,7 @@ function WelcomeMirrorCard({
         gap: 16, flexWrap: 'wrap',
       }}>
         <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5, flex: 1 }}>
-          Answer Examiner questions in depth — that&apos;s the primary signal source across most modules.
+          Answer the follow-up questions in depth — that&apos;s the primary signal source across most modules.
         </p>
         <button
           onClick={handleDismiss}

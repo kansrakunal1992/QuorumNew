@@ -92,8 +92,8 @@ function EmptyState() {
       padding:      '22px 22px',
     }}>
       <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 12px', lineHeight: 1.65 }}>
-        Your independence score starts calculating once you've completed the Examiner
-        phase in at least one session. It tracks whether Quorum's reasoning frameworks
+        Your independence score starts calculating once you've answered the follow-up
+        questions in at least one session. It tracks whether Quorum's reasoning frameworks
         are showing up in your own thinking — unprompted.
       </p>
       <a
@@ -264,7 +264,7 @@ function ScoreDisplay({ data }: { data: ScoreData }) {
             marginTop:     4,
             display:       'block',
           }}>
-            From your last Examiner session
+            From your last follow-up answer
           </span>
         </div>
       )}
@@ -293,7 +293,7 @@ const COACHING: Record<string, { tip: string; example: string }> = {
     example: 'e.g. "If this doesn\'t land, my co-founder carries the reputational cost too — and I haven\'t thought through what walking it back would look like."',
   },
   'Frameworks starting to appear': {
-    tip:     'Question whether the timeline is real. Ask what you\'d regret looking back in two years. These patterns — when they appear in your Examiner answers — move the score.',
+    tip:     'Question whether the timeline is real. Ask what you\'d regret looking back in two years. These patterns — when they appear in your follow-up answers — move the score.',
     example: 'e.g. "I\'m not sure the Q3 deadline is a hard constraint — it was set internally. If it\'s flexible, the whole framing changes."',
   },
   'Reasoning visibly shifting': {
@@ -344,7 +344,7 @@ function ScoreExplanation() {
     }}>
       This score tracks whether you're asking better questions — surfacing stakeholders,
       questioning constraints, naming worst cases — before any AI analysis begins.
-      It rises when those habits show up in your Examiner answers unprompted.
+      It rises when those habits show up in your follow-up answers unprompted.
       At 75+, the frameworks have become yours.
     </p>
   )

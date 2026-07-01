@@ -155,7 +155,7 @@ function ThresholdGate({
           Run your next decision →
         </a>
         <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '4px 0 0', lineHeight: 1.4 }}>
-          Each Examiner response builds the signal.&nbsp;
+          Each follow-up answer builds the signal.&nbsp;
           {remaining === 1
             ? 'One more and this activates.'
             : `${remaining} more to activate.`}
@@ -211,7 +211,7 @@ function RulesDisplay({ rules, basedOnDecisions }: { rules: string[]; basedOnDec
       )}
 
       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '14px 0 0', lineHeight: 1.5 }}>
-        Extracted from {basedOnDecisions} decision{basedOnDecisions !== 1 ? 's' : ''} · based on your Examiner responses and challenges to the Council
+        Extracted from {basedOnDecisions} decision{basedOnDecisions !== 1 ? 's' : ''} · based on your follow-up answers and challenges to the Council
       </p>
     </div>
   )
@@ -273,7 +273,7 @@ export default function DecisionRules({ authToken, sessionCount, topBiasLabel, t
       return (
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '18px 20px' }}>
           <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
-            Not enough Examiner data yet to extract rules. When you answer the Examiner questions
+            Not enough follow-up answer data yet to extract rules. When you answer the follow-up questions
             in depth — rather than skipping — this section populates with the patterns in your reasoning.
           </p>
         </div>
@@ -301,7 +301,7 @@ export default function DecisionRules({ authToken, sessionCount, topBiasLabel, t
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-dim)', borderRadius: 12, padding: '18px 20px' }}>
       <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
-        Rules are still forming. Continue engaging with the Examiner phase in depth — your patterns will emerge over the next few decisions.
+        Rules are still forming. Continue engaging with the follow-up questions in depth — your patterns will emerge over the next few decisions.
       </p>
     </div>
   )

@@ -25,6 +25,7 @@ import { buildPWAInstallStep } from './OnboardingTour'
 import ValidationCard from './ValidationCard'             // SB-1
 import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
 import OntologyRevealCard   from './OntologyRevealCard'   // S1-01: Decision X-Ray (sessions 1–3)
+import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
 import SessionCompleteBadge from './SessionCompleteBadge' // S1-06: Council complete timestamp
 import {
   DECISION_TYPE_LABELS,
@@ -87,6 +88,10 @@ interface Props {
   totalSessionCount?: number   // real DB count for RecordReceipt, passed from server
   // S2-02 / S2-03: server-side context for trust disclosure
   encryptionEnabled?: boolean  // true if DB_ENCRYPTION_KEY is set
+  /** O4: real Mirror subscription state, resolved server-side via getMirrorAccessState().
+   *  Previously hardcoded false — paying Mirror subscribers were getting free-tier
+   *  Council behaviour. Now threaded through to RecordReceipt and PersonaPanel. */
+  mirrorActive?: boolean
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -127,7 +132,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, mirrorActive = false }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -228,10 +233,14 @@ export default function SessionView({ session: initialSession, initialMessages =
     stakes_reversibility:  string | null
   } | null>(null)
   const [xRayDismissed,  setXRayDismissed]  = useState(false)
+  // S2-07: Opening Ceremony dismiss flag — gates persona streaming for 3s on sessions 1-3
+  const [ceremonyDismissed, setCeremonyDismissed] = useState(false)
 
   // S1-07: Structural echo banner — pattern_analyst card
   const [structuralContextActive, setStructuralContextActive] = useState(false)
   const [structuralMatchDate,     setStructuralMatchDate]     = useState<string | null>(null)
+  // (d): matched past session's id, so the S1-07 echo banner can link to it
+  const [structuralMatchSessionId, setStructuralMatchSessionId] = useState<string | null>(null)
 
   // S1-02: Sequential streaming — unlocks one persona at a time as each completes
   const [streamUnlockedUpTo, setStreamUnlockedUpTo] = useState<number>(0)
@@ -453,6 +462,7 @@ export default function SessionView({ session: initialSession, initialMessages =
             // S1-07: Structural echo banner — show on Pattern Analyst card
             setStructuralContextActive(true)
             setStructuralMatchDate(data.best_match_date ?? null)
+            setStructuralMatchSessionId(data.best_match_session_id ?? null)
             return
           }
           if (!data.ontology_ready && attempt < MAX_ATTEMPTS) {
@@ -520,6 +530,13 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [])
 
   const allPersonasDone = Object.keys(completedResponses).length >= PERSONA_ORDER.length
+
+  // S2-07: Opening Ceremony gating — only applies on sessions 1–3, and never during
+  // a REDIRECT (R1 upstream block), where provisional advisor perspectives should
+  // appear immediately rather than be delayed by a 3s ritual beat.
+  const ceremonyApplicable = (totalSessionCount ?? 0) <= 3 && !redirectBlocked
+  const ceremonyGateOpen   = !ceremonyApplicable || ceremonyDismissed
+  const ceremonyActive     = examinerSubmitted && ceremonyApplicable && !ceremonyDismissed
 
   const handleExaminerComplete = useCallback(
     (
@@ -661,6 +678,19 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [reanalyzeError, setReanalyzeError] = useState('')
   // S1-04: third framing mode for reanalyze — 'right' matches home page option
   const [reFramingIntent, setReFramingIntent] = useState<'challenge' | 'clarify' | 'right'>('challenge')
+
+  // S2-08: prior Council summary — fetched once when the drawer opens, so the user
+  // recalls what was already concluded before choosing what to change.
+  const [priorSynthesisSummary, setPriorSynthesisSummary] = useState<string | null>(null)
+  const [prioSummaryLoaded,     setPrioSummaryLoaded]     = useState(false)
+  useEffect(() => {
+    if (!drawerOpen || prioSummaryLoaded) return
+    setPrioSummaryLoaded(true)
+    fetch(`/api/session/${session.id}/synthesis-summary`)
+      .then(r => r.json())
+      .then(data => setPriorSynthesisSummary(data.summary ?? null))
+      .catch(() => setPriorSynthesisSummary(null))
+  }, [drawerOpen, prioSummaryLoaded, session.id])
 
   const handleNewDecision = () => {
     if (!saved) {
@@ -1239,6 +1269,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                     setSynthesisCompletedAt(new Date())  // S1-06: timestamp for badge
                   }}
                   examinerContext={synthExaminerContext}
+                  // S2-05: prior session's validation correction carried into this council
+                  hasValidationCorrection={!!initialSession.validation_correction_carry}
                 />
               </div>
 
@@ -1255,7 +1287,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       if (s.includes('low') || s.includes('revers')) return 'low'
                       return undefined
                     })()}
-                    mirrorActive={false}
+                    mirrorActive={mirrorActive}
                   />
                 </div>
               )}
@@ -1320,6 +1352,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                 />
               </div>
 
+              {/* ── S2-07: Opening Ceremony — sessions 1–3, gates persona streaming for 3s ── */}
+              {ceremonyActive && (
+                <OpeningCeremonyCard onDismiss={() => setCeremonyDismissed(true)} />
+              )}
+
               {/* ── 3. Relevance label ── */}
               {gridReordered && !redirectBlocked && (
                 <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0 12px' }}>
@@ -1364,9 +1401,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                       // S1-02: Sequential streaming — each persona unlocks only after
                       // the previous one completes. initialContent (DB load) bypasses
                       // the gate so re-reads render instantly without cascading delays.
+                      // S2-07: also gated on ceremonyGateOpen — sessions 1–3 hold for the
+                      // 3s Opening Ceremony beat before the first advisor begins streaming.
                       canStream={
                         !!initialMessages[key] ||
-                        (examinerSubmitted && personaIndex <= streamUnlockedUpTo)
+                        (examinerSubmitted && ceremonyGateOpen && personaIndex <= streamUnlockedUpTo)
                       }
                       initialExaminerContext={examinerInitialContext[key]}
                       // S1-02: fires when this persona reaches 'done', unlocking the next
@@ -1376,6 +1415,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       // S1-07: structural echo banner — only pattern_analyst gets the prominent banner
                       structuralContextActive={structuralContextActive && key === 'pattern_analyst'}
                       structuralMatchDate={structuralMatchDate}
+                      structuralMatchSessionId={structuralMatchSessionId}
                     />
                   </div>
                 ))}
@@ -1493,6 +1533,32 @@ export default function SessionView({ session: initialSession, initialMessages =
                   ✕ Close
                 </button>
               </div>
+
+              {/* S2-08: prior Council summary — reminds the user what was already concluded */}
+              {priorSynthesisSummary && (
+                <div style={{
+                  padding:      '11px 14px',
+                  borderRadius:  9,
+                  border:        '1px solid var(--border-dim)',
+                  background:    'var(--bg-inset)',
+                  marginBottom:  18,
+                }}>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9.5,
+                    fontWeight:    700,
+                    letterSpacing: '0.11em',
+                    textTransform: 'uppercase',
+                    color:         'var(--text-4)',
+                    margin:        '0 0 6px',
+                  }}>
+                    What the Council concluded last time
+                  </p>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
+                    {priorSynthesisSummary}
+                  </p>
+                </div>
+              )}
 
               {/* Decision textarea */}
               <label style={{

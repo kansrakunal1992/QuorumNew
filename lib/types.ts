@@ -105,6 +105,11 @@ export interface Session {
   validation_state?:             ValidationState
   validation_emotion_confirmed?: boolean | null
   validation_correction?:        string | null
+  // S2-05: prior session correction carried into this session at creation time
+  // so council context can inject it at persona-call time (before current-session validation runs)
+  validation_correction_carry?:  string | null
+  // S2-01: post-synthesis confidence re-rate (1–10 tap widget in SynthesisCard)
+  post_decision_confidence?:     number | null
 }
 
 export interface DecisionRecord {

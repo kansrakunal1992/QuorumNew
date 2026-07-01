@@ -78,11 +78,13 @@ interface Props {
   structuralContextActive?: boolean
   /** S1-07: ISO date string of the best structural match */
   structuralMatchDate?: string | null
+  /** (d): matched past session's id — lets the echo banner link to that decision's record page */
+  structuralMatchSessionId?: string | null
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralContextActive, structuralMatchDate }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralContextActive, structuralMatchDate, structuralMatchSessionId }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -341,7 +343,9 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         </div>
       )}
 
-      {/* S1-07: Structural echo banner — pattern_analyst only, when memory is active */}
+      {/* S1-07: Structural echo banner — pattern_analyst only, when memory is active.
+          (d) Every surfaced insight needs an attached action — this was purely
+          informational before; now links straight to the matched past decision. */}
       {structuralContextActive && structuralMatchDate && (
         <div style={{
           padding:      '7px 16px',
@@ -350,11 +354,34 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           fontSize:     11,
           color:        'var(--success-text)',
           lineHeight:   1.4,
+          display:      'flex',
+          alignItems:   'center',
+          justifyContent: 'space-between',
+          gap:          10,
         }}>
-          Pattern Analyst is drawing on a decision you brought in{' '}
-          {new Date(structuralMatchDate).toLocaleDateString('en-IN', {
-            month: 'long', year: 'numeric',
-          })}.
+          <span>
+            Pattern Analyst is drawing on a decision you brought in{' '}
+            {new Date(structuralMatchDate).toLocaleDateString('en-IN', {
+              month: 'long', year: 'numeric',
+            })}.
+          </span>
+          {structuralMatchSessionId && (
+            <a
+              href={`/record/${structuralMatchSessionId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize:       11,
+                fontWeight:     600,
+                color:          'var(--success-text)',
+                textDecoration: 'underline',
+                whiteSpace:     'nowrap',
+                flexShrink:     0,
+              }}
+            >
+              View that decision →
+            </a>
+          )}
         </div>
       )}
 

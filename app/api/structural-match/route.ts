@@ -399,6 +399,13 @@ export async function POST(req: Request) {
       best_match_date:    result.threshold_met && result.matches.length > 0
         ? result.matches[0].created_at
         : null,
+      // (d) — every surfaced insight needs an attached action. S1-07's structural echo
+      // banner was purely informational ("Pattern Analyst is drawing on a decision you
+      // brought in March 2025") with nothing to click. This exposes the matched session's
+      // id so the banner can link straight to that past decision's record page.
+      best_match_session_id: result.threshold_met && result.matches.length > 0
+        ? result.matches[0].session_id
+        : null,
     })
 
   } catch (err) {

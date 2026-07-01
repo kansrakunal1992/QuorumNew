@@ -186,15 +186,17 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
         .single(),
       supabase
         .from('sessions')
-        // SB-3: fetch framing_intent + validation_correction alongside user_id
-        .select('user_id, framing_intent, validation_correction')
+        // S2-05: read validation_correction_carry (prior session's correction, copied at
+        // session creation) rather than validation_correction (current session's own correction,
+        // which doesn't exist yet at persona-call time — it's only set after synthesis + validation).
+        .select('user_id, framing_intent, validation_correction_carry')
         .eq('id', sessionId)
         .single(),
     ])
 
     const userId             = sessionResult.data?.user_id ?? null
     const framingIntent      = (sessionResult.data as { framing_intent?: string | null } | null)?.framing_intent ?? null
-    const validationCorrection = (sessionResult.data as { validation_correction?: string | null } | null)?.validation_correction ?? null
+    const validationCorrection = (sessionResult.data as { validation_correction_carry?: string | null } | null)?.validation_correction_carry ?? null
 
     const { data, error } = ontologyResult
     if (error || !data) return { ...EMPTY_COUNCIL_CONTEXT, userId }
@@ -538,6 +540,10 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
     // which produces a flat directive — still valid, just less informative).
     // Sprint CAL: personalCalibrationZones threaded through from biasContext —
     // already resolved above, no extra DB call needed.
+    // S2-02: relevanceMap hoisted to outer scope so it can be exposed to the
+    // client via the X-Persona-Relevance response header — this is the exact
+    // map used in the MANDATORY directive, not a client-side recomputation.
+    let relevanceMapForHeader: Record<string, number> | null = null
     if (isSynthesisCall) {
       const relevanceMap = computePersonaRelevance(
         councilResult.ruleEngineResult,
@@ -545,6 +551,7 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
       )
+      relevanceMapForHeader = relevanceMap
       const relevanceBlock = buildRelevanceBlock(
         relevanceMap,
         councilResult.ruleEngineResult,
@@ -643,6 +650,11 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
         'Content-Type':      'text/plain; charset=utf-8',
         'Cache-Control':     'no-cache',
         'X-Accel-Buffering': 'no',
+        // S2-02: expose the exact relevance map used in the synthesis directive
+        // so the client can render the Council Weighting Strip without recomputation.
+        ...(relevanceMapForHeader
+          ? { 'X-Persona-Relevance': JSON.stringify(relevanceMapForHeader) }
+          : {}),
       },
     })
   } catch (err) {

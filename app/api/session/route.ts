@@ -42,10 +42,11 @@ export async function POST(req: Request) {
 
     // ── RET-5 Sprint 1: validate parent_session_id belongs to the same identity ──
     let resolvedParentId: string | null = null
+    let validationCorrectionCarry: string | null = null
     if (parent_session_id) {
       const { data: parentRow } = await supabase
         .from('sessions')
-        .select('user_id, user_email, device_id')
+        .select('user_id, user_email, device_id, validation_correction')
         .eq('id', parent_session_id)
         .single()
 
@@ -58,6 +59,10 @@ export async function POST(req: Request) {
 
       if (sameIdentity) {
         resolvedParentId = parent_session_id
+        // S2-05: carry prior session correction into this session so the council context
+        // can inject it at persona-call time (current session has no correction yet).
+        const rawCarry = (parentRow as { validation_correction?: string | null } | null)?.validation_correction ?? null
+        validationCorrectionCarry = rawCarry?.trim() || null
       } else if (parentRow) {
         console.warn(`[Session] parent_session_id ${parent_session_id} identity mismatch — dropping link`)
       }
@@ -85,6 +90,8 @@ export async function POST(req: Request) {
         device_id:  device_id || null,
         user_id:    serverUserId,
         parent_session_id: resolvedParentId,
+        // S2-05: carry prior session correction for council context injection
+        validation_correction_carry: validationCorrectionCarry,
       })
       .select('id')
       .single()

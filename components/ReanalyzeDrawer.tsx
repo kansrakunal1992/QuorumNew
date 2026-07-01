@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getOrCreateDeviceId } from '@/lib/storage'
 
@@ -25,6 +25,19 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
   const [rePreConfidence, setRePreConfidence] = useState(5)
   const [reanalyzing,    setReanalyzing]     = useState(false)
   const [reanalyzeError, setReanalyzeError] = useState('')
+
+  // S2-08: prior Council summary — fetched once when the drawer opens, so the user
+  // recalls what was already concluded before choosing what to change.
+  const [priorSynthesisSummary, setPriorSynthesisSummary] = useState<string | null>(null)
+  const [priorSummaryLoaded,    setPriorSummaryLoaded]    = useState(false)
+  useEffect(() => {
+    if (!drawerOpen || priorSummaryLoaded) return
+    setPriorSummaryLoaded(true)
+    fetch(`/api/session/${sessionId}/synthesis-summary`)
+      .then(r => r.json())
+      .then(data => setPriorSynthesisSummary(data.summary ?? null))
+      .catch(() => setPriorSynthesisSummary(null))
+  }, [drawerOpen, priorSummaryLoaded, sessionId])
 
   const handleReanalyze = useCallback(async () => {
     if (!reDecision.trim() || reDecision.trim().length < 20) {
@@ -116,6 +129,32 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
                 ✕ Close
               </button>
             </div>
+
+            {/* S2-08: prior Council summary — reminds the user what was already concluded */}
+            {priorSynthesisSummary && (
+              <div style={{
+                padding:      '11px 14px',
+                borderRadius:  9,
+                border:        '1px solid var(--border-dim)',
+                background:    'var(--bg-inset)',
+                marginBottom:  16,
+              }}>
+                <p style={{
+                  fontFamily:    'var(--font-mono)',
+                  fontSize:      9.5,
+                  fontWeight:    700,
+                  letterSpacing: '0.11em',
+                  textTransform: 'uppercase',
+                  color:         'var(--text-4)',
+                  margin:        '0 0 6px',
+                }}>
+                  What the Council concluded last time
+                </p>
+                <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
+                  {priorSynthesisSummary}
+                </p>
+              </div>
+            )}
 
             {/* Decision textarea */}
             <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 6, fontWeight: 500 }}>

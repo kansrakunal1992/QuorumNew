@@ -130,7 +130,7 @@ export default function CouncilStatusBar({
   let message = ''
   if (phase === 'mapping')   message = 'Understanding the structure of your decision'
   if (phase === 'history')   message = 'Checking if you\'ve faced a structurally similar decision before'
-  if (phase === 'examiner')  message = 'The Examiner has questions for you — the Council will convene once you\'ve answered'
+  if (phase === 'examiner')  message = 'A few quick questions — the Council will convene once you\'ve answered'
   if (phase === 'council')   message = personasComplete > 0
     ? `${personasComplete} of ${totalPersonas} advisor${personasComplete === 1 ? '' : 's'} ha${personasComplete === 1 ? 's' : 've'} reviewed the brief`
     : 'Convening the Council — advisors are reviewing your decision'
@@ -193,7 +193,7 @@ export default function CouncilStatusBar({
           {phase === 'mapping'   && 'Structuring'}
           {phase === 'history'   && 'Pattern check'}
           {phase === 'council'   && 'Council'}
-          {phase === 'examiner'  && 'Examiner'}
+          {phase === 'examiner'  && 'Questions'}
           {phase === 'synthesis' && 'Synthesis'}
         </span>
 

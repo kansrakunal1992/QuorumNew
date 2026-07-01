@@ -2,6 +2,7 @@ import { notFound }            from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase'
 import SessionView             from '@/components/SessionView'
 import { decrypt }             from '@/lib/encryption'
+import { getMirrorAccessState } from '@/lib/mirror-access'   // O4
 
 interface Props {
   params: Promise<{ id: string }>
@@ -19,11 +20,15 @@ export default async function SessionPage({ params }: Props) {
 
   if (error || !session) { notFound() }
 
-  const [{ data: messages }, { count: totalSessionCount }] = await Promise.all([
+  const [{ data: messages }, { count: totalSessionCount }, mirrorState] = await Promise.all([
     supabase.from('messages').select('persona, role, content').eq('session_id', id).order('created_at', { ascending: true }),
     session.user_id
       ? supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', session.user_id)
       : Promise.resolve({ count: null }),
+    // O4: resolve actual mirror access — never hardcode false for paying users
+    session.user_id
+      ? getMirrorAccessState(session.user_id, supabase)
+      : Promise.resolve('locked' as const),
   ])
 
   const decryptedSession = {
@@ -46,5 +51,6 @@ export default async function SessionPage({ params }: Props) {
     initialMessages={initialMessages}
     totalSessionCount={totalSessionCount ?? undefined}
     encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY}
+    mirrorActive={mirrorState === 'unlocked'}     // O4: real mirror access state
   />
 }

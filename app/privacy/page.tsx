@@ -72,7 +72,7 @@ export default function PrivacyPolicyPage() {
             <Table rows={[
               ['Account data', 'Your email address, collected when you sign in via magic link.'],
               ['Decision data', 'The decision text you submit and any register-mode answers you provide before Council analysis.'],
-              ['Analysis data', 'AI-generated responses from persona analysis, synthesis, and the Examiner diagnostic. These are stored so you can return to a session.'],
+              ['Analysis data', 'AI-generated responses from persona analysis, synthesis, and the follow-up question diagnostic. These are stored so you can return to a session.'],
               ['Behavioural data', 'Bias scores, calibration records, decision patterns, and independence metrics derived from your decisions over time. This data compounds to form your decision profile in the Mirror module.'],
               ['Technical data', 'An anonymous device identifier (generated on your device, gated behind functional cookie consent), session identifiers, and server-side request logs including IP address and user agent.'],
               ['Website enquiry data', 'If you request early access via our public website, your name, email, WhatsApp number, and the decision context you provide.'],
