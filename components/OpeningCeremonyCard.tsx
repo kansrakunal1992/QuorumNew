@@ -12,7 +12,7 @@ interface Props {
   onDismiss: () => void
 }
 
-const DURATION = 3000
+const DURATION = 6000
 const ADVISOR_COUNT = 6
 
 export default function OpeningCeremonyCard({ onDismiss }: Props) {

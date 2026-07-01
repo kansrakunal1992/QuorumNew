@@ -86,7 +86,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
     }
   }, [visible]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // S2-03: intro auto-advances to the first question after 1.5s — no click required.
+  // S2-03: intro auto-advances to the first question after 2s — no click required.
   // Every question after that advances only via the Continue/Submit button (constraint e).
   useEffect(() => {
     if (fetchStatus !== 'ready' || ruleMode === 'REDIRECT') return
@@ -94,7 +94,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
     introTimerRef.current = setTimeout(() => {
       setFlowStage('stepping')
       setStepIndex(0)
-    }, 1500)
+    }, 2000)
     return () => {
       if (introTimerRef.current) clearTimeout(introTimerRef.current)
     }
