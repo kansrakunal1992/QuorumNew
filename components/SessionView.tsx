@@ -680,16 +680,20 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [reFramingIntent, setReFramingIntent] = useState<'challenge' | 'clarify' | 'right'>('challenge')
 
   // S2-08: prior Council summary — fetched once when the drawer opens, so the user
-  // recalls what was already concluded before choosing what to change.
-  const [priorSynthesisSummary, setPriorSynthesisSummary] = useState<string | null>(null)
-  const [prioSummaryLoaded,     setPrioSummaryLoaded]     = useState(false)
+  // recalls what was already concluded before choosing what to change. Full text is
+  // fetched; a short preview shows by default with a toggle to expand (fix: previously
+  // truncated server-side with no way to see the rest).
+  const [priorSynthesisFull,   setPriorSynthesisFull]   = useState<string | null>(null)
+  const [prioSummaryLoaded,    setPrioSummaryLoaded]    = useState(false)
+  const [priorSummaryExpanded, setPriorSummaryExpanded] = useState(false)
+  const PRIOR_SUMMARY_PREVIEW_CHARS = 220
   useEffect(() => {
     if (!drawerOpen || prioSummaryLoaded) return
     setPrioSummaryLoaded(true)
     fetch(`/api/session/${session.id}/synthesis-summary`)
       .then(r => r.json())
-      .then(data => setPriorSynthesisSummary(data.summary ?? null))
-      .catch(() => setPriorSynthesisSummary(null))
+      .then(data => setPriorSynthesisFull(data.full ?? null))
+      .catch(() => setPriorSynthesisFull(null))
   }, [drawerOpen, prioSummaryLoaded, session.id])
 
   const handleNewDecision = () => {
@@ -1499,6 +1503,12 @@ export default function SessionView({ session: initialSession, initialMessages =
                 maxWidth: 760,
                 margin: '0 auto',
                 boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
+                // Fix: drawer had no height cap or scroll — content taller than the viewport
+                // (e.g. the S2-08 prior-summary card) was pushed above the visible area with
+                // no way to reach it. Caps height and makes the drawer itself scrollable.
+                maxHeight: '88vh',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
               }}
             >
               {/* Drag handle */}
@@ -1535,7 +1545,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               </div>
 
               {/* S2-08: prior Council summary — reminds the user what was already concluded */}
-              {priorSynthesisSummary && (
+              {priorSynthesisFull && (
                 <div style={{
                   padding:      '11px 14px',
                   borderRadius:  9,
@@ -1555,8 +1565,28 @@ export default function SessionView({ session: initialSession, initialMessages =
                     What the Council concluded last time
                   </p>
                   <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
-                    {priorSynthesisSummary}
+                    {priorSummaryExpanded || priorSynthesisFull.length <= PRIOR_SUMMARY_PREVIEW_CHARS
+                      ? priorSynthesisFull
+                      : `${priorSynthesisFull.slice(0, PRIOR_SUMMARY_PREVIEW_CHARS).trimEnd()}…`}
                   </p>
+                  {priorSynthesisFull.length > PRIOR_SUMMARY_PREVIEW_CHARS && (
+                    <button
+                      onClick={() => setPriorSummaryExpanded(v => !v)}
+                      style={{
+                        marginTop:   7,
+                        padding:     0,
+                        background:  'transparent',
+                        border:      'none',
+                        color:       'var(--gold)',
+                        fontSize:    11.5,
+                        fontWeight:  600,
+                        cursor:      'pointer',
+                        fontFamily:  'inherit',
+                      }}
+                    >
+                      {priorSummaryExpanded ? 'Show less ▴' : 'Show full synthesis ▾'}
+                    </button>
+                  )}
                 </div>
               )}
 
