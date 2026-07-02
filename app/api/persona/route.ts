@@ -545,12 +545,34 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
     // map used in the MANDATORY directive, not a client-side recomputation.
     let relevanceMapForHeader: Record<string, number> | null = null
     if (isSynthesisCall) {
+      // ── TEMP DIAGNOSTIC (remove after root-causing flat-0.50 weighting bug) ──
+      // Logs exactly what computePersonaRelevance receives at runtime. Compare
+      // against the sessions_ontology row for the same session_id — if this log
+      // shows empty/null here but the DB row has real data, the break is in
+      // something environmental between fetchCouncilContext's return and this
+      // line (e.g. a second stale Promise.all destructure, module-level cache,
+      // or the service-role client). If this log matches the DB row exactly,
+      // the break is inside computePersonaRelevance's execution itself at
+      // runtime despite the source reading correctly.
+      console.log('[S2-02 DIAG] sessionId:', sessionId)
+      console.log('[S2-02 DIAG] ruleEngineResult:', JSON.stringify(councilResult.ruleEngineResult))
+      console.log('[S2-02 DIAG] ontologyVector keys:', councilResult.ontologyVector ? Object.keys(councilResult.ontologyVector) : null)
+      console.log('[S2-02 DIAG] ontologyVector.reversibility:', councilResult.ontologyVector?.reversibility)
+      console.log('[S2-02 DIAG] ontologyVector.time_pressure:', councilResult.ontologyVector?.time_pressure)
+      console.log('[S2-02 DIAG] ontologyVector.emotional_intensity:', councilResult.ontologyVector?.emotional_intensity)
+      console.log('[S2-02 DIAG] maxStructuralScore:', councilResult.maxStructuralScore)
+      console.log('[S2-02 DIAG] personalCalibrationZones:', JSON.stringify(biasContext.personalCalibrationZones))
+
       const relevanceMap = computePersonaRelevance(
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
       )
+
+      // ── TEMP DIAGNOSTIC (remove alongside the block above) ──────────────────
+      console.log('[S2-02 DIAG] computed relevanceMap:', JSON.stringify(relevanceMap))
+
       relevanceMapForHeader = relevanceMap
       const relevanceBlock = buildRelevanceBlock(
         relevanceMap,
