@@ -32,9 +32,9 @@ function validateTag(tag: OntologyTag): boolean {
   if (!tag.examiner_gap_1 || !tag.examiner_gap_2 || !tag.examiner_gap_3) return false
   // v2.0: also require scored_vector
   if (!tag.scored_vector || typeof tag.scored_vector !== 'object')        return false
-  if (!tag.scored_vector.upstream_dependency?.score)                      return false
-  if (!tag.scored_vector.identity_alignment?.score)                       return false
-  if (!tag.scored_vector.regret_asymmetry?.score)                         return false
+  if (typeof tag.scored_vector.upstream_dependency?.score !== 'number') return false
+  if (typeof tag.scored_vector.identity_alignment?.score !== 'number')  return false
+  if (typeof tag.scored_vector.regret_asymmetry?.score !== 'number')    return false
   return true
 }
 
@@ -106,10 +106,12 @@ export async function POST(req: Request) {
   let sessionId: string | undefined
 
   try {
+    
     const body = await req.json()
+    
     sessionId = body.sessionId
     const decisionText: string | undefined = body.decisionText
-    const contextText:  string | undefined = body.contextText
+    const contextText: string | null = body.contextText ?? null
 
     if (!sessionId || !decisionText) {
       return NextResponse.json(
