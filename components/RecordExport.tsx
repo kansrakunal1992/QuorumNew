@@ -496,7 +496,13 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
               doc.text(pbLines.slice(0, 2), ML + 1, y + 2)
               y += 12
             }
-            renderContent(isSynthesis ? stripSynthesisTags(msgs.assistant[i]) : msgs.assistant[i], 9.5)
+            // Bug fix: previously only synthesis content was stripped here
+            // (isSynthesis ? stripSynthesisTags(...) : raw). Advisor content was
+            // rendered completely raw — <lens>/<position>/<realcost>/<lean> tags leaked
+            // into the PDF appendix whenever the model emitted them, since nothing
+            // upstream strips advisor content before DB storage either. stripSynthesisTags
+            // is a safe superset for both cases (verdict/tension are no-ops on advisor text).
+            renderContent(stripSynthesisTags(msgs.assistant[i]), 9.5)
             y += 3
           }
         }
