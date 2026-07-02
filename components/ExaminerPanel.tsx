@@ -47,7 +47,16 @@ interface Props {
 type FetchStatus  = 'idle' | 'loading' | 'ready' | 'no_gaps' | 'retry' | 'error'
 type SubmitStatus = 'idle' | 'submitting' | 'done'
 
-const MAX_RETRIES    = 6
+// Bug fix (EXAMINER-1): the ontology tagger is fired fire-and-forget at
+// session creation and runs a full Claude completion (~2000 max_tokens,
+// scoring 14 dimensions) before tagger_status flips to 'complete' — realistically
+// 5-20s+. The previous 6 x 3s = 18s budget was tight enough that a normal-speed
+// tagger call could still be mid-flight when the Examiner gave up and silently
+// skipped (no card, no indication anything happened). Widened to 10 x 3s = 30s
+// to give genuine in-flight cases realistic room. This only affects sessions
+// where tagger_status is still 'pending' — see the 'failed' short-circuit below
+// for the case where retrying is pointless.
+const MAX_RETRIES    = 10
 const RETRY_DELAY_MS = 3000
 
 export default function ExaminerPanel({ sessionId, visible, onComplete, forceDismissed }: Props) {
@@ -134,6 +143,19 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
 
       if (data.status === 'no_gaps' || data.status === 'no_rules' || data.questions?.length === 0) {
         setFetchStatus('no_gaps')
+        handleSkipInternal(mode)
+        return
+      }
+
+      // Bug fix (EXAMINER-1): 'failed' means the ontology tagger errored out
+      // for this session and will never reach 'complete' — see TAGGER-1 fix
+      // in app/api/ontology/route.ts, which now sets this explicitly instead
+      // of leaving the row stuck at 'pending'. Retrying a known dead end just
+      // makes the user stare at "Calibrating questions…" for up to 30s for
+      // nothing — skip immediately instead. Only 'pending' (tagger genuinely
+      // still running) falls through to the retry loop below.
+      if (data.status === 'failed') {
+        setFetchStatus('error')
         handleSkipInternal(mode)
         return
       }

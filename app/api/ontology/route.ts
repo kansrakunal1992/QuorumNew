@@ -81,6 +81,18 @@ function tagToInsert(sessionId: string, tag: OntologyTag, ruleResult: ReturnType
 }
 
 // ── POST handler ───────────────────────────────────────────────────────────────
+//
+// Bug fix (TAGGER-1): previously, two failure paths left sessions_ontology
+// stuck at tagger_status:'pending' permanently — (a) the final upsert failing
+// (DB error) and (b) any uncaught exception (e.g. an Anthropic API timeout/
+// rate-limit/network error inside tagDecision(), which has no retry wrapper).
+// A row stuck at 'pending' is a dead end: /api/examiner retries a fixed
+// budget waiting for 'complete', never gets it, and silently skips — and on
+// every future load of that same session, the exact same thing happens again,
+// forever, since nothing ever re-fires the tagger. sessionId is now hoisted
+// so both the try body and the catch block can reach it, and every failure
+// path does a best-effort upsert to 'failed' — a real terminal state instead
+// of a permanent hang.
 
 export async function POST(req: Request) {
   // S5-03: internal route — only accessible from server-side fetch with INTERNAL_API_SECRET
@@ -90,8 +102,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  const supabase = createServiceClient()
+  let sessionId: string | undefined
+
   try {
-    const { sessionId, decisionText, contextText } = await req.json()
+    const body = await req.json()
+    sessionId = body.sessionId
+    const decisionText: string | undefined = body.decisionText
+    const contextText:  string | undefined = body.contextText
 
     if (!sessionId || !decisionText) {
       return NextResponse.json(
@@ -99,8 +117,6 @@ export async function POST(req: Request) {
         { status: 400 }
       )
     }
-
-    const supabase = createServiceClient()
 
     // Mark pending immediately (prevents double-tag on retry)
     await supabase.from('sessions_ontology').upsert(
@@ -141,6 +157,11 @@ export async function POST(req: Request) {
 
     if (upsertError) {
       console.error('[Ontology] Supabase upsert error:', upsertError)
+      // TAGGER-1: don't leave this stuck at 'pending' — see note above.
+      await supabase.from('sessions_ontology').upsert(
+        { session_id: sessionId, tagger_status: 'failed' },
+        { onConflict: 'session_id' }
+      ).catch(() => {})
       return NextResponse.json({ ok: false, error: 'DB insert failed' }, { status: 500 })
     }
 
@@ -153,6 +174,18 @@ export async function POST(req: Request) {
 
   } catch (err) {
     console.error('[Ontology] Route error:', err)
+    // TAGGER-1: best-effort mark 'failed' so this session isn't stuck at
+    // 'pending' forever. Guarded — sessionId may be undefined if req.json()
+    // itself threw (malformed body), in which case no row was ever created
+    // and there's nothing to recover.
+    if (sessionId) {
+      try {
+        await supabase.from('sessions_ontology').upsert(
+          { session_id: sessionId, tagger_status: 'failed' },
+          { onConflict: 'session_id' }
+        )
+      } catch { /* best-effort only — don't let this mask the original error */ }
+    }
     return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
   }
 }
