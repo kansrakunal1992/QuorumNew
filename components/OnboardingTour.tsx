@@ -156,6 +156,20 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
   useEffect(() => { setPortalMounted(true) }, [])
 
   // ── Inject spotlight CSS while tour is active ─────────────────────────────
+  // Bug fix (TOUR-3): the ring previously used var(--gold-dim) as its resting
+  // color (0%/100% keyframes, which — because the animation is ease-in-out —
+  // is where it sits for most of each 2s cycle). --gold-dim was designed as a
+  // subtle divider/hover-border accent elsewhere in the app, not an attention
+  // color: measured contrast was only ~2:1 against dark-theme backgrounds and
+  // ~2–2.5:1 against light-theme/white cards (WCAG's floor for a graphical UI
+  // element to read as distinct is 3:1). Net effect: the "spotlight" was real
+  // but effectively invisible outside a brief flash at the 50% keyframe.
+  // Fix: dark theme reuses --gold-bright (measured ~12:1 against --bg-void —
+  // already an existing token, no new color introduced). Light theme's own
+  // gold tokens all cap out under 3:1 against white/cream backgrounds, so it
+  // gets a dedicated deeper amber (#a8720a, ~4.1:1) plus a thin dark hairline
+  // for edge definition — a technique for keeping a warm color legible on
+  // light backgrounds without going murky/brown.
 
   useEffect(() => {
     if (!active) return
@@ -166,17 +180,36 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
         position: relative !important;
         z-index: 10001 !important;
         box-shadow:
-          0 0 0 3px var(--gold-dim),
-          0 0 0 8px rgba(201, 168, 76, 0.13) !important;
+          0 0 0 3px var(--gold-bright),
+          0 0 0 9px rgba(234, 202, 120, 0.20) !important;
         border-radius: var(--radius-sm) !important;
         animation: tourPulse 2s ease-in-out infinite !important;
       }
       @keyframes tourPulse {
         0%, 100% {
-          box-shadow: 0 0 0 3px var(--gold-dim), 0 0 0 8px rgba(201,168,76,0.13);
+          box-shadow: 0 0 0 3px var(--gold-bright), 0 0 0 9px rgba(234,202,120,0.20);
         }
         50% {
-          box-shadow: 0 0 0 4px var(--gold), 0 0 0 13px rgba(201,168,76,0.24);
+          box-shadow: 0 0 0 4px var(--gold-bright), 0 0 0 14px rgba(234,202,120,0.32);
+        }
+      }
+
+      /* Light theme: none of the app's existing gold tokens clear 3:1 against
+         white/cream cards, so this uses a dedicated deeper amber + hairline
+         instead of reusing --gold/--gold-bright/--gold-dim. */
+      [data-theme="light"] .tour-spotlight {
+        box-shadow:
+          0 0 0 1px rgba(0, 0, 0, 0.18),
+          0 0 0 4px #a8720a,
+          0 0 0 10px rgba(168, 114, 10, 0.18) !important;
+        animation: tourPulseLight 2s ease-in-out infinite !important;
+      }
+      @keyframes tourPulseLight {
+        0%, 100% {
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.18), 0 0 0 4px #a8720a, 0 0 0 10px rgba(168,114,10,0.18);
+        }
+        50% {
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.24), 0 0 0 5px #8a5c00, 0 0 0 15px rgba(168,114,10,0.28);
         }
       }
     `
