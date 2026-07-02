@@ -137,6 +137,16 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
   const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tooltipRef   = useRef<HTMLDivElement | null>(null)
   const dragStartRef = useRef<{ mx: number; my: number; tx: number; ty: number } | null>(null)
+  // Bug fix (TOUR-2): elements inside a fixed-position ancestor with its own
+  // z-index (e.g. SessionView's .sv-navbar, z-index: 8500) never visually
+  // clear the dim overlay (z-index: 10000) even though .tour-spotlight sets
+  // z-index: 10001 on the target itself — a child's z-index is only compared
+  // *within* the stacking context of its nearest positioned ancestor. If that
+  // ancestor's own z-index is below the overlay's, the whole subtree —
+  // spotlighted child included — renders underneath it. We temporarily lift
+  // any such ancestor's z-index above the overlay while its descendant is
+  // spotlit, and restore the original value when the spotlight clears.
+  const elevatedAncestorsRef = useRef<{ el: HTMLElement; prevZIndex: string }[]>([])
 
   const step   = steps[stepIndex]
   const isLast = stepIndex === steps.length - 1
@@ -193,6 +203,14 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
       el.style.display = ''
       currentElRef.current = null
     }
+    // Restore any ancestor z-indexes we temporarily lifted (see ref comment above)
+    if (elevatedAncestorsRef.current.length) {
+      elevatedAncestorsRef.current.forEach(({ el, prevZIndex }) => {
+        if (prevZIndex) el.style.zIndex = prevZIndex
+        else el.style.removeProperty('z-index')
+      })
+      elevatedAncestorsRef.current = []
+    }
     if (timerRef.current) {
       clearTimeout(timerRef.current)
       timerRef.current = null
@@ -221,6 +239,22 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     el.classList.add('tour-spotlight')
     currentElRef.current = el
+
+    // Walk up from the target and lift the z-index of any positioned ancestor
+    // (position: fixed/sticky/absolute/relative with an explicit z-index) that
+    // would otherwise cap the spotlight below the dim overlay. See ref comment
+    // above for why this is needed — .tour-spotlight's own z-index: 10001 only
+    // wins locally within that ancestor's stacking context.
+    let ancestor = (el as HTMLElement).parentElement
+    while (ancestor && ancestor !== document.body) {
+      const cs = window.getComputedStyle(ancestor)
+      const zi = parseInt(cs.zIndex, 10)
+      if (cs.position !== 'static' && !Number.isNaN(zi) && zi < 10001) {
+        elevatedAncestorsRef.current.push({ el: ancestor, prevZIndex: ancestor.style.zIndex })
+        ancestor.style.zIndex = '10001'
+      }
+      ancestor = ancestor.parentElement
+    }
 
     timerRef.current = setTimeout(() => {
       const rect = el.getBoundingClientRect()

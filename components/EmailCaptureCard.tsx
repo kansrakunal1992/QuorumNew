@@ -88,14 +88,17 @@ export default function EmailCaptureCard({ sessionId }: Props) {
   }
 
   return (
-    <div style={{
-      borderRadius:   14,
-      padding:        '18px 22px',
-      background:     'var(--bg-card)',
-      border:         '1px solid var(--border-mid)',
-      position:       'relative',
-      overflow:       'hidden',
-    }}>
+    <div
+      data-tour-id="record-email-link"
+      style={{
+        borderRadius:   14,
+        padding:        '18px 22px',
+        background:     'var(--bg-card)',
+        border:         '1px solid var(--border-mid)',
+        position:       'relative',
+        overflow:       'hidden',
+      }}
+    >
       {/* Subtle left accent */}
       <div style={{
         position:   'absolute',

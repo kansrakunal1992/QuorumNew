@@ -46,9 +46,9 @@ const RECORD_STEPS_BASE: TourStep[] = [
 const EMAIL_LINK_STEPS: TourStep[] = [
   {
     id:               'record-email-link',
-    targetSelector:   null,
+    targetSelector:   '[data-tour-id="record-email-link"]',
     heading:          'Lock in your decisions with an email',
-    body:             'Right now your decisions are tied to this device only. Enter your email in the card just below — we\'ll send you a single link. No password. Click it and your entire record travels with you across devices.',
+    body:             'Right now your decisions are tied to this device only. Enter your email right here — we\'ll send you a single link. No password. Click it and your entire record travels with you across devices.',
     preferredSide:    'bottom',
   },
   {
