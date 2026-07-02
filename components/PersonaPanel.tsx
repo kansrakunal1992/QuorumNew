@@ -94,10 +94,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
   const [contextShared, setContextShared] = useState(false)
 
-  // Header block — parsed from <lens>, <position>, <realcost> tags in streamed output
+  // Header block — parsed from <lens>, <position>, <realcost>, <lean> tags in streamed output
   const [lensText,     setLensText]     = useState('')
   const [positionText, setPositionText] = useState('')
   const [realCostText, setRealCostText] = useState('')
+  // S3-01: machine-readable lean classification — never rendered, used only by SessionView
+  // to build the pre-synthesis tension interstitial. Surfaced via onComplete's raw content.
 
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
@@ -123,7 +125,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const icon = ICONS[persona.key]
 
   // ── Header tag extractor ───────────────────────────────────────────────────
-  // Strips <lens>, <position>, <realcost> tags from streamed output and returns clean prose
+  // Strips <lens>, <position>, <realcost>, <lean> tags from streamed output and returns clean prose
   const extractHeaderTags = useCallback((raw: string): string => {
     const get = (tag: string) => {
       const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
@@ -135,11 +137,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     if (lens)     setLensText(lens)
     if (position) setPositionText(position)
     if (realcost) setRealCostText(realcost)
-    // Strip all three tag blocks + any leading blank line from prose
+    // Strip all four tag blocks + any leading blank line from prose.
+    // <lean> is a machine-readable classification only — never state, never displayed.
     return raw
       .replace(/<lens>[\s\S]*?<\/lens>/g, '')
       .replace(/<position>[\s\S]*?<\/position>/g, '')
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+      .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/^\s+/, '')
   }, [])
 
@@ -150,6 +154,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<lens>[\s\S]*?<\/lens>/g, '')
       .replace(/<position>[\s\S]*?<\/position>/g, '')
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+      .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/^\s+/, '')
   }, [])
 
@@ -438,15 +443,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
 
         {/* Position — unlabeled opening verdict, no prefix chrome.
-            Lens moves to header caption; real cost moves to card close. */}
+            Lens moves to header caption; real cost moves to card close.
+            S3-05: elevated to display font / 600 weight — this is the advisor's lean,
+            the single most load-bearing sentence on the card, previously the same
+            visual weight as body prose. */}
         {positionText && (
           <div style={{ marginBottom: 14 }}>
             <p style={{
-              fontSize: 13,
-              fontWeight: 500,
-              color: 'var(--text-1)',
-              lineHeight: 1.65,
-              margin: '0',
+              fontSize:   15,
+              fontWeight: 600,
+              fontFamily: 'var(--font-display)',
+              color:      'var(--text-1)',
+              lineHeight: 1.5,
+              margin:     '0',
             }}>
               {positionText}
             </p>
@@ -462,10 +471,22 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
 
         {/* Real cost — closing beat, shown once prose is complete.
-            Sits below exchanges (or below analysis if no pushback) as a persistent conclusion. */}
+            Sits below exchanges (or below analysis if no pushback) as a persistent conclusion.
+            S3-05: labelled — this is the advisor's closing statement, previously
+            unmarked italic text indistinguishable from a stray aside. */}
         {realCostText && panelState === 'done' && exchanges.length === 0 && (
           <div style={{ marginTop: 16 }}>
             <div style={{ borderTop: '1px solid var(--border-dim)', marginBottom: 10 }} />
+            <p style={{
+              fontSize:      10,
+              fontWeight:    700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color:         'var(--text-4)',
+              margin:        '0 0 4px',
+            }}>
+              The real cost
+            </p>
             <p style={{
               fontSize: 12,
               fontStyle: 'italic',
@@ -496,6 +517,16 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         {realCostText && panelState === 'done' && exchanges.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <div style={{ borderTop: '1px solid var(--border-dim)', marginBottom: 10 }} />
+            <p style={{
+              fontSize:      10,
+              fontWeight:    700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color:         'var(--text-4)',
+              margin:        '0 0 4px',
+            }}>
+              The real cost
+            </p>
             <p style={{
               fontSize: 12,
               fontStyle: 'italic',

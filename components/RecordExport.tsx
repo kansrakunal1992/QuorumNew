@@ -46,6 +46,7 @@ function stripSynthesisTags(raw: string): string {
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+    .replace(/<lean>[\s\S]*?<\/lean>/g, '')
     .replace(/^\s+/, '')
 }
 

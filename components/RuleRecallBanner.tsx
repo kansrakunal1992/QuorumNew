@@ -33,17 +33,28 @@ interface Props {
   onRuleApplied?: (rule: string) => void  // Sprint Chunk 1 fix — inject into synthesis
 }
 
-type BannerState = 'loading' | 'ready' | 'dismissed' | 'hidden'
+type BannerState = 'loading' | 'ready' | 'fading' | 'dismissed' | 'hidden'
+
+const FADE_MS = 300
 
 export default function RuleRecallBanner({ sessionId, authToken, visible, onRuleApplied }: Props) {
   const [state,       setState]       = useState<BannerState>('loading')
   const [rule,        setRule]        = useState<string | null>(null)
   const [actioning,   setActioning]   = useState(false)
 
+  // O6: begins a 300ms fade before fully unmounting, rather than vanishing instantly.
+  // Applies to every dismissal path — auto-dismiss (examiner submitted without a
+  // choice) and explicit action clicks alike — so the banner always acknowledges
+  // its own dismissal instead of abruptly disappearing.
+  const beginFadeOut = () => {
+    setState(s => (s === 'ready' ? 'fading' : s))
+    setTimeout(() => setState('dismissed'), FADE_MS)
+  }
+
   // Auto-dismiss when the examiner is submitted before a choice is made.
   // visible flips false → the window has closed, no injection, no DB write.
   useEffect(() => {
-    if (!visible && state === 'ready') setState('dismissed')
+    if (!visible && state === 'ready') beginFadeOut()
   }, [visible, state])
 
   useEffect(() => {
@@ -101,7 +112,7 @@ export default function RuleRecallBanner({ sessionId, authToken, visible, onRule
     } catch {
       // Non-critical — dismiss regardless
     } finally {
-      setState('dismissed')
+      beginFadeOut()
     }
   }
 
@@ -109,7 +120,7 @@ export default function RuleRecallBanner({ sessionId, authToken, visible, onRule
     return null
   }
 
-  if (state !== 'ready' || !rule) return null
+  if ((state !== 'ready' && state !== 'fading') || !rule) return null
 
   const actions: Array<{
     choice:  'applied' | 'exception' | 'ignored'
@@ -128,6 +139,10 @@ export default function RuleRecallBanner({ sessionId, authToken, visible, onRule
       background:   'var(--gold-glow)',
       padding:      '16px 20px',
       margin:       '16px 0',
+      // O6: 300ms fade on dismiss instead of instant unmount
+      opacity:      state === 'fading' ? 0 : 1,
+      transition:   `opacity ${FADE_MS}ms ease`,
+      pointerEvents: state === 'fading' ? 'none' : 'auto',
     }}>
 
       {/* Header */}
@@ -167,7 +182,7 @@ export default function RuleRecallBanner({ sessionId, authToken, visible, onRule
           <button
             key={choice}
             onClick={() => handleAction(choice)}
-            disabled={actioning}
+            disabled={actioning || state === 'fading'}
             className={primary ? 'btn-primary' : 'btn-ghost'}
             style={{ fontSize: 12, padding: '7px 16px' }}
           >

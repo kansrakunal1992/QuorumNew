@@ -55,12 +55,24 @@ export default function BiasNoteCard({ note }: Props) {
         width:        7,
         height:       7,
         borderRadius: '50%',
-        background:   '#c98a4c',
+        background:   'var(--amber-dot)',
         marginTop:    5,
         flexShrink:   0,
         }}
         />
       <div>
+        {/* S3-06: intro label — makes the card's appearance feel deliberate,
+            not accidental. Materializing with no framing previously read as a glitch. */}
+        <p style={{
+          fontSize:      10,
+          fontWeight:    700,
+          letterSpacing: '0.11em',
+          textTransform: 'uppercase',
+          color:         'var(--text-4)',
+          margin:        '0 0 5px',
+        }}>
+          Noticed in this session
+        </p>
         <p style={{
           fontSize:   12.5,
           fontWeight: 600,

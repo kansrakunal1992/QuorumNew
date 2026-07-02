@@ -110,6 +110,8 @@ export interface Session {
   validation_correction_carry?:  string | null
   // S2-01: post-synthesis confidence re-rate (1–10 tap widget in SynthesisCard)
   post_decision_confidence?:     number | null
+  // O3: cached Decision-Maker Observation line, Mirror subscribers only
+  decision_observation?:         string | null
 }
 
 export interface DecisionRecord {

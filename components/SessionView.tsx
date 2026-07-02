@@ -26,6 +26,8 @@ import ValidationCard from './ValidationCard'             // SB-1
 import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
 import OntologyRevealCard   from './OntologyRevealCard'   // S1-01: Decision X-Ray (sessions 1–3)
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
+import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesis tension beat
+import type { Lean }        from './TensionInterstitial'
 import SessionCompleteBadge from './SessionCompleteBadge' // S1-06: Council complete timestamp
 import {
   DECISION_TYPE_LABELS,
@@ -235,6 +237,11 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [xRayDismissed,  setXRayDismissed]  = useState(false)
   // S2-07: Opening Ceremony dismiss flag — gates persona streaming for 3s on sessions 1-3
   const [ceremonyDismissed, setCeremonyDismissed] = useState(false)
+  // S3-01: per-persona lean classification (proceed/wait/mixed), parsed from each
+  // persona's raw <lean> header tag in handlePersonaComplete.
+  const [personaLeans, setPersonaLeans] = useState<Record<string, Lean>>({})
+  // S3-01: gates synthesis start for a brief tension-interstitial beat
+  const [interstitialDismissed, setInterstitialDismissed] = useState(false)
 
   // S1-07: Structural echo banner — pattern_analyst card
   const [structuralContextActive, setStructuralContextActive] = useState(false)
@@ -505,6 +512,17 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [ontologyReady, styleCueReady])
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
+    // S3-01: capture this persona's lean classification, if present. Only overwrite on a
+    // valid match — later calls (pushback replies, examiner updates) send pre-stripped
+    // content without the tag, and should never clear a previously captured lean.
+    const leanMatch = content.match(/<lean>([\s\S]*?)<\/lean>/)
+    if (leanMatch) {
+      const lean = leanMatch[1].trim().toLowerCase()
+      if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
+        setPersonaLeans(prev => ({ ...prev, [personaKey]: lean as Lean }))
+      }
+    }
+
     setCompletedResponses(prev => {
       const isUpdate = personaKey in prev
       if (isUpdate) setSynthesisVersion(v => v + 1)
@@ -537,6 +555,13 @@ export default function SessionView({ session: initialSession, initialMessages =
   const ceremonyApplicable = (totalSessionCount ?? 0) <= 3 && !redirectBlocked
   const ceremonyGateOpen   = !ceremonyApplicable || ceremonyDismissed
   const ceremonyActive     = examinerSubmitted && ceremonyApplicable && !ceremonyDismissed
+
+  // S3-01: Tension interstitial — fires once all 6 advisors have finished AND the user
+  // has answered the follow-up questions (the exact moment synthesis would otherwise
+  // begin). Not gated by session count — this reflects THIS decision's actual tension,
+  // not an onboarding ritual, so it's valuable for every session.
+  const interstitialActive   = allPersonasDone && examinerReady && !interstitialDismissed && !redirectBlocked
+  const interstitialGateOpen = !interstitialActive
 
   const handleExaminerComplete = useCallback(
     (
@@ -1108,6 +1133,32 @@ export default function SessionView({ session: initialSession, initialMessages =
                   </p>
                 )
               })()}
+
+              {/* S3-04: Structural memory badge — a persistent, glanceable marker at the
+                  top of the page that this decision is drawing on structural/longitudinal
+                  memory. Complements S1-07's echo banner (which explains WHICH prior
+                  decision, on the Pattern Analyst card) by making the fact visible
+                  immediately, before the user scrolls to any advisor card. */}
+              {structuralContextActive && (
+                <div style={{
+                  display:      'inline-flex',
+                  alignItems:   'center',
+                  gap:          5,
+                  marginTop:    9,
+                  padding:      '3px 10px',
+                  borderRadius: 999,
+                  border:       '1px solid var(--success-border)',
+                  background:   'var(--success-bg)',
+                  fontSize:     10.5,
+                  color:        'var(--success-text)',
+                }}>
+                  <span style={{
+                    width: 5, height: 5, borderRadius: '50%',
+                    background: 'var(--success-text)', flexShrink: 0,
+                  }} />
+                  Drawing on structural memory
+                </div>
+              )}
               {session.decision_text.length > 220 && (
                 <button
                   onClick={() => setDecisionExpanded(v => !v)}
@@ -1275,6 +1326,10 @@ export default function SessionView({ session: initialSession, initialMessages =
                   examinerContext={synthExaminerContext}
                   // S2-05: prior session's validation correction carried into this council
                   hasValidationCorrection={!!initialSession.validation_correction_carry}
+                  // S3-01: withholds the synthesis fetch while the tension interstitial is showing
+                  interstitialGateOpen={interstitialGateOpen}
+                  // O3: gates the auto-surfaced Decision-Maker Observation line
+                  mirrorActive={mirrorActive}
                 />
               </div>
 
@@ -1359,6 +1414,11 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* ── S2-07: Opening Ceremony — sessions 1–3, gates persona streaming for 3s ── */}
               {ceremonyActive && (
                 <OpeningCeremonyCard onDismiss={() => setCeremonyDismissed(true)} />
+              )}
+
+              {/* ── S3-01: Tension interstitial — gates synthesis for a brief beat ── */}
+              {interstitialActive && (
+                <TensionInterstitial leans={personaLeans} onDismiss={() => setInterstitialDismissed(true)} />
               )}
 
               {/* ── 3. Relevance label ── */}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'   // S3-07: Observatory mode overlay
 import { useTTSContext } from '@/context/TTSContext'
 import CouncilWeightingStrip from './CouncilWeightingStrip'   // S2-02
 import type { PersonaRelevanceMap } from '@/lib/persona-relevance'  // S2-02
@@ -25,6 +26,11 @@ interface Props {
   personaWeights?:   PersonaRelevanceMap | null
   /** S2-05: true when prior session's validation correction was carried into this council */
   hasValidationCorrection?: boolean
+  /** S3-01: false while the pre-synthesis tension interstitial is showing — synthesis
+   *  fetch waits until this flips true, same pattern as the other readiness gates. */
+  interstitialGateOpen?: boolean
+  /** O3: Mirror subscription state — gates the auto-surfaced Decision-Maker Observation line */
+  mirrorActive?: boolean
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -41,6 +47,8 @@ export default function SynthesisCard({
   examinerContext,
   personaWeights,          // S2-02
   hasValidationCorrection, // S2-05
+  interstitialGateOpen = true, // S3-01 — defaults true so it's never a silent regression if unset
+  mirrorActive, // O3
 }: Props) {
   const [synthesis,    setSynthesis]   = useState('')
   const [state,        setState]       = useState<State>('waiting')
@@ -55,6 +63,16 @@ export default function SynthesisCard({
   // S2-02: persona relevance weights — read from X-Persona-Relevance response header,
   // the exact map used in the synthesis directive (not a client-side recomputation).
   const [fetchedWeights, setFetchedWeights] = useState<PersonaRelevanceMap | null>(null)
+
+  // S3-07: Observatory mode — opt-in focus overlay, triggered only by an explicit
+  // "Focus mode" button (never automatic on TTS start). Dims everything but the
+  // synthesis text and locks scroll, no word-level tracking.
+  const [focusModeActive, setFocusModeActive] = useState(false)
+
+  // O3: Decision-Maker Observation — auto-fetched once synthesis completes, for
+  // Mirror subscribers only. Cached server-side after first generation.
+  const [decisionObservation, setDecisionObservation] = useState<string | null>(null)
+  const [observationFetched,  setObservationFetched]  = useState(false)
 
   // S1-03: verdict + tension
   const [verdictText,  setVerdictText]  = useState('')
@@ -124,6 +142,30 @@ export default function SynthesisCard({
   }, [sessionId])
 
   const completedCount = Object.keys(personaResponses).length
+
+  // O3: once synthesis completes, auto-fetch the Decision-Maker Observation for
+  // Mirror subscribers. Fire-and-forget; failure just means the line doesn't show.
+  useEffect(() => {
+    if (state !== 'done' || !synthesis || !mirrorActive || observationFetched) return
+    setObservationFetched(true)
+    fetch(`/api/session/${sessionId}/observation`, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => setDecisionObservation(data.observation ?? null))
+      .catch(() => setDecisionObservation(null))
+  }, [state, synthesis, mirrorActive, observationFetched, sessionId])
+
+  // S3-07: lock page scroll while Observatory mode is open, and allow Escape to exit
+  useEffect(() => {
+    if (!focusModeActive) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFocusModeActive(false) }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [focusModeActive])
   const allDone        = completedCount >= totalPersonas
   const abortRef       = useRef<AbortController | null>(null)
   const briefAbortRef  = useRef<AbortController | null>(null)
@@ -143,8 +185,10 @@ export default function SynthesisCard({
   useEffect(() => { registerRef.current  = registerMode  }, [registerMode])
 
   // Fire synthesis — gated on examinerReady AND not redirectBlocked (Sprint 11b)
+  // S3-01: also gated on interstitialGateOpen — holds for the brief tension-interstitial
+  // beat once all advisors finish, before the actual synthesis fetch begins.
   useEffect(() => {
-    if (!allDone || !examinerReady || redirectBlocked) return   // Sprint 11b: redirectBlocked blocks synthesis permanently
+    if (!allDone || !examinerReady || redirectBlocked || !interstitialGateOpen) return   // Sprint 11b: redirectBlocked blocks synthesis permanently
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -302,7 +346,7 @@ export default function SynthesisCard({
     }
     run()
     return () => { ctrl.abort() }
-  }, [allDone, examinerReady, redirectBlocked, version]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allDone, examinerReady, redirectBlocked, interstitialGateOpen, version]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerateBrief = async () => {
     briefAbortRef.current?.abort()
@@ -494,6 +538,7 @@ export default function SynthesisCard({
             <p style={{ fontSize: 11, color: 'var(--synthesis-text-sub)', marginTop: 0 }}>
               {state === 'waiting' && !allDone ? `Waiting for advisors — ${completedCount} of ${totalPersonas} complete`
                 : state === 'waiting' && allDone && !examinerReady ? 'Answer the questions to unlock synthesis'
+                : state === 'waiting' && allDone && examinerReady && !interstitialGateOpen ? 'Weighing the Council\u2019s tension…'
                 : state === 'streaming' && isRecalibrating ? 'Recalibrating after pushback…'
                 : state === 'streaming' ? 'Writing the Council\'s conclusion…'
                 : 'What the council collectively surfaced'}
@@ -639,6 +684,38 @@ export default function SynthesisCard({
               }}
             >
               {rate === 1 ? '1×' : rate === 1.5 ? '1.5×' : '2×'}
+            </button>
+          )}
+
+          {/* ── S3-07: Focus mode (Observatory) — opt-in, never automatic ── */}
+          {state === 'done' && synthesis && (
+            <button
+              onClick={() => {
+                setFocusModeActive(true)
+                if (!isThisSpeaking) speak(synthesis, 'synthesis')
+              }}
+              title="Focus mode — dims the page and enlarges the synthesis"
+              style={{
+                display:       'flex',
+                alignItems:    'center',
+                gap:           5,
+                padding:       '5px 11px',
+                borderRadius:  6,
+                border:        '1px solid var(--synthesis-btn-border)',
+                background:    'transparent',
+                color:         'var(--synthesis-btn-text)',
+                fontSize:      11.5,
+                fontWeight:    500,
+                cursor:        'pointer',
+                fontFamily:    'inherit',
+                transition:    'all 0.18s',
+                letterSpacing: '0.01em',
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+              Focus mode
             </button>
           )}
 
@@ -855,6 +932,22 @@ export default function SynthesisCard({
                 View Mirror →
               </a>
             </div>
+
+            {/* O3: Decision-Maker Observation — the most psychologically pointed output
+                Quorum produces, previously buried behind Generate Brief → a separate page.
+                Mirror subscribers only. Placed last — a quiet closing line, not a headline. */}
+            {decisionObservation && (
+              <p style={{
+                marginTop:  14,
+                fontSize:   12.5,
+                fontStyle:  'italic',
+                color:      'var(--text-3)',
+                lineHeight: 1.6,
+                textAlign:  'center',
+              }}>
+                — {decisionObservation}
+              </p>
+            )}
           </>
         )}
         {state === 'streaming' && !synthesis && (
@@ -942,6 +1035,114 @@ export default function SynthesisCard({
           }
         }
       `}</style>
+
+      {/* ── S3-07: Observatory mode overlay — opt-in focus view, no word-level tracking.
+          Portalled to document.body so it sits above everything regardless of where
+          SynthesisCard is mounted in the tree. */}
+      {focusModeActive && synthesis && typeof document !== 'undefined' && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position:   'fixed',
+            inset:      0,
+            zIndex:     9999,
+            background: 'var(--bg-void)',
+            display:    'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            overflowY:  'auto',
+            padding:    '48px 24px',
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setFocusModeActive(false) }}
+        >
+          <button
+            onClick={() => setFocusModeActive(false)}
+            title="Exit focus mode (Esc)"
+            style={{
+              position:     'fixed',
+              top:          20,
+              right:        20,
+              width:        38,
+              height:       38,
+              borderRadius: '50%',
+              border:       '1px solid var(--border-mid)',
+              background:   'var(--bg-card)',
+              color:        'var(--text-3)',
+              fontSize:     18,
+              cursor:       'pointer',
+              display:      'flex',
+              alignItems:   'center',
+              justifyContent: 'center',
+            }}
+          >
+            ✕
+          </button>
+
+          <div style={{ maxWidth: 680, width: '100%', margin: 'auto 0' }}>
+            <p style={{
+              fontSize:      11,
+              fontWeight:    700,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color:         'var(--gold)',
+              textAlign:     'center',
+              margin:        '0 0 28px',
+            }}>
+              Council Synthesis
+            </p>
+            {verdictText && (
+              <p style={{
+                fontSize:   22,
+                fontWeight: 600,
+                fontFamily: 'var(--font-display)',
+                color:      'var(--gold)',
+                textAlign:  'center',
+                lineHeight: 1.5,
+                margin:     '0 0 28px',
+              }}>
+                {firstSentence(verdictText)}
+              </p>
+            )}
+            <div style={{
+              fontSize:   18,
+              lineHeight: 1.85,
+              color:      'var(--text-2)',
+              fontFamily: 'var(--font-display)',
+            }}>
+              {renderProse(synthesis, true)}
+            </div>
+          </div>
+
+          {/* Playback controls stay reachable inside focus mode */}
+          <div style={{
+            position:   'fixed',
+            bottom:     20,
+            display:    'flex',
+            gap:        10,
+            alignItems: 'center',
+            background: 'var(--bg-card)',
+            border:     '1px solid var(--border-mid)',
+            borderRadius: 999,
+            padding:    '8px 16px',
+          }}>
+            <button
+              onClick={() => {
+                if (isThisSpeaking && isPaused) { resume(); return }
+                if (isThisSpeaking) { pause(); return }
+                speak(synthesis, 'synthesis')
+              }}
+              style={{
+                background: 'none', border: 'none', color: 'var(--gold)',
+                fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+              }}
+            >
+              {isThisSpeaking && isLoading ? 'Starting…' : isThisSpeaking && isPaused ? '▶ Resume' : isThisSpeaking ? '⏸ Pause' : '▶ Read aloud'}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

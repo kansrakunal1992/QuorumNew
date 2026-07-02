@@ -18,13 +18,15 @@ import type { TimelineEntry } from '@/components/DecisionTimeline'
 import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
 import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
 
-// Strip <lens>, <position>, <realcost> tags stored in DB — rendered separately in PersonaPanel
+// Strip <lens>, <position>, <realcost>, <lean> tags stored in DB — rendered separately
+// in PersonaPanel (lean is never rendered, only used for the S3-01 tension interstitial)
 // but never cleaned before persistence, so record page must strip them before display
 function stripHeaderTags(raw: string): string {
   return raw
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+    .replace(/<lean>[\s\S]*?<\/lean>/g, '')
     // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close
@@ -54,6 +56,7 @@ function parseVerdictTension(raw: string): { verdict: string | null; rest: strin
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
+    .replace(/<lean>[\s\S]*?<\/lean>/g, '')
     .trimStart()
   return { verdict, rest }
 }

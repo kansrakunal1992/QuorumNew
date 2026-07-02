@@ -89,7 +89,7 @@ export default function DecisionStateCard({ sessionId }: Props) {
             Capturing your position now prevents hindsight from rewriting it later.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 10, flexShrink: 0, alignItems: 'center' }}>
           <button
             className="btn-primary"
             style={{ fontSize: 13, padding: '9px 20px' }}
@@ -97,9 +97,22 @@ export default function DecisionStateCard({ sessionId }: Props) {
           >
             Capture position
           </button>
+          {/* S3-02: was a bordered btn-ghost button with near-equal visual weight to the
+              primary CTA — sitting right beside it made skipping feel like an equally
+              valid default. Plain text link, lower contrast, no bounding box — still one
+              click away, but reads as the secondary path it actually is. */}
           <button
-            className="btn-ghost"
-            style={{ fontSize: 12, padding: '9px 14px' }}
+            style={{
+              fontSize:   12,
+              padding:    '9px 4px',
+              background: 'none',
+              border:     'none',
+              color:      'var(--text-4)',
+              cursor:     'pointer',
+              fontFamily: 'inherit',
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
+            }}
             onClick={() => setMode('saved')}   // skip — component disappears
           >
             Skip
