@@ -159,11 +159,17 @@ export async function POST(req: Request) {
 
     if (upsertError) {
       console.error('[Ontology] Supabase upsert error:', upsertError)
+
       // TAGGER-1: don't leave this stuck at 'pending' — see note above.
-      await supabase.from('sessions_ontology').upsert(
-        { session_id: sessionId, tagger_status: 'failed' },
-        { onConflict: 'session_id' }
-      ).catch(() => {})
+      try {
+        await supabase.from('sessions_ontology').upsert(
+          { session_id: sessionId, tagger_status: 'failed' },
+          { onConflict: 'session_id' }
+        )
+      } catch {
+        // best-effort only — don't let this mask the original DB insert error
+      }
+
       return NextResponse.json({ ok: false, error: 'DB insert failed' }, { status: 500 })
     }
 
