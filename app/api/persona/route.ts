@@ -199,9 +199,34 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
     const validationCorrection = (sessionResult.data as { validation_correction_carry?: string | null } | null)?.validation_correction_carry ?? null
 
     const { data, error } = ontologyResult
-    if (error || !data) return { ...EMPTY_COUNCIL_CONTEXT, userId }
-    if (data.tagger_version !== 'v2.0') return { ...EMPTY_COUNCIL_CONTEXT, userId }
-    if (!data.ontology_vector || !data.rule_engine_result) return { ...EMPTY_COUNCIL_CONTEXT, userId }
+
+    // ── TEMP DIAGNOSTIC (remove once root-caused) ────────────────────────────
+    // Confirms exactly which early-return branch is discarding real data.
+    // JSON.stringify on tagger_version reveals hidden whitespace/control chars
+    // that a SQL client or terminal would silently render as identical to 'v2.0'.
+    console.log('[S2-02 DIAG:fetchCouncilContext] sessionId:', sessionId)
+    console.log('[S2-02 DIAG:fetchCouncilContext] error:', error ? JSON.stringify(error) : null)
+    console.log('[S2-02 DIAG:fetchCouncilContext] data exists:', !!data)
+    console.log('[S2-02 DIAG:fetchCouncilContext] raw tagger_version (JSON-escaped):', JSON.stringify(data?.tagger_version))
+    console.log('[S2-02 DIAG:fetchCouncilContext] tagger_version === "v2.0":', data?.tagger_version === 'v2.0')
+    console.log('[S2-02 DIAG:fetchCouncilContext] has ontology_vector:', !!data?.ontology_vector)
+    console.log('[S2-02 DIAG:fetchCouncilContext] has rule_engine_result:', !!data?.rule_engine_result)
+
+    if (error || !data) {
+      console.log('[S2-02 DIAG:fetchCouncilContext] → EARLY RETURN: error or no data row')
+      return { ...EMPTY_COUNCIL_CONTEXT, userId }
+    }
+    // Defensive fix: .trim() guards against trailing whitespace/control chars
+    // in the stored value causing a silent strict-equality mismatch — costs
+    // nothing if the stored value is already clean, fixes it immediately if not.
+    if (data.tagger_version?.trim() !== 'v2.0') {
+      console.log('[S2-02 DIAG:fetchCouncilContext] → EARLY RETURN: tagger_version mismatch (even after trim)')
+      return { ...EMPTY_COUNCIL_CONTEXT, userId }
+    }
+    if (!data.ontology_vector || !data.rule_engine_result) {
+      console.log('[S2-02 DIAG:fetchCouncilContext] → EARLY RETURN: missing ontology_vector or rule_engine_result')
+      return { ...EMPTY_COUNCIL_CONTEXT, userId }
+    }
 
     // Sprint R3: extract max structural score from matches_json (JSONB array or null)
     let maxStructuralScore: number | null = null
