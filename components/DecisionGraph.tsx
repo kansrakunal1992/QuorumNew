@@ -257,7 +257,21 @@ export default function DecisionGraph({
     svg.selectAll('*').remove()  // clear on re-render
 
     const W = containerRef.current.clientWidth || 640
-    const H = 420
+    // Bug fix (GRAPH-4): "atom oscillation" for users with a lot of decisions.
+    // H was a flat 420px regardless of node count, and charge/collision
+    // strength were likewise fixed — so as node count grows, the available
+    // area per node shrinks while the forces trying to keep them apart don't
+    // relax at all. That's an increasingly overcrowded, overconstrained
+    // system: forceLink keeps pulling connected nodes to 120px apart while
+    // forceManyBody repels everything and forceCollide refuses overlap
+    // within 36px, all inside the same fixed box — for a dense graph there
+    // may be no stable arrangement that satisfies all three at once, so
+    // nodes never settle and keep visibly jostling for room. Scaling H with
+    // node count gives the layout room to actually resolve, and the added
+    // velocityDecay/alphaDecay tuning damps out residual jitter faster so
+    // even a still-imperfect layout stops visibly moving in a bounded time
+    // instead of continuing to buzz indefinitely.
+    const H = Math.max(420, Math.min(900, 140 + data.nodes.length * 16))
 
     svgRef.current.setAttribute('width',  String(W))
     svgRef.current.setAttribute('height', String(H))
@@ -290,6 +304,8 @@ export default function DecisionGraph({
       .force('charge', d3.forceManyBody().strength(-280))
       .force('center', d3.forceCenter(W / 2, H / 2))
       .force('collide', d3.forceCollide(36))
+      .velocityDecay(0.55)   // more damping (default 0.4) — settles instead of buzzing
+      .alphaDecay(0.04)      // cools down faster (default ~0.0228) — bounds how long jitter is visible
 
     // ── Edges ─────────────────────────────────────────────────────────────────
     const link = g.append('g').selectAll('line')
@@ -394,13 +410,26 @@ export default function DecisionGraph({
       })
 
     // Drag behaviour
+    // Bug fix (GRAPH-2): click-to-open-record was silently broken. The old
+    // code set dragMoved=true on ANY 'mousemove' event fired on the node —
+    // but mousemove fires on ordinary hover motion too, not just an actual
+    // held-button drag. It is essentially impossible for a human to click
+    // with literally zero cursor movement between mousedown and mouseup, so
+    // dragMoved was ending up true on nearly every real click, silently
+    // suppressing the router.push below almost every time. Now tracks actual
+    // cumulative displacement from d3.drag()'s own start/drag/end stream,
+    // which only fires during a genuine held-button drag — a real click (no
+    // button-held movement) now correctly measures ~0 distance.
+    let dragDistance = 0
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     node.call(d3.drag()
       .on('start', (event: { active: boolean }, d: { fx: number | null; fy: number | null; x: number; y: number }) => {
+        dragDistance = 0
         if (!event.active) sim.alphaTarget(0.3).restart()
         d.fx = d.x; d.fy = d.y
       })
-      .on('drag', (event: { x: number; y: number }, d: { fx: number; fy: number }) => {
+      .on('drag', (event: { dx: number; dy: number; x: number; y: number }, d: { fx: number; fy: number }) => {
+        dragDistance += Math.abs(event.dx) + Math.abs(event.dy)
         d.fx = event.x; d.fy = event.y
       })
       .on('end', (event: { active: boolean }, d: { fx: number | null; fy: number | null }) => {
@@ -409,13 +438,10 @@ export default function DecisionGraph({
       })
     )
 
-    // Node click → record page; prevent drag from firing click
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let dragMoved = false
-    node.on('mousedown', () => { dragMoved = false })
-      .on('mousemove', () => { dragMoved = true })
-      .on('click', (_event: MouseEvent, d: GraphNode) => {
-        if (!dragMoved) router.push(`/record/${d.id}`)
+    // Node click → record page; only suppressed for genuine drags (>5px of
+    // real held-button movement), not ordinary hover jitter.
+    node.on('click', (_event: MouseEvent, d: GraphNode) => {
+        if (dragDistance < 5) router.push(`/record/${d.id}`)
       })
       .on('mouseenter', (event: MouseEvent, d: GraphNode) => {
         const rect = svgRef.current!.getBoundingClientRect()
@@ -609,25 +635,50 @@ export default function DecisionGraph({
         <svg ref={svgRef} style={{ display: 'block', width: '100%' }} />
 
         {/* Tooltip */}
-        {tooltip && (
-          <div
-            style={{
-              position:     'absolute',
-              left:         Math.min(tooltip.x + 12, (containerRef.current?.clientWidth ?? 640) - 260),
-              top:          Math.max(tooltip.y - 10, 8),
-              background:   'var(--bg-card)',
-              border:       '1px solid var(--border-mid)',
-              borderRadius: 6,
-              padding:      '10px 12px',
-              pointerEvents:'auto',
-              zIndex:       10,
-              boxShadow:    '0 4px 16px rgba(0,0,0,0.4)',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            {tooltip.content}
-          </div>
-        )}
+        {tooltip && (() => {
+          // Bug fix (GRAPH-3): nodes on the right side of the graph blinked
+          // rapidly on hover and couldn't be clicked. The old clamp —
+          // `Math.min(tooltip.x + 12, containerWidth - 260)` — only kept the
+          // tooltip inside the container's right edge; it never checked
+          // whether the clamped position ends up *underneath the cursor*.
+          // For a right-side node, tooltip.x + 12 already overflows, so the
+          // clamp pulls the tooltip's whole box leftward — often far enough
+          // left that it now sits directly on top of the cursor (and the
+          // node under it). Since this div has pointerEvents:'auto' and
+          // renders above the SVG, the browser then considers the tooltip —
+          // not the node — to be under the cursor, which fires the node's
+          // mouseleave (hiding the tooltip), which puts the cursor back over
+          // the node (firing mouseenter again) — an infinite rapid loop, and
+          // a moving target that also made clicking unreliable. Fix: flip
+          // the tooltip to the LEFT of the cursor when there's no room on
+          // the right, instead of clamping into an overlapping position —
+          // this always keeps a 12px gap from the cursor either way.
+          const TOOLTIP_W = 260
+          const containerWidth = containerRef.current?.clientWidth ?? 640
+          const overflowsRight = tooltip.x + 12 + TOOLTIP_W > containerWidth
+          const left = overflowsRight
+            ? Math.max(tooltip.x - TOOLTIP_W - 12, 8)   // flip to the left of the cursor
+            : tooltip.x + 12                             // default: right of the cursor
+          return (
+            <div
+              style={{
+                position:     'absolute',
+                left,
+                top:          Math.max(tooltip.y - 10, 8),
+                background:   'var(--bg-card)',
+                border:       '1px solid var(--border-mid)',
+                borderRadius: 6,
+                padding:      '10px 12px',
+                pointerEvents:'auto',
+                zIndex:       10,
+                boxShadow:    '0 4px 16px rgba(0,0,0,0.4)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              {tooltip.content}
+            </div>
+          )
+        })()}
       </div>
 
       {/* Legend + annotation CTA */}
