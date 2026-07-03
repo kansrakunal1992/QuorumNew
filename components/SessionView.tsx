@@ -25,6 +25,7 @@ import { buildPWAInstallStep } from './OnboardingTour'
 import ValidationCard from './ValidationCard'             // SB-1
 import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
 import OntologyRevealCard   from './OntologyRevealCard'   // S1-01: Decision X-Ray (sessions 1–3)
+import DecisionGraph        from './DecisionGraph'        // S1-07: Graph teaser (sessions 1–3)
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
 import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesis tension beat
 import type { Lean }        from './TensionInterstitial'
@@ -1291,6 +1292,43 @@ export default function SessionView({ session: initialSession, initialMessages =
                     ontologyVector={ontologyVector}
                     onDismiss={() => setXRayDismissed(true)}
                   />
+                )
+              }
+
+              {/* S1-07: Graph teaser — appears as the X-Ray fades out, sessions 1–3 only.
+                  Deliberately reuses DecisionGraph unmodified (same component + same
+                  /api/mirror/graph endpoint as /mirror) rather than a bespoke visual —
+                  what's shown here is guaranteed to match what the person would see if
+                  they clicked through to /mirror right now: a ghost node at session 1,
+                  a real (redacted) preview graph from session 2 on. No timer — this one
+                  stays up, it's meant to be an open loop, not a flash message. */}
+              {xRayDismissed
+                && (totalSessionCount ?? 0) <= 3
+                && ontologyReady
+                && (
+                  <div
+                    className="sv-fade"
+                    style={{
+                      background:   'var(--bg-card)',
+                      border:       '1px solid var(--border-mid)',
+                      borderRadius: 13,
+                      padding:      '16px 20px 18px',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <p style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      10,
+                      fontWeight:    700,
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      color:         'var(--text-4)',
+                      margin:        '0 0 12px',
+                    }}>
+                      This shape gets compared against future decisions
+                    </p>
+                    <DecisionGraph authToken={authTokenSV ?? ''} />
+                  </div>
                 )
               }
 
