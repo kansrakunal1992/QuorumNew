@@ -1327,7 +1327,17 @@ export default function SessionView({ session: initialSession, initialMessages =
                     }}>
                       This shape gets compared against future decisions
                     </p>
-                    <DecisionGraph authToken={authTokenSV ?? ''} />
+                    
+                    <DecisionGraph
+                                          authToken={authTokenSV ?? ''}
+                                          fallbackSessionCount={totalSessionCount ?? getStoredSessionIds().length}
+                                          fallbackCurrentNode={{
+                                            id: session.id,
+                                            decision_snippet: session.decision_text.slice(0, 120),
+                                            created_at: new Date().toISOString(),
+                                            status: 'active',
+                                          }}
+                                        />
                   </div>
                 )
               }

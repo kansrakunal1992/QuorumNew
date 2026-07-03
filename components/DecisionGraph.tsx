@@ -126,8 +126,18 @@ interface AnnotationForm {
   error:        string | null
 }
 
+interface DecisionGraphProps {
+  authToken: string
+  fallbackSessionCount?: number
+  fallbackCurrentNode?: GraphNode
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
-export default function DecisionGraph({ authToken }: { authToken: string }) {
+export default function DecisionGraph({
+  authToken,
+  fallbackSessionCount,
+  fallbackCurrentNode,
+}: DecisionGraphProps) {
   const router                              = useRouter()
   const svgRef                              = useRef<SVGSVGElement>(null)
   const containerRef                        = useRef<HTMLDivElement>(null)
@@ -145,17 +155,45 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
     loadD3().then(() => setD3Ready(true)).catch(() => setError(true))
   }, [])
 
+  const buildAuthlessLockedData = useCallback((): GraphData => {
+    const sessionCount = Math.max(
+      fallbackSessionCount ?? 0,
+      fallbackCurrentNode ? 1 : 0
+    )
+
+    return {
+      nodes: fallbackCurrentNode ? [fallbackCurrentNode] : [],
+      edges: [],
+      tier: 'locked',
+      corpus: {
+        met: false,
+        tier: 'locked',
+        session_count: sessionCount,
+        min_sessions: 2,
+        min_edges: 1,
+        locked_edge_count: 0,
+      },
+    }
+  }, [fallbackSessionCount, fallbackCurrentNode])
+
   // ── 2. Fetch graph data ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!authToken) return
-    setLoading(true)
+    setLoading(true)        
+    setError(false)
+    
+        if (!authToken) {
+          setData(buildAuthlessLockedData())
+          setLoading(false)
+          return
+        }
+
     fetch('/api/mirror/graph', {
       headers: { Authorization: `Bearer ${authToken}` },
     })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((d: GraphData) => { setData(d); setLoading(false) })
       .catch(() => { setError(true); setLoading(false) })
-  }, [authToken])
+  }, [authToken, buildAuthlessLockedData])
 
   // ── 3. Dismiss edge ─────────────────────────────────────────────────────────
   const dismissEdge = useCallback(async (edgeId: string) => {
