@@ -30,13 +30,22 @@ import { decrypt }               from '@/lib/encryption'
 // Source: sessions_ontology.matches_json (already computed + stored by structural-retrieval.ts)
 // 50 = neutral (no prior sessions to compare against — not good or bad)
 
-function scoreStructural(matchesJson: unknown): number {
-  if (!matchesJson || !Array.isArray(matchesJson)) return 50
+// Bug fix (MIRROR-1): previously returned a bare number, using 50 as both
+// "no data available for this session" AND a legitimately reachable real
+// score. deriveActionPlan() relied on that overload (checking `=== 50`) as a
+// proxy for "user doesn't have enough decisions yet" — but a rounded average
+// across up to 20 sessions can land on exactly 50 by pure arithmetic
+// coincidence for a user with plenty of real data, which is exactly what
+// produced the "Bring 3 or more decisions" message for veteran users. Now
+// returns the data-availability flag explicitly instead of overloading the
+// score.
+function scoreStructural(matchesJson: unknown): { score: number; hasData: boolean } {
+  if (!matchesJson || !Array.isArray(matchesJson)) return { score: 50, hasData: false }
   const scores = (matchesJson as Array<{ structural_score?: number }>)
     .map(m => m.structural_score ?? 0)
     .filter(s => s > 0)
-  if (scores.length === 0) return 50
-  return Math.round(Math.max(...scores)) // use max match score this session achieved
+  if (scores.length === 0) return { score: 50, hasData: false }
+  return { score: Math.round(Math.max(...scores)), hasData: true } // use max match score this session achieved
 }
 
 // ── Sub-score: bias clarity ───────────────────────────────────────────────────
@@ -119,6 +128,7 @@ function scoreCalibration(calibrationDelta: number | null | undefined): number {
 
 export function deriveActionPlan(avgScores: {
   structural: number
+  structuralDataCount: number
   biasClarity: number
   councilConfidence: number
   calibration: number
@@ -137,7 +147,11 @@ export function deriveActionPlan(avgScores: {
 
   switch (weakest.key) {
     case 'structural':
-      if (avgScores.structural === 50) {
+      // Bug fix (MIRROR-1): was `if (avgScores.structural === 50)` — see
+      // scoreStructural() comment above for why that was wrong. Now checks
+      // the actual thing the copy claims: fewer than 3 sessions with usable
+      // structural comparison data.
+      if (avgScores.structuralDataCount < 3) {
         return 'Bring 3 or more decisions to Quorum and the Council begins connecting patterns across them — each one makes the next analysis more precise.'
       }
       return 'Bring decisions with different structural profiles — variety in decision type and reversibility builds a richer comparison set and raises your structural match quality.'
@@ -221,12 +235,18 @@ export async function computeUserSessionScores(
   // 4. Compute per session
   type SessionScoreRow = Omit<SessionScoreData, 'actionPlan'>
 
+  // MIRROR-1: tracked alongside `scored` (not inside it) to avoid touching
+  // SessionScoreData's shape / any other consumer of it — this is only
+  // needed for the aggregate check below.
+  const structuralHasDataFlags: boolean[] = []
+
   const scored: SessionScoreRow[] = sessions.map(session => {
     const sid      = session.id as string
     const ontology = ontologyMap.get(sid)
     const calibDelta = calibrationMap.get(sid) ?? null
 
-    const structural        = scoreStructural(ontology?.matches_json)
+    const { score: structural, hasData: structuralHasData } = scoreStructural(ontology?.matches_json)
+    structuralHasDataFlags.push(structuralHasData)
     const { score: biasClarity, distortingLabels } = scoreBiasClarity(biasRows, sid)
     const councilConfidence = scoreCouncilConfidence(ontology?.rule_engine_result)
     const calibration       = scoreCalibration(calibDelta)
@@ -256,6 +276,10 @@ export async function computeUserSessionScores(
   const avg = (key: keyof Pick<SessionScoreData, 'structural' | 'biasClarity' | 'councilConfidence' | 'calibration'>) =>
     Math.round(scored.reduce((s, r) => s + r[key], 0) / scored.length)
 
+  // MIRROR-1: real count of sessions with usable structural comparison data —
+  // replaces the old `avgScores.structural === 50` proxy.
+  const structuralDataCount = structuralHasDataFlags.filter(Boolean).length
+
   const allDistorting = scored.flatMap(r => r.distortingBiasLabels)
   const topDistortingBias = allDistorting.length > 0
     ? Object.entries(
@@ -270,10 +294,11 @@ export async function computeUserSessionScores(
   const hasAnyPendingOutcome = scored.some(r => r.calibrationPending)
 
   const actionPlan = deriveActionPlan({
-    structural:        avg('structural'),
-    biasClarity:       avg('biasClarity'),
-    councilConfidence: avg('councilConfidence'),
-    calibration:       avg('calibration'),
+    structural:          avg('structural'),
+    structuralDataCount,
+    biasClarity:         avg('biasClarity'),
+    councilConfidence:   avg('councilConfidence'),
+    calibration:         avg('calibration'),
     hasAnyPendingOutcome,
     topDistortingBias,
     hasMostlyRedirects,
