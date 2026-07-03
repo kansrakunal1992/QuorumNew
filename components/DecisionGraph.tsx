@@ -639,11 +639,27 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
             The system connects decisions by structural pattern. This is for causal or narrative links it can't infer — "leaving that role is why I made this decision six months later."
           </p>
 
+          {/* Bug fix (GRAPH-1): both selects had `flex: 1` but no `min-width: 0`.
+              Flex items default to `min-width: auto`, which means they refuse
+              to shrink below their content's intrinsic width — and a native
+              <select>'s intrinsic width is driven by whichever currently-
+              selected option's text is longest (up to the 60-char snippet
+              slice below). Whichever of the two decisions has the longer
+              snippet forces that select to ignore its equal flex share and
+              overflow the row/card instead of shrinking — which is why it
+              looked like "first is fine, second overflows": it's whichever
+              side has the longer text, not a fixed side. min-width: 0 lets
+              both shrink correctly; the ellipsis/nowrap/hidden trio keeps the
+              truncation readable instead of an abrupt content-driven cutoff. */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <select
               value={annotation.session_id_a}
               onChange={e => setAnnotation(a => a ? { ...a, session_id_a: e.target.value } : null)}
-              style={{ flex: 1, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', borderRadius: 4, color: 'var(--text-2)', fontSize: 11, padding: '6px 8px', fontFamily: 'inherit' }}
+              style={{
+                flex: 1, minWidth: 0, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)',
+                borderRadius: 4, color: 'var(--text-2)', fontSize: 11, padding: '6px 8px', fontFamily: 'inherit',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}
             >
               {data.nodes.map(n => (
                 <option key={n.id} value={n.id}>{n.decision_snippet.slice(0, 60)}</option>
@@ -653,7 +669,11 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
             <select
               value={annotation.session_id_b}
               onChange={e => setAnnotation(a => a ? { ...a, session_id_b: e.target.value } : null)}
-              style={{ flex: 1, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', borderRadius: 4, color: 'var(--text-2)', fontSize: 11, padding: '6px 8px', fontFamily: 'inherit' }}
+              style={{
+                flex: 1, minWidth: 0, background: 'var(--bg-inset)', border: '1px solid var(--border-dim)',
+                borderRadius: 4, color: 'var(--text-2)', fontSize: 11, padding: '6px 8px', fontFamily: 'inherit',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}
             >
               {data.nodes.filter(n => n.id !== annotation.session_id_a).map(n => (
                 <option key={n.id} value={n.id}>{n.decision_snippet.slice(0, 60)}</option>
