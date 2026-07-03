@@ -67,17 +67,26 @@ interface GraphEdge {
   explanation_text:    string | null
   metadata:            Record<string, unknown> | null
   dismissed_at:        string | null
+  // Sprint QW-2: true when the "why" (dimension_breakdown/explanation_text/
+  // metadata) was stripped server-side because the viewer is on the preview
+  // tier — the connection is real, the interpretation is paid. Never inferred
+  // client-side from null fields; the API sets this explicitly.
+  redacted:            boolean
 }
+
+type GraphTier = 'locked' | 'preview' | 'full'
 
 interface GraphData {
   nodes:  GraphNode[]
   edges:  GraphEdge[]
+  tier:   GraphTier
   corpus: {
-    met:           boolean
-    session_count: number
-    edge_count:    number
-    min_sessions:  number
-    min_edges:     number
+    met:                boolean
+    tier:               GraphTier
+    session_count:      number
+    min_sessions:       number
+    min_edges:          number
+    locked_edge_count:  number
   }
 }
 
@@ -200,7 +209,7 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
   useEffect(() => {
     let cancelled = false
     async function render() {
-      if (!d3Ready || !data?.corpus.met || !svgRef.current || !containerRef.current) return
+      if (!d3Ready || !data || data.nodes.length === 0 || !svgRef.current || !containerRef.current) return
       if (data.nodes.length === 0) return
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,42 +279,55 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: 6 }}>
                 {EDGE_LABEL[d.edge_type]}
               </div>
-              {d.edge_type === 'structural_similarity' && dims.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-4)', marginBottom: 4 }}>Connected by</div>
-                  {dims.map((dim: string) => (
-                    <div key={dim} style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 2 }}>
-                      · {dim.replace(/_/g, ' ')}
+              {d.redacted ? (
+                <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 4 }}>
+                  {d.edge_type === 'contradiction'
+                    ? 'A possible contradiction was detected between these two decisions.'
+                    : 'These two decisions are connected.'}{' '}
+                  <span style={{ color: 'var(--text-4)' }}>The specific reason is part of Mirror.</span>
+                </div>
+              ) : (
+                <>
+                  {d.edge_type === 'structural_similarity' && dims.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-4)', marginBottom: 4 }}>Connected by</div>
+                      {dims.map((dim: string) => (
+                        <div key={dim} style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 2 }}>
+                          · {dim.replace(/_/g, ' ')}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-              {d.edge_type === 'user_asserted' && d.explanation_text && (
-                <div style={{ fontSize: 11, color: 'var(--text-2)', fontStyle: 'italic', marginBottom: 8, lineHeight: 1.5 }}>
-                  "{d.explanation_text}"
-                </div>
-              )}
-              {d.edge_type === 'contradiction' && (
-                <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
-                  A contradiction was detected between these decisions.
-                </div>
-              )}
-              {d.edge_type === 'shared_bias_trigger' && Array.isArray(d.metadata?.bias_parameters) && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-4)', marginBottom: 4 }}>Shared trigger</div>
-                  {(d.metadata.bias_parameters as string[]).map((b: string) => (
-                    <div key={b} style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 2 }}>
-                      · {b.replace(/_/g, ' ')}
+                  )}
+                  {d.edge_type === 'user_asserted' && d.explanation_text && (
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', fontStyle: 'italic', marginBottom: 8, lineHeight: 1.5 }}>
+                      "{d.explanation_text}"
                     </div>
-                  ))}
-                </div>
+                  )}
+                  {d.edge_type === 'contradiction' && (
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>
+                      A contradiction was detected between these decisions.
+                    </div>
+                  )}
+                  {d.edge_type === 'shared_bias_trigger' && Array.isArray(d.metadata?.bias_parameters) && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-4)', marginBottom: 4 }}>Shared trigger</div>
+                      {(d.metadata.bias_parameters as string[]).map((b: string) => (
+                        <div key={b} style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 2 }}>
+                          · {b.replace(/_/g, ' ')}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
-              <button
-                onClick={(e) => { e.stopPropagation(); dismissEdge(d.id) }}
-                style={{ fontSize: 10, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 2 }}
-              >
-                Dismiss this connection
-              </button>
+              {!d.redacted && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); dismissEdge(d.id) }}
+                  style={{ fontSize: 10, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 2 }}
+                >
+                  Dismiss this connection
+                </button>
+              )}
             </div>
           ),
         })
@@ -416,8 +438,9 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
 
   if (!data) return null
 
-  // ── Corpus gate ─────────────────────────────────────────────────────────────
-  if (!data.corpus.met) {
+  // ── Locked tier — sessionCount < MIN_PREVIEW_SESSIONS, no edges possible ────
+  if (data.tier === 'locked') {
+    const hasFirstNode  = data.nodes.length > 0
     const sessionsNeeded = Math.max(0, data.corpus.min_sessions - data.corpus.session_count)
     return (
       <div style={{ padding: '24px 0' }}>
@@ -426,37 +449,63 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
           contradictions, and decision type — patterns that only become visible with enough history.
         </p>
         <div style={{
-          background:   'var(--bg-inset)',
-          border:       '1px solid var(--border-dim)',
-          borderRadius: 8,
-          padding:      '16px 20px',
+          background:    'var(--bg-inset)',
+          border:        '1px solid var(--border-dim)',
+          borderRadius:  8,
+          padding:       '24px 20px',
+          display:       'flex',
+          flexDirection: 'column',
+          alignItems:    'center',
+          gap:           14,
         }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
-            Graph builds after
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1, height: 3, background: 'var(--border-dim)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{
-                height:     '100%',
-                width:      `${Math.min(100, (data.corpus.session_count / data.corpus.min_sessions) * 100)}%`,
-                background: 'var(--gold)',
-                borderRadius: 2,
-                transition: 'width 0.6s ease',
-              }} />
-            </div>
-            <span style={{ fontSize: 12, color: 'var(--text-3)', flexShrink: 0 }}>
-              {data.corpus.session_count} / {data.corpus.min_sessions} decisions
-            </span>
-          </div>
-          {sessionsNeeded > 0 && (
-            <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '10px 0 0', lineHeight: 1.6 }}>
-              {sessionsNeeded} more decision{sessionsNeeded !== 1 ? 's' : ''} to unlock.
+          <svg width="180" height="70" viewBox="0 0 180 70">
+            {hasFirstNode ? (
+              <>
+                <circle cx="36" cy="35" r="16" fill="var(--bg-card)" stroke="rgba(201,168,76,0.7)" strokeWidth="2" />
+                <text x="36" y="39" textAnchor="middle" fontSize="8" fill="var(--text-4)" fontFamily="var(--font-mono, monospace)">
+                  {(() => { const d = new Date(data.nodes[0].created_at); return `${d.getDate()}/${d.getMonth() + 1}` })()}
+                </text>
+              </>
+            ) : (
+              <circle cx="36" cy="35" r="16" fill="none" stroke="var(--border-mid)" strokeWidth="1.5" strokeDasharray="3,3" />
+            )}
+            <line x1="52" y1="35" x2="124" y2="35" stroke="var(--border-dim)" strokeWidth="1.5" strokeDasharray="4,4" />
+            <circle cx="140" cy="35" r="16" fill="none" stroke="var(--border-mid)" strokeWidth="1.5" strokeDasharray="3,3">
+              <animate attributeName="opacity" values="0.3;0.8;0.3" dur="2s" repeatCount="indefinite" />
+            </circle>
+          </svg>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 4px', fontWeight: 600 }}>
+              {hasFirstNode ? 'Your first decision is mapped.' : 'Your Decision Graph starts here.'}
             </p>
-          )}
+            {sessionsNeeded > 0 && (
+              <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
+                {sessionsNeeded} more decision{sessionsNeeded !== 1 ? 's' : ''} and your first connection appears.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     )
   }
+
+  // ── Preview tier, no visible connections yet ──────────────────────────────
+  // (Enough sessions to be past 'locked', but no structural/bias/contradiction
+  // edge has cleared the match threshold yet — different message from
+  // 'locked' since there's no countdown here, it's data-dependent.)
+  if (data.tier === 'preview' && data.nodes.length === 0) {
+    return (
+      <div style={{ padding: '24px 0' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.7, margin: 0 }}>
+          No structural connections yet across your {data.corpus.session_count} decisions. As you log
+          more, the graph will surface shared patterns, contradictions, and structural echoes here.
+        </p>
+      </div>
+    )
+  }
+
+  // ── 'full' tier, or 'preview' tier with real (redacted) edges to show ─────
+  // falls through to the normal force-graph render below.
 
   // ── Legend ──────────────────────────────────────────────────────────────────
   const LEGEND: { type: EdgeType; dashed?: boolean }[] = [
@@ -479,6 +528,32 @@ export default function DecisionGraph({ authToken }: { authToken: string }) {
         }
         .dg-annotation-btn:hover { color: var(--gold); border-color: var(--gold-dim); }
       `}</style>
+
+      {/* Preview-tier banner — real graph shown above, deeper detail is paid */}
+      {data.tier === 'preview' && (
+        <div style={{
+          marginBottom: 14,
+          padding:      '10px 14px',
+          background:   'rgba(201,168,76,0.06)',
+          border:       '1px solid var(--gold-dim)',
+          borderRadius: 8,
+          display:      'flex',
+          alignItems:   'center',
+          justifyContent: 'space-between',
+          gap:          10,
+          flexWrap:     'wrap',
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+            Click a connection to see what type it is. Why two decisions connect — the shared
+            dimensions, the exact contradiction, the shared bias — is part of Mirror.
+          </span>
+          {data.corpus.locked_edge_count > 0 && (
+            <span style={{ fontSize: 11, color: 'var(--gold)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+              +{data.corpus.locked_edge_count} more connection{data.corpus.locked_edge_count !== 1 ? 's' : ''} with Mirror
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Graph SVG */}
       <div

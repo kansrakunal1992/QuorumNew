@@ -260,7 +260,7 @@ function AuthGate() {
 }
 
 // ── Gate: Session threshold not met ──────────────────────────────────────────
-function LockedView({ sessionCount }: { sessionCount: number }) {
+function LockedView({ sessionCount, authToken }: { sessionCount: number; authToken: string }) {
   const router = useRouter()
   const LOCK_THRESHOLD = 3
   const remaining = LOCK_THRESHOLD - sessionCount
@@ -355,6 +355,19 @@ function LockedView({ sessionCount }: { sessionCount: number }) {
           </div>
         ))}
       </div>
+
+      {/* Sprint QW-2: Decision Graph preview — real from session 1 (ghost node),
+          real edges from session 2 onward (redacted). Lets a pre-payment user
+          see the product's most differentiated asset before they ever hit a
+          paywall, instead of only a bullet-point promise. */}
+      {sessionCount >= 1 && (
+        <div style={{ width: '100%' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10, textAlign: 'left' }}>
+            Your Decision Graph
+          </div>
+          <DecisionGraph authToken={authToken} />
+        </div>
+      )}
 
       <button
         onClick={() => window.history.length > 1 ? router.back() : router.push('/')}
@@ -687,6 +700,20 @@ function TeaserView({
           </span>
         </div>
         <MirrorTimeline sessions={sessions} />
+      </div>
+
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* Sprint QW-2: Decision Graph — teaser tier always has sessionCount >= 3,
+          well above MIN_PREVIEW_SESSIONS, so this always renders real (redacted)
+          edges rather than the locked ghost state. */}
+      <div style={{ marginBottom: 40 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+            Decision Graph
+          </h3>
+        </div>
+        <DecisionGraph authToken={authToken} />
       </div>
 
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
@@ -1879,7 +1906,7 @@ export default function MirrorPage() {
             <>
               {status.gateState === 'auth'     && <AuthGate />}
               {status.gateState === 'locked'   && (
-                <LockedView sessionCount={status.sessionCount} />
+                <LockedView sessionCount={status.sessionCount} authToken={authToken ?? ''} />
               )}
               {status.gateState === 'teaser'   && (
                 <TeaserView
