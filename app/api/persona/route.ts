@@ -70,8 +70,10 @@
  *
  *     fetchCouncilContext() extended to also return:
  *       ruleEngineResult  — the full RuleEngineResult (already fetched, now returned)
- *       maxStructuralScore — extracted from matches_json (already in sessions_ontology)
- *     No new DB queries. No client-side changes.
+ *       maxStructuralScore — extracted from matches_json, sourced from
+ *                            structural_matches (NOT sessions_ontology — see
+ *                            BUGFIX note at the fetchCouncilContext call site).
+ *     One additional DB query (structural_matches, keyed by session_id). No client-side changes.
  *
  *   Updated system prompt layer order (after R3, synthesis calls):
  *     1. persona.prompt            — core identity and mandate
@@ -144,15 +146,17 @@ import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
 import type { PersonaKey, Message }          from '@/lib/types'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
-import { encrypt }                           from '@/lib/encryption'
+import { encrypt, decryptJson }              from '@/lib/encryption'
 
 // ── Council context fetch (Sprint 12 / R2 / R3 update) ───────────────────────
 //
 // Sprint R2: return shape extended with userId for fetchUserBiasContext().
 // Sprint R3: return shape further extended with ruleEngineResult and
 //   maxStructuralScore for computePersonaRelevance() at synthesis time.
-//   matches_json added to the select — already stored in sessions_ontology
-//   by the structural-match route. No new DB round-trip.
+//   matches_json is read from structural_matches (its actual home table,
+//   populated by the structural-match route) via one additional query —
+//   see BUGFIX note at the fetchCouncilContext call site for why this
+//   is NOT read from sessions_ontology.
 //
 // Sprint TB1 (June 2026): this shape was previously hand-typed as an inline
 // object literal in 7 separate places across this file (the function
@@ -171,7 +175,7 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
   try {
     const supabase = createServiceClient()
 
-    const [ontologyResult, sessionResult] = await Promise.all([
+    const [ontologyResult, sessionResult, structuralMatchResult] = await Promise.all([
       supabase
         .from('sessions_ontology')
         // Sprint BT Phase 2b: +decision_type_primary, +dominant_emotion — the
@@ -181,7 +185,18 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
         // written by the same ontology-tagger call as ontology_vector itself,
         // well before synthesis runs (unlike Phase 2a's flag triggers, which
         // depend on a separate fire-and-forget bias-score call).
-        .select('tagger_version, ontology_vector, rule_engine_result, matches_json, decision_type_primary, dominant_emotion')
+        //
+        // BUGFIX (root-caused via S2-02 diagnostic, July 2026): matches_json
+        // was previously selected here too, but it does NOT exist on
+        // sessions_ontology — it lives on the separate structural_matches
+        // cache table (populated by /api/structural-match, keyed by
+        // session_id). Selecting a nonexistent column makes Postgres reject
+        // the ENTIRE query (error 42703), so `data` came back null on every
+        // single call — silently collapsing ontology_vector and
+        // rule_engine_result to null downstream even though the ontology
+        // tagger had written real data. This was the actual cause of
+        // computePersonaRelevance always returning flat 0.50 baseline.
+        .select('tagger_version, ontology_vector, rule_engine_result, decision_type_primary, dominant_emotion')
         .eq('session_id', sessionId)
         .single(),
       supabase
@@ -192,6 +207,15 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
         .select('user_id, framing_intent, validation_correction_carry')
         .eq('id', sessionId)
         .single(),
+      // BUGFIX: matches_json's real source — structural_matches, not sessions_ontology.
+      // Encrypted at rest (matches the pattern in app/api/structural-match/route.ts),
+      // decrypted below via decryptJson. maybeSingle() because a match cache row may
+      // not exist yet (e.g. this session's structural retrieval hasn't run/cached).
+      supabase
+        .from('structural_matches')
+        .select('matches_json')
+        .eq('session_id', sessionId)
+        .maybeSingle(),
     ])
 
     const userId             = sessionResult.data?.user_id ?? null
@@ -200,46 +224,39 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
 
     const { data, error } = ontologyResult
 
-    // ── TEMP DIAGNOSTIC (remove once root-caused) ────────────────────────────
-    // Confirms exactly which early-return branch is discarding real data.
-    // JSON.stringify on tagger_version reveals hidden whitespace/control chars
-    // that a SQL client or terminal would silently render as identical to 'v2.0'.
-    console.log('[S2-02 DIAG:fetchCouncilContext] sessionId:', sessionId)
-    console.log('[S2-02 DIAG:fetchCouncilContext] error:', error ? JSON.stringify(error) : null)
-    console.log('[S2-02 DIAG:fetchCouncilContext] data exists:', !!data)
-    console.log('[S2-02 DIAG:fetchCouncilContext] raw tagger_version (JSON-escaped):', JSON.stringify(data?.tagger_version))
-    console.log('[S2-02 DIAG:fetchCouncilContext] tagger_version === "v2.0":', data?.tagger_version === 'v2.0')
-    console.log('[S2-02 DIAG:fetchCouncilContext] has ontology_vector:', !!data?.ontology_vector)
-    console.log('[S2-02 DIAG:fetchCouncilContext] has rule_engine_result:', !!data?.rule_engine_result)
-
+    // Production warning (not diagnostic-only) — this branch silently discarding
+    // real ontology data was the root cause of the flat-0.50 weighting bug
+    // (July 2026). Kept permanently so a future schema drift on sessions_ontology
+    // surfaces immediately in logs instead of silently degrading synthesis quality.
     if (error || !data) {
-      console.log('[S2-02 DIAG:fetchCouncilContext] → EARLY RETURN: error or no data row')
+      if (error) console.warn('[fetchCouncilContext] sessions_ontology query failed:', JSON.stringify(error), '| sessionId:', sessionId)
       return { ...EMPTY_COUNCIL_CONTEXT, userId }
     }
-    // Defensive fix: .trim() guards against trailing whitespace/control chars
-    // in the stored value causing a silent strict-equality mismatch — costs
-    // nothing if the stored value is already clean, fixes it immediately if not.
+    // .trim() guards against trailing whitespace/control chars in the stored
+    // value causing a silent strict-equality mismatch on tagger_version.
     if (data.tagger_version?.trim() !== 'v2.0') {
-      console.log('[S2-02 DIAG:fetchCouncilContext] → EARLY RETURN: tagger_version mismatch (even after trim)')
       return { ...EMPTY_COUNCIL_CONTEXT, userId }
     }
     if (!data.ontology_vector || !data.rule_engine_result) {
-      console.log('[S2-02 DIAG:fetchCouncilContext] → EARLY RETURN: missing ontology_vector or rule_engine_result')
       return { ...EMPTY_COUNCIL_CONTEXT, userId }
     }
 
-    // Sprint R3: extract max structural score from matches_json (JSONB array or null)
+    // Sprint R3 / BUGFIX: extract max structural score from matches_json —
+    // now correctly sourced from structural_matches (decrypted), not from
+    // sessions_ontology (which never had this column — see note above).
     let maxStructuralScore: number | null = null
     try {
-      const matches = Array.isArray(data.matches_json)
-        ? data.matches_json as Array<{ structural_score?: number }>
+      const rawMatchesJson = structuralMatchResult.data?.matches_json
+      const decrypted = rawMatchesJson ? decryptJson(rawMatchesJson) : null
+      const matches = Array.isArray(decrypted)
+        ? decrypted as Array<{ structural_score?: number }>
         : null
       if (matches && matches.length > 0) {
         const scores = matches.map(m => m.structural_score ?? 0).filter(s => s > 0)
         if (scores.length > 0) maxStructuralScore = Math.max(...scores)
       }
     } catch {
-      // matches_json absent or malformed — maxStructuralScore stays null
+      // matches_json absent, malformed, or not yet cached — maxStructuralScore stays null
     }
 
     // SB-3: fetch user profile for council context injection
@@ -570,33 +587,12 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
     // map used in the MANDATORY directive, not a client-side recomputation.
     let relevanceMapForHeader: Record<string, number> | null = null
     if (isSynthesisCall) {
-      // ── TEMP DIAGNOSTIC (remove after root-causing flat-0.50 weighting bug) ──
-      // Logs exactly what computePersonaRelevance receives at runtime. Compare
-      // against the sessions_ontology row for the same session_id — if this log
-      // shows empty/null here but the DB row has real data, the break is in
-      // something environmental between fetchCouncilContext's return and this
-      // line (e.g. a second stale Promise.all destructure, module-level cache,
-      // or the service-role client). If this log matches the DB row exactly,
-      // the break is inside computePersonaRelevance's execution itself at
-      // runtime despite the source reading correctly.
-      console.log('[S2-02 DIAG] sessionId:', sessionId)
-      console.log('[S2-02 DIAG] ruleEngineResult:', JSON.stringify(councilResult.ruleEngineResult))
-      console.log('[S2-02 DIAG] ontologyVector keys:', councilResult.ontologyVector ? Object.keys(councilResult.ontologyVector) : null)
-      console.log('[S2-02 DIAG] ontologyVector.reversibility:', councilResult.ontologyVector?.reversibility)
-      console.log('[S2-02 DIAG] ontologyVector.time_pressure:', councilResult.ontologyVector?.time_pressure)
-      console.log('[S2-02 DIAG] ontologyVector.emotional_intensity:', councilResult.ontologyVector?.emotional_intensity)
-      console.log('[S2-02 DIAG] maxStructuralScore:', councilResult.maxStructuralScore)
-      console.log('[S2-02 DIAG] personalCalibrationZones:', JSON.stringify(biasContext.personalCalibrationZones))
-
       const relevanceMap = computePersonaRelevance(
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
       )
-
-      // ── TEMP DIAGNOSTIC (remove alongside the block above) ──────────────────
-      console.log('[S2-02 DIAG] computed relevanceMap:', JSON.stringify(relevanceMap))
 
       relevanceMapForHeader = relevanceMap
       const relevanceBlock = buildRelevanceBlock(
