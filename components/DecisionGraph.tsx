@@ -23,6 +23,7 @@
 //
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { DIMENSION_LABELS } from '@/lib/session-labels'
 
 // No d3 import at module scope — dynamically imported below to code-split it
 // from the main Mirror bundle. d3 only loads when this component mounts.
@@ -93,12 +94,21 @@ interface GraphData {
 // ── Edge style config ─────────────────────────────────────────────────────────
 // Computed vs user_asserted are visually distinct — never implying the system
 // found a structural match it didn't find. (KDD G3)
+//
+// Bug fix (GRAPH-5): these were hardcoded rgba() values tuned only for the
+// dark theme's background — never adapted to light theme, where the same
+// low-alpha colors composite against near-white and lose almost all visible
+// contrast (measured as low as ~2:1 for some edge types even in dark theme,
+// let alone light). Now reference CSS custom properties defined per-theme in
+// globals.css (contrast-checked ~3:1+ for every computed edge type in both
+// themes), so edges recolor live on theme toggle without needing the D3
+// simulation to rebuild — var() is a valid SVG stroke value.
 const EDGE_COLOR: Record<EdgeType, string> = {
-  structural_similarity: 'rgba(201,168,76,0.55)',   // gold — primary computed edge
-  contradiction:         'rgba(220,80,80,0.55)',     // red — tension signal
-  shared_bias_trigger:   'rgba(140,100,200,0.5)',    // muted purple — behavioral link
-  shared_decision_type:  'rgba(100,160,200,0.45)',   // muted blue — categorical link
-  user_asserted:         'rgba(201,168,76,0.3)',     // dim gold, dashed — user-authored
+  structural_similarity: 'var(--graph-edge-structural)',    // gold — primary computed edge
+  contradiction:         'var(--graph-edge-contradiction)', // red — tension signal
+  shared_bias_trigger:   'var(--graph-edge-bias)',          // purple — behavioral link
+  shared_decision_type:  'var(--graph-edge-type)',          // blue — categorical link
+  user_asserted:         'var(--graph-edge-annotation)',    // dim gold, dashed — user-authored (deliberately subordinate, see KDD G3)
 }
 const EDGE_LABEL: Record<EdgeType, string> = {
   structural_similarity: 'Structural similarity',
@@ -106,6 +116,159 @@ const EDGE_LABEL: Record<EdgeType, string> = {
   shared_bias_trigger:   'Shared bias trigger',
   shared_decision_type:  'Same decision type',
   user_asserted:         'Your annotation',
+}
+
+// ── Insights strip (Sprint G4 / issue #5) ─────────────────────────────────────
+// Turns the edge data already loaded for the graph into plain-English, ranked
+// observations — no new AI calls, no new endpoint. The graph stays exactly as
+// it renders today (kept deliberately unchanged visually); this is a companion
+// panel that does the "so what" interpretation the graph itself was never
+// built to do. Deliberately in the user's own words, not the app's internal
+// vocabulary — e.g. lib/bias-scorer.ts's own BIAS_PARAMETERS labels ("Exit
+// Optionality Mispricing", "Network Circularity") are already used elsewhere
+// in the app (Council, Mirror) and are fine there, but fail a "layman/easy to
+// understand" bar on their own — so this map is a plainer one-line gloss for
+// each, specific to this panel, not a replacement for those existing labels.
+// Not imported from lib/bias-scorer.ts itself — that file pulls in
+// createServiceClient/createCompletion at module scope (server-only secrets),
+// unsafe to bundle into this 'use client' component.
+const BIAS_PLAIN_LANGUAGE: Record<string, string> = {
+  fomo_urgency:                      'feeling like you had to act fast',
+  overconfidence:                    'being more certain than the evidence supported',
+  attribution_asymmetry:             'crediting yourself for wins but blaming circumstances for losses',
+  social_proof:                      'going along with what others were doing',
+  control_illusion:                  'feeling more in control of the outcome than you actually were',
+  speed_bias:                        'valuing a quick decision over a careful one',
+  exit_optionality_mispricing:       'underestimating how hard it would be to back out later',
+  recency_bias:                      'weighing a recent event more than it deserved',
+  uniqueness_fallacy:                'believing your situation was too unique for past lessons to apply',
+  deference_distortion:              "deferring to someone else's judgment over your own read",
+  relationship_alignment_assumption: 'assuming a relationship would stay aligned without checking',
+  success_compression:               'assuming a past win would repeat the same way',
+  loss_aversion_reversal:            "taking on more risk to avoid feeling like you'd already lost",
+  network_circularity:               'hearing the same opinion echoed back by people who talk to each other',
+  complexity_opacity:                "moving ahead despite not fully understanding how it worked",
+}
+
+interface GraphInsight {
+  id:      string
+  kind:    'contradiction' | 'bias' | 'connected' | 'structural' | 'annotation'
+  label:   string       // small kicker, e.g. "Contradiction"
+  body:    string       // the plain-English sentence
+  nodeIds: string[]     // for hover/click sync with the graph above
+}
+
+const truncate = (s: string | null | undefined, n: number) =>
+  !s ? '' : (s.length > n ? s.slice(0, n).trimEnd() + '…' : s)
+
+// Builds up to 4 ranked insights, most-actionable first. Respects `redacted`
+// per edge (preview-tier users get a generic teaser line pointing at Mirror,
+// same paywall pattern as the tooltip above — never leaking the underlying
+// reason a redacted edge fired, consistent with KDD G3).
+function buildInsights(nodes: GraphNode[], edges: GraphEdge[]): GraphInsight[] {
+  const live = edges.filter(e => !e.dismissed_at)
+  const byId = new Map(nodes.map(n => [n.id, n]))
+  const insights: GraphInsight[] = []
+
+  // 1. Contradiction — most urgent, surface first.
+  const contradiction = live.find(e => e.edge_type === 'contradiction')
+  if (contradiction) {
+    if (contradiction.redacted) {
+      insights.push({
+        id: 'contradiction', kind: 'contradiction', label: 'Contradiction',
+        body:    'Two of your decisions seem to pull in different directions. Unlocking Mirror shows exactly which ones and why.',
+        nodeIds: [contradiction.session_id_a, contradiction.session_id_b],
+      })
+    } else {
+      const a = byId.get(contradiction.session_id_a)
+      const b = byId.get(contradiction.session_id_b)
+      insights.push({
+        id: 'contradiction', kind: 'contradiction', label: 'Contradiction',
+        body:    `"${truncate(a?.decision_snippet, 42)}" and "${truncate(b?.decision_snippet, 42)}" seem to pull in different directions — worth checking if something changed.`,
+        nodeIds: [contradiction.session_id_a, contradiction.session_id_b],
+      })
+    }
+  }
+
+  // 2. Shared bias cluster — the most-repeated bias trigger across 2+ decisions.
+  const biasEdges = live.filter(e => e.edge_type === 'shared_bias_trigger')
+  const openBiasEdges = biasEdges.filter(e => !e.redacted)
+  const biasNodeSets = new Map<string, Set<string>>()
+  openBiasEdges.forEach(e => {
+    const params = (e.metadata?.bias_parameters as string[] | undefined) ?? []
+    params.forEach(p => {
+      if (!biasNodeSets.has(p)) biasNodeSets.set(p, new Set())
+      biasNodeSets.get(p)!.add(e.session_id_a)
+      biasNodeSets.get(p)!.add(e.session_id_b)
+    })
+  })
+  const topBias = [...biasNodeSets.entries()].sort((a, b) => b[1].size - a[1].size)[0]
+  if (topBias && topBias[1].size >= 2) {
+    const [biasKey, nodeSet] = topBias
+    const plain = BIAS_PLAIN_LANGUAGE[biasKey] ?? biasKey.replace(/_/g, ' ')
+    insights.push({
+      id: 'bias-cluster', kind: 'bias', label: 'Recurring pattern',
+      body:    `${nodeSet.size} of your decisions show signs of ${plain}.`,
+      nodeIds: [...nodeSet],
+    })
+  } else if (biasEdges.some(e => e.redacted)) {
+    insights.push({
+      id: 'bias-cluster-locked', kind: 'bias', label: 'Recurring pattern',
+      body:    'Your decisions show a repeating pattern. Unlocking Mirror names it.',
+      nodeIds: [],
+    })
+  }
+
+  // 3. Most connected node — exploratory, not urgent, but a natural "start here".
+  const countByNode = new Map<string, number>()
+  live.forEach(e => {
+    countByNode.set(e.session_id_a, (countByNode.get(e.session_id_a) ?? 0) + 1)
+    countByNode.set(e.session_id_b, (countByNode.get(e.session_id_b) ?? 0) + 1)
+  })
+  const topNode = [...countByNode.entries()].sort((a, b) => b[1] - a[1])[0]
+  if (topNode && topNode[1] >= 2) {
+    const node = byId.get(topNode[0])
+    if (node) {
+      insights.push({
+        id: 'most-connected', kind: 'connected', label: 'Most connected',
+        body:    `"${truncate(node.decision_snippet, 60)}" links to ${topNode[1]} other decision${topNode[1] === 1 ? '' : 's'} — often a sign it's still unresolved.`,
+        nodeIds: [node.id],
+      })
+    }
+  }
+
+  // 4. Structural similarity detail — what specifically two decisions had in
+  // common, in plain English via DIMENSION_LABELS (shared with Mirror/Council
+  // elsewhere in the app, so the vocabulary stays consistent).
+  const structural = live.find(e =>
+    e.edge_type === 'structural_similarity' && !e.redacted &&
+    (e.dimension_breakdown?.top_matching_dims?.length ?? 0) > 0,
+  )
+  if (structural && insights.length < 4) {
+    const dims = structural.dimension_breakdown!.top_matching_dims
+      .map(d => DIMENSION_LABELS[d])
+      .filter(Boolean)
+      .slice(0, 2)
+    if (dims.length > 0) {
+      insights.push({
+        id: 'structural', kind: 'structural', label: 'Similar situations',
+        body:    `You approached two decisions the same way: both were ${dims.map(d => d.toLowerCase()).join(' and ')}.`,
+        nodeIds: [structural.session_id_a, structural.session_id_b],
+      })
+    }
+  }
+
+  // 5. User's own annotation — least novel (they already know this), lowest priority filler.
+  const annotation = live.find(e => e.edge_type === 'user_asserted' && e.explanation_text)
+  if (annotation && insights.length < 4) {
+    insights.push({
+      id: 'annotation', kind: 'annotation', label: 'Your own note',
+      body:    `You connected two decisions yourself: "${truncate(annotation.explanation_text, 80)}"`,
+      nodeIds: [annotation.session_id_a, annotation.session_id_b],
+    })
+  }
+
+  return insights.slice(0, 4)
 }
 
 // ── d3 dynamic loader ─────────────────────────────────────────────────────────
@@ -149,6 +312,11 @@ export default function DecisionGraph({
   const [dismissed,   setDismissed]   = useState<Set<string>>(new Set())
   const [annotation,  setAnnotation]  = useState<AnnotationForm | null>(null)
   const [d3Ready,     setD3Ready]     = useState(false)
+  // Insights strip: which node ids to glow, driven by hovering an insight card
+  // below the graph. Applied via a lightweight separate effect (below) that
+  // just toggles a filter on existing DOM nodes — never rebuilds the D3
+  // simulation, so hovering a card can't restart/reheat the physics.
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([])
 
   // ── 1. Load d3 ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -279,6 +447,18 @@ export default function DecisionGraph({
     // Filter dismissed edges
     const visibleEdges = data.edges.filter(e => !dismissed.has(e.id))
 
+    // "Most significant node" glow (companion to the Insights strip below —
+    // same ranking as its 'most-connected' insight). Static per render, not
+    // tied to hover state, so it's always visible as an entry point into a
+    // dense graph — gives the eye somewhere to land first.
+    const connectionCounts = new Map<string, number>()
+    visibleEdges.forEach(e => {
+      connectionCounts.set(e.session_id_a, (connectionCounts.get(e.session_id_a) ?? 0) + 1)
+      connectionCounts.set(e.session_id_b, (connectionCounts.get(e.session_id_b) ?? 0) + 1)
+    })
+    const topEntry = [...connectionCounts.entries()].sort((a, b) => b[1] - a[1])[0]
+    const mostConnectedId = topEntry && topEntry[1] >= 2 ? topEntry[0] : null
+
     // d3-force simulation nodes/links (clones to avoid d3 mutating original)
     const nodes = data.nodes.map(n => ({ ...n }))
     const nodeById = new Map(nodes.map(n => [n.id, n]))
@@ -389,13 +569,18 @@ export default function DecisionGraph({
 
     // ── Nodes ─────────────────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const node = g.append('g').selectAll('g').data(nodes).join('g').style('cursor', 'pointer')
+    const node = g.append('g').selectAll('g').data(nodes).join('g')
+      .attr('class', 'dg-node')
+      .attr('data-node-id', (d: GraphNode) => d.id)
+      .style('cursor', 'pointer')
 
     node.append('circle')
-      .attr('r', 18)
+      .attr('class', 'dg-node-circle')
+      .attr('r', (d: GraphNode) => d.id === mostConnectedId ? 22 : 18)
       .attr('fill',   'var(--bg-card)')
-      .attr('stroke', (d: GraphNode) => d.status === 'active' ? 'rgba(201,168,76,0.7)' : 'rgba(201,168,76,0.3)')
+      .attr('stroke', (d: GraphNode) => d.status === 'active' ? 'var(--graph-node-stroke-active)' : 'var(--graph-node-stroke-inactive)')
       .attr('stroke-width', (d: GraphNode) => d.status === 'active' ? 2 : 1.2)
+      .style('filter', (d: GraphNode) => d.id === mostConnectedId ? 'drop-shadow(0 0 5px var(--gold-bright))' : 'none')
 
     // Date label inside node
     node.append('text')
@@ -486,6 +671,33 @@ export default function DecisionGraph({
     return () => { cancelled = true }
   }, [d3Ready, data, dismissed, dismissEdge, router])
 
+  // ── Insights ↔ graph hover-sync ────────────────────────────────────────────
+  // Deliberately a separate effect from the D3 render above: only toggles a
+  // CSS filter/opacity on already-rendered DOM nodes via plain querySelector,
+  // never touches the simulation or re-runs render() — hovering an insight
+  // card must not restart/reheat the physics (would look identical to the
+  // GRAPH-4 "atom oscillation" bug from the user's perspective if it did).
+  useEffect(() => {
+    if (!svgRef.current) return
+    const circles = svgRef.current.querySelectorAll<SVGCircleElement>('.dg-node-circle')
+    const groups  = svgRef.current.querySelectorAll<SVGGElement>('.dg-node')
+    if (highlightedNodeIds.length === 0) {
+      circles.forEach(c => { c.style.filter = ''; })
+      groups.forEach(gEl => { gEl.style.opacity = '' })
+      return
+    }
+    const idSet = new Set(highlightedNodeIds)
+    groups.forEach(gEl => {
+      const id = gEl.getAttribute('data-node-id')
+      const isMatch = !!id && idSet.has(id)
+      gEl.style.opacity = isMatch ? '1' : '0.3'
+    })
+    circles.forEach(c => {
+      const id = c.closest('.dg-node')?.getAttribute('data-node-id')
+      c.style.filter = (id && idSet.has(id)) ? 'drop-shadow(0 0 7px var(--gold-bright))' : 'none'
+    })
+  }, [highlightedNodeIds])
+
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 0', color: 'var(--text-4)', fontSize: 13 }}>
@@ -525,7 +737,7 @@ export default function DecisionGraph({
           <svg width="180" height="70" viewBox="0 0 180 70">
             {hasFirstNode ? (
               <>
-                <circle cx="36" cy="35" r="16" fill="var(--bg-card)" stroke="rgba(201,168,76,0.7)" strokeWidth="2" />
+                <circle cx="36" cy="35" r="16" fill="var(--bg-card)" stroke="var(--graph-node-stroke-active)" strokeWidth="2" />
                 <text x="36" y="39" textAnchor="middle" fontSize="8" fill="var(--text-4)" fontFamily="var(--font-mono, monospace)">
                   {(() => { const d = new Date(data.nodes[0].created_at); return `${d.getDate()}/${d.getMonth() + 1}` })()}
                 </text>
@@ -571,6 +783,24 @@ export default function DecisionGraph({
   // ── 'full' tier, or 'preview' tier with real (redacted) edges to show ─────
   // falls through to the normal force-graph render below.
 
+  // Insights + small live counts next to the legend — both derived from the
+  // same already-loaded edge data, computed once per render (cheap: at most
+  // a few dozen edges for any real user).
+  const liveEdges = data.edges.filter(e => !dismissed.has(e.id))
+  const insights = buildInsights(data.nodes, liveEdges)
+  const contradictionCount = liveEdges.filter(e => e.edge_type === 'contradiction').length
+  const biasClusterCount = (() => {
+    const sets = new Map<string, Set<string>>()
+    liveEdges.filter(e => e.edge_type === 'shared_bias_trigger' && !e.redacted).forEach(e => {
+      const params = (e.metadata?.bias_parameters as string[] | undefined) ?? []
+      params.forEach(p => {
+        if (!sets.has(p)) sets.set(p, new Set())
+        sets.get(p)!.add(e.session_id_a); sets.get(p)!.add(e.session_id_b)
+      })
+    })
+    return [...sets.values()].filter(s => s.size >= 2).length
+  })()
+
   // ── Legend ──────────────────────────────────────────────────────────────────
   const LEGEND: { type: EdgeType; dashed?: boolean }[] = [
     { type: 'structural_similarity' },
@@ -591,6 +821,7 @@ export default function DecisionGraph({
           font-family: inherit;
         }
         .dg-annotation-btn:hover { color: var(--gold); border-color: var(--gold-dim); }
+        .dg-insight-card:hover { border-color: var(--gold-dim); }
       `}</style>
 
       {/* Preview-tier banner — real graph shown above, deeper detail is paid */}
@@ -681,8 +912,18 @@ export default function DecisionGraph({
         })()}
       </div>
 
+      {/* Live counts — glance-level summary before reading the insight cards below */}
+      {(contradictionCount > 0 || biasClusterCount > 0) && (
+        <div style={{ marginTop: 16, fontSize: 11, color: 'var(--gold)', fontWeight: 600 }}>
+          {[
+            contradictionCount > 0 ? `${contradictionCount} contradiction${contradictionCount === 1 ? '' : 's'}` : null,
+            biasClusterCount > 0 ? `${biasClusterCount} shared bias cluster${biasClusterCount === 1 ? '' : 's'}` : null,
+          ].filter(Boolean).join(' · ')}
+        </div>
+      )}
+
       {/* Legend + annotation CTA */}
-      <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: '6px 16px', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: '6px 16px', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
           {LEGEND.map(({ type, dashed }) => (
             <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -711,6 +952,49 @@ export default function DecisionGraph({
           + Add connection
         </button>
       </div>
+
+      {/* Insights strip (issue #5) — plain-English "so what" for the same edge
+          data the graph above already renders. Hovering a card glows the
+          matching node(s) above via the highlightedNodeIds hover-sync effect;
+          clicking a card with exactly one linked node opens that decision,
+          same as clicking the node itself. */}
+      {insights.length > 0 && (
+        <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+          {insights.map(insight => {
+            const kindColor: Record<GraphInsight['kind'], string> = {
+              contradiction: 'var(--graph-edge-contradiction)',
+              bias:          'var(--graph-edge-bias)',
+              connected:     'var(--gold-bright)',
+              structural:    'var(--graph-edge-structural)',
+              annotation:    'var(--graph-edge-annotation)',
+            }
+            return (
+              <div
+                key={insight.id}
+                className="dg-insight-card"
+                onMouseEnter={() => setHighlightedNodeIds(insight.nodeIds)}
+                onMouseLeave={() => setHighlightedNodeIds([])}
+                onClick={() => { if (insight.nodeIds.length === 1) router.push(`/record/${insight.nodeIds[0]}`) }}
+                style={{
+                  background:   'var(--bg-card)',
+                  border:       '1px solid var(--border-dim)',
+                  borderRadius: 8,
+                  padding:      '10px 12px',
+                  cursor:       insight.nodeIds.length === 1 ? 'pointer' : 'default',
+                  transition:   'border-color 0.15s',
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: kindColor[insight.kind], marginBottom: 4 }}>
+                  {insight.label}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
+                  {insight.body}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Annotation form */}
       {annotation && (
