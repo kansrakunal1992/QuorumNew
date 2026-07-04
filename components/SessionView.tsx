@@ -433,7 +433,14 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   useEffect(() => {
     let attempt = 0
-    const MAX_ATTEMPTS = 4
+    // Bug fix (STRUCT-1): widened from 4x6s (24s) — see app/api/ontology/
+    // route.ts's fireStructuralMatch() for the primary fix (server-side
+    // chain, fires immediately once tagging completes rather than relying on
+    // this client poll alone). This retry loop is now a fallback for cases
+    // where that server-to-server call fails for some transient reason —
+    // widened modestly to match the Examiner's own retry budget rather than
+    // giving up meaningfully sooner than the rest of the tagging-dependent UI.
+    const MAX_ATTEMPTS = 6
     const RETRY_MS     = 6000
 
     const fetchStructuralContext = () => {

@@ -9,8 +9,18 @@
 //      yet complete, so the client can retry intelligently.
 //   3. Writes individual pairwise scores into structural_scores table for
 //      traceability (was previously empty).
-//   4. Server-side trigger added to examiner POST so DB gets populated even
-//      when client-side fetch aborts due to timing.
+//
+// Bug fix (STRUCT-1): this route was only ever reached via a client-side
+// fire-and-forget call (SessionView.tsx), retrying up to 4x/6s (24s) only
+// while ontology wasn't ready yet — and it only writes structural_matches on
+// full success, with nothing to retry a session that timed out or whose tab
+// was closed early. That left structural_matches permanently unpopulated for
+// any session where tagging took longer than the client's patience. Fixed by
+// chaining this route server-side from app/api/ontology/route.ts's
+// fireStructuralMatch(), fired immediately once tagger_status flips to
+// 'complete' — the client-side call above remains as a redundant fallback
+// (this route's own cache check at Step 1 makes a duplicate call a cheap
+// no-op either way).
 
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'

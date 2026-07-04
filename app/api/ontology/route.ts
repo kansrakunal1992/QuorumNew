@@ -173,6 +173,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'DB insert failed' }, { status: 500 })
     }
 
+    // Bug fix (STRUCT-1): /api/structural-match was only ever triggered from
+    // the client (SessionView.tsx), fire-and-forget, retrying up to 4x/6s
+    // (24s total) only while ontology_ready was false — and it only writes
+    // its structural_matches row on full success. If tagging took longer than
+    // that window, or the user navigated away before it finished, that
+    // session's structural_matches row was never created, permanently — no
+    // cron or later re-trigger existed anywhere. This is the same race-
+    // condition shape as the Examiner/tagger bug (TAGGER-1/EXAMINER-1) above,
+    // just one hop further downstream. Now that tagging has genuinely just
+    // completed server-side, fire structural-match immediately from here —
+    // removes the client's tab-must-stay-open-long-enough dependency for the
+    // common case entirely. The client-side call in SessionView.tsx is left
+    // in place as a redundant second attempt (structural-match's own cache
+    // check at the top of that route makes a duplicate call a cheap no-op),
+    // and its retry budget is separately widened as a fallback if this one
+    // fails for any reason (e.g. INTERNAL cold start, transient DB error).
+    fireStructuralMatch(sessionId)
+
     return NextResponse.json({
       ok:          true,
       mode:        ruleResult.mode,
@@ -196,6 +214,21 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
   }
+}
+
+// STRUCT-1: same fire-and-forget pattern as fireOntologyTagger() in
+// app/api/session/route.ts — errors are logged only, never surfaced to the
+// caller, since this route's own response must not be delayed or failed by
+// a downstream step that already has its own client-side fallback.
+function fireStructuralMatch(sessionId: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  fetch(`${baseUrl}/api/structural-match`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sessionId }),
+  }).catch(err => {
+    console.error('[Ontology] fireStructuralMatch failed to dispatch:', err)
+  })
 }
 
 // ── GET handler (debug + examiner reads) ──────────────────────────────────────
