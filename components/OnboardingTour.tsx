@@ -146,7 +146,64 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
   // spotlighted child included — renders underneath it. We temporarily lift
   // any such ancestor's z-index above the overlay while its descendant is
   // spotlit, and restore the original value when the spotlight clears.
-  const elevatedAncestorsRef = useRef<{ el: HTMLElement; prevZIndex: string }[]>([])
+  //
+  // Bug fix (TOUR-4): the check above only caught ancestors that were
+  // `position !== static` AND already had a *numeric* z-index. It missed a
+  // much more common case: any ancestor carrying one of this codebase's
+  // entrance-animation classes (.sv-fade / .rec-fade / .home equivalents),
+  // which animate `transform: translateY(...)` with fill-mode `both` — so
+  // the end-state transform (translateY(0)) persists on the element forever
+  // after the animation completes. A non-'none' transform creates a new
+  // stacking context REGARDLESS of position or whether z-index is set at
+  // all, and that ancestor has no explicit z-index of its own — so it was
+  // invisible to the old check and silently traps every descendant (spotlight
+  // ring included) at whatever paint order the ancestor naturally sits at,
+  // which is beneath the portal-rendered overlay. Symptom: the target is
+  // still faintly visible through the translucent overlay (not literally
+  // hidden) but never gets the gold pulsing ring — it reads as "present but
+  // not highlighted" rather than "spotlit."
+  //
+  // createsStackingContext() below checks every property that the CSS spec
+  // uses to establish a new stacking context, not just position+z-index.
+  // Any ancestor that qualifies gets elevated — and if it's position:static
+  // (z-index has no effect on static elements), position is also forced to
+  // 'relative' for the duration of the spotlight, then restored alongside
+  // z-index in clearSpotlight().
+  const elevatedAncestorsRef = useRef<{
+    el:               HTMLElement
+    prevZIndex:       string
+    prevPosition?:    string   // only set when we forced position:relative
+  }[]>([])
+
+  // Returns true if this computed style would establish a new CSS stacking
+  // context on its own element — i.e. any descendant's z-index, however high,
+  // can only ever be compared *within* this element's local paint order, not
+  // against siblings/overlays outside it.
+  //
+  // For the classic position+explicit-z-index case, only flags it when that
+  // z-index is actually insufficient (< 10001) — an ancestor legitimately
+  // sitting above the tour already (rare, but possible) is left untouched
+  // rather than needlessly overwritten and restored.
+  // For every other stacking-context trigger (transform, filter, opacity,
+  // etc.) the ancestor almost never has an explicit z-index of its own — it's
+  // sitting in normal document flow beneath the portal-rendered overlay
+  // regardless of numeric value — so those are flagged unconditionally.
+  function createsStackingContext(cs: CSSStyleDeclaration): boolean {
+    if (cs.position !== 'static') {
+      const zi = parseInt(cs.zIndex, 10)
+      if (!Number.isNaN(zi) && zi < 10001) return true                 // classic case (already handled)
+    }
+    if (cs.transform && cs.transform !== 'none') return true           // .sv-fade / .rec-fade end-state — the actual bug
+    if (cs.filter && cs.filter !== 'none') return true
+    if (cs.backdropFilter && cs.backdropFilter !== 'none') return true
+    if (cs.opacity && parseFloat(cs.opacity) < 1) return true
+    if (cs.willChange && /transform|opacity|filter/.test(cs.willChange)) return true
+    if (cs.isolation === 'isolate') return true
+    if (cs.perspective && cs.perspective !== 'none') return true
+    if (cs.contain && /paint|layout|strict|content/.test(cs.contain)) return true
+    if (cs.mixBlendMode && cs.mixBlendMode !== 'normal') return true
+    return false
+  }
 
   const step   = steps[stepIndex]
   const isLast = stepIndex === steps.length - 1
@@ -236,11 +293,16 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
       el.style.display = ''
       currentElRef.current = null
     }
-    // Restore any ancestor z-indexes we temporarily lifted (see ref comment above)
+    // Restore any ancestor z-indexes (and, where forced, position) we
+    // temporarily lifted — see elevatedAncestorsRef comment above.
     if (elevatedAncestorsRef.current.length) {
-      elevatedAncestorsRef.current.forEach(({ el, prevZIndex }) => {
+      elevatedAncestorsRef.current.forEach(({ el, prevZIndex, prevPosition }) => {
         if (prevZIndex) el.style.zIndex = prevZIndex
         else el.style.removeProperty('z-index')
+        if (prevPosition !== undefined) {
+          if (prevPosition) el.style.position = prevPosition
+          else el.style.removeProperty('position')
+        }
       })
       elevatedAncestorsRef.current = []
     }
@@ -273,17 +335,25 @@ export default function OnboardingTour({ steps, onComplete, onSkip, active, page
     el.classList.add('tour-spotlight')
     currentElRef.current = el
 
-    // Walk up from the target and lift the z-index of any positioned ancestor
-    // (position: fixed/sticky/absolute/relative with an explicit z-index) that
-    // would otherwise cap the spotlight below the dim overlay. See ref comment
-    // above for why this is needed — .tour-spotlight's own z-index: 10001 only
-    // wins locally within that ancestor's stacking context.
+    // Walk up from the target and lift any ancestor that establishes its own
+    // stacking context (position+z-index, OR a lingering transform/filter/
+    // opacity/etc. from an entrance-animation class — see TOUR-4 above) so
+    // the spotlight's z-index: 10001 is compared against the tour overlay's
+    // z-index: 10000 globally, not trapped inside a local context that sits
+    // beneath it. position:static ancestors get position:relative forced on
+    // for the duration (z-index has no effect without it); both are restored
+    // in clearSpotlight().
     let ancestor = (el as HTMLElement).parentElement
     while (ancestor && ancestor !== document.body) {
       const cs = window.getComputedStyle(ancestor)
-      const zi = parseInt(cs.zIndex, 10)
-      if (cs.position !== 'static' && !Number.isNaN(zi) && zi < 10001) {
-        elevatedAncestorsRef.current.push({ el: ancestor, prevZIndex: ancestor.style.zIndex })
+      if (createsStackingContext(cs)) {
+        const needsPositionFix = cs.position === 'static'
+        elevatedAncestorsRef.current.push({
+          el:            ancestor,
+          prevZIndex:    ancestor.style.zIndex,
+          prevPosition:  needsPositionFix ? ancestor.style.position : undefined,
+        })
+        if (needsPositionFix) ancestor.style.position = 'relative'
         ancestor.style.zIndex = '10001'
       }
       ancestor = ancestor.parentElement
