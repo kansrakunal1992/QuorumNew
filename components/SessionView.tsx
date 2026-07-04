@@ -26,6 +26,7 @@ import ValidationCard from './ValidationCard'             // SB-1
 import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
 import OntologyRevealCard   from './OntologyRevealCard'   // S1-01: Decision X-Ray (sessions 1–3)
 import DecisionGraph        from './DecisionGraph'        // S1-07: Graph teaser (sessions 1–3)
+import GraphNudgeLine       from './GraphNudgeLine'        // QW-3: Graph nudge (sessions 6+)
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
 import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesis tension beat
 import type { Lean }        from './TensionInterstitial'
@@ -236,6 +237,16 @@ export default function SessionView({ session: initialSession, initialMessages =
     stakes_reversibility:  string | null
   } | null>(null)
   const [xRayDismissed,  setXRayDismissed]  = useState(false)
+
+  // QW-3: 6+ session graph nudge (Option A "new-connection" / Option C
+  // "milestone") — fetched once from /api/session/[id]/graph-nudge, which
+  // does its own event/cooldown gating server-side. null = not fetched yet
+  // or nothing to show; this component only renders when show===true.
+  const [graphNudge, setGraphNudge] = useState<
+    | { show: true; variant: 'new-connection'; edgeType: string }
+    | { show: true; variant: 'milestone'; edgeCount: number; milestone: number }
+    | null
+  >(null)
   // S2-07: Opening Ceremony dismiss flag — gates persona streaming for 3s on sessions 1-3
   const [ceremonyDismissed, setCeremonyDismissed] = useState(false)
   // S3-01: per-persona lean classification (proceed/wait/mixed), parsed from each
@@ -413,6 +424,24 @@ export default function SessionView({ session: initialSession, initialMessages =
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [synthesisDone, authTokenSV])
+
+  // QW-3: fetch the 6+ session graph nudge once synthesis is done. Unlike
+  // bias-note, this DOES require authTokenSV — the endpoint writes
+  // cooldown/milestone state server-side and has no anonymous path (see its
+  // own header comment). Gate on totalSessionCount > 5 client-side too, even
+  // though the endpoint re-checks server-side — avoids a pointless fetch for
+  // the sessions-1–5 window where the pictorial graph (S1-07) is shown instead.
+  useEffect(() => {
+    if (!synthesisDone || !authTokenSV) return
+    if ((totalSessionCount ?? 0) <= 5) return
+    fetch(`/api/session/${session.id}/graph-nudge`, {
+      headers: { Authorization: `Bearer ${authTokenSV}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.show) setGraphNudge(data) })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [synthesisDone, authTokenSV, totalSessionCount])
 
   // Sprint TOUR-1: fire council tour once after synthesis completes
   useEffect(() => {
@@ -1302,16 +1331,25 @@ export default function SessionView({ session: initialSession, initialMessages =
                 )
               }
 
-              {/* S1-07: Graph teaser — appears as the X-Ray fades out, sessions 1–3 only.
-                  Deliberately reuses DecisionGraph unmodified (same component + same
-                  /api/mirror/graph endpoint as /mirror) rather than a bespoke visual —
-                  what's shown here is guaranteed to match what the person would see if
-                  they clicked through to /mirror right now: a ghost node at session 1,
-                  a real (redacted) preview graph from session 2 on. No timer — this one
-                  stays up, it's meant to be an open loop, not a flash message. */}
-              {xRayDismissed
-                && (totalSessionCount ?? 0) <= 3
+              {/* S1-07 / QW-3: Graph teaser — Option B (pictorial), sessions 1–5.
+                  Sessions 1–3: appears as the X-Ray fades out, referencing the
+                  ontology shape it just showed. Sessions 4–5: X-Ray no longer
+                  renders (gated <=3), so this appears on its own once the
+                  session is ready — no ontology callback in the copy, since
+                  there's no "this shape" to refer back to.
+                  Deliberately reuses DecisionGraph unmodified (same component +
+                  same /api/mirror/graph endpoint as /mirror) rather than a
+                  bespoke visual — what's shown here is guaranteed to match
+                  what the person would see if they clicked through to /mirror
+                  right now: a ghost node at session 1, a real (redacted)
+                  preview graph from session 2 on. No timer — this one stays
+                  up, it's meant to be an open loop, not a flash message.
+                  Sessions 6+ get GraphNudgeLine instead (see bottom of flow) —
+                  event-gated single line, not this pictorial version, per the
+                  POV doc (item3-4plus-sessions-pov-plan.md). */}
+              {(totalSessionCount ?? 0) <= 5
                 && ontologyReady
+                && (xRayDismissed || (totalSessionCount ?? 0) > 3)
                 && (
                   <div
                     className="sv-fade"
@@ -1332,7 +1370,9 @@ export default function SessionView({ session: initialSession, initialMessages =
                       color:         'var(--text-4)',
                       margin:        '0 0 12px',
                     }}>
-                      This shape gets compared against future decisions
+                      {(totalSessionCount ?? 0) <= 3
+                        ? 'This shape gets compared against future decisions'
+                        : 'Your Decision Graph'}
                     </p>
                     
                     <DecisionGraph
@@ -1588,6 +1628,22 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </button>
               </div>
             </div>
+
+            {/* QW-3: 6+ session graph nudge — deliberately the very last thing in
+                the flow, after every core session-completion element (synthesis,
+                receipt, validation, personas, the action tray itself). Only
+                renders when /api/session/[id]/graph-nudge returned show:true —
+                see that route + item3-4plus-sessions-pov-plan.md for why this
+                is event-gated rather than shown on a fixed cadence. */}
+            {(totalSessionCount ?? 0) > 5 && graphNudge?.show && (
+              <GraphNudgeLine
+                variant={graphNudge.variant}
+                edgeType={graphNudge.variant === 'new-connection' ? graphNudge.edgeType : undefined}
+                edgeCount={graphNudge.variant === 'milestone' ? graphNudge.edgeCount : undefined}
+                milestone={graphNudge.variant === 'milestone' ? graphNudge.milestone : undefined}
+                mirrorActive={mirrorActive}
+              />
+            )}
 
           </div>
         </div>
