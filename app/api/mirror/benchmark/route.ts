@@ -166,9 +166,20 @@ export async function GET(req: Request): Promise<Response> {
 
   // ── 4. Fetch other users' session vectors from corpus ─────────────────────
   // Reads sessions_ontology cross-user — no PII, structural vectors only.
+  //
+  // BUGFIX (audit pass, July 2026): this previously also selected `user_id`,
+  // which sessions_ontology does not have (confirmed against the complete
+  // insert shape in tagToInsert(), app/api/ontology/route.ts — no user_id
+  // field). Selecting a nonexistent column makes Postgres reject the entire
+  // query — same failure mode as the S2-02/MIRROR-1 bugs — so `corpusRows`
+  // silently came back empty on every call, and this endpoint has been
+  // returning "insufficient data" to every user regardless of corpus size.
+  // The `userSessionIds` check below is sufficient on its own to exclude the
+  // current user's own sessions; the removed user_id check was a redundant
+  // "belt + suspenders" line that never actually worked.
   const { data: corpusRows } = await supabase
     .from('sessions_ontology')
-    .select('session_id, ontology_vector, user_id')
+    .select('session_id, ontology_vector')
     .eq('tagger_version', 'v2.0')
     .eq('tagger_status', 'complete')
     .not('ontology_vector', 'is', null)
@@ -182,8 +193,6 @@ export async function GET(req: Request): Promise<Response> {
 
     // Exclude current user's own sessions
     if (userSessionIds.has(sessionId)) continue
-    // Also exclude by user_id where available (belt + suspenders)
-    if ((row.user_id as string | null) === userId) continue
 
     const vec = row.ontology_vector as Record<string, unknown> | null
     if (!vec) continue

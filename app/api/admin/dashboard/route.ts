@@ -22,13 +22,25 @@
 //   current value and ±10% variants. Reveals whether the threshold is tight or
 //   loose relative to current data distribution.
 //   Thresholds covered:
-//     MATCH_THRESHOLD (45)         → structural_scores.total_score
-//     SIMILARITY_THRESHOLD (0.808) → structural_scores.vector_similarity
+//     MATCH_THRESHOLD (45)         → structural_matches.matches_json[].structural_score
+//     SIMILARITY_THRESHOLD (0.808) → structural_matches.matches_json[].score_breakdown.vector_similarity
 //     LOW_CONFIDENCE_THRESHOLD (0.55) → not directly queryable (noted)
 //     MIN_SESSIONS (5)             → sessions_ontology tagger_status=complete
 //     PATTERNS_SESSION_THRESHOLD (3) → bias_library.detection_count
 //     RULES_SESSION_THRESHOLD (8)  → per-user, not aggregatable (noted)
 //     RERUN_DAYS_THRESHOLD (7)     → per-user cadence, not aggregatable (noted)
+//
+// BUGFIX (audit pass, July 2026): MATCH_THRESHOLD/SIMILARITY_THRESHOLD used to
+// read from a table called `structural_scores`, which does not exist anywhere
+// in this codebase — no CREATE TABLE, and nothing ever writes to it. Selecting
+// from a nonexistent table fails the same way a nonexistent column does, so
+// `scores` was always empty and R8 has been reporting 0 / null for both
+// thresholds regardless of real corpus size. The real values live inside
+// structural_matches.matches_json (encrypted JSONB array, one row per
+// session) — see lib/structural-retrieval.ts's `structural_score` /
+// `score_breakdown.vector_similarity` fields, the same source
+// app/api/persona/route.ts and lib/session-score.ts read from. Fixed by
+// querying structural_matches and flattening each session's match array.
 //
 // No schema changes. No new tables. All queries against existing tables.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +48,7 @@
 import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { writeAuditLog }        from '@/lib/audit'
+import { decryptJson }          from '@/lib/encryption'
 
 // council_helped → numeric helpfulness score for averaging
 const HELPED_SCORE: Record<string, number> = {
@@ -181,10 +194,10 @@ async function handleDashboard() {
   })
 
   // ── R8: Threshold Sensitivity ───────────────────────────────────────────────
-  const [scoresResult, completeSoResult, biasResult] = await Promise.all([
+  const [matchesResult, completeSoResult, biasResult] = await Promise.all([
     supabase
-      .from('structural_scores')
-      .select('total_score, vector_similarity'),
+      .from('structural_matches')
+      .select('matches_json'),
     supabase
       .from('sessions_ontology')
       .select('session_id')
@@ -194,7 +207,24 @@ async function handleDashboard() {
       .select('detection_count'),
   ])
 
-  const scores      = scoresResult.data ?? []
+  // Each structural_matches row holds an encrypted array of up to MAX_MATCHES
+  // (currently 2) match objects for one session — flatten across the whole
+  // corpus into one array of { total_score, vector_similarity } so the
+  // threshold-count helpers below stay unchanged. Same decryptJson pattern as
+  // app/api/persona/route.ts and lib/session-score.ts.
+  type FlatMatch = { total_score: number | null; vector_similarity: number | null }
+  const scores: FlatMatch[] = []
+  for (const row of matchesResult.data ?? []) {
+    const decrypted = row.matches_json ? decryptJson(row.matches_json) : null
+    if (!Array.isArray(decrypted)) continue
+    for (const m of decrypted as Array<{ structural_score?: number; score_breakdown?: { vector_similarity?: number } }>) {
+      scores.push({
+        total_score:       m.structural_score ?? null,
+        vector_similarity: m.score_breakdown?.vector_similarity ?? null,
+      })
+    }
+  }
+
   const completeSo  = completeSoResult.data ?? []
   const biasRows    = biasResult.data ?? []
 

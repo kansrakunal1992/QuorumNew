@@ -24,10 +24,23 @@
 
 import { createServiceClient } from '@/lib/supabase'
 import type { SessionScoreData }  from '@/lib/types'
-import { decrypt }               from '@/lib/encryption'
+import { decrypt, decryptJson }  from '@/lib/encryption'
 
 // ── Sub-score: structural match ───────────────────────────────────────────────
-// Source: sessions_ontology.matches_json (already computed + stored by structural-retrieval.ts)
+// Source: structural_matches.matches_json (populated by /api/structural-match,
+// encrypted at rest). NOT sessions_ontology.
+//
+// BUGFIX (audit pass, July 2026): matches_json was being selected from
+// sessions_ontology — it does not live there, it lives on structural_matches,
+// same root cause as the S2-02 fix in app/api/persona/route.ts. Selecting a
+// nonexistent column makes Postgres reject the entire query, so ontologyRes
+// silently came back empty and structural scoring always fell back to the
+// neutral default (hasData: false) — for every session, for every user, on
+// top of the MIRROR-1 overload this file already fixed below. Separately,
+// bias_library was queried with `bias_label`, but the real column is
+// `bias_parameter` (confirmed against every other bias_library call site,
+// e.g. app/api/bias-score/route.ts) — same failure mode, so bias-clarity
+// scoring was also always falling back to its neutral default (80).
 // 50 = neutral (no prior sessions to compare against — not good or bad)
 
 // Bug fix (MIRROR-1): previously returned a bare number, using 50 as both
@@ -54,7 +67,7 @@ function scoreStructural(matchesJson: unknown): { score: number; hasData: boolea
 // 80 = baseline when no biases fired in this session (neutral-good)
 
 type BiasRow = {
-  bias_label: string
+  bias_parameter: string
   activation_contexts: Record<string, { signal_type?: string }> | null
   asymmetry_score_avg: number
 }
@@ -82,7 +95,7 @@ function scoreBiasClarity(biasRows: BiasRow[], sessionId: string): {
 
   return {
     score,
-    distortingLabels: distorting.map(r => r.bias_label as string),
+    distortingLabels: distorting.map(r => r.bias_parameter as string),
   }
 }
 
@@ -198,31 +211,46 @@ export async function computeUserSessionScores(
 
   const sessionIds = sessions.map(s => s.id as string)
 
-  // 2. Parallel DB reads — all three ancillary tables in one round-trip
-  const [ontologyRes, biasRes, outcomesRes] = await Promise.all([
+  // 2. Parallel DB reads — four ancillary tables in one round-trip.
+  // BUGFIX: matches_json moved to its own query against structural_matches
+  // (see header note) — sessions_ontology no longer selects it, and
+  // bias_library now selects the real column, bias_parameter.
+  const [ontologyRes, biasRes, outcomesRes, structuralMatchesRes] = await Promise.all([
     supabase
       .from('sessions_ontology')
-      .select('session_id, matches_json, rule_engine_result')
+      .select('session_id, rule_engine_result')
       .in('session_id', sessionIds),
 
     supabase
       .from('bias_library')
-      .select('bias_label, activation_contexts, asymmetry_score_avg')
+      .select('bias_parameter, activation_contexts, asymmetry_score_avg')
       .eq('user_id', userId),
 
     supabase
       .from('outcomes')
       .select('session_id, calibration_delta')
       .in('session_id', sessionIds),
+
+    supabase
+      .from('structural_matches')
+      .select('session_id, matches_json')
+      .in('session_id', sessionIds),
   ])
 
   // 3. Index ancillary data by session_id for O(1) lookup
-  const ontologyMap = new Map<string, { matches_json: unknown; rule_engine_result: unknown }>()
+  const ontologyMap = new Map<string, { rule_engine_result: unknown }>()
   for (const row of ontologyRes.data ?? []) {
     ontologyMap.set(row.session_id as string, {
-      matches_json:       row.matches_json,
       rule_engine_result: row.rule_engine_result,
     })
+  }
+
+  // structural_matches.matches_json is encrypted at rest (encryptJson on write,
+  // in app/api/structural-match/route.ts) — decrypt before use, same pattern
+  // as the fetchCouncilContext fix in app/api/persona/route.ts.
+  const structuralMatchesMap = new Map<string, unknown>()
+  for (const row of structuralMatchesRes.data ?? []) {
+    structuralMatchesMap.set(row.session_id as string, decryptJson(row.matches_json))
   }
 
   const biasRows = (biasRes.data ?? []) as BiasRow[]
@@ -245,7 +273,7 @@ export async function computeUserSessionScores(
     const ontology = ontologyMap.get(sid)
     const calibDelta = calibrationMap.get(sid) ?? null
 
-    const { score: structural, hasData: structuralHasData } = scoreStructural(ontology?.matches_json)
+    const { score: structural, hasData: structuralHasData } = scoreStructural(structuralMatchesMap.get(sid))
     structuralHasDataFlags.push(structuralHasData)
     const { score: biasClarity, distortingLabels } = scoreBiasClarity(biasRows, sid)
     const councilConfidence = scoreCouncilConfidence(ontology?.rule_engine_result)

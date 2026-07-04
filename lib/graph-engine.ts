@@ -228,41 +228,40 @@ async function backfillStructuralEdges(
 }
 
 // ── backfillContradictionEdges ────────────────────────────────────────────────
-// Reads contradiction_log for sessions belonging to this user and writes an
-// edge between each principle/violation pair. contradiction_log uses user_email
-// for identity (not user_id directly) — so this function resolves via the
-// sessions table instead of querying contradiction_log.user_email directly,
-// which would require email lookup and isn't available on the server without
-// the auth token.
+// BUGFIX (audit pass, July 2026): this used to read contradiction_log, which
+// was superseded by the contradictions/contradiction_runs tables (see
+// app/api/mirror/contradictions/route.ts — the only place anything actually
+// INSERTs a contradiction anymore). Nothing writes to contradiction_log
+// anywhere in this codebase, so this function has always found 0 rows —
+// meaning no 'contradiction' edge has ever been created in the graph, despite
+// the graph, the DecisionGraph UI, and the redaction/tooltip copy all
+// explicitly supporting that edge type (Sprint QW-2). Fixed to read the real
+// table, which conveniently also has a direct user_id column, removing the
+// old two-step session-id resolution that contradiction_log needed.
+//
+// Dismissed contradictions (user marked "not relevant" in the Mirror
+// contradictions panel) are excluded here too, for consistency with how the
+// rest of the Mirror UI treats a dismissal as resolved/hidden.
 
 async function backfillContradictionEdges(
   supabase: ReturnType<typeof createServiceClient>,
   userId:   string,
 ): Promise<number> {
-  // Resolve session IDs for this user (contradiction_log has session_id_principle
-  // and session_id_violation which are foreign keys into sessions)
-  const { data: userSessions, error: sessErr } = await supabase
-    .from('sessions')
-    .select('id')
-    .eq('user_id', userId)
-
-  if (sessErr || !userSessions || userSessions.length === 0) return 0
-  const sessionIds = userSessions.map((s: { id: string }) => s.id)
-
   const { data: contradictions, error: cErr } = await supabase
-    .from('contradiction_log')
-    .select('id, session_id_principle, session_id_violation')
-    .in('session_id_principle', sessionIds)
-    .not('session_id_principle', 'is', null)
-    .not('session_id_violation', 'is', null)
+    .from('contradictions')
+    .select('id, principle_session_id, violation_session_id')
+    .eq('user_id', userId)
+    .is('dismissed_at', null)
+    .not('principle_session_id', 'is', null)
+    .not('violation_session_id', 'is', null)
 
   if (cErr || !contradictions || contradictions.length === 0) return 0
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const upserts = (contradictions as any[])
-    .filter(c => c.session_id_principle && c.session_id_violation)
+    .filter(c => c.principle_session_id && c.violation_session_id)
     .map(c => {
-      const [sid_a, sid_b] = canonicalize(c.session_id_principle, c.session_id_violation)
+      const [sid_a, sid_b] = canonicalize(c.principle_session_id, c.violation_session_id)
       return {
         user_id:             userId,
         session_id_a:        sid_a,
