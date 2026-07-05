@@ -985,7 +985,7 @@ function BenchmarkModule({ authToken, tier }: { authToken: string; tier: MirrorT
           <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
             Others in Similar Decisions
           </h3>
-          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.benchmark} />
+          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.benchmark} authToken={authToken} source="benchmark" />
         </div>
       </>
     )

@@ -171,12 +171,19 @@ function buildInsights(nodes: GraphNode[], edges: GraphEdge[]): GraphInsight[] {
   const insights: GraphInsight[] = []
 
   // 1. Contradiction — most urgent, surface first.
-  const contradiction = live.find(e => e.edge_type === 'contradiction')
+  const allContradictions = live.filter(e => e.edge_type === 'contradiction')
+  const contradiction = allContradictions[0]
   if (contradiction) {
     if (contradiction.redacted) {
+      // Bug fix (GRAPH-6): was a hardcoded "Two of your decisions..." even
+      // when the real count was 1, 3, or more — a generic placeholder word
+      // where a real number belongs. The count itself isn't the paid part
+      // (Bias Fingerprint/Patterns/Contradiction Detector teasers all show
+      // real counts for locked content elsewhere in the app); only which
+      // specific decisions and why stays locked.
       insights.push({
         id: 'contradiction', kind: 'contradiction', label: 'Contradiction',
-        body:    'Two of your decisions seem to pull in different directions. Unlocking Mirror shows exactly which ones and why.',
+        body:    `${allContradictions.length} of your decisions seem to pull in different directions. Unlocking Mirror shows exactly which ones and why.`,
         nodeIds: [contradiction.session_id_a, contradiction.session_id_b],
       })
     } else {
@@ -211,12 +218,21 @@ function buildInsights(nodes: GraphNode[], edges: GraphEdge[]): GraphInsight[] {
       body:    `${nodeSet.size} of your decisions show signs of ${plain}.`,
       nodeIds: [...nodeSet],
     })
-  } else if (biasEdges.some(e => e.redacted)) {
-    insights.push({
-      id: 'bias-cluster-locked', kind: 'bias', label: 'Recurring pattern',
-      body:    'Your decisions show a repeating pattern. Unlocking Mirror names it.',
-      nodeIds: [],
+  } else {
+    // GRAPH-6: which specific bias (bias_parameters) is the locked part —
+    // but which/how many *decisions* are touched by a shared-bias edge is
+    // not, same real-count-not-placeholder fix as the contradiction branch.
+    const redactedBiasNodes = new Set<string>()
+    biasEdges.filter(e => e.redacted).forEach(e => {
+      redactedBiasNodes.add(e.session_id_a); redactedBiasNodes.add(e.session_id_b)
     })
+    if (redactedBiasNodes.size >= 2) {
+      insights.push({
+        id: 'bias-cluster-locked', kind: 'bias', label: 'Recurring pattern',
+        body:    `${redactedBiasNodes.size} of your decisions share a recurring bias pattern. Unlocking Mirror names it.`,
+        nodeIds: [...redactedBiasNodes],
+      })
+    }
   }
 
   // 3. Most connected node — exploratory, not urgent, but a natural "start here".
@@ -958,7 +974,7 @@ export default function DecisionGraph({
           matching node(s) above via the highlightedNodeIds hover-sync effect;
           clicking a card with exactly one linked node opens that decision,
           same as clicking the node itself. */}
-      {insights.length > 0 && (
+      {insights.length > 0 ? (
         <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
           {insights.map(insight => {
             const kindColor: Record<GraphInsight['kind'], string> = {
@@ -994,6 +1010,18 @@ export default function DecisionGraph({
             )
           })}
         </div>
+      ) : (
+        // GRAPH-6: dipstick finding (issue #6 review) — every other threshold-
+        // gated module in Mirror (Decision Rules, Contradiction Detector,
+        // Pattern Memory) reframes "not enough data yet" forward ("Building
+        // the map", milestone labels) rather than rendering a silent gap.
+        // The graph itself renders from 2 sessions, but most insight types
+        // need a few edges to say anything meaningful — this fills that gap
+        // with the same house voice instead of an empty space under a graph
+        // that otherwise looks "ready".
+        <p style={{ marginTop: 16, fontSize: 12, color: 'var(--text-4)', lineHeight: 1.6 }}>
+          Add a few more decisions and Quorum will start surfacing patterns here — contradictions, recurring biases, and which decisions influence each other most.
+        </p>
       )}
 
       {/* Annotation form */}

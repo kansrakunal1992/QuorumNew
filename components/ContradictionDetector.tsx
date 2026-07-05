@@ -526,7 +526,7 @@ function ContradictionSummaryView({
         </div>
       </div>
 
-      <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.contradictionDetail} />
+      <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.contradictionDetail} authToken={authToken} source="contradictionDetail" />
 
       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '10px 0 0', lineHeight: 1.5 }}>
         Extracted from your follow-up answers and pushbacks — your own words, not an assessment.

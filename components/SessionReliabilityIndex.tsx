@@ -284,7 +284,7 @@ export default function SessionReliabilityIndex({ authToken, tier }: { authToken
         )
       ) : (
         <div style={{ marginTop: 20 }}>
-          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.sriNextMove} />
+          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.sriNextMove} authToken={authToken} source="sriNextMove" />
         </div>
       )}
 
