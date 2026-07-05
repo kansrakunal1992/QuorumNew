@@ -461,12 +461,16 @@ function categoryLabel(key: string): string {
   return CATEGORY_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function ContradictionSummaryView({
-  active, dismissedCount, lastRanAt,
+function ContradictionSummaryView({ 
+  active,
+  dismissedCount,
+  lastRanAt,
+  authToken,
 }: {
   active:         Contradiction[]
   dismissedCount: number
   lastRanAt:      string | null
+  authToken:      string
 }) {
   // Group by category, keep the sharpest severity per category for ordering
   const severityRank: Record<string, number> = { sharp: 0, notable: 1, forming: 2 }
@@ -622,6 +626,7 @@ export default function ContradictionDetector({ authToken, sessionCount, tier }:
         active={active}
         dismissedCount={data?.dismissedCount ?? 0}
         lastRanAt={data?.lastRanAt ?? null}
+        authToken={authToken}
       />
     )
   }
