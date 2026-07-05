@@ -224,18 +224,28 @@ export async function GET(req: Request): Promise<NextResponse> {
   const selectedEdges = graphTier === 'full' ? allEdges : allEdges.slice(0, PREVIEW_MAX_EDGES)
   const lockedEdgeCount = graphTier === 'full' ? 0 : Math.max(0, realEdgeCount - selectedEdges.length)
 
+  // Bug fix (GRAPH-7, issue #6 audit): redaction was applied blanket to every
+  // edge type, including 'user_asserted' — the viewer's OWN hand-written
+  // annotation via "+ Add connection", not a system-computed interpretation.
+  // A preview-tier user who wrote their own note would see it come back as
+  // "The specific reason is part of Mirror" — asking them to pay to unlock a
+  // sentence they typed themselves. There's no paid interpretation being
+  // protected here since the system didn't generate this content at all, so
+  // user_asserted edges are now always shown in full regardless of tier.
+  const isRedacted = (e: GraphEdge) => e.edge_type !== 'user_asserted' && graphTier !== 'full'
+
   const responseEdges: ResponseEdge[] = selectedEdges.map(e => ({
     id:                  e.id,
     session_id_a:        e.session_id_a,
     session_id_b:        e.session_id_b,
     edge_type:           e.edge_type,
     strength:            e.strength,
-    dimension_breakdown: graphTier === 'full' ? e.dimension_breakdown : null,
-    explanation_text:    graphTier === 'full' ? e.explanation_text    : null,
-    metadata:            graphTier === 'full' ? e.metadata            : null,
+    dimension_breakdown: (graphTier === 'full' || e.edge_type === 'user_asserted') ? e.dimension_breakdown : null,
+    explanation_text:    (graphTier === 'full' || e.edge_type === 'user_asserted') ? e.explanation_text    : null,
+    metadata:            (graphTier === 'full' || e.edge_type === 'user_asserted') ? e.metadata            : null,
     dismissed_at:        e.dismissed_at,
     computed_at:         e.computed_at,
-    redacted:            graphTier !== 'full',
+    redacted:            isRedacted(e),
   }))
 
   // ── 8. Collect node IDs from the edges we're actually returning ───────────

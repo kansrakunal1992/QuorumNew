@@ -805,16 +805,32 @@ export default function DecisionGraph({
   const liveEdges = data.edges.filter(e => !dismissed.has(e.id))
   const insights = buildInsights(data.nodes, liveEdges)
   const contradictionCount = liveEdges.filter(e => e.edge_type === 'contradiction').length
-  const biasClusterCount = (() => {
+  // Bug fix (GRAPH-8, issue #6 dipstick): this previously only counted
+  // distinct clusters from non-redacted edges, so it silently showed 0 for
+  // preview-tier users even when a shared bias pattern genuinely existed —
+  // inconsistent with contradictionCount above, which counts real numbers
+  // regardless of redaction (matches the house "counts are free, specifics
+  // are paid" standard used throughout Mirror). True per-parameter grouping
+  // needs metadata.bias_parameters, which is (correctly) stripped for
+  // redacted edges — so when that grouping isn't possible, fall back to the
+  // number of distinct decisions touched by any shared-bias edge instead of
+  // reporting zero. Same fallback buildInsights' bias-cluster-locked branch
+  // already uses, kept consistent here.
+  const biasCluster = (() => {
+    const biasEdges = liveEdges.filter(e => e.edge_type === 'shared_bias_trigger')
     const sets = new Map<string, Set<string>>()
-    liveEdges.filter(e => e.edge_type === 'shared_bias_trigger' && !e.redacted).forEach(e => {
+    biasEdges.filter(e => !e.redacted).forEach(e => {
       const params = (e.metadata?.bias_parameters as string[] | undefined) ?? []
       params.forEach(p => {
         if (!sets.has(p)) sets.set(p, new Set())
         sets.get(p)!.add(e.session_id_a); sets.get(p)!.add(e.session_id_b)
       })
     })
-    return [...sets.values()].filter(s => s.size >= 2).length
+    const trueClusters = [...sets.values()].filter(s => s.size >= 2).length
+    if (trueClusters > 0) return { count: trueClusters, unit: 'shared bias cluster' }
+
+    const nodeCount = new Set(biasEdges.flatMap(e => [e.session_id_a, e.session_id_b])).size
+    return nodeCount >= 2 ? { count: nodeCount, unit: 'decision shares a bias pattern' } : { count: 0, unit: '' }
   })()
 
   // ── Legend ──────────────────────────────────────────────────────────────────
@@ -929,11 +945,15 @@ export default function DecisionGraph({
       </div>
 
       {/* Live counts — glance-level summary before reading the insight cards below */}
-      {(contradictionCount > 0 || biasClusterCount > 0) && (
+      {(contradictionCount > 0 || biasCluster.count > 0) && (
         <div style={{ marginTop: 16, fontSize: 11, color: 'var(--gold)', fontWeight: 600 }}>
           {[
             contradictionCount > 0 ? `${contradictionCount} contradiction${contradictionCount === 1 ? '' : 's'}` : null,
-            biasClusterCount > 0 ? `${biasClusterCount} shared bias cluster${biasClusterCount === 1 ? '' : 's'}` : null,
+            biasCluster.count > 0
+              ? biasCluster.unit === 'shared bias cluster'
+                ? `${biasCluster.count} shared bias cluster${biasCluster.count === 1 ? '' : 's'}`
+                : `${biasCluster.count} decision${biasCluster.count === 1 ? '' : 's'} share${biasCluster.count === 1 ? 's' : ''} a bias pattern`
+              : null,
           ].filter(Boolean).join(' · ')}
         </div>
       )}
