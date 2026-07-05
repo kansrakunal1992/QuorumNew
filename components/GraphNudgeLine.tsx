@@ -17,15 +17,22 @@ import { useState } from 'react'
 import Link from 'next/link'
 
 export interface GraphNudgeLineProps {
-  variant:      'new-connection' | 'milestone'
+  variant:      'new-connection' | 'milestone' | 'watchlist-suggestion'
   edgeType?:    string
   edgeCount?:   number
   milestone?:   number
+  gapText?:     string
   mirrorActive: boolean
+  /** Required only for the watchlist-suggestion variant's Add action. */
+  authToken?:   string | null
 }
 
 function copyFor(props: GraphNudgeLineProps): { text: string; showLink: boolean } {
-  const { variant, edgeCount, milestone, mirrorActive } = props
+  const { variant, edgeCount, milestone, mirrorActive, gapText } = props
+
+  if (variant === 'watchlist-suggestion') {
+    return { text: `Still open: "${gapText}"`, showLink: false }
+  }
 
   if (variant === 'milestone') {
     if (mirrorActive) {
@@ -55,9 +62,27 @@ function copyFor(props: GraphNudgeLineProps): { text: string; showLink: boolean 
 
 export default function GraphNudgeLine(props: GraphNudgeLineProps) {
   const [dismissed, setDismissed] = useState(false)
+  const [added,     setAdded]     = useState(false)
+  const [adding,    setAdding]    = useState(false)
   if (dismissed) return null
 
   const { text, showLink } = copyFor(props)
+  const isWatchlistSuggestion = props.variant === 'watchlist-suggestion'
+
+  const handleAddToWatchlist = async () => {
+    if (!props.authToken || !props.gapText) return
+    setAdding(true)
+    try {
+      const res = await fetch('/api/watchlist', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${props.authToken}` },
+        body:    JSON.stringify({ text: props.gapText }),
+      })
+      if (res.ok) setAdded(true)
+    } finally {
+      setAdding(false)
+    }
+  }
 
   return (
     <div
@@ -83,6 +108,22 @@ export default function GraphNudgeLine(props: GraphNudgeLineProps) {
           </>
         )}
       </p>
+      {isWatchlistSuggestion && (
+        added ? (
+          <span style={{ fontSize: 11.5, color: 'var(--gold)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            Added
+          </span>
+        ) : (
+          <button
+            className="btn-ghost"
+            onClick={handleAddToWatchlist}
+            disabled={adding}
+            style={{ fontSize: 11, padding: '5px 12px', flexShrink: 0, whiteSpace: 'nowrap' }}
+          >
+            {adding ? 'Adding…' : 'Add to Watchlist'}
+          </button>
+        )
+      )}
       <button
         onClick={() => setDismissed(true)}
         aria-label="Dismiss"

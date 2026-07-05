@@ -245,6 +245,7 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [graphNudge, setGraphNudge] = useState<
     | { show: true; variant: 'new-connection'; edgeType: string }
     | { show: true; variant: 'milestone'; edgeCount: number; milestone: number }
+    | { show: true; variant: 'watchlist-suggestion'; gapText: string }
     | null
   >(null)
   // S2-07: Opening Ceremony dismiss flag — gates persona streaming for 3s on sessions 1-3
@@ -1641,6 +1642,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                 edgeType={graphNudge.variant === 'new-connection' ? graphNudge.edgeType : undefined}
                 edgeCount={graphNudge.variant === 'milestone' ? graphNudge.edgeCount : undefined}
                 milestone={graphNudge.variant === 'milestone' ? graphNudge.milestone : undefined}
+                gapText={graphNudge.variant === 'watchlist-suggestion' ? graphNudge.gapText : undefined}
+                authToken={authTokenSV}
                 mirrorActive={mirrorActive}
               />
             )}

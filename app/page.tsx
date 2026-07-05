@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
+import WatchlistSection from '@/components/WatchlistSection'
+import { isWatchlistEnabled } from '@/lib/feature-flags'
 import AuthPanel from '@/components/AuthPanel'
 import BehaviorAlerts from '@/components/BehaviorAlerts'
 import dynamic from 'next/dynamic'
@@ -1023,6 +1025,21 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* Sprint W1 — Watchlist. Gated behind NEXT_PUBLIC_WATCHLIST_ENABLED;
+              see lib/feature-flags.ts. onGraduate hands the item's text back
+              here to pre-fill + focus the existing decision input — no
+              navigation needed, Watchlist lives on this same page. */}
+          {isWatchlistEnabled() && (
+            <WatchlistSection
+              authToken={authToken}
+              onGraduate={(text) => {
+                setDecision(text)
+                setInputRevealed(true)
+                setTimeout(() => textareaRef.current?.focus(), 380)
+              }}
+            />
+          )}
 
           {/* ── Chunk 4a — Proactive Pattern Card ─────────── */}
           {mirrorUnlocked && sessions.length >= 5 && (

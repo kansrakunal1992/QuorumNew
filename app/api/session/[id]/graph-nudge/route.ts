@@ -1,5 +1,14 @@
 // app/api/session/[id]/graph-nudge/route.ts
-// Sprint QW-3 — powers the 6+ session SessionView graph nudge.
+// Sprint QW-3 (graph variants) + Sprint W1 (watchlist-suggestion variant) —
+// powers the single shared end-of-flow prompt slot in SessionView.
+//
+// Kept at this path rather than renamed to something more neutral like
+// post-session-prompt — a real naming imprecision now that this also returns
+// a non-graph variant, flagged deliberately rather than silently left, but
+// judged not worth the cascading rename across this route + SessionView.tsx
+// for what's a documentation concern, not a correctness one (unlike the
+// wrong-TABLE bugs from the earlier audit pass, which this is not an
+// instance of).
 //
 // Deliberately NOT the full /api/mirror/graph payload: this only needs to
 // answer "should anything show, and which variant" — running the full
@@ -7,23 +16,27 @@
 // session completion would be needless overhead for what's ultimately a
 // single boolean + a couple of scalars.
 //
-// Two variants, mutually exclusive per call:
-//   'new-connection' (non-veteran, sessions 6 through VETERAN_SESSION_THRESHOLD-1)
-//     — fires when a graph_edges row involving THIS session exists that's
-//     newer than the last time this nudge was shown to this user (or any
-//     edge at all, if it's never been shown before). Event-gated, not
-//     cadence-gated — see the POV doc (item3-4plus-sessions-pov-plan.md)
-//     for why this matters: a static recurring message is what causes
-//     habituation, a genuine new event is what earns attention.
-//   'milestone' (veteran, VETERAN_SESSION_THRESHOLD+ sessions)
-//     — fires when the user's total (non-dismissed) edge count has crossed
-//     a new rung on the MILESTONES ladder since the last one celebrated.
-//     Deliberately NOT session-count-based — a veteran's graph growing is
-//     the actual thing worth celebrating, not their session count alone.
+// Three variants, mutually exclusive per call, tried in this order:
+//   1. 'milestone' (veteran, VETERAN_SESSION_THRESHOLD+ sessions) — fires
+//      when total (non-dismissed) edge count crosses a new MILESTONES rung.
+//   2. 'new-connection' (non-veteran) — fires when a graph_edges row
+//      involving THIS session exists that's newer than the last time this
+//      slot was shown to this user (or any edge, if never shown before).
+//   3. 'watchlist-suggestion' (either cohort, fallback only, Sprint W1) —
+//      if neither graph variant fired, and NEXT_PUBLIC_WATCHLIST_ENABLED is
+//      on, offers to add this session's first non-empty examiner_gap_N
+//      phrase to the person's Watchlist. Deliberately sourced from a field
+//      the Examiner already computed for this exact session — never a new
+//      detection pass, so this can't become the fake-insight problem the
+//      rest of this build has been careful to avoid. Graph variants always
+//      win when both are eligible — a real new connection or milestone is
+//      treated as the more "earned" moment; the watchlist suggestion is the
+//      lower-stakes fallback, not a competing headline.
 //
-// Both variants share one cooldown (last_graph_nudge_shown_at) so a user
-// can never see either nudge more than once per COOLDOWN_HOURS, regardless
-// of how many qualifying events pile up in between.
+// All three share ONE cooldown (last_graph_nudge_shown_at) — whichever
+// variant fires, it updates the same timestamp, so a user can never see
+// more than one prompt from this slot per COOLDOWN_HOURS regardless of which
+// variant it was.
 //
 // Auth: session UUID + a real resolved user_id are both required — unlike
 // read-only routes such as bias-note, this route WRITES nudge-shown state,
@@ -31,6 +44,7 @@
 
 import { NextResponse }                        from 'next/server'
 import { createServiceClient, createClient }   from '@/lib/supabase'
+import { isWatchlistEnabled }                  from '@/lib/feature-flags'
 
 const VETERAN_SESSION_THRESHOLD  = 20
 const COOLDOWN_HOURS             = 72
@@ -43,6 +57,7 @@ type NudgeResponse =
   | { show: false }
   | { show: true; variant: 'new-connection'; edgeType: string }
   | { show: true; variant: 'milestone'; edgeCount: number; milestone: number }
+  | { show: true; variant: 'watchlist-suggestion'; gapText: string }
 
 export async function GET(
   req: Request,
@@ -132,7 +147,8 @@ export async function GET(
         milestone: highestReached,
       })
     }
-    return NextResponse.json({ show: false })
+    const fallback = await tryWatchlistSuggestion(supabase, userId, sessionId)
+    return NextResponse.json(fallback)
   }
 
   // ── Non-veteran: new-edge-since-last-shown check (Option A) ────────────
@@ -153,7 +169,10 @@ export async function GET(
   }
 
   const { data: freshEdge } = await edgeQuery.maybeSingle()
-  if (!freshEdge) return NextResponse.json({ show: false })
+  if (!freshEdge) {
+    const fallback = await tryWatchlistSuggestion(supabase, userId, sessionId)
+    return NextResponse.json(fallback)
+  }
 
   await supabase.from('user_preferences').upsert(
     { user_id: userId, last_graph_nudge_shown_at: new Date().toISOString() },
@@ -165,4 +184,35 @@ export async function GET(
     variant:  'new-connection',
     edgeType: freshEdge.edge_type as string,
   })
+}
+
+// ── Watchlist-suggestion fallback (Sprint W1) ────────────────────────────
+// Only reached when neither graph variant fired. Sources the suggestion
+// from this session's own examiner_gap_1/2/3 — real, already-computed by
+// the Examiner during this exact session (see lib/ontology-tagger.ts) —
+// never a new detection pass run just to manufacture a prompt.
+async function tryWatchlistSuggestion(
+  supabase: ReturnType<typeof createServiceClient>,
+  userId:   string,
+  sessionId: string,
+): Promise<NudgeResponse> {
+  if (!isWatchlistEnabled()) return { show: false }
+
+  const { data: ont } = await supabase
+    .from('sessions_ontology')
+    .select('examiner_gap_1, examiner_gap_2, examiner_gap_3')
+    .eq('session_id', sessionId)
+    .maybeSingle()
+
+  const gapText = [ont?.examiner_gap_1, ont?.examiner_gap_2, ont?.examiner_gap_3]
+    .find((g): g is string => typeof g === 'string' && g.trim().length > 0)
+
+  if (!gapText) return { show: false }
+
+  await supabase.from('user_preferences').upsert(
+    { user_id: userId, last_graph_nudge_shown_at: new Date().toISOString() },
+    { onConflict: 'user_id' },
+  )
+
+  return { show: true, variant: 'watchlist-suggestion', gapText: gapText.trim() }
 }
