@@ -17,7 +17,7 @@ interface Props {
   onDismiss: () => void
 }
 
-const DURATION = 2500
+const DURATION = 4000  // 1.6x the original 2500ms — gives the beat enough weight to register
 const MIN_VALID_LEANS = 4
 
 export default function TensionInterstitial({ leans, onDismiss }: Props) {

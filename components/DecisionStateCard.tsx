@@ -10,8 +10,13 @@
 //   review_date:      When to revisit. Primary retention hook — drives
 //                     Monthly Judgment Review open-loops list (Chunk 2).
 //
-// State machine: 'prompt' → 'form' → 'saved'
-// Skippable at both prompt and form stages (stores nothing — correct).
+// State machine: 'form' → 'saved' | 'skipped'
+// S3-02: removed the 'prompt' step — it added a click before the user could
+// even see what was being asked, and the "Capture position" vs "Skip" choice
+// read as a 50/50 decision rather than the low-friction default it should be.
+// The form now renders immediately post-synthesis; "Skip" (de-emphasized,
+// plain text, no bounding box) is the one-click way out. Skipping stores
+// nothing — correct.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
@@ -20,7 +25,7 @@ interface Props {
   sessionId: string
 }
 
-type Mode = 'prompt' | 'form' | 'saved'
+type Mode = 'form' | 'saved' | 'skipped'
 
 interface Commitment {
   leaning:          string
@@ -29,7 +34,7 @@ interface Commitment {
 }
 
 export default function DecisionStateCard({ sessionId }: Props) {
-  const [mode,     setMode]     = useState<Mode>('prompt')
+  const [mode,     setMode]     = useState<Mode>('form')
   const [leaning,  setLeaning]  = useState('')
   const [switchC,  setSwitchC]  = useState('')
   const [date,     setDate]     = useState('')
@@ -66,62 +71,6 @@ export default function DecisionStateCard({ sessionId }: Props) {
     }
   }
 
-  // ── Prompt ───────────────────────────────────────────────────────────────
-  if (mode === 'prompt') {
-    return (
-      <div style={{
-        borderRadius: 14,
-        border:       '1px solid var(--border-mid)',
-        background:   'var(--bg-card)',
-        padding:      '20px 24px',
-        display:      'flex',
-        alignItems:   'center',
-        justifyContent: 'space-between',
-        gap:          20,
-        flexWrap:     'wrap',
-        marginTop:    12,
-      }}>
-        <div>
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', margin: 0 }}>
-            Before you close — where does this leave you?
-          </p>
-          <p style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 4 }}>
-            Capturing your position now prevents hindsight from rewriting it later.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexShrink: 0, alignItems: 'center' }}>
-          <button
-            className="btn-primary"
-            style={{ fontSize: 13, padding: '9px 20px' }}
-            onClick={() => setMode('form')}
-          >
-            Capture position
-          </button>
-          {/* S3-02: was a bordered btn-ghost button with near-equal visual weight to the
-              primary CTA — sitting right beside it made skipping feel like an equally
-              valid default. Plain text link, lower contrast, no bounding box — still one
-              click away, but reads as the secondary path it actually is. */}
-          <button
-            style={{
-              fontSize:   12,
-              padding:    '9px 4px',
-              background: 'none',
-              border:     'none',
-              color:      'var(--text-4)',
-              cursor:     'pointer',
-              fontFamily: 'inherit',
-              textDecoration: 'underline',
-              textUnderlineOffset: 2,
-            }}
-            onClick={() => setMode('saved')}   // skip — component disappears
-          >
-            Skip
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   // ── Form ─────────────────────────────────────────────────────────────────
   if (mode === 'form') {
     return (
@@ -140,9 +89,12 @@ export default function DecisionStateCard({ sessionId }: Props) {
           letterSpacing: '0.14em',
           textTransform: 'uppercase',
           color:         'var(--text-4)',
-          marginBottom:  14,
+          marginBottom:  6,
         }}>
           Decision position
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 16, lineHeight: 1.5 }}>
+          Capturing this now prevents hindsight from rewriting it later. Takes a minute — skip if you'd rather not.
         </p>
 
         {/* Field 1: Leaning + Next move (clubbed) */}
@@ -259,12 +211,23 @@ export default function DecisionStateCard({ sessionId }: Props) {
           >
             {saving ? 'Saving…' : 'Save position'}
           </button>
+          {/* S3-02: de-emphasized — plain text, no border, lower contrast than the */}
+          {/* primary "Save position" button beside it. This is the one-click skip. */}
           <button
-            className="btn-ghost"
-            style={{ fontSize: 12 }}
-            onClick={() => setMode('prompt')}
+            style={{
+              fontSize:   12,
+              padding:    '9px 4px',
+              background: 'none',
+              border:     'none',
+              color:      'var(--text-4)',
+              cursor:     'pointer',
+              fontFamily: 'inherit',
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
+            }}
+            onClick={() => setMode('skipped')}
           >
-            Cancel
+            Skip
           </button>
         </div>
       </div>

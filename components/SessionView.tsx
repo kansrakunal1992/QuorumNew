@@ -29,6 +29,7 @@ import DecisionGraph        from './DecisionGraph'        // S1-07: Graph teaser
 import GraphNudgeLine       from './GraphNudgeLine'        // QW-3: Graph nudge (sessions 6+)
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
 import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesis tension beat
+import EarlyEchoCard        from './EarlyEchoCard'         // Sprint: second-use early signal, sessions 2-4
 import type { Lean }        from './TensionInterstitial'
 import SessionCompleteBadge from './SessionCompleteBadge' // S1-06: Council complete timestamp
 import {
@@ -1508,6 +1509,16 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
+              {/* ── Early Echo Card — second-use signal, sessions 2-4 ── */}
+              {/* Self-gates internally (count<2 or >=5 renders nothing, dismiss via  */}
+              {/* sessionStorage) — no additional session-count logic needed here.    */}
+              {/* Fires post-synthesis, same beat as ValidationCard above it.         */}
+              {synthesisDone && (
+                <div className="sv-fade sv-fade-2">
+                  <EarlyEchoCard sessionId={session.id} />
+                </div>
+              )}
+
 
               {/* ── 2b. Rule Recall Banner (Sprint Chunk 1 fix) ──────────── */}
               {/* Fires when ontologyReady — BEFORE examiner submission so the
@@ -1539,11 +1550,6 @@ export default function SessionView({ session: initialSession, initialMessages =
                 <OpeningCeremonyCard onDismiss={() => setCeremonyDismissed(true)} />
               )}
 
-              {/* ── S3-01: Tension interstitial — gates synthesis for a brief beat ── */}
-              {interstitialActive && (
-                <TensionInterstitial leans={personaLeans} onDismiss={() => setInterstitialDismissed(true)} />
-              )}
-
               {/* ── 3. Relevance label ── */}
               {gridReordered && !redirectBlocked && (
                 <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0 12px' }}>
@@ -1556,6 +1562,15 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
+
+              {/* ── S3-01: Tension interstitial — gates synthesis for a brief beat ── */}
+              {/* Repositioned to sit at the persona grid rather than near the Examiner: */}
+              {/* it only ever renders once allPersonasDone is true, so by the time it   */}
+              {/* appears the user's attention is on the six cards below, not the        */}
+              {/* Examiner section they finished with several beats earlier.             */}
+              {interstitialActive && (
+                <TensionInterstitial leans={personaLeans} onDismiss={() => setInterstitialDismissed(true)} />
+              )}
 
               {/* ── 4. Six persona panels ── */}
               <div
