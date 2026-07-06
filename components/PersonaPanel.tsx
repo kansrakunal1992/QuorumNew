@@ -139,11 +139,22 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     if (realcost) setRealCostText(realcost)
     // Strip all four tag blocks + any leading blank line from prose.
     // <lean> is a machine-readable classification only — never state, never displayed.
+    //
+    // Bug fix: this runs on every streamed chunk (accumulated so far), not just on
+    // the final response. The four regexes below only match a FULLY CLOSED tag —
+    // while a chunk boundary lands between an opening tag (e.g. "<lean>") and its
+    // closing tag, the dangling open tag + partial content (e.g. "<lean>proc")
+    // doesn't match any of them and briefly renders raw on screen. <lean> is the
+    // last of the four header tags, so it's the one most exposed to this window.
+    // The trailing guard below strips any still-open header tag (and everything
+    // after it) the same way the <verdict> "guard: open tag without close" pattern
+    // already does elsewhere in the codebase (SynthesisCard, RecordExport, etc).
     return raw
       .replace(/<lens>[\s\S]*?<\/lens>/g, '')
       .replace(/<position>[\s\S]*?<\/position>/g, '')
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
+      .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
       .replace(/^\s+/, '')
   }, [])
 
@@ -155,6 +166,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<position>[\s\S]*?<\/position>/g, '')
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
+      .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
       .replace(/^\s+/, '')
   }, [])
 

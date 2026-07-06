@@ -31,6 +31,15 @@ interface Props {
   interstitialGateOpen?: boolean
   /** O3: Mirror subscription state — gates the auto-surfaced Decision-Maker Observation line */
   mirrorActive?: boolean
+  /** Bug fix: raw synthesis text already persisted in `messages` for this session
+   *  (persona='synthesis'), loaded server-side in app/session/[id]/page.tsx the same
+   *  way PersonaPanel's initialContent works. When present, the synthesis is rendered
+   *  from this cached text instead of re-streaming a brand-new AI synthesis — previously
+   *  navigating back to SessionView (e.g. from the record page) re-ran the full council
+   *  synthesis every time, even though all six advisor panels correctly reused their
+   *  cached output. Only consulted for the FIRST synthesis (version 0); explicit
+   *  re-syntheses (validation correction, examiner update) still regenerate normally. */
+  initialContent?: string
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -49,9 +58,20 @@ export default function SynthesisCard({
   hasValidationCorrection, // S2-05
   interstitialGateOpen = true, // S3-01 — defaults true so it's never a silent regression if unset
   mirrorActive, // O3
+  initialContent, // bug fix: cached synthesis text — skips regeneration when present
 }: Props) {
-  const [synthesis,    setSynthesis]   = useState('')
-  const [state,        setState]       = useState<State>('waiting')
+  // Bug fix: strip tags out of cached initialContent the same way the streaming
+  // loop's final pass does, so a returning visit renders identically to a freshly
+  // completed synthesis instead of showing raw <verdict>/<tension> markup.
+  const stripSynthesisTags = (raw: string): string =>
+    raw
+      .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
+      .replace(/<verdict>[\s\S]*/g, '')
+      .replace(/<\/?tension>/g, '')
+      .trimStart()
+
+  const [synthesis,    setSynthesis]   = useState(() => initialContent ? stripSynthesisTags(initialContent) : '')
+  const [state,        setState]       = useState<State>(initialContent ? 'done' : 'waiting')
   const [briefText,    setBriefText]   = useState('')
   const [briefState,   setBriefState]  = useState<'idle'|'streaming'|'done'|'error'>('idle')
   const [showBrief,    setShowBrief]   = useState(false)
@@ -75,14 +95,24 @@ export default function SynthesisCard({
   const [observationFetched,  setObservationFetched]  = useState(false)
 
   // S1-03: verdict + tension
-  const [verdictText,  setVerdictText]  = useState('')
-  const [tensionText,  setTensionText]  = useState('')
+  const [verdictText,  setVerdictText]  = useState(() => {
+    if (!initialContent) return ''
+    const m = initialContent.match(/<verdict>([\s\S]*?)<\/verdict>/)
+    return m?.[1]?.trim() ?? ''
+  })
+  const [tensionText,  setTensionText]  = useState(() => {
+    if (!initialContent) return ''
+    const m = initialContent.match(/<tension>([\s\S]*?)<\/tension>/)
+    return m?.[1]?.trim() ?? ''
+  })
   const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
   const verdictAccRef  = useRef('')
   const tensionAccRef  = useRef('')
   // Raw accumulated stream text — used by renderProse to locate tension tags
   // without relying on trimmed state strings (avoids whitespace indexOf mismatches).
-  const rawAccRef = useRef('')
+  // Bug fix: seed with initialContent so renderProse's tension-highlight logic works
+  // identically for a cached synthesis as it does for a freshly streamed one.
+  const rawAccRef = useRef(initialContent ?? '')
 
   // Truncates to the first complete sentence — guards against the model putting
   // multiple sentences inside <verdict>. Applied only at render time.
@@ -141,6 +171,19 @@ export default function SynthesisCard({
     } catch { /* non-blocking — UI already updated */ }
   }, [sessionId])
 
+  // Bug fix: a cached synthesis is already "complete" from SessionView's point of
+  // view (badge, record receipt, contradiction/bias-note fetches, etc. all gate on
+  // onSynthesisComplete having fired) — fire it once on mount instead of waiting on
+  // a network call that will never arrive because we're not making one.
+  const initialContentFiredRef = useRef(false)
+  useEffect(() => {
+    if (initialContent && !initialContentFiredRef.current) {
+      initialContentFiredRef.current = true
+      onSynthesisComplete?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const completedCount = Object.keys(personaResponses).length
 
   // O3: once synthesis completes, auto-fetch the Decision-Maker Observation for
@@ -189,6 +232,14 @@ export default function SynthesisCard({
   // beat once all advisors finish, before the actual synthesis fetch begins.
   useEffect(() => {
     if (!allDone || !examinerReady || redirectBlocked || !interstitialGateOpen) return   // Sprint 11b: redirectBlocked blocks synthesis permanently
+    // Bug fix: version 0 is the initial synthesis. If we already loaded a persisted
+    // synthesis for this session (e.g. user navigated back to SessionView from the
+    // record page), skip re-running it — the six persona panels already do this via
+    // their own initialContent prop; synthesis was the one place still re-firing a
+    // brand-new AI call (and inserting a duplicate row into `messages`) every time.
+    // Explicit re-syntheses (validation correction, examiner follow-up) bump version
+    // past 0 and are intentionally NOT skipped — those must regenerate for real.
+    if (version === 0 && initialContent) return
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -346,7 +397,7 @@ export default function SynthesisCard({
     }
     run()
     return () => { ctrl.abort() }
-  }, [allDone, examinerReady, redirectBlocked, interstitialGateOpen, version]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allDone, examinerReady, redirectBlocked, interstitialGateOpen, version, initialContent]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerateBrief = async () => {
     briefAbortRef.current?.abort()

@@ -1030,6 +1030,21 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Bug fix: session-0 email capture — previously AuthPanel only rendered
+              inside the "returning users" history block (sessions.length > 0), so a
+              brand-new user had NO way to link an email before running their first
+              session. That first session would then only be linkable retroactively
+              via the record-page EmailCaptureCard / magic-link sweep, which is a much
+              more fragile path. Surfacing the same AuthPanel here — before any session
+              exists — lets the very first session be created with user_email already
+              attached server-side (see handleSubmit's session POST body), so no
+              retroactive linking is needed for it at all. */}
+          {!userEmail && sessions.length === 0 && !loadingHist && (
+            <div style={{ marginTop: 20 }}>
+              <AuthPanel onAuthenticated={email => setUserEmail(email)} userEmail={userEmail} />
+            </div>
+          )}
+
           {/* Sprint W1 — Watchlist. Gated behind NEXT_PUBLIC_WATCHLIST_ENABLED;
               see lib/feature-flags.ts. onGraduate hands the item's text back
               here to pre-fill + focus the existing decision input — no

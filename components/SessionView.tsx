@@ -163,7 +163,31 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
-  const [completedResponses, setCompletedResponses] = useState<Record<string, string>>(initialMessages)
+
+  // Bug fix: `initialMessages` (built server-side from the `messages` table) contains
+  // an entry per DISTINCT persona value ever saved for this session — which includes
+  // 'synthesis' (and potentially 'decision_brief') alongside the six real council
+  // personas. Seeding completedResponses directly from initialMessages was leaking
+  // those non-advisor entries into the advisor-response map: it inflated the
+  // "all personas done" count and, on any real re-synthesis, would have fed the PRIOR
+  // synthesis text back into the synthesis prompt as if it were a 7th advisor's
+  // response. Filter to PERSONA_ORDER keys only; the synthesis text is threaded to
+  // SynthesisCard separately via initialSynthesisContent below.
+  const [completedResponses, setCompletedResponses] = useState<Record<string, string>>(
+    Object.fromEntries(
+      Object.entries(initialMessages).filter(([key]) => (PERSONA_ORDER as string[]).includes(key))
+    )
+  )
+  // Bug fix (council synthesis re-run on back-navigation): the persisted synthesis
+  // text for this session, if any — passed to SynthesisCard so it renders the cached
+  // result instead of firing a brand-new AI synthesis call every time SessionView
+  // remounts (e.g. navigating back from the record page).
+  //
+  // Guarded to sessionKey === 0: initialMessages is a static prop from the original
+  // server-rendered session and never updates client-side, so after Reanalyze creates
+  // a brand-new session id, this must NOT carry the prior session's synthesis text
+  // forward — the new session has no synthesis yet and must generate one for real.
+  const initialSynthesisContent = sessionKey === 0 ? initialMessages['synthesis'] : undefined
   const [decisionExpanded, setDecisionExpanded] = useState(false)
   const [contextExpanded,  setContextExpanded]  = useState(false)
 
@@ -1426,6 +1450,9 @@ export default function SessionView({ session: initialSession, initialMessages =
                   interstitialGateOpen={interstitialGateOpen}
                   // O3: gates the auto-surfaced Decision-Maker Observation line
                   mirrorActive={mirrorActive}
+                  // Bug fix: cached synthesis from a prior visit — skips regenerating
+                  // it on remount when already persisted for this session.
+                  initialContent={initialSynthesisContent}
                 />
               </div>
 
@@ -1557,14 +1584,21 @@ export default function SessionView({ session: initialSession, initialMessages =
                       structuralContext={structuralContext ?? undefined}
                       onShareContext={(text) => handleShareContext(key, text)}
                       onExaminerUpdateComplete={handleExaminerUpdateComplete}
-                      initialContent={initialMessages[key]}
+                      initialContent={sessionKey === 0 ? initialMessages[key] : undefined}
                       // S1-02: Sequential streaming — each persona unlocks only after
                       // the previous one completes. initialContent (DB load) bypasses
                       // the gate so re-reads render instantly without cascading delays.
                       // S2-07: also gated on ceremonyGateOpen — sessions 1–3 hold for the
                       // 3s Opening Ceremony beat before the first advisor begins streaming.
+                      //
+                      // Bug fix: initialMessages is a static prop from the ORIGINAL
+                      // server-rendered session and never updates client-side. Without
+                      // the sessionKey===0 guard, reanalyzing a session (which creates a
+                      // brand-new session id) would still see the PRIOR session's
+                      // persona text here, rendering stale cached content instead of
+                      // running the six advisors fresh against the new decision text.
                       canStream={
-                        !!initialMessages[key] ||
+                        (sessionKey === 0 && !!initialMessages[key]) ||
                         (examinerSubmitted && ceremonyGateOpen && personaIndex <= streamUnlockedUpTo)
                       }
                       initialExaminerContext={examinerInitialContext[key]}

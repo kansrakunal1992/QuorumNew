@@ -157,8 +157,8 @@ export default function PushEnablePrompt({ authToken }: Props) {
       <div style={{
         marginTop: 16,
         padding: '14px 16px',
-        background: '#0f0f0f',
-        border: '1px solid #1e1e1e',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-dim)',
         borderRadius: 10,
         display: 'flex',
         alignItems: 'flex-start',
@@ -167,17 +167,17 @@ export default function PushEnablePrompt({ authToken }: Props) {
       }}>
         <span style={{ fontSize: 18, lineHeight: 1, marginTop: 1 }}>📲</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 600, color: '#c0b89a', fontFamily: 'var(--font-sans, DM Sans, sans-serif)' }}>
+          <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 600, color: 'var(--gold)', fontFamily: 'var(--font-sans, DM Sans, sans-serif)' }}>
             Enable notifications
           </p>
-          <p style={{ margin: 0, fontSize: 12, color: '#666', lineHeight: 1.55 }}>
-            Tap <strong style={{ color: '#888' }}>Share</strong> → <strong style={{ color: '#888' }}>Add to Home Screen</strong>, then open from there to receive occasional check-ins, spaced out — never back-to-back.
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--text-4)', lineHeight: 1.55 }}>
+            Tap <strong style={{ color: 'var(--text-3)' }}>Share</strong> → <strong style={{ color: 'var(--text-3)' }}>Add to Home Screen</strong>, then open from there to receive occasional check-ins, spaced out — never back-to-back.
           </p>
         </div>
         <button
           onClick={handleDismiss}
           aria-label="Dismiss"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', fontSize: 16, padding: '2px 4px', lineHeight: 1, flexShrink: 0 }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', fontSize: 16, padding: '2px 4px', lineHeight: 1, flexShrink: 0 }}
         >
           ×
         </button>
@@ -191,15 +191,15 @@ export default function PushEnablePrompt({ authToken }: Props) {
       <div style={{
         marginTop: 16,
         padding: '12px 16px',
-        background: '#0c1a0e',
-        border: '1px solid #1a3320',
+        background: 'var(--success-bg)',
+        border: '1px solid var(--success-border)',
         borderRadius: 10,
         display: 'flex',
         alignItems: 'center',
         gap: 10,
       }}>
-        <span style={{ color: '#4caf72', fontSize: 15 }}>✓</span>
-        <p style={{ margin: 0, fontSize: 13, color: '#4caf72' }}>
+        <span style={{ color: 'var(--success-text)', fontSize: 15 }}>✓</span>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--success-text)' }}>
           Notifications enabled — you'll get occasional check-ins, never back-to-back.
         </p>
       </div>
@@ -211,8 +211,8 @@ export default function PushEnablePrompt({ authToken }: Props) {
     <div style={{
       marginTop: 16,
       padding: '14px 16px',
-      background: '#0f0f0f',
-      border: '1px solid #1e1e1e',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-dim)',
       borderRadius: 10,
       display: 'flex',
       alignItems: 'center',
@@ -221,10 +221,10 @@ export default function PushEnablePrompt({ authToken }: Props) {
     }}>
       <span style={{ fontSize: 17, lineHeight: 1, flexShrink: 0 }}>🔔</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#c0b89a', fontFamily: 'var(--font-sans, DM Sans, sans-serif)' }}>
+        <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--gold)', fontFamily: 'var(--font-sans, DM Sans, sans-serif)' }}>
           Get occasional check-ins
         </p>
-        <p style={{ margin: 0, fontSize: 12, color: '#666', lineHeight: 1.5 }}>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
           Spaced out, never back-to-back — turn off anytime.
         </p>
       </div>
@@ -233,9 +233,9 @@ export default function PushEnablePrompt({ authToken }: Props) {
           onClick={handleDismiss}
           style={{
             background: 'none',
-            border: '1px solid #2a2a2a',
+            border: '1px solid var(--border-mid)',
             borderRadius: 6,
-            color: '#555',
+            color: 'var(--text-4)',
             fontSize: 12,
             padding: '6px 10px',
             cursor: 'pointer',
@@ -248,10 +248,10 @@ export default function PushEnablePrompt({ authToken }: Props) {
           onClick={handleEnable}
           disabled={state === 'loading'}
           style={{
-            background: state === 'loading' ? '#1a1600' : '#c9a84c',
+            background: state === 'loading' ? 'var(--gold-dim)' : 'var(--gold)',
             border: 'none',
             borderRadius: 6,
-            color: state === 'loading' ? '#c9a84c' : '#0a0a12',
+            color: state === 'loading' ? 'var(--gold)' : 'var(--bg-void)',
             fontSize: 12,
             fontWeight: 700,
             padding: '6px 14px',
