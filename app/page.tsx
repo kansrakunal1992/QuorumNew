@@ -17,7 +17,7 @@ const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), 
 import CalibrationRevealCard from '@/components/CalibrationRevealCard'
 import OnboardingTour from '@/components/OnboardingTour'
 import type { TourStep } from '@/components/OnboardingTour'
-import { buildPWAInstallStep } from '@/components/OnboardingTour'
+import { buildPWAInstallStep, buildWatchlistTourStep } from '@/components/OnboardingTour'
 import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
 
 // ── Icons ────────────────────────────────────────────────
@@ -208,9 +208,13 @@ export default function Home() {
       const done    = localStorage.getItem('quorum_tour.home')
       const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
       if (!done && !skipped) {
-        // Build steps: base + optional PWA install step
-        const pwaStep = buildPWAInstallStep()
-        setHomeTourSteps(pwaStep ? [...HOME_STEPS_BASE, pwaStep] : HOME_STEPS_BASE)
+        // Build steps: base + optional Watchlist step + optional PWA install step.
+        // Watchlist ordered first — it relates to page content just walked
+        // through; PWA install is a final "before you go" meta step, kept last.
+        const watchlistStep = buildWatchlistTourStep()
+        const pwaStep       = buildPWAInstallStep()
+        const extraSteps    = [watchlistStep, pwaStep].filter((s): s is TourStep => s !== null)
+        setHomeTourSteps([...HOME_STEPS_BASE, ...extraSteps])
         const t = setTimeout(() => setShowHomeTour(true), 600)
         return () => clearTimeout(t)
       }

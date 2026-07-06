@@ -105,7 +105,9 @@ export default function WatchlistSection({ authToken, onGraduate }: WatchlistSec
   if (!authToken) return null // Watchlist requires a signed-in user — no anonymous path
 
   return (
-    <div style={{
+    <div
+      data-tour-id="home-watchlist"
+      style={{
       background:   'var(--bg-card)',
       border:       '1px solid var(--border-mid)',
       borderRadius: 13,

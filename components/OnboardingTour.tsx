@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { isWatchlistEnabled } from '@/lib/feature-flags'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,30 @@ export interface TourStep {
   heading:         string
   body:            string
   preferredSide:   'top' | 'bottom'
+}
+
+// ── Shared Watchlist step builder (Sprint W1) ────────────────────────────────
+// Returns the Watchlist step only when NEXT_PUBLIC_WATCHLIST_ENABLED is on —
+// a disabled feature should never appear in the tour, same principle as
+// every other Watchlist integration point in this build (see
+// lib/feature-flags.ts). Points at the actual home page section
+// (data-tour-id="home-watchlist" on WatchlistSection's outer container), so
+// unlike the PWA step this always has a real target — targetSelector is
+// never null here.
+//
+// Copy is deliberately explicit about the Council/Watchlist boundary, not
+// coy about it — the design intent throughout has been that this distinction
+// stays visible everywhere the feature is mentioned, including here.
+
+export function buildWatchlistTourStep(): TourStep | null {
+  if (!isWatchlistEnabled()) return null
+  return {
+    id:             'home-watchlist',
+    targetSelector: '[data-tour-id="home-watchlist"]',
+    heading:        'Not ready to convene the Council yet?',
+    body:           'Add it to your Watchlist instead — a private parking lot for things you\'re keeping an eye on. Watchlist entries are never analyzed by the Council and never become part of your Decision Graph, until you explicitly bring one in.',
+    preferredSide:  'top',
+  }
 }
 
 // ── Shared PWA-install step builder ──────────────────────────────────────────
