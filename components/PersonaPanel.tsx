@@ -566,8 +566,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </div>
         )}
 
-        {structuralCitationBlock}
-
         {/* Pushback exchanges */}
         {exchanges.map((ex, i) => (
           <div key={i} style={{ marginTop: 18 }}>
