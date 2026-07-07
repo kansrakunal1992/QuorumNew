@@ -1199,9 +1199,10 @@ export default function SessionView({ session: initialSession, initialMessages =
 
               {/* S3-04: Structural memory badge — a persistent, glanceable marker at the
                   top of the page that this decision is drawing on structural/longitudinal
-                  memory. Complements S1-07's echo banner (which explains WHICH prior
-                  decision, on the Pattern Analyst card) by making the fact visible
-                  immediately, before the user scrolls to any advisor card. */}
+                  memory. Complements the R6 per-persona citation badges (which appear on
+                  whichever of the 5 eligible advisor cards actually drew on it, quoting
+                  their specific observation) by making the fact visible immediately,
+                  before the user scrolls to any advisor card. */}
               {structuralContextActive && (
                 <div style={{
                   display:      'inline-flex',
@@ -1621,8 +1622,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                       onPersonaComplete={() =>
                         setStreamUnlockedUpTo(prev => Math.max(prev, personaIndex + 1))
                       }
-                      // S1-07: structural echo banner — only pattern_analyst gets the prominent banner
-                      structuralContextActive={structuralContextActive && key === 'pattern_analyst'}
+                      // R6: match date/session id are session-wide (which past decision
+                      // matched) and passed to every persona unconditionally — harmless
+                      // for the 4 non-eligible/uncited cases, since each card's citation
+                      // badge only renders when THAT persona's own output actually
+                      // contains a <structural> tag. No client-side eligibility list needed.
                       structuralMatchDate={structuralMatchDate}
                       structuralMatchSessionId={structuralMatchSessionId}
                     />

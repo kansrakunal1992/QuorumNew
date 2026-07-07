@@ -1,5 +1,5 @@
 /**
- * QUORUM — Persona Route (Sprint 19 / R2 / R1 / R3 / R5 update)
+ * QUORUM — Persona Route (Sprint 19 / R2 / R1 / R3 / R5 / R6 update)
  *
  * Sprint 19 additions:
  *
@@ -91,6 +91,24 @@
  *     shaped the persona's angle, they close with one sentence beginning
  *     \"Structurally, this decision [observation].\" If the record did not apply
  *     to their specific analytical angle, the sentence is omitted entirely.
+ *
+ * Sprint R6 additions:
+ *
+ *   Structural citation → tag, not free-form sentence
+ *     R5's free-form closing sentence was never parsed on the frontend — it
+ *     streamed in as anonymous prose, indistinguishable from the rest of the
+ *     persona's analysis. Worse, the only visible signal that structural
+ *     retrieval had fired at all was a single hardcoded banner on the
+ *     pattern_analyst card, driven by a session-wide flag — disconnected from
+ *     whether pattern_analyst (or any of the other 4 eligible personas) had
+ *     actually produced a citation.
+ *
+ *     Fix: the conditional sentence is now wrapped in <structural>...</structural>,
+ *     matching the existing <lens>/<position>/<realcost>/<lean> tag convention.
+ *     PersonaPanel extracts and strips it per-persona and renders a citation
+ *     badge ONLY on cards whose own output actually contains the tag — no
+ *     more session-wide flag standing in for five personas' individual
+ *     editorial judgment.
  *
  * RET-5 Sprint 2 additions:
  *
@@ -433,14 +451,19 @@ export async function POST(req: Request) {
         ? `\nCONTEXT PROVIDED BY DECISION-MAKER:\n${contextText}\n`
         : ''
 
-      // Sprint R1: append persona-specific structural directive after shared block.
-      // Sprint R5: OUTPUT TRACEABILITY appended after the mandate — conditional.
+      // Sprint R5 → R6: OUTPUT TRACEABILITY — conditional. Originally instructed a
+      // free-form closing sentence ("Structurally, this decision..."), which the
+      // frontend never parsed or displayed — it just streamed in as anonymous
+      // prose. R6 converts it to a <structural> tag, matching the existing
+      // <lens>/<position>/<realcost>/<lean> header-tag convention: the frontend
+      // extracts it, strips it from displayed prose, and renders it as a
+      // per-persona citation badge (see PersonaPanel extractHeaderTags).
       const structuralBlock = (
         structuralContext &&
         PERSONAS_WITH_STRUCTURAL_CONTEXT.has(personaKey) &&
         messages.length === 0
       )
-        ? `\n${structuralContext}\n\nYOUR STRUCTURAL MANDATE: ${getPersonaStructuralDirective(personaKey)}\n\nOUTPUT TRACEABILITY (conditional): If the structural record above has genuinely shaped your angle — if you can draw a specific parallel or contrast — close your response with exactly one sentence in this form: "Structurally, this decision [your specific observation about the single most relevant signal from the record above]." If the structural memory did not apply to your specific analytical angle, omit this sentence entirely. Do not fabricate a citation.\n`
+        ? `\n${structuralContext}\n\nYOUR STRUCTURAL MANDATE: ${getPersonaStructuralDirective(personaKey)}\n\nOUTPUT TRACEABILITY (conditional): If the structural record above has genuinely shaped your angle — if you can draw a specific parallel or contrast — include exactly one <structural>...</structural> tag, placed as the very last thing in your response, after all other prose and tags. Inside it, write one sentence naming the specific observation (e.g. "This echoes the same avoidance-of-conflict pattern that shaped your March decision on the lease renewal."). Write it so it reads naturally as a citation, not as a continuation of your analysis. If the structural memory did not apply to your specific analytical angle, omit the tag entirely. Do not fabricate a citation.\n`
         : ''
 
       if (messages.length === 0) {

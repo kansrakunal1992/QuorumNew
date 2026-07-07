@@ -121,7 +121,11 @@ export default function WatchlistSection({ authToken, onGraduate }: WatchlistSec
         <p style={{
           fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
           letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-4)', margin: 0,
+          display: 'flex', alignItems: 'center', gap: 7,
         }}>
+          {/* Matches the eye icon on the locked (signed-out) teaser in app/page.tsx —
+              same visual identity carries through from locked to unlocked state. */}
+          <span aria-hidden="true" style={{ fontSize: 13 }}>👁️</span>
           Watchlist {items.length > 0 && `(${items.length})`}
         </p>
         <span style={{ fontSize: 12, color: 'var(--text-4)' }}>{expanded ? '▴' : '▾'}</span>

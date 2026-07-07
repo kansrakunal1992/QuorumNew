@@ -74,17 +74,17 @@ interface Props {
   initialExaminerContext?: string
   /** S1-02: fires when this persona transitions to 'done' — used by SessionView for sequential streaming */
   onPersonaComplete?: () => void
-  /** S1-07: true when structural memory is active for this persona */
-  structuralContextActive?: boolean
-  /** S1-07: ISO date string of the best structural match */
+  /** R6: ISO date string of the best structural match — session-wide, reused across every
+      eligible persona. The citation badge itself is gated on this persona's own
+      structuralCitationText (parsed from its <structural> tag), not on this flag. */
   structuralMatchDate?: string | null
-  /** (d): matched past session's id — lets the echo banner link to that decision's record page */
+  /** (d): matched past session's id — lets the echo badge link to that decision's record page */
   structuralMatchSessionId?: string | null
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralContextActive, structuralMatchDate, structuralMatchSessionId }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -100,6 +100,11 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [realCostText, setRealCostText] = useState('')
   // S3-01: machine-readable lean classification — never rendered, used only by SessionView
   // to build the pre-synthesis tension interstitial. Surfaced via onComplete's raw content.
+
+  // R6: per-persona structural citation — parsed from <structural> tag. Empty means
+  // this specific persona did not find the structural record relevant to its angle;
+  // the citation badge only ever renders when this is non-empty.
+  const [structuralCitationText, setStructuralCitationText] = useState('')
 
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
@@ -125,7 +130,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const icon = ICONS[persona.key]
 
   // ── Header tag extractor ───────────────────────────────────────────────────
-  // Strips <lens>, <position>, <realcost>, <lean> tags from streamed output and returns clean prose
+  // Strips <lens>, <position>, <realcost>, <lean>, <structural> tags from streamed output and returns clean prose
   const extractHeaderTags = useCallback((raw: string): string => {
     const get = (tag: string) => {
       const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
@@ -134,9 +139,11 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     const lens     = get('lens')
     const position = get('position')
     const realcost = get('realcost')
+    const structural = get('structural')
     if (lens)     setLensText(lens)
     if (position) setPositionText(position)
     if (realcost) setRealCostText(realcost)
+    if (structural) setStructuralCitationText(structural)
     // Strip all four tag blocks + any leading blank line from prose.
     // <lean> is a machine-readable classification only — never state, never displayed.
     //
@@ -164,7 +171,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<position>[\s\S]*?<\/position>/g, '')
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-      .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+      .replace(/<structural>[\s\S]*?<\/structural>/g, '')
+      .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       .replace(/^\s+/, '')
   }, [])
@@ -177,7 +185,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<position>[\s\S]*?<\/position>/g, '')
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-      .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+      .replace(/<structural>[\s\S]*?<\/structural>/g, '')
+      .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       .replace(/^\s+/, '')
   }, [])
@@ -359,40 +368,45 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     return null
   }
 
-  return (
-    <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280, borderLeft: `3px solid ${accentColor}` }}>
-      {/* S5-01: Rate limit banner — shown when 429 is returned from /api/persona */}
-      {rateLimitInfo && (
-        <div style={{ padding: '8px 12px 4px' }}>
-          <RateLimitBanner
-            message={rateLimitInfo.message}
-            resetAt={rateLimitInfo.resetAt}
-            onExpired={clearRateLimit}
-          />
-        </div>
-      )}
-
-      {/* S1-07: Structural echo banner — pattern_analyst only, when memory is active.
-          (d) Every surfaced insight needs an attached action — this was purely
-          informational before; now links straight to the matched past decision. */}
-      {structuralContextActive && structuralMatchDate && (
-        <div style={{
-          padding:      '7px 16px',
-          background:   'var(--success-bg)',
-          borderBottom: '1px solid var(--success-border)',
-          fontSize:     11,
-          color:        'var(--success-text)',
-          lineHeight:   1.4,
-          display:      'flex',
-          alignItems:   'center',
-          justifyContent: 'space-between',
-          gap:          10,
-        }}>
-          <span>
-            Pattern Analyst is drawing on a decision you brought in{' '}
-            {new Date(structuralMatchDate).toLocaleDateString('en-IN', {
-              month: 'long', year: 'numeric',
-            })}.
+  // R6: structural citation badge — renders ONLY when THIS persona's own output
+  // contained a <structural> tag. structuralMatchDate/structuralMatchSessionId
+  // are session-wide (which past decision matched), reused across every eligible
+  // persona; structuralCitationText is persona-specific (what THIS advisor
+  // actually observed) and is the true gate — precise instead of a stand-in flag.
+  const structuralCitationBlock = (structuralCitationText && panelState === 'done') ? (
+    <div style={{
+      marginTop:    16,
+      padding:      '10px 12px',
+      borderRadius: 8,
+      background:   'var(--success-bg)',
+      border:       '1px solid var(--success-border)',
+    }}>
+      <p style={{
+        fontSize:      10,
+        fontWeight:    700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color:         'var(--success-text)',
+        margin:        '0 0 5px',
+        display:       'flex',
+        alignItems:    'center',
+        gap:           5,
+      }}>
+        <span aria-hidden="true">↺</span> Structural echo
+      </p>
+      <p style={{
+        fontSize:   12,
+        color:      'var(--success-text)',
+        lineHeight: 1.6,
+        margin:     structuralMatchDate ? '0 0 6px' : 0,
+      }}>
+        {structuralCitationText}
+      </p>
+      {structuralMatchDate && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ fontSize: 11, color: 'var(--success-text)', opacity: 0.85 }}>
+            From a decision you brought in{' '}
+            {new Date(structuralMatchDate).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
           </span>
           {structuralMatchSessionId && (
             <a
@@ -413,6 +427,30 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           )}
         </div>
       )}
+    </div>
+  ) : null
+
+  return (
+    <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280, borderLeft: `3px solid ${accentColor}` }}>
+      {/* S5-01: Rate limit banner — shown when 429 is returned from /api/persona */}
+      {rateLimitInfo && (
+        <div style={{ padding: '8px 12px 4px' }}>
+          <RateLimitBanner
+            message={rateLimitInfo.message}
+            resetAt={rateLimitInfo.resetAt}
+            onExpired={clearRateLimit}
+          />
+        </div>
+      )}
+
+      {/* R6: the old top-of-card banner here was gated on a session-wide flag AND
+          hardcoded to pattern_analyst, with copy that named the persona directly —
+          it could show even when this persona's own output never referenced the
+          past decision, and never showed on the other 4 eligible personas at all.
+          Replaced by a citation badge anchored at the end of the analysis (see
+          "Structural echo" block below), driven entirely by whether THIS persona's
+          own <structural> tag is present — no hardcoded persona list, no
+          disconnect between what's claimed and what was actually said. */}
 
       {/* Header */}
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-card-alt)', borderRadius: '14px 14px 0 0' }}>
@@ -523,6 +561,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </div>
         )}
 
+        {structuralCitationBlock}
+
         {/* Pushback exchanges */}
         {exchanges.map((ex, i) => (
           <div key={i} style={{ marginTop: 18 }}>
@@ -562,6 +602,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             </p>
           </div>
         )}
+
+        {structuralCitationBlock}
 
         {isPushingBack && (
           <p style={{ fontSize: 12, color: 'var(--gold)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>

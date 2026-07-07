@@ -1052,9 +1052,20 @@ export default function Home() {
               showing nothing (and the feature going completely undiscovered), show
               a compact locked teaser that explains what it is and links down to the
               email-capture panel above (now shown at session 0 too, see AuthPanel
-              block above) so the two features reinforce each other. */}
+              block above) so the two features reinforce each other.
+
+              Bug fix: buildWatchlistTourStep() (OnboardingTour.tsx) targets
+              [data-tour-id="home-watchlist"], which previously only existed on
+              WatchlistSection's own container — never rendered for anonymous
+              visitors. The tour step had nothing to find or highlight for exactly
+              the audience (new, signed-out, session 0) most likely to see it.
+              Same data-tour-id now added here too, so the step resolves to
+              whichever of the two states (locked teaser or unlocked section)
+              is actually on the page. */}
           {isWatchlistEnabled() && !authToken && (
-            <div style={{
+            <div
+              data-tour-id="home-watchlist"
+              style={{
               marginTop: 20,
               padding: '14px 16px',
               background: 'var(--bg-card)',
