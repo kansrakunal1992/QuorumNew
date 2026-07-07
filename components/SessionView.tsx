@@ -894,7 +894,12 @@ export default function SessionView({ session: initialSession, initialMessages =
       setReanalyzeError('Something went wrong. Please try again.')
       setReanalyzing(false)
     }
-  }, [reDecision, reContext, reRegisterMode, rePreConfidence])
+  // QC fix: session.id and reFramingIntent are both read inside this callback
+  // (parent_session_id + framing_intent in the POST body) but were missing here.
+  // Without them, a second reanalyze submitted with identical text/context/register/
+  // confidence to the first would reuse the stale memoized closure and send the
+  // ORIGINAL session's id as parent_session_id instead of the immediately prior one.
+  }, [reDecision, reContext, reRegisterMode, rePreConfidence, reFramingIntent, session.id])
 
   // ── Scroll state for navbar shadow ───────────────────────────────────────
   const [navScrolled, setNavScrolled] = useState(false)

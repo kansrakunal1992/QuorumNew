@@ -116,10 +116,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
   const onPersonaCompleteRef = useRef(onPersonaComplete)
+  // QC fix: onExaminerUpdateComplete was previously called directly (not via ref),
+  // unlike its sibling onComplete/onPersonaComplete above — same stale-closure risk
+  // those refs exist to prevent, just missed on this one. Same pattern applied here.
+  const onExaminerUpdateCompleteRef = useRef(onExaminerUpdateComplete)
 
   useEffect(() => { exchangesRef.current        = exchanges       }, [exchanges])
   useEffect(() => { onCompleteRef.current       = onComplete      }, [onComplete])
   useEffect(() => { onPersonaCompleteRef.current = onPersonaComplete }, [onPersonaComplete])
+  useEffect(() => { onExaminerUpdateCompleteRef.current = onExaminerUpdateComplete }, [onExaminerUpdateComplete])
 
   // S1-02: Sequential streaming — fire when this persona transitions to done
   useEffect(() => {
@@ -247,7 +252,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       setPanelState('error')
       setResponse('Connection error.')
     }
-  }, [sessionId, persona.key, decisionText, contextText, registerMode, extractHeaderTags, stripHeaderTags])
+  }, [sessionId, persona.key, decisionText, contextText, registerMode, structuralContext, extractHeaderTags, stripHeaderTags])
 
   // Parse header tags from initialContent so Lens/Position/Trade-off render on Back to Council
   useEffect(() => {
@@ -314,7 +319,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           ].join('\n\n')
           onCompleteRef.current?.(persona.key, fullContent)
           // Sprint 16b Fix 4b: notify SessionView this update is done — used to count share-context completions
-          onExaminerUpdateComplete?.(persona.key, fullContent)
+          onExaminerUpdateCompleteRef.current?.(persona.key, fullContent)
         }
       } catch {
         setExaminerUpdateState('done')
