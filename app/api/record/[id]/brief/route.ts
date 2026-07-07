@@ -90,6 +90,8 @@ function stripAdvisorTags(raw: string): string {
     .replace(/<realcost>[\s\S]*?<\/realcost>/gi, '')
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/gi, '')
     .replace(/<verdict>[\s\S]*/gi, '')           // guard: open tag without close
+    .replace(/<(?:lens|position|realcost)>[\s\S]*$/i, '') // guard: open tag without close
+    .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')      // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     .replace(/<\/?tension>/gi, '')
     .replace(/^\s+/, '')
 }

@@ -47,6 +47,8 @@ function stripSynthesisTags(raw: string): string {
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
+    .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     .replace(/^\s+/, '')
 }
 

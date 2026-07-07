@@ -17,6 +17,7 @@ import DecisionTimeline from '@/components/DecisionTimeline'  // RET-5 Sprint 3
 import type { TimelineEntry } from '@/components/DecisionTimeline'
 import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
 import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
+import RecordDecisionHero from '@/components/RecordDecisionHero'
 
 // Strip <lens>, <position>, <realcost>, <lean> tags stored in DB — rendered separately
 // in PersonaPanel (lean is never rendered, only used for the S3-01 tension interstitial)
@@ -27,6 +28,8 @@ function stripHeaderTags(raw: string): string {
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
+    .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close
@@ -57,6 +60,8 @@ function parseVerdictTension(raw: string): { verdict: string | null; rest: strin
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
+    .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
     .trimStart()
   return { verdict, rest }
 }
@@ -386,6 +391,11 @@ export default async function RecordPage({ params }: Props) {
           letter-spacing: -0.015em;
           color: var(--text-1);
         }
+        .rec-hero-context {
+          font-size: 12.5px;
+          line-height: 1.65;
+          color: var(--text-3);
+        }
 
         /* Persona card tiers */
         .rec-persona-elevated {
@@ -587,28 +597,10 @@ export default async function RecordPage({ params }: Props) {
               The Decision
             </p>
 
-            <p className="rec-hero-decision">
-              {session.decision_text}
-            </p>
-
-            {session.context_text && (
-              <>
-                <div className="gold-rule" style={{ margin: '14px 0' }} />
-                <p style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 9.5,
-                  letterSpacing: '0.13em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-4)',
-                  marginBottom: 6,
-                }}>
-                  Context
-                </p>
-                <p style={{ fontSize: 12.5, lineHeight: 1.65, color: 'var(--text-3)' }}>
-                  {session.context_text}
-                </p>
-              </>
-            )}
+            <RecordDecisionHero
+              decisionText={session.decision_text}
+              contextText={session.context_text}
+            />
           </div>
 
           {/* ── Validation prompt — only place a returning user (e.g. from   */}

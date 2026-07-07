@@ -149,12 +149,23 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     // The trailing guard below strips any still-open header tag (and everything
     // after it) the same way the <verdict> "guard: open tag without close" pattern
     // already does elsewhere in the codebase (SynthesisCard, RecordExport, etc).
+    //
+    // Second bug fix (observed live, July 2026): the model has been seen emitting a
+    // bare, malformed tag using the <lean> ENUM VALUE as the tag name itself — e.g.
+    // literal "<wait>" sitting in the prose — instead of correctly closing
+    // <lean>wait</lean>. This isn't a tag our schema defines, so none of the regexes
+    // above (which only know the tag NAMES lens/position/realcost/lean) ever match
+    // it, and it leaked straight into the visible card. Since <lean>'s only valid
+    // values are proceed/wait/mixed, strip any bare occurrence of those three as a
+    // targeted defense — this is not a generic "strip all tags" rule, only the exact
+    // vocabulary this one field draws from.
     return raw
       .replace(/<lens>[\s\S]*?<\/lens>/g, '')
       .replace(/<position>[\s\S]*?<\/position>/g, '')
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+      .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       .replace(/^\s+/, '')
   }, [])
 
@@ -167,6 +178,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+      .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       .replace(/^\s+/, '')
   }, [])
 

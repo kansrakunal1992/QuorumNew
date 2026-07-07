@@ -1040,8 +1040,56 @@ export default function Home() {
               attached server-side (see handleSubmit's session POST body), so no
               retroactive linking is needed for it at all. */}
           {!userEmail && sessions.length === 0 && !loadingHist && (
-            <div style={{ marginTop: 20 }}>
+            <div id="auth-panel-anchor" style={{ marginTop: 20 }}>
               <AuthPanel onAuthenticated={email => setUserEmail(email)} userEmail={userEmail} />
+            </div>
+          )}
+
+          {/* Bug fix / UX: Watchlist is deliberately signed-in-only (see
+              WatchlistSection.tsx — "no anonymous path"), which made it invisible
+              to any brand-new, unauthenticated visitor — most visibly at session 0,
+              since that's when almost everyone is still anonymous. Rather than
+              showing nothing (and the feature going completely undiscovered), show
+              a compact locked teaser that explains what it is and links down to the
+              email-capture panel above (now shown at session 0 too, see AuthPanel
+              block above) so the two features reinforce each other. */}
+          {isWatchlistEnabled() && !authToken && (
+            <div style={{
+              marginTop: 20,
+              padding: '14px 16px',
+              background: 'var(--bg-card)',
+              border: '1px dashed var(--border-mid)',
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}>
+              <span style={{ fontSize: 17, lineHeight: 1, flexShrink: 0 }}>👁️</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>
+                  Watchlist
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
+                  Park a decision you're not ready to bring to the Council yet — link your email to unlock it.
+                </p>
+              </div>
+              <button
+                onClick={() => document.getElementById('auth-panel-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border-mid)',
+                  borderRadius: 6,
+                  color: 'var(--gold)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                Unlock
+              </button>
             </div>
           )}
 
@@ -1049,7 +1097,7 @@ export default function Home() {
               see lib/feature-flags.ts. onGraduate hands the item's text back
               here to pre-fill + focus the existing decision input — no
               navigation needed, Watchlist lives on this same page. */}
-          {isWatchlistEnabled() && (
+          {isWatchlistEnabled() && authToken && (
             <WatchlistSection
               authToken={authToken}
               onGraduate={(text) => {

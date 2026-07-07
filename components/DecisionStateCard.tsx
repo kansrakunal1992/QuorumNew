@@ -17,6 +17,15 @@
 // The form now renders immediately post-synthesis; "Skip" (de-emphasized,
 // plain text, no bounding box) is the one-click way out. Skipping stores
 // nothing — correct.
+//
+// UX fix: showing all three fields (leaning, switch condition, review date +
+// three date-shortcut buttons) open by default was visually heavy right under
+// a synthesis card — it read as "shabby"/cluttered rather than inviting. Kept
+// the S3-02 decision (form open by default, no extra click to start typing),
+// but the two optional fields (switch condition, review date) are now tucked
+// behind a "+ Add more detail" toggle — collapsed by default. The one field
+// that matters most (leaning + first move) is still the very first thing
+// shown, full-width, no friction.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
@@ -41,6 +50,7 @@ export default function DecisionStateCard({ sessionId }: Props) {
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState('')
   const [saved,    setSaved]    = useState<Commitment | null>(null)
+  const [showMore, setShowMore] = useState(false)
 
   const handleSave = async () => {
     // At least leaning or a review date required — rest optional
@@ -97,7 +107,8 @@ export default function DecisionStateCard({ sessionId }: Props) {
           Capturing this now prevents hindsight from rewriting it later. Takes a minute — skip if you'd rather not.
         </p>
 
-        {/* Field 1: Leaning + Next move (clubbed) */}
+        {/* Field 1: Leaning + Next move (clubbed) — always visible, the one
+            field that matters most */}
         <label style={{
           display:    'block',
           fontSize:   12,
@@ -112,91 +123,112 @@ export default function DecisionStateCard({ sessionId }: Props) {
           value={leaning}
           onChange={e => setLeaning(e.target.value)}
           placeholder="e.g. Leaning towards not proceeding — first step is asking for a 3-month extension to verify the numbers"
-          style={{ fontSize: 13, marginBottom: 16 }}
+          style={{ fontSize: 13, marginBottom: showMore ? 16 : 6 }}
         />
 
-        {/* Field 2: Switch condition (clubbed with main risk) */}
-        <label style={{
-          display:    'block',
-          fontSize:   12,
-          color:      'var(--text-3)',
-          marginBottom: 6,
-          fontWeight: 500,
-        }}>
-          What would change your course?
-          <span style={{ color: 'var(--text-4)', fontWeight: 400, marginLeft: 6 }}>optional</span>
-        </label>
-        <textarea
-          rows={2}
-          value={switchC}
-          onChange={e => setSwitchC(e.target.value)}
-          placeholder="e.g. If the independent audit comes back clean, or if a co-investor with domain knowledge joins"
-          style={{ fontSize: 13, marginBottom: 16 }}
-        />
+        {!showMore ? (
+          <button
+            onClick={() => setShowMore(true)}
+            style={{
+              fontSize:   12,
+              padding:    '4px 0',
+              background: 'none',
+              border:     'none',
+              color:      'var(--text-4)',
+              cursor:     'pointer',
+              fontFamily: 'inherit',
+              marginBottom: 16,
+              display:    'block',
+            }}
+          >
+            + Add more detail <span style={{ color: 'var(--text-4)' }}>(what would change your course, review date)</span>
+          </button>
+        ) : (
+          <>
+            {/* Field 2: Switch condition (clubbed with main risk) */}
+            <label style={{
+              display:    'block',
+              fontSize:   12,
+              color:      'var(--text-3)',
+              marginBottom: 6,
+              fontWeight: 500,
+            }}>
+              What would change your course?
+              <span style={{ color: 'var(--text-4)', fontWeight: 400, marginLeft: 6 }}>optional</span>
+            </label>
+            <textarea
+              rows={2}
+              value={switchC}
+              onChange={e => setSwitchC(e.target.value)}
+              placeholder="e.g. If the independent audit comes back clean, or if a co-investor with domain knowledge joins"
+              style={{ fontSize: 13, marginBottom: 16 }}
+            />
 
-        {/* Field 3: Review date */}
-        <label style={{
-          display:    'block',
-          fontSize:   12,
-          color:      'var(--text-3)',
-          marginBottom: 6,
-          fontWeight: 500,
-        }}>
-          Review by
-          <span style={{ color: 'var(--text-4)', fontWeight: 400, marginLeft: 6 }}>optional</span>
-        </label>
+            {/* Field 3: Review date */}
+            <label style={{
+              display:    'block',
+              fontSize:   12,
+              color:      'var(--text-3)',
+              marginBottom: 6,
+              fontWeight: 500,
+            }}>
+              Review by
+              <span style={{ color: 'var(--text-4)', fontWeight: 400, marginLeft: 6 }}>optional</span>
+            </label>
 
-        {/* Quick date shortcuts */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-          {[
-            { label: '+1 week',  days: 7  },
-            { label: '+2 weeks', days: 14 },
-            { label: '+1 month', days: 30 },
-          ].map(({ label, days }) => {
-            const d   = new Date()
-            d.setDate(d.getDate() + days)
-            const iso = d.toISOString().split('T')[0]
-            return (
-              <button
-                key={days}
-                onClick={() => setDate(iso)}
-                style={{
-                  padding:      '5px 12px',
-                  borderRadius: 8,
-                  fontSize:     11,
-                  cursor:       'pointer',
-                  fontFamily:   'inherit',
-                  transition:   'all 0.15s',
-                  border:       date === iso
-                    ? '1px solid var(--gold)'
-                    : '1px solid var(--border-dim)',
-                  background:   date === iso ? 'var(--gold-glow)' : 'transparent',
-                  color:        date === iso ? 'var(--gold)'      : 'var(--text-4)',
-                }}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
+            {/* Quick date shortcuts */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+              {[
+                { label: '+1 week',  days: 7  },
+                { label: '+2 weeks', days: 14 },
+                { label: '+1 month', days: 30 },
+              ].map(({ label, days }) => {
+                const d   = new Date()
+                d.setDate(d.getDate() + days)
+                const iso = d.toISOString().split('T')[0]
+                return (
+                  <button
+                    key={days}
+                    onClick={() => setDate(iso)}
+                    style={{
+                      padding:      '5px 12px',
+                      borderRadius: 8,
+                      fontSize:     11,
+                      cursor:       'pointer',
+                      fontFamily:   'inherit',
+                      transition:   'all 0.15s',
+                      border:       date === iso
+                        ? '1px solid var(--gold)'
+                        : '1px solid var(--border-dim)',
+                      background:   date === iso ? 'var(--gold-glow)' : 'transparent',
+                      color:        date === iso ? 'var(--gold)'      : 'var(--text-4)',
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
 
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          style={{
-            width:        '100%',
-            padding:      '9px 12px',
-            borderRadius: 8,
-            border:       '1px solid var(--border-dim)',
-            background:   'var(--bg-inset)',
-            color:        date ? 'var(--text-1)' : 'var(--text-4)',
-            fontSize:     13,
-            fontFamily:   'inherit',
-            marginBottom: 18,
-            boxSizing:    'border-box',
-          }}
-        />
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              style={{
+                width:        '100%',
+                padding:      '9px 12px',
+                borderRadius: 8,
+                border:       '1px solid var(--border-dim)',
+                background:   'var(--bg-inset)',
+                color:        date ? 'var(--text-1)' : 'var(--text-4)',
+                fontSize:     13,
+                fontFamily:   'inherit',
+                marginBottom: 18,
+                boxSizing:    'border-box',
+              }}
+            />
+          </>
+        )}
 
         {error && (
           <p style={{ fontSize: 12, color: '#e05050', marginBottom: 12 }}>{error}</p>
