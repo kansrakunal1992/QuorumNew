@@ -21,3 +21,19 @@
 export function isWatchlistEnabled(): boolean {
   return process.env.NEXT_PUBLIC_WATCHLIST_ENABLED === 'true'
 }
+
+// Institutional layer master kill switch (Institutional Sprint 1).
+// Same pattern as isWatchlistEnabled() above: one NEXT_PUBLIC_ var, default
+// OFF when unset, read identically client and server, baked in at build
+// time (redeploy required after changing it in Railway).
+//
+// Difference from the Watchlist precedent: this flag gates real permission
+// logic — institution/membership rows, code redemption, admin routes — not
+// just a UI surface. So every institution-related API route checks this
+// server-side too, not just the client hiding the badge/switcher. See
+// app/api/institutions/redeem/route.ts and
+// app/api/admin/create-institution/route.ts.
+
+export function isInstitutionalModeEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_INSTITUTIONAL_MODE_ENABLED === 'true'
+}
