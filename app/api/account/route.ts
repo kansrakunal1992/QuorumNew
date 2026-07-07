@@ -6,12 +6,31 @@
 //
 // Permanently erases all data for the authenticated user:
 //   1. Writes audit_log entry BEFORE any deletion (so there is a record).
-//   2. Explicitly deletes email-keyed tables (bias_library, contradiction_log etc.)
-//      that have no FK cascade to auth.users.
-//   3. Deletes auth.users via admin.deleteUser() which cascades:
-//        sessions → messages, examiner_responses, sessions_ontology,
-//        structural_scores, outcomes, mirror_access, avoidance_alerts
-//        (all via ON DELETE CASCADE FKs to auth.users / sessions).
+//   2. Explicitly deletes user_id-keyed tables that have no FK cascade to
+//      auth.users (this list has grown a lot since Sprint 6 — see below).
+//   3. Explicitly deletes session_id-keyed tables (outcomes, sessions_ontology,
+//      structural_scores) by session_id, rather than relying solely on an
+//      assumed ON DELETE CASCADE via sessions — belt-and-suspenders, since we
+//      can't verify live FK constraints from application code.
+//   4. Deletes auth.users via admin.deleteUser(), which cascades sessions →
+//      messages, examiner_responses (and anything else with a real FK).
+//
+// QC fix (audit pass, July 2026): this route previously only covered 6 tables
+// (bias_library, contradiction_log, independence_score_log, user_preferences,
+// avoidance_alerts, contradiction_runs) plus the sessions cascade. Cross-
+// referencing every .from('table') call in the codebase turned up 13 more
+// user-data tables with no explicit cleanup here, several holding encrypted
+// decision-linked content (structural_matches, graph_edges, watchlist_items).
+// mirror_access (subscription/tier record) was also never actually covered —
+// the old comment assumed it cascaded via sessions, but it's user_id-keyed,
+// not session-scoped, so nothing was deleting it.
+// Also: 'contradiction_log' is a dead table — nothing has inserted into it
+// since the migration to contradictions/contradiction_runs (see
+// lib/graph-engine.ts backfillContradictionEdges comment) — so it's replaced
+// below with the real 'contradictions' table.
+//
+// audit_log is intentionally NOT deleted — it's the durable compliance record
+// that erasure requests occurred, standard practice for this kind of log.
 //
 // This operation is irreversible. The client confirmation modal requires the
 // user to type "delete my account" before the button is enabled.
@@ -52,7 +71,6 @@ export async function DELETE(req: Request) {
   if (user.email) {
     const emailTables = [
       'bias_library',
-      'contradiction_log',
     ] as const
 
     for (const table of emailTables) {
@@ -71,6 +89,19 @@ export async function DELETE(req: Request) {
     'user_preferences',
     'avoidance_alerts',
     'contradiction_runs',
+    // QC fix (audit pass, July 2026) — added below, all confirmed user_id-keyed:
+    'advisory_access_requests',
+    'bias_alert_log',
+    'contradictions',
+    'email_send_log',
+    'graph_edges',
+    'mirror_access',
+    'mirror_insight_email_log',
+    'notification_log',
+    'push_subscriptions',
+    'structural_matches',
+    'user_profiles',
+    'watchlist_items',
   ] as const
 
   for (const table of userIdTables) {
@@ -84,10 +115,30 @@ export async function DELETE(req: Request) {
     }
   }
 
-  // ── 5. Delete auth.users — cascades sessions + everything downstream ──────
+  // ── 5. Delete session_id-keyed tables explicitly (don't rely solely on a
+  // cascade we can't verify from application code) ──────────────────────────
+  const { data: userSessions } = await supabase
+    .from('sessions')
+    .select('id')
+    .eq('user_id', user.id)
+
+  const sessionIds = (userSessions ?? []).map(s => s.id as string)
+
+  if (sessionIds.length > 0) {
+    const sessionIdTables = ['outcomes', 'sessions_ontology', 'structural_scores'] as const
+    for (const table of sessionIdTables) {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .in('session_id', sessionIds)
+      if (error && !error.message.includes('does not exist')) {
+        errors.push(`${table}(session_id): ${error.message}`)
+      }
+    }
+  }
+
+  // ── 6. Delete auth.users — cascades sessions + messages/examiner_responses ─
   // supabase.auth.admin.deleteUser() issues a DELETE to the Auth admin API.
-  // Supabase cascade: auth.users → sessions → messages, examiner_responses,
-  //   sessions_ontology, structural_scores, outcomes, mirror_access.
   const { error: deleteUserError } = await supabase.auth.admin.deleteUser(user.id)
 
   if (deleteUserError) {

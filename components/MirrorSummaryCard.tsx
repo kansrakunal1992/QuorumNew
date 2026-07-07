@@ -23,7 +23,7 @@
 //   ADD COLUMN IF NOT EXISTS last_mirror_viewed_at TIMESTAMPTZ;
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // Exported so AttentionZone and MirrorInsightCard can share the same shape.
@@ -167,6 +167,16 @@ export default function MirrorSummaryCard({ authToken, onData }: {
   const [data,    setData]    = useState<SummaryData | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // QC fix (audit pass, July 2026): onData was called directly inside the
+  // fetch effect but wasn't in its dependency array. If the parent passes a
+  // new inline onData on re-render (common — it's not memoized upstream),
+  // the effect would still hold the STALE onData captured at mount, since it
+  // only re-runs when authToken changes. Routing through a ref (same pattern
+  // used for onComplete/onPersonaComplete in PersonaPanel.tsx) always calls
+  // the current onData without needing it in the effect's deps.
+  const onDataRef = useRef(onData)
+  useEffect(() => { onDataRef.current = onData }, [onData])
+
   useEffect(() => {
     if (!authToken) return
     let cancelled = false
@@ -179,7 +189,7 @@ export default function MirrorSummaryCard({ authToken, onData }: {
         if (!cancelled) {
           const typed = d as SummaryData | null
           setData(typed)
-          if (typed && onData) onData(typed)
+          if (typed) onDataRef.current?.(typed)
           setLoading(false)
         }
       })

@@ -85,7 +85,7 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
       setReanalyzeError('Something went wrong. Please try again.')
       setReanalyzing(false)
     }
-  }, [reDecision, reContext, reRegisterMode, reFramingIntent, rePreConfidence, router])
+  }, [reDecision, reContext, reRegisterMode, reFramingIntent, rePreConfidence, sessionId, router])
 
   return (
     <>

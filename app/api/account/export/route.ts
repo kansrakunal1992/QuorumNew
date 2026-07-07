@@ -12,11 +12,29 @@
 //   Content-Type: application/json
 //
 // Logs to audit_log.
+//
+// QC fix (audit pass, July 2026) — two issues fixed:
+//   1. The sessions query embedded `examiner_responses ( question_index,
+//      question_text, answer_text, created_at )` — but the real columns are
+//      `question_order` and `response_text` (see app/api/examiner/route.ts
+//      insert + lib/encryption.ts's documented column list). Referencing
+//      non-existent columns in a Supabase embedded select fails the entire
+//      query server-side, and this route never checked sessionsResult.error —
+//      so exports were silently returning ~empty JSON (no sessions, no
+//      messages) with a 200 OK, no error surfaced anywhere. Fixed the column
+//      names, switched to select('*') on embedded/added tables to remove this
+//      whole class of typo risk, and added explicit error checking.
+//   2. Only sessions + bias_library were exported. Cross-referencing every
+//      .from('table') call in the codebase turned up 11 more user-data
+//      tables not included. Added below: outcomes, sessions_ontology,
+//      watchlist_items, graph_edges, contradictions, structural_matches,
+//      user_preferences, avoidance_alerts, independence_score_log,
+//      mirror_access, user_profiles, push_subscriptions.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }              from 'next/server'
 import { createServiceClient }       from '@/lib/supabase'
-import { decrypt }                   from '@/lib/encryption'
+import { decrypt, decryptJson }      from '@/lib/encryption'
 import { writeAuditLog, getUserFromBearer, getAuditContext } from '@/lib/audit'
 
 // ── In-memory rate limit: 1 export per 24h per user ──────────────────────────
@@ -62,8 +80,8 @@ export async function GET(req: Request) {
         id, created_at, status, register_mode,
         decision_text, context_text, pre_decision_confidence,
         user_email, device_id,
-        messages ( role, persona_key, content, created_at ),
-        examiner_responses ( question_index, question_text, answer_text, created_at )
+        messages ( * ),
+        examiner_responses ( * )
       `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false }),
@@ -73,7 +91,57 @@ export async function GET(req: Request) {
       .or(`user_id.eq.${user.id}${user.email ? `,user_email.eq.${user.email}` : ''}`),
   ])
 
+  // QC fix: previously not checked — a query error (e.g. bad column name)
+  // meant sessionsResult.data was null, silently treated as [] below, and the
+  // export "succeeded" with none of the user's actual data in it.
+  if (sessionsResult.error) {
+    console.error('[Account/Export] sessions query failed:', sessionsResult.error)
+    return NextResponse.json(
+      { error: 'Failed to gather your data. Contact support — this has been logged.' },
+      { status: 500 }
+    )
+  }
+
+  const sessionIds = (sessionsResult.data ?? []).map(s => s.id as string)
+
+  const [
+    outcomesResult,
+    ontologyResult,
+    watchlistResult,
+    graphEdgesResult,
+    contradictionsResult,
+    structuralMatchesResult,
+    userPreferencesResult,
+    avoidanceAlertsResult,
+    independenceScoreLogResult,
+    mirrorAccessResult,
+    userProfileResult,
+    pushSubscriptionsResult,
+  ] = await Promise.all([
+    sessionIds.length
+      ? supabase.from('outcomes').select('*').in('session_id', sessionIds)
+      : Promise.resolve({ data: [], error: null }),
+    sessionIds.length
+      ? supabase.from('sessions_ontology').select('*').in('session_id', sessionIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('watchlist_items').select('*').eq('user_id', user.id),
+    supabase.from('graph_edges').select('*').eq('user_id', user.id),
+    supabase.from('contradictions').select('*').eq('user_id', user.id),
+    supabase.from('structural_matches').select('*').eq('user_id', user.id),
+    supabase.from('user_preferences').select('*').eq('user_id', user.id),
+    supabase.from('avoidance_alerts').select('*').eq('user_id', user.id),
+    supabase.from('independence_score_log').select('*').eq('user_id', user.id),
+    supabase.from('mirror_access').select('*').eq('user_id', user.id),
+    supabase.from('user_profiles').select('*').eq('user_id', user.id).maybeSingle(),
+    supabase.from('push_subscriptions').select('*').eq('user_id', user.id),
+  ])
+
   // ── 4. Decrypt encrypted fields ────────────────────────────────────────────
+  // Per lib/encryption.ts's documented column list:
+  //   sessions (decision_text, context_text), messages (content),
+  //   examiner_responses (question_text, response_text), outcomes
+  //   (what_decided, notes), structural_matches (context_block, matches_json),
+  //   graph_edges (explanation_text), watchlist_items (text_encrypted).
   const sessions = (sessionsResult.data ?? []).map(s => ({
     ...s,
     decision_text: decrypt(s.decision_text as string) ?? s.decision_text,
@@ -85,15 +153,39 @@ export async function GET(req: Request) {
     examiner_responses: (s.examiner_responses as Array<Record<string, unknown>>)?.map(e => ({
       ...e,
       question_text: decrypt(e.question_text as string) ?? e.question_text,
-      answer_text:   decrypt(e.answer_text   as string) ?? e.answer_text,
+      response_text: decrypt(e.response_text as string) ?? e.response_text,
     })),
+  }))
+
+  const outcomes = (outcomesResult.data ?? []).map(o => ({
+    ...o,
+    what_decided: decrypt(o.what_decided as string) ?? o.what_decided,
+    notes:        decrypt(o.notes as string) ?? o.notes,
+  }))
+
+  const watchlistItems = (watchlistResult.data ?? []).map(w => ({
+    ...w,
+    text: decrypt(w.text_encrypted as string) ?? w.text_encrypted,
+  }))
+
+  const graphEdges = (graphEdgesResult.data ?? []).map(g => ({
+    ...g,
+    explanation_text: g.explanation_text
+      ? (decrypt(g.explanation_text as string) ?? g.explanation_text)
+      : null,
+  }))
+
+  const structuralMatches = (structuralMatchesResult.data ?? []).map(m => ({
+    ...m,
+    context_block: decrypt(m.context_block as string) ?? m.context_block,
+    matches_json:  decryptJson(m.matches_json),
   }))
 
   // ── 5. Assemble export payload ─────────────────────────────────────────────
   const exportDate = new Date().toISOString().split('T')[0]
   const payload = {
     exported_at:   new Date().toISOString(),
-    export_format: '1.0',
+    export_format: '1.1',
     user: {
       id:    user.id,
       email: user.email,
@@ -102,9 +194,23 @@ export async function GET(req: Request) {
       session_count:  sessions.length,
       message_count:  sessions.reduce((n, s) => n + ((s.messages as unknown[])?.length ?? 0), 0),
       bias_parameters: (biasResult.data ?? []).length,
+      watchlist_items: watchlistItems.length,
+      contradictions:  (contradictionsResult.data ?? []).length,
     },
     sessions,
-    bias_library:  biasResult.data ?? [],
+    outcomes,
+    sessions_ontology:     ontologyResult.data ?? [],
+    bias_library:          biasResult.data ?? [],
+    watchlist_items:       watchlistItems,
+    graph_edges:           graphEdges,
+    contradictions:        contradictionsResult.data ?? [],
+    structural_matches:    structuralMatches,
+    user_preferences:      userPreferencesResult.data ?? [],
+    avoidance_alerts:      avoidanceAlertsResult.data ?? [],
+    independence_score_log: independenceScoreLogResult.data ?? [],
+    mirror_access:         mirrorAccessResult.data ?? [],
+    user_profile:          userProfileResult.data ?? null,
+    push_subscriptions:    pushSubscriptionsResult.data ?? [],
   }
 
   // ── 6. Record export in cooldown + audit log ───────────────────────────────

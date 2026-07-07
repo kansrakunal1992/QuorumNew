@@ -236,11 +236,19 @@ export async function GET(req: Request) {
   let newContradictions = 0
   if (lastViewedAt) {
     try {
+      // QC fix (audit pass, July 2026): this used to read contradiction_log,
+      // which nothing has inserted into since the migration to the
+      // contradictions table (see lib/graph-engine.ts backfillContradictionEdges
+      // comment for the same finding) — so newContradictions was always 0,
+      // silently disabling the AttentionZone/MirrorInsightCard "N new
+      // contradictions" copy even when real unresolved ones exist.
+      // contradictions uses dismissed_at (nullable timestamp), not a
+      // dismissed boolean.
       const { count } = await supabase
-        .from('contradiction_log')
+        .from('contradictions')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('dismissed', false)
+        .is('dismissed_at', null)
         .gt('generated_at', lastViewedAt)
       newContradictions = count ?? 0
     } catch { /* non-critical */ }
