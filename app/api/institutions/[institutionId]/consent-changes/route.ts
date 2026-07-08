@@ -23,11 +23,13 @@ import { requireInstitutionRole }     from '@/lib/institution-auth'
 
 export async function GET(
   req: Request,
-  { params }: { params: { institutionId: string } },
+  { params }: { params: Promise<{ institutionId: string }> },
 ): Promise<NextResponse> {
   if (!isInstitutionalModeEnabled()) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const auth = await requireInstitutionRole(req, params.institutionId, ['admin'])
+  const { institutionId } = await params
+
+  const auth = await requireInstitutionRole(req, institutionId, ['admin'])
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const supabase = createServiceClient()
@@ -36,7 +38,7 @@ export async function GET(
   const { data: rows, error } = await supabase
     .from('consent_audit_log')
     .select('field_changed, changed_at')
-    .eq('institution_id', params.institutionId)
+    .eq('institution_id', institutionId)
     .gte('changed_at', since)
 
   if (error) {
