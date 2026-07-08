@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import InstitutionConsentSettings from '@/components/InstitutionConsentSettings' // Institutional Sprint 2
 
 const CONSENT_KEY = 'quorum_cookie_consent'
 
@@ -251,6 +252,11 @@ export default function PrivacyCenterPage() {
               </>
             )}
           </SettingsCard>
+
+          {/* ── Institutional Sharing (Institutional Sprint 2) ─────────────────
+              Renders nothing if the flag is off or the user has no
+              institution memberships — self-contained, no props needed. */}
+          <InstitutionConsentSettings />
 
           {/* ── Data Rights ─────────────────────────────────────────────────── */}
           <SettingsCard title="Your Data Rights">
