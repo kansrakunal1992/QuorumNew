@@ -37,6 +37,7 @@ import AvoidanceAlertCard     from '@/components/AvoidanceAlertCard'
 import type { AvoidanceAlertData } from '@/components/AvoidanceAlertCard'
 import MonthlyJudgmentReview  from '@/components/MonthlyJudgmentReview'
 import PatternStore           from '@/components/PatternStore'
+import CohortInsightsCard     from '@/components/CohortInsightsCard'    // Institutional Sprint 3
 import StyleCalibration        from '@/components/StyleCalibration'
 import MirrorNav               from '@/components/MirrorNav'           // Sprint M2
 import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
@@ -1566,6 +1567,11 @@ function UnlockedView({
         <PatternStore authToken={authToken} />
       </SectionWrapper>
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* Institutional Sprint 3 — supplies its own chrome and divider, and
+          renders nothing at all if there's no mutually-consenting cohort
+          data, so no <hr> gap appears when it's absent. */}
+      <CohortInsightsCard authToken={authToken} />
 
       {/* ── Deep insight modules ────────────────────────────────────────────── */}
 

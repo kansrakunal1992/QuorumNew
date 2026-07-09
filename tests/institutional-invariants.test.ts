@@ -20,8 +20,19 @@
 
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { isAggregationEligible } from '../lib/aggregate-eligibility'
+
+// __dirname isn't reliably available here: vitest runs test files as ESM,
+// and __dirname is a CommonJS-only global — using it directly is an
+// environment gamble that happens to work in some vitest configs and not
+// others. import.meta.url is the ESM-native equivalent and works
+// unconditionally under vitest. Confirmed via isolated tsc repro before
+// landing this — the __dirname version type-checks fine in isolation but
+// is exactly the kind of thing that only fails at actual runtime.
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 const REPO_ROOT = join(__dirname, '..')
 const SCAN_DIRS = ['app/api/institutions', 'app/api/admin']
