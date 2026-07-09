@@ -102,6 +102,13 @@ export async function DELETE(req: Request) {
     'structural_matches',
     'user_profiles',
     'watchlist_items',
+    // QC fix (audit pass, July 2026, round 2) — Institutional Sprints 1-3
+    // added these after the first GDPR pass above; same gap, reopened by
+    // new tables. institutions/cohorts themselves are org-level, not
+    // deleted here — only this user's membership/consent rows.
+    'institution_memberships',
+    'cohort_memberships',
+    'consent_audit_log',
   ] as const
 
   for (const table of userIdTables) {

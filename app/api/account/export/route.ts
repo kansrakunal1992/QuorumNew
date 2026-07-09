@@ -117,6 +117,9 @@ export async function GET(req: Request) {
     mirrorAccessResult,
     userProfileResult,
     pushSubscriptionsResult,
+    institutionMembershipsResult,
+    cohortMembershipsResult,
+    consentAuditLogResult,
   ] = await Promise.all([
     sessionIds.length
       ? supabase.from('outcomes').select('*').in('session_id', sessionIds)
@@ -134,6 +137,14 @@ export async function GET(req: Request) {
     supabase.from('mirror_access').select('*').eq('user_id', user.id),
     supabase.from('user_profiles').select('*').eq('user_id', user.id).maybeSingle(),
     supabase.from('push_subscriptions').select('*').eq('user_id', user.id),
+    // QC fix (audit pass, July 2026, round 2) — Institutional Sprints 1-3
+    // tables, added after the first GDPR pass. institutions/cohorts
+    // themselves aren't exported (org-level, not this user's data) — just
+    // this user's membership/consent rows, with names joined in for
+    // readability since IDs alone aren't meaningful here.
+    supabase.from('institution_memberships').select('*, institutions(name)').eq('user_id', user.id),
+    supabase.from('cohort_memberships').select('*, cohorts(name)').eq('user_id', user.id),
+    supabase.from('consent_audit_log').select('*').eq('user_id', user.id),
   ])
 
   // ── 4. Decrypt encrypted fields ────────────────────────────────────────────
@@ -211,6 +222,9 @@ export async function GET(req: Request) {
     mirror_access:         mirrorAccessResult.data ?? [],
     user_profile:          userProfileResult.data ?? null,
     push_subscriptions:    pushSubscriptionsResult.data ?? [],
+    institution_memberships: institutionMembershipsResult.data ?? [],
+    cohort_memberships:      cohortMembershipsResult.data ?? [],
+    consent_audit_log:       consentAuditLogResult.data ?? [],
   }
 
   // ── 6. Record export in cooldown + audit log ───────────────────────────────

@@ -226,6 +226,14 @@ export function useSoniox(): UseSonioxReturn {
 
     setFinalText(''); setPartialText(''); setErrorCode(null)
     finalTextRef.current = ''
+    // QC fix (audit pass, July 2026): previously only reset() cleared this.
+    // VoiceInput.tsx happens to always route through reset() before start()
+    // can be called again (start only renders in the idle branch, reached
+    // from done/error only via a reset button) — but that's a property of
+    // that one consumer's UI, not something this hook enforced itself. A
+    // stale true here would suppress the onerror handler below on a second
+    // recording, leaving the UI silently stuck instead of showing an error.
+    finishedRef.current = false
 
     if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setState('error'); setErrorCode('BROWSER_UNSUPPORTED'); return
