@@ -510,10 +510,27 @@ textarea::placeholder { color: var(--text-4); }
   grid-template-columns: 1fr 1fr;
 }
 
+/* Item #9 — hidden by default (desktop); shown only under the 600px
+   breakpoint below, where the Judgment Record accordion applies */
+.history-mobile-toggle {
+  display: none;
+}
+
 /* ── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 600px) {
   /* Hide navbar tagline — not enough room next to ThemeToggle */
   .nav-tagline {
+    display: none;
+  }
+
+  /* Item #9 — Judgment Record accordion, mobile only, default compressed.
+     .history-accordion-body has 'is-collapsed' applied by default; this
+     rule only exists inside this @media block, so desktop always shows
+     the section expanded regardless of the collapsed class. */
+  .history-mobile-toggle {
+    display: flex !important;
+  }
+  .history-accordion-body.is-collapsed {
     display: none;
   }
 

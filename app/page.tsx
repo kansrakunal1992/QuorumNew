@@ -20,6 +20,7 @@ import type { TourStep } from '@/components/OnboardingTour'
 import { buildPWAInstallStep, buildWatchlistTourStep } from '@/components/OnboardingTour'
 import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
 import MeetTheCouncil from '@/components/MeetTheCouncil' // Item #4
+import FAQSection from '@/components/FAQSection' // Item #10
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -176,6 +177,11 @@ export default function Home() {
   })
   const [navScrolled,    setNavScrolled]    = useState(false)
   const [historyShowAll, setHistoryShowAll] = useState(false)
+  // Item #9: mobile-only accordion for the Judgment Record section, default
+  // compressed. The collapse only takes visual effect under the 600px
+  // breakpoint (see .history-accordion-body in globals.css) — on desktop
+  // this state has no effect and the section always renders expanded.
+  const [historyMobileOpen, setHistoryMobileOpen] = useState(false)
   const HISTORY_PREVIEW = 5
   // Sprint TOUR-1: home tour
   const [showHomeTour,   setShowHomeTour]   = useState(false)
@@ -1205,10 +1211,43 @@ export default function Home() {
            {authToken && sessions.length >= 1 && (
              <PushEnablePrompt authToken={authToken} />
            )}
-           
+
+          {/* Item #4 — quiet, collapsed-by-default reference section, moved to sit
+              directly before the Judgment Record; still deliberately kept off the
+              live synthesis path per the working decision on this item */}
+          <MeetTheCouncil />
+
           {/* ── Decision history (returning users only) ────── */}
           {(sessions.length > 0 || loadingHist) && (
             <div ref={historyRef} style={{ marginTop: 8, opacity: loadingHist ? 0 : 1, transition: 'opacity 0.6s ease' }}>
+              {/* Item #9 — mobile-only accordion toggle; hidden entirely on
+                  desktop via CSS (.history-mobile-toggle), where the section
+                  below always renders expanded regardless of this state */}
+              <button
+                className="history-mobile-toggle"
+                onClick={() => setHistoryMobileOpen(o => !o)}
+                aria-expanded={historyMobileOpen}
+                style={{
+                  width: '100%', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 2px', background: 'transparent', border: 'none',
+                  borderBottom: '1px solid var(--border-dim)', cursor: 'pointer',
+                  fontFamily: 'inherit', marginBottom: 14,
+                }}
+              >
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
+                  Your judgment record
+                  <span style={{ margin: '0 8px', opacity: 0.4 }}>·</span>
+                  <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--text-4)' }}>
+                    {sessions.length} decision{sessions.length !== 1 ? 's' : ''}
+                  </span>
+                </span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ color: 'var(--text-4)', transform: historyMobileOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              <div className={`history-accordion-body${historyMobileOpen ? '' : ' is-collapsed'}`}>
               {/* Header + tabs */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
                 <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)', margin: 0 }}>
@@ -1372,6 +1411,7 @@ export default function Home() {
                   Show {filtered.length - HISTORY_PREVIEW} more decisions
                 </button>
               )}
+              </div>
             </div>
           )}
 
@@ -1382,9 +1422,8 @@ export default function Home() {
             }
           </p>
 
-          {/* Item #4 — quiet, collapsed-by-default reference section; deliberately
-              kept off the live synthesis path per the working decision on this item */}
-          <MeetTheCouncil />
+          {/* Item #10 — end of home page, each question collapsed by default */}
+          <FAQSection />
         </div>
       </main>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import CaseStudyOptIn from './CaseStudyOptIn' // Item #11
 
 type OutcomeQuality = 'better_than_expected' | 'as_expected' | 'worse_than_expected' | 'too_early'
 
@@ -427,6 +428,12 @@ export default function OutcomeTracker({ sessionId, existingOutcome, preDecision
             Edit
           </button>
         </div>
+
+        {/* Item #11 — only offered on the strongest "Aha moment" signal,
+            matching the original feedback this backlog item came from */}
+        {displayOutcome.council_helped === 'yes' && (
+          <CaseStudyOptIn sessionId={sessionId} />
+        )}
       </div>
     )
   }

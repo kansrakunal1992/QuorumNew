@@ -15,6 +15,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter }                         from 'next/navigation'
+import CaseStudyReviewPanel from '@/components/CaseStudyReviewPanel' // Item #11
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -233,6 +234,10 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-300 px-6 py-10 max-w-6xl mx-auto space-y-12">
+
+      {/* Item #11 — case-study review queue; actionable, time-sensitive,
+          so it sits above the R7/R8 analytics rather than below them */}
+      <CaseStudyReviewPanel adminCode={storedCode} />
 
       {/* Header */}
       <div className="flex items-start justify-between">
