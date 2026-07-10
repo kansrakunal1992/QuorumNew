@@ -19,6 +19,7 @@ import OnboardingTour from '@/components/OnboardingTour'
 import type { TourStep } from '@/components/OnboardingTour'
 import { buildPWAInstallStep, buildWatchlistTourStep } from '@/components/OnboardingTour'
 import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
+import MeetTheCouncil from '@/components/MeetTheCouncil' // Item #4
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -179,6 +180,13 @@ export default function Home() {
   // Sprint TOUR-1: home tour
   const [showHomeTour,   setShowHomeTour]   = useState(false)
   const [homeTourSteps,  setHomeTourSteps]  = useState<TourStep[]>(HOME_STEPS_BASE)
+  // Item #3 fix: server-side completion check, so a returning user on a
+  // *different* device/browser (where localStorage never persisted) doesn't
+  // see the tour again. `serverCheckDone` gates the tour effect below so we
+  // never flash the tour before we've heard back from the server for a
+  // signed-in user — undefined/anonymous resolves this to true immediately.
+  const [serverTourDone, setServerTourDone] = useState(false)
+  const [serverCheckDone, setServerCheckDone] = useState(false)
 
   // ── Effects ───────────────────────────────────────────
   useEffect(() => {
@@ -204,10 +212,11 @@ export default function Home() {
   // Sprint TOUR-1: fire home tour once after the input form is revealed
   useEffect(() => {
     if (!inputRevealed) return
+    if (!serverCheckDone) return // Item #3: wait for the server check before deciding
     try {
       const done    = localStorage.getItem('quorum_tour.home')
       const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
-      if (!done && !skipped) {
+      if (!done && !skipped && !serverTourDone) {
         // Build steps: base + optional Watchlist step + optional PWA install step.
         // Watchlist ordered first — it relates to page content just walked
         // through; PWA install is a final "before you go" meta step, kept last.
@@ -219,7 +228,7 @@ export default function Home() {
         return () => clearTimeout(t)
       }
     } catch {}
-  }, [inputRevealed])
+  }, [inputRevealed, serverCheckDone, serverTourDone])
 
   // Sprint TOUR-1: auto-advance panel 2 (QUORUM card) → input reveal after 1800ms
   // User can still click to fast-forward. This removes the "dead end" on the QUORUM card.
@@ -243,6 +252,21 @@ export default function Home() {
         const { data: { session: authSession } } = await supabase.auth.getSession()
         const token = authSession?.access_token ?? null
         setAuthToken(token)
+        if (token) {
+          // Item #3 fix: check server-side tour completion for signed-in users.
+          // Anonymous/unauthenticated sessions have no server record to check,
+          // so they fall through to serverCheckDone=true below and rely on
+          // localStorage alone, same as before this fix.
+          fetch('/api/profile', { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(d => {
+              if (d?.profile?.onboarding_tour_completed_at) setServerTourDone(true)
+            })
+            .catch(() => {})
+            .finally(() => setServerCheckDone(true))
+        } else {
+          setServerCheckDone(true) // no session to check — localStorage is authoritative
+        }
         if (token) {
           fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
             .then(r => r.json())
@@ -1357,6 +1381,10 @@ export default function Home() {
               : 'Sessions are private by URL. No account linked.'
             }
           </p>
+
+          {/* Item #4 — quiet, collapsed-by-default reference section; deliberately
+              kept off the live synthesis path per the working decision on this item */}
+          <MeetTheCouncil />
         </div>
       </main>
 
@@ -1368,6 +1396,14 @@ export default function Home() {
           active={showHomeTour}
           onComplete={() => {
             try { localStorage.setItem('quorum_tour.home', 'done') } catch {}
+            // Item #3: also persist server-side for signed-in users, so this
+            // holds across devices/browsers, not just this localStorage.
+            if (authToken) {
+              fetch('/api/onboarding/complete', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${authToken}` },
+              }).catch(() => {})
+            }
             setShowHomeTour(false)
           }}
           onSkip={() => {
@@ -1375,6 +1411,12 @@ export default function Home() {
               ;['quorum_tour.home', 'quorum_tour.council', 'quorum_tour.record']
                 .forEach(k => localStorage.setItem(k, 'skip'))
             } catch {}
+            if (authToken) {
+              fetch('/api/onboarding/complete', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${authToken}` },
+              }).catch(() => {})
+            }
             setShowHomeTour(false)
           }}
         />
