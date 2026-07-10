@@ -120,6 +120,8 @@ export async function GET(req: Request) {
     institutionMembershipsResult,
     cohortMembershipsResult,
     consentAuditLogResult,
+    userInstitutionPreferenceResult,
+    seenUnlockNoticesResult,
   ] = await Promise.all([
     sessionIds.length
       ? supabase.from('outcomes').select('*').in('session_id', sessionIds)
@@ -145,6 +147,11 @@ export async function GET(req: Request) {
     supabase.from('institution_memberships').select('*, institutions(name)').eq('user_id', user.id),
     supabase.from('cohort_memberships').select('*, cohorts(name)').eq('user_id', user.id),
     supabase.from('consent_audit_log').select('*').eq('user_id', user.id),
+    // Institutional Sprint 5 — same gap, closed proactively this time
+    // rather than in a follow-up pass: an account-level preference and a
+    // UI-state flag, both genuinely this user's data.
+    supabase.from('user_institution_preference').select('*').eq('user_id', user.id),
+    supabase.from('seen_unlock_notices').select('*').eq('user_id', user.id),
   ])
 
   // ── 4. Decrypt encrypted fields ────────────────────────────────────────────
@@ -225,6 +232,8 @@ export async function GET(req: Request) {
     institution_memberships: institutionMembershipsResult.data ?? [],
     cohort_memberships:      cohortMembershipsResult.data ?? [],
     consent_audit_log:       consentAuditLogResult.data ?? [],
+    user_institution_preference: userInstitutionPreferenceResult.data ?? [],
+    seen_unlock_notices:         seenUnlockNoticesResult.data ?? [],
   }
 
   // ── 6. Record export in cooldown + audit log ───────────────────────────────

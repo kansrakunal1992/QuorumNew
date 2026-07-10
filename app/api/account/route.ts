@@ -109,6 +109,9 @@ export async function DELETE(req: Request) {
     'institution_memberships',
     'cohort_memberships',
     'consent_audit_log',
+    // Institutional Sprint 5 — closed proactively this time.
+    'user_institution_preference',
+    'seen_unlock_notices',
   ] as const
 
   for (const table of userIdTables) {
