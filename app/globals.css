@@ -431,6 +431,28 @@ textarea::placeholder { color: var(--text-4); }
   color: var(--gold);
 }
 
+/* ── Institution mode badge (Institutional Sprint 5) ──────
+   Deliberately stacked BELOW .theme-toggle (top: 62px vs its 18px) at the
+   same right edge, rather than sharing its row — .theme-toggle is a single
+   fixed-width button; this badge is two variable-width pieces (institution
+   name + sharing pill) that would collide with it, and with the home page's
+   own fixed navbar (0–56px, "Judgment Operating System" tagline at its
+   right edge) if placed any higher. Only ever rendered for users who've
+   actually joined an institution (see InstitutionModeBadge.tsx), so this
+   never appears for most users regardless. */
+.institution-mode-badge {
+  position: fixed;
+  top: 62px;
+  right: 20px;
+  z-index: 8999;
+}
+@media (max-width: 480px) {
+  .institution-mode-badge {
+    top: 52px;
+    right: 12px;
+  }
+}
+
 /* ── Semantic outcome badge colours ─────────────────────── */
 [data-theme="dark"] {
   --green-border:    #2a4a2e;

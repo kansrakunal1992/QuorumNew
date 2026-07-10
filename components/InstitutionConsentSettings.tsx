@@ -95,7 +95,7 @@ export default function InstitutionConsentSettings() {
   if (loading || !memberships?.length) return null
 
   return (
-    <>
+    <div id="institutional-sharing" style={{ scrollMarginTop: 80 }}>
       {memberships.map(m => (
         <div key={m.institution_id} style={{
           background: 'var(--bg-card)',
@@ -189,7 +189,7 @@ export default function InstitutionConsentSettings() {
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 }
 

@@ -14,6 +14,7 @@
 // CookieConsent/UpdateBanner already use in that file, not a new pattern.
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
 
@@ -103,10 +104,7 @@ export default function InstitutionModeBadge() {
   if (!active?.institutionId || !active.memberships.length) return null
 
   return (
-    <div style={{
-      position: 'fixed', top: 14, right: 16, zIndex: 500,
-      display: 'inline-flex', alignItems: 'center', gap: 8,
-    }}>
+    <div className="institution-mode-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
         <button
           onClick={() => setOpen(v => !v)}
@@ -123,13 +121,21 @@ export default function InstitutionModeBadge() {
           {active.memberships.length > 1 && <span style={{ fontSize: 9 }}>▾</span>}
         </button>
 
-        <span style={{
-          padding: '3px 10px', borderRadius: 20,
-          border: '1px solid var(--border-dim)', background: 'transparent',
-          color: 'var(--text-4)', fontSize: 10.5, fontFamily: 'var(--font-mono)',
-        }}>
+        {/* Clickable — goes straight to the Institutional Sharing card in
+            Privacy Center, since "how do I change this" was the whole point
+            of surfacing it here in the first place. */}
+        <Link
+          href="/settings/privacy#institutional-sharing"
+          title="Change sharing settings"
+          style={{
+            padding: '3px 10px', borderRadius: 20,
+            border: '1px solid var(--border-dim)', background: 'transparent',
+            color: 'var(--text-4)', fontSize: 10.5, fontFamily: 'var(--font-mono)',
+            textDecoration: 'none', cursor: 'pointer',
+          }}
+        >
           Sharing: {sharing}
-        </span>
+        </Link>
 
         {open && active.memberships.length > 1 && (
           <div style={{
