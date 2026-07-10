@@ -10,6 +10,20 @@
 // Hidden automatically if:
 //   - quorum_user_email already in localStorage (user is linked)
 //   - user dismissed during this session (sessionStorage flag)
+//   - a link was already sent this session and is awaiting click (sessionStorage flag)
+//
+// Bug fix (2026-07): this card used to write quorum_user_email to localStorage
+// as soon as the magic link was *sent*, not once it was actually clicked and
+// verified. quorum_user_email is documented everywhere else (lib/storage.ts,
+// app/auth/callback/page.tsx) as a post-auth-only signal — app/page.tsx reads
+// it to decide whether to show the "Sessions linked to X" badge and whether to
+// send the auth token to /api/history. Setting it early made the home page
+// claim the account was linked (and only show local-device sessions) while
+// the Watchlist teaser — correctly gated on the real authToken — still showed
+// "Unlock", producing a contradictory UI. Only app/auth/callback/page.tsx
+// (via storeUserEmail(), after Supabase verifies the session) should ever
+// write that key. This card now uses its own session-scoped "pending" flag
+// instead, so it still avoids re-prompting within the same session.
 
 import { useState, useEffect } from 'react'
 import { getStoredSessionIds, getStoredDeviceId } from '@/lib/storage'
@@ -26,12 +40,15 @@ export default function EmailCaptureCard({ sessionId }: Props) {
   const [state,   setState]   = useState<State>('idle')
   const [error,   setError]   = useState('')
 
-  // Check localStorage on mount — hide if already linked or dismissed
+  // Check localStorage/sessionStorage on mount — hide if already linked,
+  // dismissed, or a link was already sent this session and hasn't been
+  // clicked yet (avoids re-nagging without falsely claiming linkage).
   useEffect(() => {
     try {
-      const linked    = !!localStorage.getItem('quorum_user_email')
+      const linked   = !!localStorage.getItem('quorum_user_email')
       const dismissed = !!sessionStorage.getItem('quorum_brief_email_dismissed')
-      if (!linked && !dismissed) setVisible(true)
+      const pending   = !!sessionStorage.getItem('quorum_brief_email_pending')
+      if (!linked && !dismissed && !pending) setVisible(true)
     } catch {
       // localStorage unavailable — don't show
     }
@@ -75,8 +92,11 @@ export default function EmailCaptureCard({ sessionId }: Props) {
         return
       }
       setState('sent')
-      // Store email locally so this card hides on future visits
-      try { localStorage.setItem('quorum_user_email', trimmed) } catch {}
+      // Mark pending (NOT linked) so this card doesn't re-prompt for the rest
+      // of this session while the link is unclicked. The actual
+      // quorum_user_email key is only ever set post-verification, in
+      // app/auth/callback/page.tsx.
+      try { sessionStorage.setItem('quorum_brief_email_pending', '1') } catch {}
     } catch {
       setState('idle')
       setError('Something went wrong. Try again.')
