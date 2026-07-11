@@ -97,7 +97,7 @@ function FAQRow({ item }: { item: FAQItem }) {
 
 export default function FAQSection() {
   return (
-    <div style={{ marginTop: 28 }}>
+    <div id="faq" style={{ marginTop: 28 }}>
       <p style={{
         fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em',
         textTransform: 'uppercase', color: 'var(--text-3)', margin: '0 0 6px',

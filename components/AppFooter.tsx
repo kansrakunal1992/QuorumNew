@@ -9,6 +9,7 @@
 import Link from 'next/link'
 
 const LEGAL_LINKS = [
+  { href: '/methodology', label: 'How Quorum Works' },
   { href: '/privacy',  label: 'Privacy Policy' },
   { href: '/cookies',  label: 'Cookie Policy'  },
   { href: '/terms',    label: 'Terms'          },
