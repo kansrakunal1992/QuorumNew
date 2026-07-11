@@ -106,6 +106,22 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // the citation badge only ever renders when this is non-empty.
   const [structuralCitationText, setStructuralCitationText] = useState('')
 
+  // Item #9 (revised) — mobile-only collapse for this persona card, default
+  // OPEN/expanded. Unlike the Judgment Record or FAQ (secondary/reference
+  // content, collapsed by default), this card's analysis IS the core product
+  // value — collapsing it by default would hide the main thing someone opened
+  // the session to read. This only ever gates visibility under the 600px
+  // breakpoint (see .persona-body-mobile in globals.css); desktop is
+  // unaffected regardless of this state. The toggle itself only appears once
+  // panelState === 'done' — collapsing mid-stream would be disorienting.
+  const [mobileCollapsed, setMobileCollapsed] = useState(false)
+
+  // Item #14 — synthesized one-line rationale, tucked behind a small "why"
+  // toggle, hidden by default so it never competes with the analysis itself.
+  // Reuses the existing structural-citation text (already computed,
+  // already safe to show — no raw scores/rule IDs) rather than a new signal.
+  const [showWhy, setShowWhy] = useState(false)
+
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
   const [examinerUpdateState, setExaminerUpdateState] = useState<'idle' | 'streaming' | 'done'>('idle')
@@ -502,12 +518,34 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             </button>
           )}
           <StatusBadge />
+          {/* Item #9 (revised) — mobile-only card collapse toggle; hidden
+              entirely on desktop, and only shown once the response is done */}
+          {panelState === 'done' && (
+            <button
+              className="persona-mobile-toggle"
+              onClick={() => setMobileCollapsed(c => !c)}
+              aria-expanded={!mobileCollapsed}
+              aria-label={mobileCollapsed ? 'Expand analysis' : 'Collapse analysis'}
+              style={{
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: 'var(--text-4)', padding: 2, display: 'none', alignItems: 'center',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: mobileCollapsed ? 'none' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          )}
           </div>  {/* close buttons row */}
         </div>  {/* close justify-between */}
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}>
+      <div
+        className={`persona-body-mobile${mobileCollapsed ? ' is-collapsed' : ''}`}
+        style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}
+      >
 
         {/* Position — unlabeled opening verdict, no prefix chrome.
             Lens moves to header caption; real cost moves to card close.
@@ -606,7 +644,30 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </div>
         )}
 
-        {structuralCitationBlock}
+        {/* Item #14 — synthesized rationale, hidden by default behind a
+            small toggle so it never competes with the analysis itself.
+            Only shown at all when there's something to show. */}
+        {structuralCitationText && panelState === 'done' && (
+          <div style={{ marginTop: 16 }}>
+            <button
+              onClick={() => setShowWhy(w => !w)}
+              aria-expanded={showWhy}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                padding: 0, fontFamily: 'inherit',
+                fontSize: 11, fontWeight: 600, color: 'var(--text-4)', letterSpacing: '0.03em',
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: showWhy ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              Why
+            </button>
+            {showWhy && structuralCitationBlock}
+          </div>
+        )}
 
         {isPushingBack && (
           <p style={{ fontSize: 12, color: 'var(--gold)', marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>

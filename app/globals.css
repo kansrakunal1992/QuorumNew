@@ -510,9 +510,12 @@ textarea::placeholder { color: var(--text-4); }
   grid-template-columns: 1fr 1fr;
 }
 
-/* Item #9 — hidden by default (desktop); shown only under the 600px
-   breakpoint below, where the Judgment Record accordion applies */
-.history-mobile-toggle {
+/* Item #9 (revised) — persona card mobile-collapse toggle, hidden by
+   default (desktop); shown only under the 600px breakpoint below. Default
+   state is OPEN/expanded (no 'is-collapsed' class applied initially) —
+   unlike the Judgment Record or FAQ, this content is the core product
+   value, not reference material, so it should not hide itself by default. */
+.persona-mobile-toggle {
   display: none;
 }
 
@@ -523,14 +526,14 @@ textarea::placeholder { color: var(--text-4); }
     display: none;
   }
 
-  /* Item #9 — Judgment Record accordion, mobile only, default compressed.
-     .history-accordion-body has 'is-collapsed' applied by default; this
-     rule only exists inside this @media block, so desktop always shows
-     the section expanded regardless of the collapsed class. */
-  .history-mobile-toggle {
+  /* Item #9 (revised) — persona card accordion, mobile only, default open.
+     .persona-body-mobile only collapses when .is-collapsed is explicitly
+     applied (i.e. the user tapped to collapse it themselves) — this rule
+     only exists inside this @media block, so desktop is never affected. */
+  .persona-mobile-toggle {
     display: flex !important;
   }
-  .history-accordion-body.is-collapsed {
+  .persona-body-mobile.is-collapsed {
     display: none;
   }
 

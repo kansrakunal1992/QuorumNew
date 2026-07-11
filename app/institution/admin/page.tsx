@@ -16,7 +16,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
-import { DIM_LABELS, type VectorDimName } from '@/lib/structural-retrieval'   // Institutional Sprint 5 (task 7)
+import { DIM_LABELS, type VectorDimName } from '@/lib/structural-dims'   // Institutional Sprint 5 (task 7) — build fix: client-safe import
 
 interface AdminMembership {
   institution_id: string

@@ -21,6 +21,7 @@ import { buildPWAInstallStep, buildWatchlistTourStep } from '@/components/Onboar
 import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
 import MeetTheCouncil from '@/components/MeetTheCouncil' // Item #4
 import FAQSection from '@/components/FAQSection' // Item #10
+import ReferralLink from '@/components/ReferralLink' // Item #17
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = () => (
@@ -160,6 +161,7 @@ export default function Home() {
   const [loadingHist,    setLoadingHist]    = useState(false)
   const [activeTab,      setActiveTab]      = useState<'all'|'pending'|'decided'>('all')
   const [authToken,      setAuthToken]      = useState<string | null>(null)
+  const [userId,         setUserId]         = useState<string | null>(null) // Item #17 — referral link
   const [mirrorUnlocked, setMirrorUnlocked] = useState(false)
   const [patternDimensions, setPatternDimensions] = useState<Array<{dim:string;label:string;avg_score:number;high_count:number}> >([])
 
@@ -182,11 +184,6 @@ export default function Home() {
   })
   const [navScrolled,    setNavScrolled]    = useState(false)
   const [historyShowAll, setHistoryShowAll] = useState(false)
-  // Item #9: mobile-only accordion for the Judgment Record section, default
-  // compressed. The collapse only takes visual effect under the 600px
-  // breakpoint (see .history-accordion-body in globals.css) — on desktop
-  // this state has no effect and the section always renders expanded.
-  const [historyMobileOpen, setHistoryMobileOpen] = useState(false)
   const HISTORY_PREVIEW = 5
   // Sprint TOUR-1: home tour
   const [showHomeTour,   setShowHomeTour]   = useState(false)
@@ -213,6 +210,19 @@ export default function Home() {
       if (!alreadyOnboarded && !hasDecisions) setIsOnboarding(true)
     } catch {}
   }, [])
+
+  // Onboarding fix: correct for the cross-device case — localStorage on
+  // THIS device may say "not onboarded" even though the signed-in user
+  // already completed/skipped it elsewhere. serverTourDone is set once the
+  // /api/profile check resolves (see the auth-token effect above); if it
+  // comes back true while the carousel is still showing, close it and sync
+  // localStorage so this device is consistent going forward.
+  useEffect(() => {
+    if (serverTourDone && isOnboarding) {
+      setIsOnboarding(false)
+      try { localStorage.setItem('quorum_onboarded', 'true') } catch {}
+    }
+  }, [serverTourDone, isOnboarding])
 
   useEffect(() => {
     const onScroll = () => setNavScrolled(window.scrollY > 24)
@@ -263,7 +273,31 @@ export default function Home() {
         const { data: { session: authSession } } = await supabase.auth.getSession()
         const token = authSession?.access_token ?? null
         setAuthToken(token)
+        setUserId(authSession?.user?.id ?? null)
         if (token) {
+          // Items #16/#17 — capture ?invite= and ?ref= from the URL once the
+          // user is signed in. Fire-and-forget; both endpoints are safe to
+          // call repeatedly (idempotent no-ops on repeat/self-referral).
+          try {
+            const params    = new URLSearchParams(window.location.search)
+            const inviteCode = params.get('invite')
+            const referrerId = params.get('ref')
+            if (inviteCode) {
+              fetch('/api/invite/redeem', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body:    JSON.stringify({ code: inviteCode }),
+              }).catch(() => {})
+            }
+            if (referrerId) {
+              fetch('/api/referral/track', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body:    JSON.stringify({ referrerId }),
+              }).catch(() => {})
+            }
+          } catch {}
+
           // Item #3 fix: check server-side tour completion for signed-in users.
           // Anonymous/unauthenticated sessions have no server record to check,
           // so they fall through to serverCheckDone=true below and rely on
@@ -312,6 +346,20 @@ export default function Home() {
   const markOnboarded = () => {
     try { localStorage.setItem('quorum_onboarded', 'true') } catch {}
     setIsOnboarding(false)
+    // Onboarding fix: also persist server-side for signed-in users, using
+    // the same flag/endpoint as the Sprint TOUR-1 walkthrough (item #3) —
+    // from the product's perspective this is one continuous first-time
+    // flow (intro carousel → input reveal → walkthrough tooltip), so it
+    // shares one durability mechanism. Without this, a signed-in user
+    // skipping on one device would still see the full intro (including the
+    // video) again on a different device, since quorum_onboarded is
+    // otherwise localStorage-only.
+    if (authToken) {
+      fetch('/api/onboarding/complete', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      }).catch(() => {})
+    }
   }
 
   const handleReveal = () => {
@@ -1293,34 +1341,6 @@ export default function Home() {
           {/* ── Decision history (returning users only) ────── */}
           {(sessions.length > 0 || loadingHist) && (
             <div ref={historyRef} style={{ marginTop: 8, opacity: loadingHist ? 0 : 1, transition: 'opacity 0.6s ease' }}>
-              {/* Item #9 — mobile-only accordion toggle; hidden entirely on
-                  desktop via CSS (.history-mobile-toggle), where the section
-                  below always renders expanded regardless of this state */}
-              <button
-                className="history-mobile-toggle"
-                onClick={() => setHistoryMobileOpen(o => !o)}
-                aria-expanded={historyMobileOpen}
-                style={{
-                  width: '100%', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 2px', background: 'transparent', border: 'none',
-                  borderBottom: '1px solid var(--border-dim)', cursor: 'pointer',
-                  fontFamily: 'inherit', marginBottom: 14,
-                }}
-              >
-                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
-                  Your judgment record
-                  <span style={{ margin: '0 8px', opacity: 0.4 }}>·</span>
-                  <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--text-4)' }}>
-                    {sessions.length} decision{sessions.length !== 1 ? 's' : ''}
-                  </span>
-                </span>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ color: 'var(--text-4)', transform: historyMobileOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-
-              <div className={`history-accordion-body${historyMobileOpen ? '' : ' is-collapsed'}`}>
               {/* Header + tabs */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
                 <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)', margin: 0 }}>
@@ -1484,7 +1504,6 @@ export default function Home() {
                   Show {filtered.length - HISTORY_PREVIEW} more decisions
                 </button>
               )}
-              </div>
             </div>
           )}
 
@@ -1497,6 +1516,9 @@ export default function Home() {
 
           {/* Item #10 — end of home page, each question collapsed by default */}
           <FAQSection />
+
+          {/* Item #17 — plain referral link, signed-in users only */}
+          {userId && <ReferralLink userId={userId} />}
         </div>
       </main>
 
