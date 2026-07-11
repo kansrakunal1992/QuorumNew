@@ -32,6 +32,7 @@ import type { CalibrationPoint, CalibrationSummary, CalibrationResponse } from '
 import type { DimensionalCalibrationZone, CalibrationEvidence } from '@/lib/calibration-engine'
 import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS } from '@/lib/calibration-copy'
 import PendingOutcomesCTA from '@/components/PendingOutcomesCTA'
+import BenchmarkScopeTag from '@/components/BenchmarkScopeTag'   // Institutional Sprint 5
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -224,7 +225,7 @@ function EvidenceRow({ evidence }: { evidence: CalibrationEvidence }) {
   )
 }
 
-function ZoneCard({ zone }: { zone: DimensionalCalibrationZone }) {
+function ZoneCard({ zone, authToken }: { zone: DimensionalCalibrationZone; authToken: string }) {
   const color    = directionColor(zone.direction)
   const phrase   = DIMENSION_EVERYDAY_PHRASE[zone.dim]
   const headline = phrase.charAt(0).toUpperCase() + phrase.slice(1)
@@ -290,12 +291,17 @@ function ZoneCard({ zone }: { zone: DimensionalCalibrationZone }) {
       }}>
         Evidence — from {totalN} of your past decisions
       </p>
+      {/* Institutional Sprint 5 — renders nothing unless this user has
+          institutional context; self-contained, no other prop needed */}
+      <div style={{ marginTop: 6 }}>
+        <BenchmarkScopeTag dim={zone.dim} authToken={authToken} />
+      </div>
       {zone.evidence.map(e => <EvidenceRow key={e.session_id} evidence={e} />)}
     </div>
   )
 }
 
-function DimensionalZonesSection({ zones }: { zones: DimensionalCalibrationZone[] }) {
+function DimensionalZonesSection({ zones, authToken }: { zones: DimensionalCalibrationZone[]; authToken: string }) {
   if (zones.length === 0) return null
   return (
     <div style={{ marginTop: 18 }}>
@@ -310,7 +316,7 @@ function DimensionalZonesSection({ zones }: { zones: DimensionalCalibrationZone[
         Personal Calibration Zones
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {zones.map(z => <ZoneCard key={z.dim} zone={z} />)}
+        {zones.map(z => <ZoneCard key={z.dim} zone={z} authToken={authToken} />)}
       </div>
     </div>
   )
@@ -701,7 +707,7 @@ export default function CalibrationSparkline({ authToken }: { authToken: string 
       </p>
 
       {/* ── Personal Calibration Zones (Sprint CAL) ─────────────────────────── */}
-      <DimensionalZonesSection zones={dimensionalZones} />
+      <DimensionalZonesSection zones={dimensionalZones} authToken={authToken} />
     </div>
   )
 }

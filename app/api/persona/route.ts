@@ -151,7 +151,10 @@ import {
 }                                            from '@/lib/structural-retrieval'
 import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
-import { computePersonaRelevance, buildRelevanceBlock } from '@/lib/persona-relevance'  // Sprint R3
+import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5
+import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
+import { resolveActiveInstitution }   from '@/lib/active-institution'
+import { getBenchmarkForDimension }   from '@/lib/aggregate-benchmark'
 import { type CouncilContext, EMPTY_COUNCIL_CONTEXT } from '@/lib/council-context'
 import { fetchContinuityContext, EMPTY_CONTINUITY_CONTEXT } from '@/lib/decision-continuity'  // RET-5 Sprint 2
 import {
@@ -627,6 +630,33 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
       )
       basePrompt = `${basePrompt}${relevanceBlock}`
       console.log(`[Persona] Council weighting directive injected for synthesis | session ${sessionId}`)
+
+      // ── Institutional Sprint 5 (task 6) — additive, optional context block ──
+      // Deliberately separate from relevanceBlock above (which stays exactly
+      // as it was): this can only ever ADD text, never change what the
+      // MANDATORY directive says. No-ops entirely (adds nothing) when the
+      // flag is off, the user has no active institution, or the segment
+      // hasn't cleared K_FLOOR — matching every other "absent, not empty"
+      // institutional UI surface in this build.
+      if (isInstitutionalModeEnabled() && councilResult.userId) {
+        try {
+          const dim = pickMostRelevantDimension(councilResult.ontologyVector)
+          if (dim) {
+            const active = await resolveActiveInstitution(councilResult.userId)
+            const benchmark = await getBenchmarkForDimension(dim, active.institutionId)
+            const institutionalBlock = buildInstitutionalContextBlock(benchmark)
+            if (institutionalBlock) {
+              basePrompt = `${basePrompt}${institutionalBlock}`
+              console.log(`[Persona] Institutional context block injected (dim=${dim}, scope=${benchmark.scope.type}) | session ${sessionId}`)
+            }
+          }
+        } catch (err) {
+          // Never let institutional context break synthesis — this whole
+          // block is additive and optional by design; a failure here should
+          // degrade to "no institutional context", not fail the request.
+          console.error('[Persona] Institutional context block failed (non-fatal):', err)
+        }
+      }
 
       // ── RET-5 Sprint 2: continuity directive — terminal layer (after relevanceBlock) ──
       // Position matters: this must be the final instruction before synthesis output

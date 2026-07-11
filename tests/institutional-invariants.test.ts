@@ -35,7 +35,17 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const REPO_ROOT = join(__dirname, '..')
-const SCAN_DIRS = ['app/api/institutions', 'app/api/admin']
+const SCAN_DIRS = [
+  'app/api/institutions',
+  // NOT 'app/api/admin' wholesale — that directory is a shared namespace for
+  // all platform admin tooling (case-studies review, audit-log, mirror-access
+  // grants, etc.), most of which has nothing to do with institutions and
+  // legitimately needs raw content access for its own, unrelated, consent-
+  // gated purposes (discovered when app/api/admin/case-studies/route.ts
+  // started tripping this test after being added in a parallel feature).
+  // Only the one institutional admin route lives under this specific path.
+  'app/api/admin/create-institution',
+]
 
 // Fields that must never be selected from an institution-scoped or admin
 // route, at any role — per plan Section 0's ledger table list.

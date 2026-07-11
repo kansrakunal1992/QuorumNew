@@ -16,6 +16,7 @@ import type { FingerprintData } from '@/lib/types'
 import type { PersonalBiasTrigger, BiasTriggerEvidence } from '@/lib/bias-trigger-engine'
 import { DIMENSION_EVERYDAY_PHRASE, CALIBRATION_ACTION_HINTS, FLAG_EVERYDAY_PHRASE, FLAG_ACTION_HINTS, CATEGORY_ACTION_HINTS, CATEGORY_VALUE_LABELS } from '@/lib/calibration-copy'
 import PendingOutcomesCTA from '@/components/PendingOutcomesCTA'
+import BenchmarkScopeTag from '@/components/BenchmarkScopeTag'   // Institutional Sprint 5
 
 // ── Personal Trigger Patterns (Sprint BT) ─────────────────────────────────────
 function TriggerEvidenceRow({ evidence }: { evidence: BiasTriggerEvidence }) {
@@ -36,7 +37,7 @@ function TriggerEvidenceRow({ evidence }: { evidence: BiasTriggerEvidence }) {
   )
 }
 
-function TriggerCard({ trigger }: { trigger: PersonalBiasTrigger }) {
+function TriggerCard({ trigger, authToken }: { trigger: PersonalBiasTrigger; authToken: string }) {
   // Phase 2b: trigger is a 3-way union (dimension | flag | category). Each
   // type needs its own opening clause — "When you have {noun phrase}," fits
   // dimension copy (a noun phrase) but NOT flag or category copy (both full
@@ -89,6 +90,16 @@ function TriggerCard({ trigger }: { trigger: PersonalBiasTrigger }) {
       <p style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '12px 0 0' }}>
         When it went wrong — {trigger.evidence.length} example{trigger.evidence.length !== 1 ? 's' : ''}
       </p>
+      {/* Institutional Sprint 5 — only dimension-type triggers share a
+          vocabulary with the aggregate views (triggerDim: VectorDimName);
+          flag/category triggers use a different vocabulary with no
+          aggregate view built, so they're deliberately skipped rather than
+          querying a dim that could never resolve. */}
+      {trigger.triggerType === 'dimension' && (
+        <div style={{ marginTop: 6 }}>
+          <BenchmarkScopeTag dim={trigger.triggerDim} authToken={authToken} />
+        </div>
+      )}
       {trigger.evidence.map(e => <TriggerEvidenceRow key={e.session_id} evidence={e} />)}
     </div>
   )
@@ -116,7 +127,7 @@ function PersonalTriggerSection({
           const subKey = t.triggerType === 'dimension' ? t.triggerDim
             : t.triggerType === 'flag' ? t.triggerFlag
             : `${t.categoryField}:${t.categoryValue}`
-          return <TriggerCard key={t.biasKey + t.triggerType + subKey} trigger={t} />
+          return <TriggerCard key={t.biasKey + t.triggerType + subKey} trigger={t} authToken={authToken} />
         })}
       </div>
     )

@@ -76,8 +76,12 @@ export async function getUnlockProgress(
 
   for (const row of rows ?? []) {
     const ontology = Array.isArray(row.sessions_ontology) ? row.sessions_ontology[0] : row.sessions_ontology
-    const vector = ontology?.ontology_vector as Record<string, number> | undefined
-    const score = vector?.[dim]
+    // ontology_vector's real shape (verified against supabase/sprint11a_14dim_ontology.sql):
+    // { "<dim>": { score: 1-5, confidence: 0-1, rationale }, ... } — each
+    // dimension is an object, not a bare number. Matches lib/structural-
+    // retrieval.ts's VectorDim type exactly.
+    const vector = ontology?.ontology_vector as Record<string, { score?: number }> | undefined
+    const score = vector?.[dim]?.score
     if (typeof score !== 'number') continue
     if (score >= 4) highUsers.add(row.user_id)
     else if (score <= 2) lowUsers.add(row.user_id)

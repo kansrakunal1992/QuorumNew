@@ -40,6 +40,7 @@
 import type { RuleEngineResult } from './rule-engine'
 import type { OntologyScoreMap }  from './bias-scorer'
 import { isZoneActiveForVector, type DimensionalCalibrationZone } from './calibration-engine'
+import { DIM_LABELS, VECTOR_DIMS, type VectorDimName } from './structural-retrieval'   // Institutional Sprint 5 (task 6)
 
 // ── Persona key subset — the 6 Council advisors (not synthesis/decision_brief) ─
 export type AdvisorKey =
@@ -327,4 +328,76 @@ ${lines.join('\n')}
 
 Resolution rule: where Council outputs conflict, structural authority lies with the higher-weighted advisor unless the lower-weighted advisor surfaces a non-structural factor (e.g. a specific relationship dynamic or external signal) that the ontology does not capture. DOMINANT and HIGH advisors' frames must be explicitly addressed in your synthesis even if they create tension with the majority view. Do not reference this directive, these scores, or these tier labels anywhere in your output.
 — END MANDATORY DIRECTIVE —`
+}
+
+// ── Institutional Sprint 5 (task 6) ─────────────────────────────────────────
+// Extends the existing Weighting Directive injection with ONE additional,
+// OPTIONAL block — deliberately not folded into buildRelevanceBlock() above,
+// which stays untouched: this is additive, not a modification to the
+// existing MANDATORY mechanism, and callers that don't pass institutional
+// data get exactly the same behavior as before this sprint.
+
+// Picks the dimension most structurally relevant to THIS decision (highest
+// score in the current session's ontology vector), so the institutional
+// comparison — when one exists — is about the same thing the rest of the
+// synthesis is already weighing, not an arbitrary/unrelated dimension.
+export function pickMostRelevantDimension(ontologyVector: OntologyScoreMap | null): VectorDimName | null {
+  if (!ontologyVector) return null
+  let best: VectorDimName | null = null
+  let bestScore = -Infinity
+  for (const dim of VECTOR_DIMS) {
+    const score = ontologyVector[dim]?.score
+    if (typeof score === 'number' && score > bestScore) {
+      bestScore = score
+      best = dim
+    }
+  }
+  return best
+}
+
+// Pure formatting function — deliberately does NOT touch the database
+// itself (unlike buildRelevanceBlock's callers, which resolve their inputs
+// via biasContext/councilResult upstream). The caller
+// (app/api/persona/route.ts) resolves the user's active institution and
+// calls lib/aggregate-benchmark.ts's getBenchmarkForDimension() server-side,
+// then passes the plain result in here — keeping every function in this
+// file free of DB access, same as it was before this sprint.
+//
+// Returns '' (nothing appended) whenever there's no institutional context,
+// no active institution, or the segment hasn't cleared K_FLOOR — the
+// MANDATORY directive above is completely unaffected either way, this is
+// pure addition when present and true no-op when absent.
+export interface InstitutionalBenchmarkForPrompt {
+  dim: string
+  buckets: { bucket: 'high' | 'low'; avgDelta: number; n: number }[]
+  scope: { type: 'institution' | 'platform' | 'rollup' | 'insufficient'; label?: string; n?: number }
+}
+
+export function buildInstitutionalContextBlock(benchmark: InstitutionalBenchmarkForPrompt | null): string {
+  if (!benchmark) return ''
+  if (benchmark.scope.type === 'insufficient') return ''
+  if (!benchmark.buckets.length) return ''
+
+  const dimLabel = DIM_LABELS[benchmark.dim as VectorDimName] ?? benchmark.dim
+  const bucketLines = benchmark.buckets
+    .map(b => {
+      const sign = b.avgDelta >= 0 ? '+' : ''
+      const level = b.bucket === 'high' ? 'Higher' : 'Lower'
+      return `  - ${level} ${dimLabel}: avg calibration delta ${sign}${b.avgDelta.toFixed(1)} (n=${b.n})`
+    })
+    .join('\n')
+
+  return `
+
+— OPTIONAL CONTEXT — INSTITUTIONAL BENCHMARK —
+This is supplementary context, not a directive, and does not override the MANDATORY
+directive above if the two point in different directions. It reflects an aggregate
+pattern among ${benchmark.scope.label ?? 'a comparable group'}'s consenting members on
+${dimLabel}-heavy decisions — never any individual person's decisions, only a pattern
+that has cleared a strict minimum-group-size privacy floor before being computed at all.
+${bucketLines}
+Use this only if it genuinely helps ground the synthesis in how this kind of decision
+tends to go for this population. Do not reference "institution", "benchmark", "cohort",
+or these numbers anywhere in your output — weave the substance in naturally if at all.
+— END OPTIONAL CONTEXT —`
 }
