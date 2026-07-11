@@ -152,7 +152,7 @@ const BIAS_PLAIN_LANGUAGE: Record<string, string> = {
 
 interface GraphInsight {
   id:      string
-  kind:    'contradiction' | 'bias' | 'connected' | 'structural' | 'annotation'
+  kind:    'contradiction' | 'bias' | 'connected' | 'structural' | 'annotation' | 'cluster'
   label:   string       // small kicker, e.g. "Contradiction"
   body:    string       // the plain-English sentence
   nodeIds: string[]     // for hover/click sync with the graph above
@@ -235,7 +235,33 @@ function buildInsights(nodes: GraphNode[], edges: GraphEdge[]): GraphInsight[] {
     }
   }
 
-  // 3. Most connected node — exploratory, not urgent, but a natural "start here".
+  // 3. Item #30 — structural-similarity cluster. A pairwise structural match
+  // (step 4 below) is interesting; three or more decisions all structurally
+  // similar to the same one is a genuine recurring pattern, not a
+  // coincidence — that's the threshold the working decision on this item
+  // settled on. Counts real neighbor totals even when some edges are
+  // redacted (same "counts are free, specifics are paid" standard as the
+  // contradiction/bias insights above); the comparison panel itself hides
+  // the per-edge "why" for any redacted edge.
+  const structuralEdgesLive = live.filter(e => e.edge_type === 'structural_similarity')
+  const structuralNeighbors = new Map<string, Set<string>>()
+  structuralEdgesLive.forEach(e => {
+    if (!structuralNeighbors.has(e.session_id_a)) structuralNeighbors.set(e.session_id_a, new Set())
+    if (!structuralNeighbors.has(e.session_id_b)) structuralNeighbors.set(e.session_id_b, new Set())
+    structuralNeighbors.get(e.session_id_a)!.add(e.session_id_b)
+    structuralNeighbors.get(e.session_id_b)!.add(e.session_id_a)
+  })
+  const clusterCenter = [...structuralNeighbors.entries()].sort((a, b) => b[1].size - a[1].size)[0]
+  if (clusterCenter && clusterCenter[1].size >= 3) {
+    const [centerId, neighborIds] = clusterCenter
+    insights.push({
+      id: 'cluster', kind: 'cluster', label: 'Recurring pattern',
+      body:    `${neighborIds.size} of your decisions are structurally similar to each other — click to compare them.`,
+      nodeIds: [centerId, ...neighborIds],
+    })
+  }
+
+  // 4. Most connected node — exploratory, not urgent, but a natural "start here".
   const countByNode = new Map<string, number>()
   live.forEach(e => {
     countByNode.set(e.session_id_a, (countByNode.get(e.session_id_a) ?? 0) + 1)
@@ -333,6 +359,11 @@ export default function DecisionGraph({
   // just toggles a filter on existing DOM nodes — never rebuilds the D3
   // simulation, so hovering a card can't restart/reheat the physics.
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([])
+  // Item #30 — set when a cluster insight is clicked; drives the comparison
+  // panel below the insights strip. Holds the center node id only — the
+  // panel itself looks up the live edges/nodes fresh from `data` each
+  // render, so it never goes stale relative to dismissals etc.
+  const [clusterView, setClusterView] = useState<string | null>(null)
 
   // ── 1. Load d3 ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1003,6 +1034,7 @@ export default function DecisionGraph({
               connected:     'var(--gold-bright)',
               structural:    'var(--graph-edge-structural)',
               annotation:    'var(--graph-edge-annotation)',
+              cluster:       'var(--graph-edge-structural)',
             }
             return (
               <div
@@ -1010,13 +1042,16 @@ export default function DecisionGraph({
                 className="dg-insight-card"
                 onMouseEnter={() => setHighlightedNodeIds(insight.nodeIds)}
                 onMouseLeave={() => setHighlightedNodeIds([])}
-                onClick={() => { if (insight.nodeIds.length === 1) router.push(`/record/${insight.nodeIds[0]}`) }}
+                onClick={() => {
+                  if (insight.kind === 'cluster') { setClusterView(insight.nodeIds[0]); return }
+                  if (insight.nodeIds.length === 1) router.push(`/record/${insight.nodeIds[0]}`)
+                }}
                 style={{
                   background:   'var(--bg-card)',
                   border:       '1px solid var(--border-dim)',
                   borderRadius: 8,
                   padding:      '10px 12px',
-                  cursor:       insight.nodeIds.length === 1 ? 'pointer' : 'default',
+                  cursor:       (insight.nodeIds.length === 1 || insight.kind === 'cluster') ? 'pointer' : 'default',
                   transition:   'border-color 0.15s',
                 }}
               >
@@ -1145,6 +1180,88 @@ export default function DecisionGraph({
           </div>
         </div>
       )}
+
+      {/* Item #30 — cluster comparison panel. Same inline-card convention as
+          the annotation form above (not an overlay), opened from an insight
+          card click. Structural "why" per neighbor reuses DIMENSION_LABELS —
+          no new AI call, no new data; this is presentation of what the
+          structural-match scoring loop already computed and stored. */}
+      {clusterView && (() => {
+        const centerNode = data.nodes.find(n => n.id === clusterView)
+        const neighborEdges = liveEdges.filter(e =>
+          e.edge_type === 'structural_similarity' &&
+          (e.session_id_a === clusterView || e.session_id_b === clusterView),
+        )
+        if (!centerNode || neighborEdges.length === 0) return null
+        return (
+          <div style={{
+            marginTop:    16,
+            background:   'var(--bg-card)',
+            border:       '1px solid var(--border-mid)',
+            borderRadius: 8,
+            padding:      '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
+                  Recurring structural pattern
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
+                  Compared against <a href={`/record/${centerNode.id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'underline' }}>
+                    &ldquo;{truncate(centerNode.decision_snippet, 50)}&rdquo;
+                  </a>
+                </p>
+              </div>
+              <button
+                onClick={() => setClusterView(null)}
+                style={{ fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontFamily: 'inherit', flexShrink: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {neighborEdges.map(edge => {
+                const neighborId = edge.session_id_a === clusterView ? edge.session_id_b : edge.session_id_a
+                const neighbor   = data.nodes.find(n => n.id === neighborId)
+                if (!neighbor) return null
+                const dims = edge.redacted
+                  ? []
+                  : (edge.dimension_breakdown?.top_matching_dims ?? []).map(d => DIMENSION_LABELS[d]).filter(Boolean).slice(0, 2)
+                return (
+                  <a
+                    key={edge.id}
+                    href={`/record/${neighbor.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'block', padding: '10px 12px', borderRadius: 6,
+                      background: 'var(--bg-inset)', border: '1px solid var(--border-dim)',
+                      textDecoration: 'none', transition: 'border-color 0.15s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                      <span style={{ fontSize: 12.5, color: 'var(--text-1)', fontWeight: 500 }}>
+                        {truncate(neighbor.decision_snippet, 56)}
+                      </span>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-4)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                        {new Date(neighbor.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.5 }}>
+                      {edge.redacted
+                        ? 'Unlocking Mirror shows why these structurally match.'
+                        : dims.length > 0
+                          ? `Both involved ${dims.map(d => d.toLowerCase()).join(' and ')}.`
+                          : 'Structurally similar — unlock Mirror for the specific match.'}
+                    </p>
+                  </a>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Edge/node count */}
       <div style={{ marginTop: 10, fontSize: 10, color: 'var(--text-4)', textAlign: 'right', letterSpacing: '0.04em' }}>
