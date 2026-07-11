@@ -166,8 +166,13 @@ export default function Home() {
   // ── UI state ──────────────────────────────────────────
   const [inputRevealed,  setInputRevealed]  = useState(false)
   const [cardHovered,    setCardHovered]    = useState(false)
-  const [onboardingPanel, setOnboardingPanel] = useState(0)   // 0 | 1 | 2; panel 2 = QUORUM face
+  const [onboardingPanel, setOnboardingPanel] = useState(0)   // 0 = intro video, 1 = Council, 2 = Mirror, 3 = QUORUM face
   const [isOnboarding,    setIsOnboarding]    = useState(false)
+  // Video 1 (intro/self-help) — shown once, only to genuinely new users, as
+  // onboarding panel 0, before Council/Mirror/input. If the file 404s (not
+  // yet uploaded to /videos/ in this app's public/ dir), we skip straight to
+  // the Council panel so the flow behaves exactly as it does today.
+  const [introVideoFailed, setIntroVideoFailed] = useState(false)
   const [tipsOpen,       setTipsOpen]       = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     try {
@@ -236,10 +241,10 @@ export default function Home() {
     } catch {}
   }, [inputRevealed, serverCheckDone, serverTourDone])
 
-  // Sprint TOUR-1: auto-advance panel 2 (QUORUM card) → input reveal after 1800ms
+  // Sprint TOUR-1: auto-advance panel 3 (QUORUM card) → input reveal after 1800ms
   // User can still click to fast-forward. This removes the "dead end" on the QUORUM card.
   useEffect(() => {
-    if (!isOnboarding || onboardingPanel !== 2) return
+    if (!isOnboarding || onboardingPanel !== 3) return
     const t = setTimeout(() => {
       markOnboarded()
       handleReveal()
@@ -316,7 +321,7 @@ export default function Home() {
 
   const handleCardClick = () => {
     if (isOnboarding) {
-      if (onboardingPanel < 2) {
+      if (onboardingPanel < 3) {
         setOnboardingPanel(p => p + 1)
       } else {
         markOnboarded()
@@ -331,6 +336,12 @@ export default function Home() {
     e.stopPropagation()
     markOnboarded()
     handleReveal()
+  }
+
+  // Video panel (0) → Council panel (1). Used both when the intro video
+  // finishes naturally and when it fails to load at all.
+  const advancePastIntroVideo = () => {
+    setOnboardingPanel(p => (p === 0 ? 1 : p))
   }
 
   const handleSubmit = async () => {
@@ -572,8 +583,8 @@ export default function Home() {
                 userSelect:    'none',
               }}
             >
-              {/* Skip — only shown during onboarding panels 0 & 1 */}
-              {isOnboarding && onboardingPanel < 2 && (
+              {/* Skip — shown during onboarding panels 0, 1 & 2 (video, Council, Mirror) */}
+              {isOnboarding && onboardingPanel < 3 && (
                 <button
                   onClick={handleSkipOnboarding}
                   style={{
@@ -599,8 +610,68 @@ export default function Home() {
                 </button>
               )}
 
-              {/* ── Panel 0 — THE COUNCIL ──────────────────── */}
-              {isOnboarding && onboardingPanel === 0 && (
+              {/* ── Panel 0 — INTRO VIDEO ───────────────────── */}
+              {/* Video 1 (intro/self-help), per video strategy doc: shown once,
+                  before the input box, skippable. Autoplay+muted (no user
+                  gesture needed inside the card), native controls exposed so
+                  the person can unmute or scrub if they want to. If the file
+                  hasn't been uploaded yet, onError skips straight to the
+                  Council panel — no broken player, same flow as today. */}
+              {isOnboarding && onboardingPanel === 0 && !introVideoFailed && (
+                <div style={{ width: '100%', maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    margin:        '0 0 20px',
+                    opacity:       0.75,
+                    textAlign:     'center',
+                  }}>
+                    Welcome to Quorum
+                  </p>
+                  <video
+                    autoPlay
+                    muted
+                    controls
+                    playsInline
+                    preload="metadata"
+                    poster="/videos/quorum-intro-poster.jpg"
+                    onEnded={advancePastIntroVideo}
+                    onError={() => { setIntroVideoFailed(true); advancePastIntroVideo() }}
+                    style={{
+                      width:        '100%',
+                      borderRadius: 12,
+                      border:       '1px solid var(--gold-dim)',
+                      background:   '#000',
+                      display:      'block',
+                    }}
+                  >
+                    <source src="/videos/quorum-intro.mp4" type="video/mp4" />
+                    <track kind="captions" src="/videos/quorum-intro.vtt" srcLang="en" label="English" default />
+                  </video>
+                  <p
+                    onClick={() => setOnboardingPanel(1)}
+                    style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      9.5,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      color:         'var(--text-4)',
+                      textAlign:     'center',
+                      margin:        '14px 0 0',
+                      cursor:        'pointer',
+                      opacity:       0.7,
+                    }}
+                  >
+                    Skip video →
+                  </p>
+                </div>
+              )}
+
+              {/* ── Panel 1 — THE COUNCIL ──────────────────── */}
+              {isOnboarding && onboardingPanel === 1 && (
                 <>
                   <p style={{
                     fontFamily:    'var(--font-mono)',
@@ -642,8 +713,8 @@ export default function Home() {
                 </>
               )}
 
-              {/* ── Panel 1 — YOUR MIRROR ─────────────────── */}
-              {isOnboarding && onboardingPanel === 1 && (
+              {/* ── Panel 2 — YOUR MIRROR ─────────────────── */}
+              {isOnboarding && onboardingPanel === 2 && (
                 <>
                   <p style={{
                     fontFamily:    'var(--font-mono)',
@@ -685,8 +756,8 @@ export default function Home() {
                 </>
               )}
 
-              {/* ── Panel 2 / Default — QUORUM face ────────── */}
-              {(!isOnboarding || onboardingPanel === 2) && (
+              {/* ── Panel 3 / Default — QUORUM face ────────── */}
+              {(!isOnboarding || onboardingPanel === 3) && (
                 <>
                   <div style={{
                     width:      56, height: 1,
@@ -744,7 +815,7 @@ export default function Home() {
                 {/* Dot indicators — only during onboarding */}
                 {isOnboarding && (
                   <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                    {[0, 1, 2].map(i => (
+                    {[0, 1, 2, 3].map(i => (
                       <div key={i} style={{
                         width:        i === onboardingPanel ? 18 : 6,
                         height:       6,
@@ -757,8 +828,10 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Tap prompt — panels 0 & 1 only */}
-                {isOnboarding && onboardingPanel < 2 && (
+                {/* Tap prompt — Council (1) & Mirror (2) only. Video panel (0)
+                    has its own "Skip video →" link + native controls;
+                    QUORUM panel (3) has its own CTA copy below. */}
+                {isOnboarding && onboardingPanel > 0 && onboardingPanel < 3 && (
                   <p style={{
                     fontFamily:    'var(--font-mono)',
                     fontSize:      9,
