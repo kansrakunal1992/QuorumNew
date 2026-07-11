@@ -116,6 +116,7 @@ export async function GET(req: Request) {
     independenceScoreLogResult,
     mirrorAccessResult,
     userProfileResult,
+    caseStudySubmissionsResult,   // unrelated fix, found while auditing GDPR coverage
     pushSubscriptionsResult,
     institutionMembershipsResult,
     cohortMembershipsResult,
@@ -138,6 +139,13 @@ export async function GET(req: Request) {
     supabase.from('independence_score_log').select('*').eq('user_id', user.id),
     supabase.from('mirror_access').select('*').eq('user_id', user.id),
     supabase.from('user_profiles').select('*').eq('user_id', user.id).maybeSingle(),
+    // Unrelated to institutional work — found while auditing GDPR coverage
+    // with the full migration set now visible: user_note is genuinely
+    // user-authored content, safe from orphaning on delete (ON DELETE
+    // CASCADE to auth.users) but was never exportable. anonymized_draft is
+    // an internal AI-drafted starting point never shown to the user, so
+    // deliberately not selected here even though it's in the same row.
+    supabase.from('case_study_submissions').select('id, session_id, user_note, status, consent_given_at, created_at').eq('user_id', user.id),
     supabase.from('push_subscriptions').select('*').eq('user_id', user.id),
     // QC fix (audit pass, July 2026, round 2) — Institutional Sprints 1-3
     // tables, added after the first GDPR pass. institutions/cohorts
@@ -228,6 +236,7 @@ export async function GET(req: Request) {
     independence_score_log: independenceScoreLogResult.data ?? [],
     mirror_access:         mirrorAccessResult.data ?? [],
     user_profile:          userProfileResult.data ?? null,
+    case_study_submissions: caseStudySubmissionsResult.data ?? [],
     push_subscriptions:    pushSubscriptionsResult.data ?? [],
     institution_memberships: institutionMembershipsResult.data ?? [],
     cohort_memberships:      cohortMembershipsResult.data ?? [],

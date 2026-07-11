@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
+import { DIM_LABELS, type VectorDimName } from '@/lib/structural-retrieval'   // Institutional Sprint 5 (task 7)
 
 interface AdminMembership {
   institution_id: string
@@ -36,6 +37,21 @@ interface CodeStatus {
   children: { id: string; name: string; created_at: string }[]
 }
 
+// Institutional Sprint 5 (task 7)
+type ConsentRate =
+  | { belowFloor: true; memberCount: number; kFloor: number }
+  | { belowFloor: false; memberCount: number; aggregateRate: number; cohortRate: number }
+
+interface AggregateSegment {
+  dim: string
+  high_avg_delta: number | null
+  high_n: number | null
+  low_avg_delta: number | null
+  low_n: number | null
+  gap: number | null
+  is_signal: boolean | null
+}
+
 function institutionName(m: AdminMembership): string {
   const inst = Array.isArray(m.institutions) ? m.institutions[0] : m.institutions
   return inst?.name ?? 'Institution'
@@ -50,6 +66,8 @@ export default function InstitutionAdminPage() {
   const [roster, setRoster]           = useState<RosterRow[] | null>(null)
   const [codeStatus, setCodeStatus]   = useState<CodeStatus | null>(null)
   const [consentCounts, setConsentCounts] = useState<Record<string, number> | null>(null)
+  const [consentRate, setConsentRate] = useState<ConsentRate | null>(null)
+  const [aggregateSegments, setAggregateSegments] = useState<AggregateSegment[] | null>(null)
   const [lastIssuedCode, setLastIssuedCode] = useState<string | null>(null)
   const [busy, setBusy]               = useState(false)
   const [notice, setNotice]           = useState<string | null>(null)
@@ -84,14 +102,18 @@ export default function InstitutionAdminPage() {
   // ── 2. Load roster + code status whenever the selected institution changes ──
   const loadInstitutionData = useCallback(async (institutionId: string, token: string) => {
     const headers = { Authorization: `Bearer ${token}` }
-    const [rosterRes, codesRes, consentRes] = await Promise.all([
+    const [rosterRes, codesRes, consentRes, rateRes, dashboardRes] = await Promise.all([
       fetch(`/api/institutions/${institutionId}/admin/roster`, { headers }),
       fetch(`/api/institutions/${institutionId}/admin/codes`, { headers }),
       fetch(`/api/institutions/${institutionId}/consent-changes`, { headers }),
+      fetch(`/api/institutions/${institutionId}/admin/consent-rate`, { headers }),
+      fetch(`/api/institutions/${institutionId}/admin/aggregate-dashboard`, { headers }),
     ])
     setRoster(rosterRes.ok ? (await rosterRes.json()).roster : null)
     setCodeStatus(codesRes.ok ? await codesRes.json() : null)
     setConsentCounts(consentRes.ok ? (await consentRes.json()).counts : null)
+    setConsentRate(rateRes.ok ? await rateRes.json() : null)
+    setAggregateSegments(dashboardRes.ok ? (await dashboardRes.json()).segments : null)
   }, [])
 
   useEffect(() => {
@@ -262,11 +284,61 @@ export default function InstitutionAdminPage() {
         </p>
       </Panel>
 
-      {/* ── Aggregate Dashboard — coming soon, no backend call, no fake data ── */}
+      {/* ── Consent Rate (Task 7) — floor-gated per the answered question:
+          no rate shown until total membership itself clears K_FLOOR ────── */}
+      <Panel title="Consent Rate">
+        {!consentRate ? (
+          <p style={{ color: 'var(--text-4)', fontSize: 12.5 }}>Loading…</p>
+        ) : consentRate.belowFloor ? (
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)' }}>
+            Not enough members yet ({consentRate.memberCount} of {consentRate.kFloor} needed) —
+            a rate isn&apos;t shown below this size, since it could nearly reveal who specifically opted in.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Aggregate benchmarking</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-2)', fontFamily: 'var(--font-mono)' }}>{consentRate.aggregateRate}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Cohort sharing</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-2)', fontFamily: 'var(--font-mono)' }}>{consentRate.cohortRate}%</span>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '4px 0 0' }}>
+              Of {consentRate.memberCount} members.
+            </p>
+          </div>
+        )}
+      </Panel>
+
+      {/* ── Aggregate Dashboard (Task 7) — real data now, replacing Sprint 3's
+          placeholder. Absent dimensions simply haven't cleared K_FLOOR yet —
+          not listed as "locked", same absence-is-the-mechanism pattern. ── */}
       <Panel title="Aggregate Dashboard">
-        <p style={{ fontSize: 12.5, color: 'var(--text-4)' }}>
-          Coming in a future update — floor-protected benchmarks across your institution.
-        </p>
+        {!aggregateSegments ? (
+          <p style={{ color: 'var(--text-4)', fontSize: 12.5 }}>Loading…</p>
+        ) : !aggregateSegments.length ? (
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)' }}>
+            No dimensions have cleared the participation floor yet. This fills in as more
+            members opt in and log outcomes — nothing to configure.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {aggregateSegments.map(s => (
+              <div key={s.dim} style={{ padding: '8px 0', borderTop: '1px solid var(--border-dim)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{DIM_LABELS[s.dim as VectorDimName] ?? s.dim}</span>
+                  {s.is_signal && <span style={{ fontSize: 10, color: 'var(--gold)' }}>signal</span>}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+                  {s.high_avg_delta != null && `high avg Δ ${s.high_avg_delta} (n=${s.high_n})`}
+                  {s.high_avg_delta != null && s.low_avg_delta != null && '  ·  '}
+                  {s.low_avg_delta != null && `low avg Δ ${s.low_avg_delta} (n=${s.low_n})`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </Panel>
     </PageShell>
   )
