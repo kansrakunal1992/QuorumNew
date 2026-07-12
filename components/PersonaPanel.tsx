@@ -120,7 +120,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // toggle, hidden by default so it never competes with the analysis itself.
   // Reuses the existing structural-citation text (already computed,
   // already safe to show — no raw scores/rule IDs) rather than a new signal.
-  const [showWhy, setShowWhy] = useState(false)
+  const [showWhy, setShowWhy] = useState(true)
 
   // Examiner update — supplemental stream, does not overwrite original
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
@@ -541,19 +541,16 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         </div>  {/* close justify-between */}
       </div>
 
-      {/* Body */}
-      <div
-        className={`persona-body-mobile${mobileCollapsed ? ' is-collapsed' : ''}`}
-        style={{ flex: 1, padding: '14px 16px', overflowY: 'auto', maxHeight: 380 }}
-      >
-
-        {/* Position — unlabeled opening verdict, no prefix chrome.
-            Lens moves to header caption; real cost moves to card close.
-            S3-05: elevated to display font / 600 weight — this is the advisor's lean,
-            the single most load-bearing sentence on the card, previously the same
-            visual weight as body prose. */}
+      {/* Body — Item #33/#34 §2.2: split into an always-visible summary
+          (position + a compact real-cost preview while collapsed) and a
+          collapsible detail block. Previously `.persona-body-mobile` wrapped
+          the entire body, so collapsing on mobile hid the stance too — a
+          glance at a collapsed card told you nothing. The summary below sits
+          outside that class so it survives collapse; the detail block below
+          it keeps the exact same className/is-collapsed behavior as before. */}
+      <div style={{ padding: '14px 16px 0' }}>
         {positionText && (
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: mobileCollapsed && realCostText && panelState === 'done' ? 10 : 14 }}>
             <p style={{
               fontSize:   15,
               fontWeight: 600,
@@ -567,6 +564,28 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             <div style={{ marginTop: 12, borderTop: '1px solid var(--border-dim)' }} />
           </div>
         )}
+
+        {/* Compact real-cost preview — collapsed-mobile only. The fuller,
+            labelled version further down (inside the collapsible block)
+            takes over as soon as the card is expanded, so this never shows
+            twice. */}
+        {mobileCollapsed && realCostText && panelState === 'done' && (
+          <p style={{
+            fontSize:   12,
+            fontStyle:  'italic',
+            color:      'var(--text-4)',
+            lineHeight: 1.6,
+            margin:     '0 0 14px',
+          }}>
+            {realCostText}
+          </p>
+        )}
+      </div>
+
+      <div
+        className={`persona-body-mobile${mobileCollapsed ? ' is-collapsed' : ''}`}
+        style={{ flex: 1, padding: '0 16px 14px', overflowY: 'auto', maxHeight: 380 }}
+      >
 
         {/* Original response — never mutated */}
         {response && (

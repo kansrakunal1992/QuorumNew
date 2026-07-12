@@ -149,16 +149,21 @@ export default function ValidationCard({
     : null
 
   // ── Done states ───────────────────────────────────────────────────────────
+  // Item #33/#34 §0b (chrome density): this used to be a full card — same
+  // bg-card/border/border-radius shell as the Decision Hero above it and the
+  // Outcome Tracker below it, three near-identical bordered boxes in a row.
+  // This one is a two-sentence receipt, not an interactive module, so it's
+  // now a quiet inline strip (left accent bar only) instead of competing as
+  // a fourth peer card. Idle/correcting states below keep the full card —
+  // they hold real buttons/textarea and need the affordance.
   if (stage === 'done_confirmed' || stage === 'done_corrected') {
     const confirmed    = stage === 'done_confirmed'
     const accumulation = getAccumulationMessage(sessionCount, tier, confirmed ? 'confirmed' : 'corrected')
     return (
       <div style={{
-        borderRadius: 14, padding: '18px 20px',
-        background: 'var(--bg-card)', border: '1px solid var(--border-dim)',
-        borderLeft: '3px solid var(--gold)', marginTop: 20,
+        borderLeft: '3px solid var(--gold)', paddingLeft: 16, marginTop: 20,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <span style={{ fontSize: 13, color: 'var(--gold)' }}>✓</span>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)', margin: 0 }}>
             {confirmed ? 'Noted.' : 'Correction saved.'}

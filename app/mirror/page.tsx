@@ -693,7 +693,7 @@ function TeaserView({
       {/* Section: Decision Timeline (always free) */}
       <div style={{ marginBottom: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, color: 'var(--text-2)', letterSpacing: '0.01em', margin: 0 }}>
             Decision Timeline
           </h3>
           <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
@@ -710,7 +710,7 @@ function TeaserView({
           edges rather than the locked ghost state. */}
       <div style={{ marginBottom: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
+          <h3 className="mirror-section-h3" style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, color: 'var(--text-2)', letterSpacing: '0.01em', margin: 0 }}>
             Decision Graph
           </h3>
         </div>

@@ -466,7 +466,7 @@ export default function SynthesisCard({
             </svg>
           </div>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em', margin: 0 }}>
+            <p style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.01em', margin: 0 }}>
               Council Synthesis
             </p>
             <p style={{ fontSize: 11, color: 'var(--synthesis-text-sub)', marginTop: 1 }}>
@@ -573,16 +573,15 @@ export default function SynthesisCard({
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em', margin: 0 }}>Council Synthesis</p>
+              <p style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.01em', margin: 0 }}>Council Synthesis</p>
               {registerMode && (
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                  border: `1px solid ${registerMode === 'clarification' ? 'var(--success-border)' : 'var(--gold-dim)'}`,
-                  background: registerMode === 'clarification' ? 'var(--success-bg)' : 'rgba(201,168,76,0.08)',
+                  fontSize: 10,
                   color: registerMode === 'clarification' ? 'var(--green-text)' : 'var(--gold)',
-                  fontWeight: 600, letterSpacing: '0.04em',
+                  fontWeight: 600, letterSpacing: '0.04em', opacity: 0.85,
                 }}>
+                  ·
                   {registerMode === 'clarification' ? (
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>
