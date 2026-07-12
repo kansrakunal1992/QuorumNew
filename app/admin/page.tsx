@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter }                         from 'next/navigation'
 import CaseStudyReviewPanel from '@/components/CaseStudyReviewPanel' // Item #11
+import CreateInstitutionPanel from '@/components/CreateInstitutionPanel' // Institutional Sprint 6
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -238,6 +239,7 @@ export default function AdminPage() {
       {/* Item #11 — case-study review queue; actionable, time-sensitive,
           so it sits above the R7/R8 analytics rather than below them */}
       <CaseStudyReviewPanel adminCode={storedCode} />
+      <CreateInstitutionPanel adminCode={storedCode} />
 
       {/* Header */}
       <div className="flex items-start justify-between">

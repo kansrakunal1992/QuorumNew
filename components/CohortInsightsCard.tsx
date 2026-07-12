@@ -24,6 +24,7 @@
 // authToken-prop convention already used by BiasFingerprint, CalibrationSparkline, etc.
 
 import { useState, useEffect } from 'react'
+import { isInstitutionalModeEnabled } from '@/lib/feature-flags'   // Sprint 6 fix — was missing (Sprint 3 predates this convention); server route already 404s so no UI leak existed, but this avoids a wasted fetch for every non-institutional user on every Mirror load
 
 interface CohortPeerInsight {
   userId:              string
@@ -49,7 +50,7 @@ export default function CohortInsightsCard({ authToken }: { authToken: string | 
   const [data, setData] = useState<CohortInsightsResponse | null>(null)
 
   useEffect(() => {
-    if (!authToken) return
+    if (!isInstitutionalModeEnabled() || !authToken) return
     let cancelled = false
 
     fetch('/api/institutions/cohort-insights', {

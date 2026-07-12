@@ -40,6 +40,7 @@ const REPO_ROOT  = join(__dirname, '..')
 
 const VIEW_SQL_FILES = [
   'supabase/institutional_sprint4_aggregate_views.sql',
+  'supabase/institutional_sprint6_bias_parameter_view.sql',
 ]
 
 // One block per `create or replace view <name> as ... ;` statement, so each
@@ -73,12 +74,14 @@ describe('Cohort-overlap guardrail (plan Section 1.10) — re-verified Sprint 4'
     }
   })
 
-  it('the two direct-aggregation views enforce a k_floor-based HAVING clause', () => {
+  it('all four direct-aggregation views enforce a k_floor-based HAVING clause', () => {
     const directViews = allBlocks.filter(b =>
       b.name === 'institutional_platform_benchmark_segments' ||
-      b.name === 'institutional_benchmark_segments',
+      b.name === 'institutional_benchmark_segments' ||
+      b.name === 'institutional_platform_bias_parameter_segments' ||
+      b.name === 'institutional_bias_parameter_segments',
     )
-    expect(directViews.length).toBe(2)
+    expect(directViews.length).toBe(4)
     for (const { name, body } of directViews) {
       const hasHaving = /having[\s\S]*k_floor/i.test(body)
       expect(hasHaving, `view "${name}" has no k_floor-based HAVING clause`).toBe(true)

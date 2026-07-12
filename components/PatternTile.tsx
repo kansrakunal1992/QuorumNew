@@ -14,22 +14,21 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Institutional Sprint 5 (task 3) — deliberately NOT integrated here, despite
-// being named alongside CalibrationSparkline/BiasFingerprint in the task
-// list. This tile is keyed by biasKey/biasLabel (the bias_parameter
-// vocabulary — matches bias_library), not the 14-dim ontology vocabulary
-// (VectorDimName) that Sprint 4's aggregate views are built on. There is no
-// aggregate view over bias_parameter frequency — Sprint 4 only built
-// calibration-delta HIGH/LOW buckets per ontology dimension. Wiring a
-// BenchmarkScopeTag here with dim={tile.biasKey} would silently query
-// something that can never resolve (biasKey values never match a VECTOR_DIMS
-// key), permanently showing "not enough participants" for data that could
-// never actually unlock — worse than no tag at all. A bias-parameter-
-// frequency aggregate view is a real, buildable option if this comparison is
-// wanted, but it's new scope beyond what Sprint 4 built, not a wiring gap in
-// this file.
+// Institutional Sprint 5 (task 3) — originally NOT integrated here (see git
+// history / conversation record for the reasoning): this tile is keyed by
+// biasKey/biasLabel (the bias_parameter vocabulary — matches bias_library),
+// not the 14-dim ontology vocabulary (VectorDimName) that Sprint 4's
+// calibration views are built on, and no aggregate view existed for
+// bias_parameter frequency at the time.
+//
+// Institutional Sprint 6 — resolved: a dedicated bias-parameter aggregate
+// view now exists (supabase/institutional_sprint6_bias_parameter_view.sql,
+// lib/bias-parameter-benchmark.ts), separate from the calibration-dimension
+// views rather than forced into the same shape. BiasParameterBenchmarkTag
+// below is the PatternTile-specific analog of BenchmarkScopeTag.
 
 import { useState, useEffect, useRef } from 'react'
+import BiasParameterBenchmarkTag from '@/components/BiasParameterBenchmarkTag'   // Institutional Sprint 6
 import { formatDate } from '@/lib/dates'
 import type { FingerprintTile, SessionPreview, BiasSignalType } from '@/lib/types'
 
@@ -330,6 +329,11 @@ function ConfirmedTile({ tile, authToken }: { tile: FingerprintTile; authToken: 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {/* Signal type pill — only shown when non-null and non-neutral */}
           {tile.signalType && <SignalPill signalType={tile.signalType} />}
+          {/* Institutional Sprint 6 — renders nothing unless this user has
+              institutional context AND this bias parameter has cleared
+              K_FLOOR somewhere; resolves the gap noted in this file's
+              header comment now that a bias-parameter aggregate view exists */}
+          <BiasParameterBenchmarkTag biasKey={tile.biasKey} authToken={authToken} />
         </div>
 
         {/* Clickable session count — opens source drawer */}
