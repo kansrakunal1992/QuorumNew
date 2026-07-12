@@ -576,13 +576,23 @@ export default function SynthesisCard({
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.04em', margin: 0 }}>Council Synthesis</p>
               {registerMode && (
                 <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
                   fontSize: 10, padding: '2px 8px', borderRadius: 10,
                   border: `1px solid ${registerMode === 'clarification' ? 'var(--success-border)' : 'var(--gold-dim)'}`,
                   background: registerMode === 'clarification' ? 'var(--success-bg)' : 'rgba(201,168,76,0.08)',
                   color: registerMode === 'clarification' ? 'var(--green-text)' : 'var(--gold)',
                   fontWeight: 600, letterSpacing: '0.04em',
                 }}>
-                  {registerMode === 'clarification' ? '🪞 Values & Clarity' : '⚔ Challenge'}
+                  {registerMode === 'clarification' ? (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                  )}
+                  {registerMode === 'clarification' ? 'Values & Clarity' : 'Challenge'}
                 </span>
               )}
             </div>
@@ -815,12 +825,14 @@ export default function SynthesisCard({
       </div>
 
       {/* Synthesis body */}
-      <div style={{ padding: '18px 20px' }}>
-        {state === 'waiting' && (
-          <p style={{ fontSize: 13, color: 'var(--text-4)', fontStyle: 'italic' }}>
-            Synthesis will appear once all six advisors complete their assessment.
-          </p>
-        )}
+      {/* Item #33/#34 (audit §2.1): the waiting state used to repeat the header
+          subtitle ("Waiting for advisors...") as a second, italic sentence
+          below a full 18/20px padding block — pure restatement, no new
+          information, and it made this card the same visual weight while
+          empty as it has once synthesis actually has something to say.
+          Dropped for state === 'waiting'; header subtitle above already
+          carries this across every waiting sub-phase. */}
+      <div style={{ padding: state === 'waiting' ? 0 : '18px 20px' }}>
         {(state === 'streaming' || state === 'done') && synthesis !== undefined && (
           <>
             {/* S1-03: Verdict block — one sentence, display font, prominent */}

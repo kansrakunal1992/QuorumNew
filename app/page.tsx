@@ -24,8 +24,8 @@ import FAQSection from '@/components/FAQSection' // Item #10
 import ReferralLink from '@/components/ReferralLink' // Item #17
 
 // ── Icons ────────────────────────────────────────────────
-const IconScale = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+const IconScale = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3v18M3 9l9-6 9 6M5 12l-2 5h4L5 12zM19 12l-2 5h4l-2-5zM3 21h18"/>
   </svg>
 )
@@ -59,6 +59,22 @@ const IconChevron = ({ open }: { open: boolean }) => (
     style={{ transition: 'transform 0.25s ease', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}
   >
     <polyline points="9 18 15 12 9 6"/>
+  </svg>
+)
+// Item #33/#34 (audit §0): replaces the ⚔ emoji on the "Challenge my thinking"
+// framing option — same mark as the Contrarian persona icon in PersonaPanel.tsx,
+// so the two "challenge" affordances in the product read as the same idea.
+const IconChallenge = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+  </svg>
+)
+// Item #33/#34 (audit §0): replaces the 🪞 emoji on "Help me understand what I
+// want" — concentric circles read as "look inward" without borrowing a literal
+// mirror glyph that renders inconsistently across OS emoji sets.
+const IconMirror = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>
   </svg>
 )
 
@@ -613,7 +629,7 @@ export default function Home() {
                 WebkitBackdropFilter: 'blur(20px)',
                 border:        '2px solid var(--gold-dim)',
                 borderRadius:  20,
-                minHeight:     inputRevealed ? 0 : 'clamp(460px, 78svh, calc(100vh - 120px))',
+                minHeight:     inputRevealed ? 0 : 'clamp(420px, 58svh, 620px)',
                 display:       'flex',
                 flexDirection: 'column',
                 alignItems:    'center',
@@ -991,8 +1007,8 @@ export default function Home() {
                       textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
                     }}
                   >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: framingIntent === 'challenge' ? 'var(--gold)' : 'var(--text-2)', marginBottom: 3 }}>
-                      ⚔ Challenge my thinking
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: framingIntent === 'challenge' ? 'var(--gold)' : 'var(--text-2)', marginBottom: 3 }}>
+                      <IconChallenge /> Challenge my thinking
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
                       Stress-test the decision. Find what I am missing.
@@ -1009,8 +1025,8 @@ export default function Home() {
                       textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
                     }}
                   >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: framingIntent === 'clarify' ? 'var(--green-text)' : 'var(--text-2)', marginBottom: 3 }}>
-                      🪞 Help me understand what I want
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: framingIntent === 'clarify' ? 'var(--green-text)' : 'var(--text-2)', marginBottom: 3 }}>
+                      <IconMirror /> Help me understand what I want
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
                       Values, identity, what matters most here.
@@ -1027,8 +1043,8 @@ export default function Home() {
                       textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
                     }}
                   >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: framingIntent === 'right' ? '#b070e0' : 'var(--text-2)', marginBottom: 3 }}>
-                      ⚖ Tell me what&apos;s actually right here
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: framingIntent === 'right' ? '#b070e0' : 'var(--text-2)', marginBottom: 3 }}>
+                      <IconScale size={13} /> Tell me what&apos;s actually right here
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
                       Even if it&apos;s not what I want to hear.
