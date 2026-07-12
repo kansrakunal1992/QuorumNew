@@ -34,6 +34,13 @@ const IconProcessed = () => (
   </svg>
 )
 
+// Item #33/#34 (audit §0b, second pass): each claim was its own bordered/
+// backgrounded pill — three small card-shells in a row directly above the
+// Decision Hero, adding to the same stack (Decision Hero → Validation →
+// Outcome Tracker) already being quieted elsewhere on this page. Collapsed
+// to one unbordered caption line, same icons, same claims, "·" separators —
+// still a disclosure row, no longer competing with the decision itself.
+
 interface Props {
   encryptionEnabled?: boolean
 }
@@ -52,26 +59,21 @@ export default function TrustBadgeStrip({ encryptionEnabled }: Props) {
       display: 'flex',
       alignItems: 'center',
       flexWrap: 'wrap',
-      gap: 8,
-      padding: '8px 0 14px',
+      columnGap: 14,
+      rowGap: 6,
+      padding: '4px 0 14px',
+      fontSize: 11,
+      color: 'var(--text-4)',
+      fontFamily: 'var(--font-mono)',
+      letterSpacing: '0.03em',
     }}>
       {badges.map((badge, i) => (
-        <span key={i} style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 5,
-          padding: '4px 10px',
-          borderRadius: 100,
-          border: '1px solid var(--border-dim)',
-          background: 'var(--bg-card)',
-          fontSize: 11,
-          color: 'var(--text-4)',
-          fontFamily: 'var(--font-mono)',
-          letterSpacing: '0.03em',
-          whiteSpace: 'nowrap',
-        }}>
+        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
           {badge.icon}
           {badge.text}
+          {i < badges.length - 1 && (
+            <span style={{ marginLeft: 9, color: 'var(--border-mid)' }}>·</span>
+          )}
         </span>
       ))}
     </div>

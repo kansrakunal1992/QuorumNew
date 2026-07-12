@@ -269,17 +269,16 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: isRedirect ? 'rgba(201,168,76,0.09)' : 'rgba(201,168,76,0.06)',
+        background: isRedirect ? 'rgba(201,168,76,0.06)' : 'rgba(201,168,76,0.04)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
-            width: 30, height: 30, borderRadius: 8,
-            background: 'rgba(201,168,76,0.12)',
-            border: '1px solid rgba(201,168,76,0.3)',
+            width: 24, height: 24, borderRadius: 7,
+            background: 'rgba(201,168,76,0.08)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: 'var(--gold)', flexShrink: 0,
           }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
           </div>

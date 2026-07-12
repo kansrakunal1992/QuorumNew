@@ -1859,7 +1859,7 @@ export default function MirrorPage() {
             maxWidth:     680,
             margin:       '0 auto',
           }}>
-            <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 6px' }}>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 600, color: 'var(--text-1)', margin: '0 0 6px' }}>
               Your Decision Mirror
             </h1>
             <p style={{ fontSize: 13.5, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
