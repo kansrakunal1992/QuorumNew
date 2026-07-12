@@ -519,6 +519,20 @@ textarea::placeholder { color: var(--text-4); }
   display: none;
 }
 
+/* Item #33/#34 (bugfix, §2.2 follow-up) — compact real-cost preview shown
+   while a persona card is collapsed on mobile. Hidden everywhere by
+   default; the @media rule below is the ONLY place it becomes visible, and
+   only in combination with .is-collapsed. This mirrors .persona-body-mobile
+   / .is-collapsed exactly on purpose — visibility for both must be decided
+   by the same CSS breakpoint, or a stale mobileCollapsed=true JS state on a
+   desktop-width viewport (e.g. window widened after collapsing at a narrow
+   width, no reload) can show this preview at the same time the full detail
+   block (with its own "The real cost" label) is no longer hidden — which is
+   exactly the duplicate-text bug this replaces. */
+.persona-collapsed-realcost {
+  display: none;
+}
+
 /* ── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 600px) {
   /* Hide navbar tagline — not enough room next to ThemeToggle */
@@ -535,6 +549,9 @@ textarea::placeholder { color: var(--text-4); }
   }
   .persona-body-mobile.is-collapsed {
     display: none;
+  }
+  .persona-collapsed-realcost.is-collapsed {
+    display: block;
   }
 
   /* Stack two-column grids to single column */

@@ -565,18 +565,28 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </div>
         )}
 
-        {/* Compact real-cost preview — collapsed-mobile only. The fuller,
-            labelled version further down (inside the collapsible block)
-            takes over as soon as the card is expanded, so this never shows
-            twice. */}
-        {mobileCollapsed && realCostText && panelState === 'done' && (
-          <p style={{
-            fontSize:   12,
-            fontStyle:  'italic',
-            color:      'var(--text-4)',
-            lineHeight: 1.6,
-            margin:     '0 0 14px',
-          }}>
+        {/* Compact real-cost preview — collapsed-mobile only. Item #33/#34
+            bugfix: this used to be gated only on the mobileCollapsed JS
+            boolean, which can stay true on a desktop-width viewport (e.g.
+            the card was collapsed at a narrow width, then the window was
+            widened without a reload) — the state doesn't know the CSS
+            media query no longer hides the detail block below, so both
+            copies of "The real cost" showed at once. Now always rendered
+            in the tree; visibility is entirely CSS-driven via
+            .persona-collapsed-realcost, which only resolves to visible
+            inside the same @media(max-width:600px) block that hides the
+            detail block — the two can no longer disagree. */}
+        {realCostText && panelState === 'done' && (
+          <p
+            className={`persona-collapsed-realcost${mobileCollapsed ? ' is-collapsed' : ''}`}
+            style={{
+              fontSize:   12,
+              fontStyle:  'italic',
+              color:      'var(--text-4)',
+              lineHeight: 1.6,
+              margin:     '0 0 14px',
+            }}
+          >
             {realCostText}
           </p>
         )}
