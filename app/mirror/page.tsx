@@ -485,14 +485,16 @@ function TeaserStatSection({
   value,
   blurred,
   copy,
+  compact,
 }: {
   title:    string
   value?:   React.ReactNode
   blurred?: boolean
   copy:     string
+  compact?: boolean
 }) {
   return (
-    <div style={{ marginBottom: 28 }}>
+    <div style={compact ? undefined : { marginBottom: 28 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
           {title}
@@ -503,7 +505,8 @@ function TeaserStatSection({
         background:   'var(--bg-card)',
         border:       '1px solid var(--border-dim)',
         borderRadius: 10,
-        padding:      '16px 20px',
+        padding:      compact ? '14px 16px' : '16px 20px',
+        height:       compact ? '100%' : undefined,
       }}>
         {value !== undefined && (
           <div style={{
@@ -807,78 +810,80 @@ function TeaserView({
         </div>
       </div>
 
-      {/* Section: Decision Rules (locked) — Sprint RET-4 */}
-      <TeaserStatSection
-        title="Decision Rules"
-        copy={
-          teaser
-            ? teaser.sessionCount >= teaser.rulesThreshold
-              ? `Enough decisions logged to extract your implicit operating principles. Activate Mirror to read them.`
-              : `${teaser.sessionCount} of ${teaser.rulesThreshold} decisions — Quorum extracts your first-person operating principles once you cross ${teaser.rulesThreshold}.`
-            : 'Reads back the implicit rules you actually operate by, extracted from how you\u2019ve answered the follow-up questions across your decisions. Visible after subscribing.'
-        }
-      />
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+        gap: 12,
+        marginBottom: 28,
+        alignItems: 'stretch',
+      }}>
+        {/* Decision Rules (locked) — Sprint RET-4 */}
+        <TeaserStatSection
+          compact
+          title="Decision Rules"
+          copy={
+            teaser
+              ? teaser.sessionCount >= teaser.rulesThreshold
+                ? `Enough decisions logged to extract your implicit operating principles. Activate Mirror to read them.`
+                : `${teaser.sessionCount} of ${teaser.rulesThreshold} decisions — Quorum extracts your first-person operating principles once you cross ${teaser.rulesThreshold}.`
+              : 'Reads back the implicit rules you actually operate by, extracted from how you\u2019ve answered the follow-up questions across your decisions. Visible after subscribing.'
+          }
+        />
 
-      {/* Section: Patterns (locked) — Sprint RET-4 */}
-      <TeaserStatSection
-        title="Patterns"
-        copy={
-          teaser && teaser.patternLabels.length > 0
-            ? `${teaser.patternLabels.length} structural pattern${teaser.patternLabels.length !== 1 ? 's' : ''} detected: ${teaser.patternLabels.join(', ')}. Activate Mirror to see how often each fires and which decisions triggered them.`
-            : 'Tracks which structural rules recur across your decisions \u2014 frequency, recency, and which sessions triggered them. Visible after subscribing.'
-        }
-      />
+        {/* Patterns (locked) — Sprint RET-4 */}
+        <TeaserStatSection
+          compact
+          title="Patterns"
+          copy={
+            teaser && teaser.patternLabels.length > 0
+              ? `${teaser.patternLabels.length} structural pattern${teaser.patternLabels.length !== 1 ? 's' : ''} detected: ${teaser.patternLabels.join(', ')}. Activate Mirror to see how often each fires and which decisions triggered them.`
+              : 'Tracks which structural rules recur across your decisions \u2014 frequency, recency, and which sessions triggered them. Visible after subscribing.'
+          }
+        />
 
-      {/* Section: Contradiction Detector (locked) */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-            Contradiction Detector
-          </h3>
-          <LockedBadge />
-        </div>
-        <div style={{
-          background:   'var(--bg-card)',
-          border:       '1px solid var(--border-dim)',
-          borderRadius: 10,
-          padding:      '16px 20px',
-        }}>
-          <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
-            {teaser && teaser.contradictionCount > 0
+        {/* Contradiction Detector (locked) */}
+        <TeaserStatSection
+          compact
+          title="Contradiction Detector"
+          copy={
+            teaser && teaser.contradictionCount > 0
               ? `${teaser.contradictionCount} active contradiction${teaser.contradictionCount !== 1 ? 's' : ''} detected across your decisions. Activate Mirror to see where your stated principles conflict with your actual choices.`
-              : 'Scans your decisions for inconsistencies between your stated principles and actual choices. Visible after subscribing.'}
-          </p>
-        </div>
+              : 'Scans your decisions for inconsistencies between your stated principles and actual choices. Visible after subscribing.'
+          }
+        />
+
+        {/* Confidence Calibration (locked) — Sprint RET-4 */}
+        <TeaserStatSection
+          compact
+          title="Confidence Calibration"
+          value={teaser && teaser.calibrationDates.length > 0 ? `${teaser.calibrationDates.length}` : undefined}
+          copy={
+            teaser && teaser.calibrationDates.length > 0
+              ? `decision${teaser.calibrationDates.length !== 1 ? 's' : ''} with confidence tracked. Activate Mirror to see whether your stated confidence runs ahead of or behind your actual judgment.`
+              : 'Confidence tracking begins on your next decision. Activate Mirror to see whether your stated confidence matches your judgment over time.'
+          }
+        />
+
+        {/* Session Reliability Index (locked / blurred) — Sprint RET-4 */}
+        <TeaserStatSection
+          compact
+          title="Session Reliability Index"
+          value={teaser?.sriAverage != null ? Math.round(teaser.sriAverage) : '—'}
+          blurred={teaser?.sriAverage != null}
+          copy="Composite score across structural fit, bias clarity, council confidence, and calibration \u2014 the single number behind how reliable each of your decisions was. Visible after activating Mirror."
+        />
+
+        {/* Open Loop (locked) — Sprint RET-4 */}
+        <TeaserStatSection
+          compact
+          title="Open Loop"
+          copy={
+            teaser && teaser.openLoopCount > 0
+              ? `${teaser.openLoopCount} decision${teaser.openLoopCount !== 1 ? 's' : ''} without a closed loop, or past their review date. Activate Mirror for the Monthly Judgment Review \u2014 a rolling summary of what's decided versus what's still open.`
+              : 'Tracks decisions you haven\u2019t closed the loop on \u2014 past review dates, decisions sitting open too long. Visible after subscribing.'
+          }
+        />
       </div>
-
-      {/* Section: Confidence Calibration (locked) — Sprint RET-4 */}
-      <TeaserStatSection
-        title="Confidence Calibration"
-        value={teaser && teaser.calibrationDates.length > 0 ? `${teaser.calibrationDates.length}` : undefined}
-        copy={
-          teaser && teaser.calibrationDates.length > 0
-            ? `decision${teaser.calibrationDates.length !== 1 ? 's' : ''} with confidence tracked. Activate Mirror to see whether your stated confidence runs ahead of or behind your actual judgment.`
-            : 'Confidence tracking begins on your next decision. Activate Mirror to see whether your stated confidence matches your judgment over time.'
-        }
-      />
-
-      {/* Section: Session Reliability Index (locked / blurred) — Sprint RET-4 */}
-      <TeaserStatSection
-        title="Session Reliability Index"
-        value={teaser?.sriAverage != null ? Math.round(teaser.sriAverage) : '—'}
-        blurred={teaser?.sriAverage != null}
-        copy="Composite score across structural fit, bias clarity, council confidence, and calibration \u2014 the single number behind how reliable each of your decisions was. Visible after activating Mirror."
-      />
-
-      {/* Section: Open Loop (locked) — Sprint RET-4 */}
-      <TeaserStatSection
-        title="Open Loop"
-        copy={
-          teaser && teaser.openLoopCount > 0
-            ? `${teaser.openLoopCount} decision${teaser.openLoopCount !== 1 ? 's' : ''} without a closed loop, or past their review date. Activate Mirror for the Monthly Judgment Review \u2014 a rolling summary of what's decided versus what's still open.`
-            : 'Tracks decisions you haven\u2019t closed the loop on \u2014 past review dates, decisions sitting open too long. Visible after subscribing.'
-        }
-      />
 
       {/* CTA card */}
       <div id="mirror-cta" className="mirror-cta-card" style={{

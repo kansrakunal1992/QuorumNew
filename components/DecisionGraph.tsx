@@ -865,13 +865,19 @@ export default function DecisionGraph({
   })()
 
   // ── Legend ──────────────────────────────────────────────────────────────────
-  const LEGEND: { type: EdgeType; dashed?: boolean }[] = [
+  // Item #33/#34 §4.2: previously a static 5-item list regardless of what the
+  // graph actually shows — for most users (a handful of structural-similarity
+  // edges, nothing else) that's 4 legend entries explaining edge types that
+  // aren't on screen. Filtered to types present in liveEdges; order preserved.
+  const presentEdgeTypes = new Set(liveEdges.map(e => e.edge_type))
+  const ALL_LEGEND: { type: EdgeType; dashed?: boolean }[] = [
     { type: 'structural_similarity' },
     { type: 'contradiction' },
     { type: 'shared_bias_trigger' },
     { type: 'shared_decision_type' },
     { type: 'user_asserted', dashed: true },
   ]
+  const LEGEND = ALL_LEGEND.filter(({ type }) => presentEdgeTypes.has(type))
 
   return (
     <div style={{ position: 'relative' }}>
@@ -912,6 +918,45 @@ export default function DecisionGraph({
           )}
         </div>
       )}
+
+      {/* Legend + annotation CTA — item #33/#34 §4.2: moved above the canvas
+          (was below it) and the legend swatches filtered to edge types
+          actually present (see LEGEND filter above), instead of a static
+          5-item key for whatever the graph happens to show. The "+ Add
+          connection" button stays visible regardless of LEGEND — it's how
+          a user creates their first connection when none exist yet, so it
+          can't be gated on there already being edges to legend. */}
+      <div style={{ marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: '6px 16px', alignItems: 'center', justifyContent: 'space-between' }}>
+        {LEGEND.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+            {LEGEND.map(({ type, dashed }) => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <svg width={22} height={8}>
+                  <line
+                    x1={0} y1={4} x2={22} y2={4}
+                    stroke={EDGE_COLOR[type]}
+                    strokeWidth={dashed ? 1.5 : 2}
+                    strokeDasharray={dashed ? '4,3' : 'none'}
+                  />
+                </svg>
+                <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{EDGE_LABEL[type]}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          className="dg-annotation-btn"
+          onClick={() => {
+            const nodeIds = data.nodes.map(n => n.id)
+            if (nodeIds.length >= 2) {
+              setAnnotation({ session_id_a: nodeIds[0], session_id_b: nodeIds[1], text: '', submitting: false, error: null })
+            }
+          }}
+        >
+          + Add connection
+        </button>
+      </div>
 
       {/* Graph SVG */}
       <div
@@ -989,36 +1034,9 @@ export default function DecisionGraph({
         </div>
       )}
 
-      {/* Legend + annotation CTA */}
-      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: '6px 16px', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
-          {LEGEND.map(({ type, dashed }) => (
-            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <svg width={22} height={8}>
-                <line
-                  x1={0} y1={4} x2={22} y2={4}
-                  stroke={EDGE_COLOR[type]}
-                  strokeWidth={dashed ? 1.5 : 2}
-                  strokeDasharray={dashed ? '4,3' : 'none'}
-                />
-              </svg>
-              <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{EDGE_LABEL[type]}</span>
-            </div>
-          ))}
-        </div>
-
-        <button
-          className="dg-annotation-btn"
-          onClick={() => {
-            const nodeIds = data.nodes.map(n => n.id)
-            if (nodeIds.length >= 2) {
-              setAnnotation({ session_id_a: nodeIds[0], session_id_b: nodeIds[1], text: '', submitting: false, error: null })
-            }
-          }}
-        >
-          + Add connection
-        </button>
-      </div>
+      {/* Legend + annotation CTA moved above the canvas — see before the
+          "Graph SVG" block. A legend explaining what you're about to look
+          at reads better before the graph than after it. */}
 
       {/* Insights strip (issue #5) — plain-English "so what" for the same edge
           data the graph above already renders. Hovering a card glows the
