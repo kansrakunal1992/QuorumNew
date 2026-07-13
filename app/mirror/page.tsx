@@ -480,6 +480,82 @@ function LockedBadge() {
 // than the original 3 hand-built sections (Fingerprint/Independence/
 // Contradictions keep their richer, bespoke layouts) — one stat line + one
 // copy line, so adding 5 more sections doesn't turn the page into a wall.
+// Item #33/#34 §4.1 (larger restructuring, approved option): the full
+// "Activate Mirror" CTA, now a component instead of inline JSX so it can be
+// rendered a second time — right after the free stats summary, before the
+// locked wall starts — without duplicating ~50 lines of JSX by hand. Same
+// content, same pricing, same both payment buttons in both places; only the
+// id and where it sits on the page differ. The original bottom placement
+// keeps id="mirror-cta" since LockedBadge's scrollIntoView targets it —
+// scrolling down a little to the end of the wall reads better than
+// scrolling back up past everything a badge-click has already passed.
+function MirrorCTACard({
+  id,
+  authToken,
+  userEmail,
+  onUnlocked,
+}: {
+  id:         string
+  authToken:  string
+  userEmail:  string
+  onUnlocked: () => void
+}) {
+  return (
+    <div id={id} className="mirror-cta-card" style={{
+      background:   'var(--bg-card)',
+      border:       '1px solid var(--gold-dim)',
+      borderRadius: 14,
+      padding:      '24px 24px',
+      marginTop:    36,
+    }}>
+      <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>
+        Activate Mirror
+      </p>
+      <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
+        Unlocks these sections:
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
+        {[
+          'Bias Fingerprint — your patterns, named and specific to your decisions',
+          'Decision Independence Score',
+          'Decision Rules — your implicit operating principles, extracted',
+          'Patterns — which structural rules recur, how often, and where',
+          'Contradiction Detector',
+          'Confidence Calibration',
+          'Session Reliability Index',
+          'Open Loop — your Monthly Judgment Review',
+          'Peer Benchmark — how your decisions compare structurally to others',
+        ].map((item, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold-dim)', marginTop: 7, flexShrink: 0 }} />
+            <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>{item}</p>
+          </div>
+        ))}
+      </div>
+      <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
+        ₹3,999/month · ₹39,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
+      </p>
+      <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+        <PaymentButton
+          plan="monthly"
+          label="₹3,999 / month →"
+          authToken={authToken}
+          userEmail={userEmail}
+          onSuccess={onUnlocked}
+        />
+        <PaymentButton
+          plan="annual"
+          label="₹39,999 / year  — best value →"
+          authToken={authToken}
+          userEmail={userEmail}
+          onSuccess={onUnlocked}
+        />
+      </div>
+    </div>
+  )
+}
+
 function TeaserStatSection({
   title,
   value,
@@ -758,6 +834,13 @@ function TeaserView({
         </div>
       )}
 
+      {/* Item #33/#34 §4.1: early CTA placement — same card as the one at
+          the bottom of the locked wall, shown here too so someone who
+          already knows they want Mirror doesn't have to scroll past six
+          more sections to act. The bottom one stays for anyone reading the
+          detail first. */}
+      <MirrorCTACard id="mirror-cta-early" authToken={authToken} userEmail={userEmail} onUnlocked={onUnlocked} />
+
       {/* Section: Bias Fingerprint (locked) */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -886,58 +969,7 @@ function TeaserView({
       </div>
 
       {/* CTA card */}
-      <div id="mirror-cta" className="mirror-cta-card" style={{
-        background:   'var(--bg-card)',
-        border:       '1px solid var(--gold-dim)',
-        borderRadius: 14,
-        padding:      '24px 24px',
-        marginTop:    36,
-      }}>
-        <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>
-          Activate Mirror
-        </p>
-        <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
-          Unlocks these sections:
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
-          {[
-            'Bias Fingerprint — your patterns, named and specific to your decisions',
-            'Decision Independence Score',
-            'Decision Rules — your implicit operating principles, extracted',
-            'Patterns — which structural rules recur, how often, and where',
-            'Contradiction Detector',
-            'Confidence Calibration',
-            'Session Reliability Index',
-            'Open Loop — your Monthly Judgment Review',
-            'Peer Benchmark — how your decisions compare structurally to others',
-          ].map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold-dim)', marginTop: 7, flexShrink: 0 }} />
-              <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>{item}</p>
-            </div>
-          ))}
-        </div>
-        <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
-          ₹3,999/month · ₹39,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
-        </p>
-        <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
-          <PaymentButton
-            plan="monthly"
-            label="₹3,999 / month →"
-            authToken={authToken}
-            userEmail={userEmail}
-            onSuccess={onUnlocked}
-          />
-          <PaymentButton
-            plan="annual"
-            label="₹39,999 / year  — best value →"
-            authToken={authToken}
-            userEmail={userEmail}
-            onSuccess={onUnlocked}
-          />
-        </div>
-      </div>
+      <MirrorCTACard id="mirror-cta" authToken={authToken} userEmail={userEmail} onUnlocked={onUnlocked} />
     </div>
   )
 }
