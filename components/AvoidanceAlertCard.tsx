@@ -21,9 +21,15 @@
 // observation; "you avoided it" does not. The word "avoidance" never appears.
 //
 // Dismiss flow:
-//   Sets dismissed_at + action_taken on avoidance_alerts row.
-//   Also writes a minimal outcomes row (outcome_quality='resolved_externally') so
-//   D2 cron does not re-flag the session on the next pass.
+//   Sets dismissed_at + action_taken on avoidance_alerts row, then navigates
+//   to the session's record page so the person can file a real outcome via
+//   the normal OutcomeTracker "What did you decide?" flow. Item #33/#34
+//   bugfix: this used to instead silently write a placeholder outcomes row
+//   (outcome_quality='resolved_externally') with no user input at all and
+//   just remove the card — the loop looked closed but nothing about what
+//   actually happened was ever recorded. The alert is still dismissed
+//   immediately either way (so it never lingers), but now the person is
+//   actually offered the chance to record what happened.
 //
 // Resubmit flow:
 //   localStorage.setItem('quorum_resubmit_alert', alertId) before navigating.
@@ -106,6 +112,12 @@ function AlertCard({
     const ok = await dismissAlert(alert.id, 'resolved_externally', authToken)
     if (ok) {
       onDismissed(alert.id)
+      // Item #33/#34 bugfix: used to stop here (card just disappeared, no
+      // outcome ever recorded). Now sends the person to the record page's
+      // "What did you decide?" flow — the alert is already dismissed above,
+      // so this is a real opportunity, not a requirement to leave the loop
+      // closed correctly.
+      window.location.href = `/record/${alert.sessionId}`
     } else {
       setDismissing(false)
     }

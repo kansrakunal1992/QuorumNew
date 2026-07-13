@@ -510,6 +510,23 @@ textarea::placeholder { color: var(--text-4); }
   grid-template-columns: 1fr 1fr;
 }
 
+/* Item #33/#34 §4.1 bugfix — Mirror locked-section tiles. Originally used
+   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)), which produces
+   an unpredictable column count depending on exact viewport width (1, 2, 3,
+   or more) and — at whatever width happened to land on exactly 2 narrow
+   columns — let long uppercase titles like "CONTRADICTION DETECTOR" wrap to
+   two lines while a shorter neighbor title stayed on one, breaking row
+   alignment (the "botched" mobile layout). Switched to the same fixed
+   2-column / 1-column-on-mobile pattern as .home-two-col above, so the
+   column count is always deterministic instead of viewport-dependent.
+   Row-height mismatches are still possible (this is a grid, not a table),
+   but full-width columns leave enough room that these short titles don't
+   wrap unpredictably. */
+.mirror-locked-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
 /* Item #9 (revised) — persona card mobile-collapse toggle, hidden by
    default (desktop); shown only under the 600px breakpoint below. Default
    state is OPEN/expanded (no 'is-collapsed' class applied initially) —
@@ -556,6 +573,9 @@ textarea::placeholder { color: var(--text-4); }
 
   /* Stack two-column grids to single column */
   .home-two-col {
+    grid-template-columns: 1fr;
+  }
+  .mirror-locked-grid {
     grid-template-columns: 1fr;
   }
 

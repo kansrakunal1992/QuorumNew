@@ -10,11 +10,19 @@
 //   1. Authenticates the user via Bearer token (same pattern as all Mirror routes).
 //   2. Fetches the avoidance_alerts row — confirms it belongs to the user.
 //   3. Sets dismissed_at = now() and action_taken on the row.
-//   4. If action = 'resolved_externally': upserts a minimal outcomes row so the
-//      D2 cron does not re-flag this session on the next daily pass.
-//      (Cron gate: session has no outcome row → alert. Minimal outcome row closes
-//      the gate without requiring the user to file a full outcome.)
-//   5. Returns { ok: true } on success; appropriate error status on failure.
+//   4. Returns { ok: true } on success; appropriate error status on failure.
+//
+// Item #33/#34 bugfix: 'resolved_externally' used to ALSO upsert a fake
+// placeholder outcomes row here ("Resolved externally — marked via Mirror.")
+// so the D2 cron wouldn't re-flag the session — meaning "Mark as resolved"
+// silently closed the loop with no real record of what actually happened.
+// That placeholder write is removed. The client now navigates to the
+// session's record page after this call succeeds, so the person files a
+// real outcome through the normal OutcomeTracker flow instead. If they
+// dismiss and never come back to record anything, the session is simply
+// eligible to be flagged again later (its own alert row stays dismissed —
+// this isn't a lingering stale alert, it's a fresh one, which is correct:
+// nothing was actually resolved).
 //
 // Ownership check: confirms avoidance_alerts.user_id === authenticated user_id.
 // Never modifies another user's alerts.
@@ -84,8 +92,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  const sessionId = (alertRow as any).session_id as string
-
   // ── Set dismissed_at + action_taken ───────────────────────────────────────
   const { error: updateErr } = await supabase
     .from('avoidance_alerts')
@@ -98,29 +104,6 @@ export async function POST(req: Request) {
   if (updateErr) {
     console.error('[AvoidanceDismiss] Update failed:', updateErr.message)
     return NextResponse.json({ error: 'Failed to dismiss' }, { status: 500 })
-  }
-
-  // ── Minimal outcome row (resolved_externally path only) ───────────────────
-  // Prevents D2 cron from re-flagging this session on the next daily pass.
-  // Uses outcome_quality only — no confidence fields required.
-  // Skips if the session already has an outcome row (upsert on session_id conflict).
-  if (action === 'resolved_externally') {
-    const { error: outcomeErr } = await supabase
-      .from('outcomes')
-      .upsert(
-        {
-          session_id:      sessionId,
-          outcome_quality: 'resolved_externally',
-          what_decided:    'Resolved externally — marked via Mirror.',
-          created_at:      new Date().toISOString(),
-        },
-        { onConflict: 'session_id', ignoreDuplicates: true },
-      )
-
-    if (outcomeErr) {
-      // Non-fatal — alert is already dismissed; outcome is a belt-and-suspenders guard
-      console.warn('[AvoidanceDismiss] Outcome upsert failed (non-fatal):', outcomeErr.message)
-    }
   }
 
   console.log(`[AvoidanceDismiss] Alert ${alertId} dismissed — action: ${action} | user: ${userId.slice(0, 8)}`)

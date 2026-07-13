@@ -156,9 +156,19 @@ export default function Home() {
         storeUserEmail(em)
         setUserEmail(em)
       }
+      // Bugfix: URLSearchParams.get() already URI-decodes the value — decoding
+      // it a second time threw ("URI malformed") for any decision text with a
+      // raw '%' in it (e.g. "cut prices by 20%"), silently caught below,
+      // aborting this whole effect before setDecision ever ran.
       const prefill = params.get('decision')
       if (prefill) {
-        setDecision(decodeURIComponent(prefill))
+        setDecision(prefill)
+        // Bugfix: setting the decision text alone left the card closed — the
+        // person landed on what still looked like the empty "tap to add"
+        // entry screen with no visible sign their decision came through.
+        // handleReveal() is the same call the card's own onClick makes; a
+        // short delay lets the mount-time flip-card transition settle first.
+        setTimeout(() => handleReveal(), 50)
       }
       if (em || prefill) {
         window.history.replaceState({}, '', '/')
