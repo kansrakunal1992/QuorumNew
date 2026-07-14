@@ -15,6 +15,7 @@
 // Server component — static, same convention as app/security/page.tsx.
 
 import Link from 'next/link'
+import MethodologyExplainerVideo from '@/components/MethodologyExplainerVideo'
 
 export const metadata = {
   title: 'How Quorum Works — Quorum',
@@ -113,6 +114,8 @@ export default function MethodologyPage() {
             Quorum exists to make judgment — not just intelligence — something that
             compounds the more you use it.
           </p>
+
+          <MethodologyExplainerVideo />
 
           {/* What happens in a session */}
           <section style={{ marginBottom: 44 }}>
