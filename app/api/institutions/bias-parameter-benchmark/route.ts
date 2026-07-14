@@ -4,19 +4,18 @@
 //
 // GET /api/institutions/bias-parameter-benchmark?biasKey=sunk_cost
 //
-// No progress-toward-floor or unlock-notice wiring here (unlike the
-// calibration benchmark route) — those were specific, explicit product
-// decisions made for the calibration-dimension case (lib/unlock-progress.ts's
-// header documents why exact counts were authorized there). Extending that
-// same bare-headcount exception to bias parameters is a new decision, not
-// assumed here; this route just returns the tiered result or "insufficient"
-// with no count attached.
+// No unlock-notice wiring here (unlike the calibration benchmark route) —
+// that was a specific product decision made for the calibration-dimension
+// case only. Progress-toward-floor counts ARE wired (Tier 3), extending
+// lib/unlock-progress.ts's exception to this data type — see
+// lib/bias-parameter-progress.ts's header for the reasoning.
 
 import { NextResponse }               from 'next/server'
 import { createClient }               from '@/lib/supabase'
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
 import { resolveActiveInstitution }   from '@/lib/active-institution'
 import { getBiasParameterBenchmark }  from '@/lib/bias-parameter-benchmark'
+import { getBiasParameterProgress }   from '@/lib/bias-parameter-progress'
 
 async function resolveUserId(req: Request): Promise<string | null> {
   const authHeader = req.headers.get('authorization')
@@ -42,6 +41,11 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const active = await resolveActiveInstitution(userId)
   const benchmark = await getBiasParameterBenchmark(biasKey, active.institutionId)
+
+  if (benchmark.scope.type === 'insufficient') {
+    const progress = await getBiasParameterProgress(biasKey, active.institutionId)
+    return NextResponse.json({ ...benchmark, progress })
+  }
 
   return NextResponse.json(benchmark)
 }

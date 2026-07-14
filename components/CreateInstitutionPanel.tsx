@@ -20,6 +20,7 @@ interface Institution {
   parent_institution_id: string | null
   admin_seat_claimed: boolean
   k_floor_override: number | null
+  deactivated_at: string | null
   created_at: string
 }
 
@@ -33,6 +34,9 @@ export default function CreateInstitutionPanel({ adminCode }: { adminCode: strin
   const [parentId, setParentId]   = useState('')
   const [kFloor, setKFloor]       = useState('')
   const [domains, setDomains]     = useState('')
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editKFloor, setEditKFloor] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +78,54 @@ export default function CreateInstitutionPanel({ adminCode }: { adminCode: strin
       await load()
     } catch {
       setError('Network error creating institution')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const toggleDeactivate = async (institution: Institution) => {
+    const action = institution.deactivated_at ? 'reactivate' : 'deactivate'
+    if (!confirm(`${action === 'deactivate' ? 'Deactivate' : 'Reactivate'} "${institution.name}"? ${
+      action === 'deactivate'
+        ? 'Existing members keep their data and settings — this only blocks new redemptions.'
+        : 'This makes the unlock code redeemable again.'
+    }`)) return
+
+    setBusy(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/create-institution', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${adminCode}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ institutionId: institution.id, deactivate: !institution.deactivated_at }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error ?? 'Update failed'); return }
+      await load()
+    } catch {
+      setError('Network error updating institution')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveKFloor = async () => {
+    if (!editingId || !editKFloor.trim()) return
+    setBusy(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/create-institution', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${adminCode}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ institutionId: editingId, kFloorOverride: Number(editKFloor.trim()) }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error ?? 'Update failed'); return }
+      setEditingId(null)
+      setEditKFloor('')
+      await load()
+    } catch {
+      setError('Network error updating institution')
     } finally {
       setBusy(false)
     }
@@ -152,15 +204,49 @@ export default function CreateInstitutionPanel({ adminCode }: { adminCode: strin
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 padding: '8px 0', borderTop: '1px solid var(--border-dim)',
               }}>
-                <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                <span style={{ fontSize: 12.5, color: i.deactivated_at ? 'var(--text-4)' : 'var(--text-2)' }}>
                   {i.parent_institution_id && '↳ '}{i.name}
+                  {i.deactivated_at && <span style={{ marginLeft: 6, fontSize: 10, color: '#f87171' }}>deactivated</span>}
                 </span>
                 <span style={{ fontSize: 10.5, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
                   {i.admin_seat_claimed ? 'admin claimed' : 'awaiting first redemption'}
                   {i.k_floor_override ? `  ·  K_FLOOR=${i.k_floor_override}` : ''}
                 </span>
+                <button
+                  onClick={() => void toggleDeactivate(i)}
+                  disabled={busy}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8 }}
+                >
+                  {i.deactivated_at ? 'Reactivate' : 'Deactivate'}
+                </button>
+                <button
+                  onClick={() => setEditingId(editingId === i.id ? null : i.id)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8 }}
+                >
+                  {editingId === i.id ? 'Close' : 'Edit'}
+                </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {editingId && (
+          <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border-mid)' }}>
+            <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 8px' }}>
+              Edit K_FLOOR override — raise only. Lowering an institution&apos;s own floor isn&apos;t
+              something to do without a specific, documented reason.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                placeholder="New K_FLOOR (e.g. 25)"
+                value={editKFloor}
+                onChange={e => setEditKFloor(e.target.value)}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button onClick={saveKFloor} disabled={busy || !editKFloor.trim()} style={buttonStyle}>
+                Save
+              </button>
+            </div>
           </div>
         )}
       </div>

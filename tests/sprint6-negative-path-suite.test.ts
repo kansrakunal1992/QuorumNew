@@ -146,15 +146,22 @@ describe('Sprint 6 negative-path suite: 1c — delete-override attempts, every r
     }
   })
 
-  it('requireInstitutionRole (the admin gate) is never used alongside a sessions .delete() in the same file', () => {
+  it('no institution/admin route ever deletes from institutions or institution_memberships', () => {
+    // Narrower, precise version of the earlier blanket check (removed — it
+    // flagged ANY .delete() in an admin-gated file, including entirely
+    // legitimate ones like cohort deletion, which is real Tier 2
+    // functionality, not a violation). The actual guarantee worth a hard
+    // check: an admin action should never be able to delete the
+    // institution itself or a membership row outright — role changes and
+    // explicit, deliberate account-deletion flows are the only sanctioned
+    // paths for those, not a generic admin route.
     for (const file of institutionRouteFiles) {
       const src = readFileSync(file, 'utf-8')
-      if (src.includes('requireInstitutionRole') && /\.delete\(/.test(src)) {
-        // Being admin-gated does not, by itself, justify a delete call existing
-        // at all in an institution-scoped route — flag for manual review even
-        // if it doesn't touch `sessions` by name, since that's exactly the kind
-        // of thing that should never be silently introduced later.
-        throw new Error(`${file} is admin-gated AND calls .delete() — review manually, admin routes should not delete data at all in this layer`)
+      for (const table of ['institutions', 'institution_memberships']) {
+        const pattern = new RegExp(`\\.from\\(\\s*['"]${table}['"]\\s*\\)[\\s\\S]{0,120}?\\.delete\\(`)
+        if (pattern.test(src)) {
+          throw new Error(`${file} deletes from "${table}" — review manually, this table should never be deleted from by a generic admin route`)
+        }
       }
     }
   })

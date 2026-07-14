@@ -92,7 +92,28 @@ export default function InstitutionConsentSettings() {
     if (value) setPendingBackfillFor(institutionId) // separate modal, never bundled
   }
 
-  if (loading || !memberships?.length) return null
+  if (loading) return null
+  if (!isInstitutionalModeEnabled()) return null
+
+  // Deliberate exception to "render nothing" — this small link IS the
+  // discovery path into institutional membership, not institutional content
+  // itself, so showing it to everyone here (a page people already chose to
+  // visit, not the global nav) doesn't reintroduce the clutter the
+  // render-null pattern elsewhere in this build exists to avoid.
+  if (!memberships?.length) {
+    return (
+      <a
+        href="/institution/join"
+        style={{
+          display: 'inline-block', fontSize: 11.5, color: 'var(--text-4)',
+          textDecoration: 'underline', textDecorationColor: 'var(--border-mid)',
+          marginBottom: 16,
+        }}
+      >
+        Have an institution code?
+      </a>
+    )
+  }
 
   return (
     <div id="institutional-sharing" style={{ scrollMarginTop: 80 }}>
@@ -132,6 +153,8 @@ export default function InstitutionConsentSettings() {
           </div>
         </div>
       ))}
+
+      <ConsentHistorySection />
 
       {/* ── Backfill modal — always separate, never bundled with the main toggle ── */}
       {pendingBackfillFor && (
@@ -197,6 +220,84 @@ export default function InstitutionConsentSettings() {
 // Duplicated locally to match the existing pattern in components/CookieConsent.tsx
 // and app/settings/privacy/page.tsx (both define their own copy rather than
 // sharing one) — kept self-contained rather than extracted to a shared file.
+
+// ── Consent history — Tier 3 ──────────────────────────────────────────────
+// The data has been readable (by the owning user) since Sprint 2's RLS
+// policy; no UI ever surfaced it until now. Self-contained: fetches lazily,
+// only on expand, not on every page load.
+
+interface HistoryEntry {
+  field_changed: string
+  old_value: boolean
+  new_value: boolean
+  changed_at: string
+  institutions: { name: string } | { name: string }[] | null
+}
+
+function historyInstitutionName(entry: HistoryEntry): string {
+  const inst = Array.isArray(entry.institutions) ? entry.institutions[0] : entry.institutions
+  return inst?.name ?? 'Institution'
+}
+
+function ConsentHistorySection() {
+  const [expanded, setExpanded] = useState(false)
+  const [history, setHistory] = useState<HistoryEntry[] | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const toggle = async () => {
+    const next = !expanded
+    setExpanded(next)
+    if (next && !history) {
+      setLoading(true)
+      const token = await getAuthToken()
+      if (!token) { setLoading(false); return }
+      try {
+        const res = await fetch('/api/institutions/consent/history', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const data = await res.json() as { history: HistoryEntry[] }
+          setHistory(data.history)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <button
+        onClick={toggle}
+        style={{
+          background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 11.5,
+          textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit', padding: 0,
+        }}
+      >
+        {expanded ? 'Hide' : 'View'} my consent history
+      </button>
+
+      {expanded && (
+        <div style={{ marginTop: 10 }}>
+          {loading ? (
+            <p style={{ fontSize: 11.5, color: 'var(--text-4)' }}>Loading…</p>
+          ) : !history?.length ? (
+            <p style={{ fontSize: 11.5, color: 'var(--text-4)' }}>No changes yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {history.map((h, i) => (
+                <p key={i} style={{ fontSize: 11.5, color: 'var(--text-3)', margin: 0, fontFamily: 'var(--font-mono)' }}>
+                  {new Date(h.changed_at).toLocaleDateString()} — {h.field_changed}: {String(h.old_value)} → {String(h.new_value)}
+                  {' '}({historyInstitutionName(h)})
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function Toggle({
   label, description, checked, onChange,

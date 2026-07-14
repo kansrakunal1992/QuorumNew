@@ -13,6 +13,7 @@ interface BiasParameterBenchmarkResponse {
   memberCount: number | null
   avgConfidenceWeight: number | null
   scope: { type: 'institution' | 'platform'; label: string; n: number } | { type: 'insufficient' }
+  progress?: { current: number; needed: number }
 }
 
 export default function BiasParameterBenchmarkTag({ biasKey, authToken }: { biasKey: string; authToken: string }) {
@@ -30,7 +31,20 @@ export default function BiasParameterBenchmarkTag({ biasKey, authToken }: { bias
     return () => { cancelled = true }
   }, [biasKey, authToken])
 
-  if (!isInstitutionalModeEnabled() || !data || data.scope.type === 'insufficient') return null
+  if (!isInstitutionalModeEnabled() || !data) return null
+
+  if (data.scope.type === 'insufficient') {
+    if (!data.progress) return null
+    return (
+      <span style={{
+        display: 'inline-flex', padding: '2px 9px', borderRadius: 20,
+        border: '1px dashed var(--border-mid)', color: 'var(--text-4)',
+        fontSize: 10, fontFamily: 'var(--font-mono)',
+      }}>
+        {data.progress.current} of {data.progress.needed} needed
+      </span>
+    )
+  }
 
   return (
     <span style={{

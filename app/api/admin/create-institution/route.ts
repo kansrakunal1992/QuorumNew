@@ -64,7 +64,7 @@ export async function GET(req: Request) {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('institutions')
-    .select('id, name, parent_institution_id, admin_seat_claimed, k_floor_override, created_at')
+    .select('id, name, parent_institution_id, admin_seat_claimed, k_floor_override, deactivated_at, created_at')
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -123,4 +123,53 @@ export async function POST(req: Request) {
     },
     { status: 201 },
   )
+}
+
+// PATCH /api/admin/create-institution
+// Tier 2 — editing k_floor_override / allowed_email_domains after creation.
+// Body: { institutionId: string, kFloorOverride?: number | null, allowedEmailDomains?: string[] | null }
+//
+// Deliberately founder-only (this route), not exposed to institution admins
+// on their own /institution/admin portal — an institution admin lowering
+// their own K_FLOOR would be a customer weakening their own members'
+// privacy floor unilaterally, which lib/k-floor.ts's own comment is
+// explicit should never be a self-serve action. Raising it is fine either
+// way; the founder-only gate is the simplest way to prevent the lowering
+// case without needing separate raise/lower logic.
+export async function PATCH(req: Request) {
+  if (!isInstitutionalModeEnabled()) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!checkAdminAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  let body: { institutionId?: string; kFloorOverride?: number | null; allowedEmailDomains?: string[] | null; deactivate?: boolean }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+  }
+  if (!body.institutionId) return NextResponse.json({ error: 'institutionId is required' }, { status: 400 })
+
+  const update: Record<string, unknown> = {}
+  if ('kFloorOverride' in body) update.k_floor_override = body.kFloorOverride
+  if ('allowedEmailDomains' in body) update.allowed_email_domains = body.allowedEmailDomains
+  if ('deactivate' in body) update.deactivated_at = body.deactivate ? new Date().toISOString() : null
+  if (!Object.keys(update).length) {
+    return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+  }
+
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('institutions')
+    .update(update)
+    .eq('id', body.institutionId)
+    .select('id, name, k_floor_override, allowed_email_domains, deactivated_at')
+    .maybeSingle()
+
+  if (error) {
+    console.error('[create-institution] patch failed:', error.message)
+    return NextResponse.json({ error: 'Update failed' }, { status: 500 })
+  }
+  if (!data) return NextResponse.json({ error: 'Institution not found' }, { status: 404 })
+
+  console.log(`[create-institution] Updated ${data.name} (${data.id})`)
+  return NextResponse.json({ institution: data })
 }

@@ -52,6 +52,29 @@ interface AggregateSegment {
   is_signal: boolean | null
 }
 
+interface RollupSegment {
+  dim: string
+  contributing_children: number
+  high_avg_delta: number | null
+  high_n: number | null
+  low_avg_delta: number | null
+  low_n: number | null
+  gap: number | null
+  is_signal: boolean | null
+}
+
+// Tier 2 — cohort management
+interface Cohort {
+  id: string
+  name: string
+  created_at: string
+  members: { userId: string; email: string | null }[]
+}
+
+function inviteMessage(code: string, origin: string): string {
+  return `Join our institution on Quorum — go to ${origin}/institution/join and enter this code:\n\n${code}\n\nIt only connects your account; nothing is shared until you choose to turn it on.`
+}
+
 function institutionName(m: AdminMembership): string {
   const inst = Array.isArray(m.institutions) ? m.institutions[0] : m.institutions
   return inst?.name ?? 'Institution'
@@ -68,7 +91,25 @@ export default function InstitutionAdminPage() {
   const [consentCounts, setConsentCounts] = useState<Record<string, number> | null>(null)
   const [consentRate, setConsentRate] = useState<ConsentRate | null>(null)
   const [aggregateSegments, setAggregateSegments] = useState<AggregateSegment[] | null>(null)
+  const [cohorts, setCohorts] = useState<Cohort[] | null>(null)
+  const [rollupSegments, setRollupSegments] = useState<RollupSegment[] | null>(null)
+  const [newCohortName, setNewCohortName] = useState('')
+  const [addMemberFor, setAddMemberFor] = useState<string | null>(null)
+  const [newChildName, setNewChildName] = useState('')
+  const [lastChildCode, setLastChildCode] = useState<{ name: string; code: string } | null>(null)
   const [lastIssuedCode, setLastIssuedCode] = useState<string | null>(null)
+  const [copyFeedback, setCopyFeedback] = useState<'code' | 'message' | null>(null)
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyFeedback(text === lastIssuedCode ? 'code' : 'message')
+      setTimeout(() => setCopyFeedback(null), 2000)
+    } catch {
+      // clipboard API can fail (permissions, non-HTTPS in dev) — the code is
+      // still visible on screen to copy manually, so this fails quietly
+    }
+  }
   const [busy, setBusy]               = useState(false)
   const [notice, setNotice]           = useState<string | null>(null)
 
@@ -102,18 +143,22 @@ export default function InstitutionAdminPage() {
   // ── 2. Load roster + code status whenever the selected institution changes ──
   const loadInstitutionData = useCallback(async (institutionId: string, token: string) => {
     const headers = { Authorization: `Bearer ${token}` }
-    const [rosterRes, codesRes, consentRes, rateRes, dashboardRes] = await Promise.all([
+    const [rosterRes, codesRes, consentRes, rateRes, dashboardRes, cohortsRes, rollupRes] = await Promise.all([
       fetch(`/api/institutions/${institutionId}/admin/roster`, { headers }),
       fetch(`/api/institutions/${institutionId}/admin/codes`, { headers }),
       fetch(`/api/institutions/${institutionId}/consent-changes`, { headers }),
       fetch(`/api/institutions/${institutionId}/admin/consent-rate`, { headers }),
       fetch(`/api/institutions/${institutionId}/admin/aggregate-dashboard`, { headers }),
+      fetch(`/api/institutions/${institutionId}/admin/cohorts`, { headers }),
+      fetch(`/api/institutions/${institutionId}/admin/rollup-dashboard`, { headers }),
     ])
     setRoster(rosterRes.ok ? (await rosterRes.json()).roster : null)
     setCodeStatus(codesRes.ok ? await codesRes.json() : null)
     setConsentCounts(consentRes.ok ? (await consentRes.json()).counts : null)
     setConsentRate(rateRes.ok ? await rateRes.json() : null)
     setAggregateSegments(dashboardRes.ok ? (await dashboardRes.json()).segments : null)
+    setCohorts(cohortsRes.ok ? (await cohortsRes.json()).cohorts : null)
+    setRollupSegments(rollupRes.ok ? (await rollupRes.json()).segments : null)
   }, [])
 
   useEffect(() => {
@@ -155,6 +200,76 @@ export default function InstitutionAdminPage() {
       const body = await res.json()
       if (!res.ok) { showNotice(body.error ?? 'Rotation failed'); return }
       setLastIssuedCode(body.unlockCode)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createChild = async () => {
+    if (!selectedInstitutionId || !authToken || !newChildName.trim()) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/institutions/${selectedInstitutionId}/admin/codes`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_child', name: newChildName.trim() }),
+      })
+      const body = await res.json()
+      if (!res.ok) { showNotice(body.error ?? 'Failed to create sub-institution'); return }
+      setLastChildCode({ name: body.institution.name, code: body.unlockCode })
+      setNewChildName('')
+      await loadInstitutionData(selectedInstitutionId, authToken)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createCohort = async () => {
+    if (!selectedInstitutionId || !authToken || !newCohortName.trim()) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/institutions/${selectedInstitutionId}/admin/cohorts`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCohortName.trim() }),
+      })
+      const body = await res.json()
+      if (!res.ok) { showNotice(body.error ?? 'Failed to create cohort'); return }
+      setNewCohortName('')
+      await loadInstitutionData(selectedInstitutionId, authToken)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteCohort = async (cohortId: string) => {
+    if (!selectedInstitutionId || !authToken) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/institutions/${selectedInstitutionId}/admin/cohorts/${cohortId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (!res.ok) { const body = await res.json(); showNotice(body.error ?? 'Failed to delete cohort'); return }
+      await loadInstitutionData(selectedInstitutionId, authToken)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const changeCohortMember = async (cohortId: string, userId: string, action: 'add_member' | 'remove_member') => {
+    if (!selectedInstitutionId || !authToken) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/institutions/${selectedInstitutionId}/admin/cohorts/${cohortId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, userId }),
+      })
+      const body = await res.json()
+      if (!res.ok) { showNotice(body.error ?? 'Failed to update cohort'); return }
+      setAddMemberFor(null)
+      await loadInstitutionData(selectedInstitutionId, authToken)
     } finally {
       setBusy(false)
     }
@@ -230,6 +345,95 @@ export default function InstitutionAdminPage() {
         )}
       </Panel>
 
+      {/* ── Cohorts (Tier 2) ─────────────────────────────────────────────── */}
+      <Panel title="Cohorts">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <input
+            placeholder="New cohort name"
+            value={newCohortName}
+            onChange={e => setNewCohortName(e.target.value)}
+            style={{
+              flex: 1, padding: '7px 12px', borderRadius: 8,
+              border: '1px solid var(--border-mid)', background: 'var(--bg-card-alt)',
+              color: 'var(--text-2)', fontSize: 12.5, fontFamily: 'inherit', outline: 'none',
+            }}
+          />
+          <button onClick={createCohort} disabled={busy || !newCohortName.trim()} style={secondaryButtonStyle}>
+            Create
+          </button>
+        </div>
+
+        {!cohorts ? (
+          <p style={{ color: 'var(--text-4)', fontSize: 12.5 }}>Loading…</p>
+        ) : !cohorts.length ? (
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)' }}>No cohorts yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {cohorts.map(cohort => (
+              <div key={cohort.id} style={{
+                border: '1px solid var(--border-dim)', borderRadius: 10, padding: '10px 12px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-2)' }}>{cohort.name}</span>
+                  <button
+                    onClick={() => { if (confirm(`Delete "${cohort.name}"? This removes it for all members.`)) void deleteCohort(cohort.id) }}
+                    disabled={busy}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
+                  >
+                    Delete
+                  </button>
+                </div>
+
+                {cohort.members.map(m => (
+                  <div key={m.userId} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{m.email ?? m.userId}</span>
+                    <button
+                      onClick={() => changeCohortMember(cohort.id, m.userId, 'remove_member')}
+                      disabled={busy}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {!cohort.members.length && (
+                  <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '4px 0' }}>No members yet.</p>
+                )}
+
+                {addMemberFor === cohort.id ? (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <select
+                      onChange={e => { if (e.target.value) void changeCohortMember(cohort.id, e.target.value, 'add_member') }}
+                      defaultValue=""
+                      style={{
+                        flex: 1, padding: '5px 8px', borderRadius: 6, fontSize: 11.5,
+                        border: '1px solid var(--border-mid)', background: 'var(--bg-card-alt)',
+                        color: 'var(--text-3)', fontFamily: 'inherit',
+                      }}
+                    >
+                      <option value="" disabled>Select a member…</option>
+                      {roster
+                        ?.filter(r => !cohort.members.some(m => m.userId === r.userId))
+                        .map(r => <option key={r.userId} value={r.userId}>{r.email ?? r.userId}</option>)}
+                    </select>
+                    <button onClick={() => setAddMemberFor(null)} style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 11, cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setAddMemberFor(cohort.id)}
+                    style={{ fontSize: 11, color: 'var(--gold)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 6, fontFamily: 'inherit' }}
+                  >
+                    + Add member
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
       {/* ── Code Management ─────────────────────────────────────────────── */}
       <Panel title="Unlock Code">
         {codeStatus && (
@@ -245,9 +449,23 @@ export default function InstitutionAdminPage() {
             <button onClick={rotateCode} disabled={busy} style={buttonStyle}>
               Rotate code
             </button>
-            {lastIssuedCode && (
-              <p style={{ fontSize: 12.5, color: 'var(--gold)', margin: '12px 0 0', fontFamily: 'var(--font-mono)' }}>
-                New code (shown once): {lastIssuedCode}
+            {lastIssuedCode ? (
+              <div style={{ marginTop: 12 }}>
+                <p style={{ fontSize: 12.5, color: 'var(--gold)', margin: '0 0 8px', fontFamily: 'var(--font-mono)' }}>
+                  New code (shown once): {lastIssuedCode}
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => copyToClipboard(lastIssuedCode)} style={secondaryButtonStyle}>
+                    {copyFeedback === 'code' ? 'Copied' : 'Copy code'}
+                  </button>
+                  <button onClick={() => copyToClipboard(inviteMessage(lastIssuedCode, window.location.origin))} style={secondaryButtonStyle}>
+                    {copyFeedback === 'message' ? 'Copied' : 'Copy invite message'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '10px 0 0' }}>
+                Codes aren&apos;t retrievable once issued — rotate to get a fresh one you can share.
               </p>
             )}
             {!!codeStatus.children.length && (
@@ -258,6 +476,32 @@ export default function InstitutionAdminPage() {
                 ))}
               </div>
             )}
+
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-dim)' }}>
+              <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 8px' }}>
+                Add a sub-institution (e.g. a portfolio company under this parent)
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  placeholder="Sub-institution name"
+                  value={newChildName}
+                  onChange={e => setNewChildName(e.target.value)}
+                  style={{
+                    flex: 1, padding: '7px 12px', borderRadius: 8,
+                    border: '1px solid var(--border-mid)', background: 'var(--bg-card-alt)',
+                    color: 'var(--text-2)', fontSize: 12.5, fontFamily: 'inherit', outline: 'none',
+                  }}
+                />
+                <button onClick={createChild} disabled={busy || !newChildName.trim()} style={secondaryButtonStyle}>
+                  Create
+                </button>
+              </div>
+              {lastChildCode && (
+                <p style={{ fontSize: 11.5, color: 'var(--gold)', margin: '10px 0 0', fontFamily: 'var(--font-mono)' }}>
+                  {lastChildCode.name} created — code (shown once): {lastChildCode.code}
+                </p>
+              )}
+            </div>
           </>
         )}
       </Panel>
@@ -340,6 +584,40 @@ export default function InstitutionAdminPage() {
           </div>
         )}
       </Panel>
+
+      {/* ── Rollup Dashboard (Tier 2) — cross-institution view for parent
+          institutions. Only rendered when this institution has children AND
+          the rollup itself has cleared its >= 2 contributing-children
+          safeguard — a parent with 0-1 children simply has nothing to show
+          here, not an error. ────────────────────────────────────────── */}
+      {!!codeStatus?.children.length && (
+        <Panel title="Rollup Dashboard (across sub-institutions)">
+          {!rollupSegments ? (
+            <p style={{ color: 'var(--text-4)', fontSize: 12.5 }}>Loading…</p>
+          ) : !rollupSegments.length ? (
+            <p style={{ fontSize: 12.5, color: 'var(--text-4)' }}>
+              Needs at least 2 sub-institutions with their own cleared data before a rollup
+              number can be shown — nothing to configure, this fills in as they get there.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {rollupSegments.map(s => (
+                <div key={s.dim} style={{ padding: '8px 0', borderTop: '1px solid var(--border-dim)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{DIM_LABELS[s.dim as VectorDimName] ?? s.dim}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{s.contributing_children} sub-institutions</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+                    {s.high_avg_delta != null && `high avg Δ ${s.high_avg_delta} (n=${s.high_n})`}
+                    {s.high_avg_delta != null && s.low_avg_delta != null && '  ·  '}
+                    {s.low_avg_delta != null && `low avg Δ ${s.low_avg_delta} (n=${s.low_n})`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      )}
     </PageShell>
   )
 }
@@ -370,4 +648,10 @@ const buttonStyle: React.CSSProperties = {
   padding: '8px 18px', borderRadius: 8, border: '1px solid var(--gold-dim)',
   background: 'rgba(201,168,76,0.12)', color: 'var(--gold)', fontSize: 12.5,
   fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+}
+
+const secondaryButtonStyle: React.CSSProperties = {
+  padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-mid)',
+  background: 'transparent', color: 'var(--text-3)', fontSize: 11.5,
+  fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
 }

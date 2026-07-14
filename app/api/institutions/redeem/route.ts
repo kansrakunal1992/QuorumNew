@@ -59,7 +59,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const { data: institution, error: lookupError } = await supabase
     .from('institutions')
-    .select('id, allowed_email_domains, admin_seat_claimed')
+    .select('id, allowed_email_domains, admin_seat_claimed, deactivated_at')
     .eq('unlock_code_hash', hashCode(code))
     .maybeSingle()
 
@@ -69,6 +69,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   if (!institution) {
     // Intentionally vague — same posture as mirror/unlock's invalid-code response
+    return NextResponse.json({ error: 'Invalid unlock code' }, { status: 403 })
+  }
+  if (institution.deactivated_at) {
+    // Tier 3 — same vague posture as an invalid code, not a distinct
+    // "this institution is deactivated" message, since that would confirm
+    // to an attacker that a code they don't have is at least structurally
+    // valid for a real (if inactive) institution.
     return NextResponse.json({ error: 'Invalid unlock code' }, { status: 403 })
   }
 
