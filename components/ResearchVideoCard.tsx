@@ -16,11 +16,12 @@
 //     component renders nothing at all — same "defaults to current
 //     experience" behavior as the website's hero video.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getStoredSessionIds, hasFunctionalConsent } from '@/lib/storage'
 
 const SEEN_KEY             = 'quorum_research_video_seen'
 const DIAL_DOWN_AT_SESSION = 3
+const VIDEO_SRC            = '/videos/quorum-research.mp4'
 
 function readSeen(): boolean {
   if (typeof window === 'undefined') return false
@@ -42,7 +43,6 @@ export default function ResearchVideoCard() {
   const [seen, setSeen]               = useState(false)
   const [sessionCount, setSessionCount] = useState(0)
   const [modalOpen, setModalOpen]     = useState(false)
-  const probeRef                      = useRef<HTMLVideoElement>(null)
 
   // Read localStorage-derived state client-side only, after mount, to avoid
   // any SSR/CSR hydration mismatch.
@@ -51,37 +51,31 @@ export default function ResearchVideoCard() {
     setSessionCount(getStoredSessionIds().length)
   }, [])
 
-  // Hidden probe element — checks whether the file actually exists before
-  // rendering either the card or the dialed-down line, so there's never a
-  // flash of broken UI if it hasn't been uploaded yet.
+  // Existence check via a HEAD request rather than mounting a real <video>
+  // element to probe it. A <video preload="metadata"> still pulls a small
+  // chunk of the file itself (enough to parse duration/codec); a HEAD
+  // request only reads response headers — meaningfully lighter on a slow
+  // connection, and it's the only network activity this component causes
+  // until someone actually presses play.
   useEffect(() => {
-    const v = probeRef.current
-    if (!v) return
-    const onOk  = () => setVideoStatus('available')
-    const onErr = () => setVideoStatus('unavailable')
-    v.addEventListener('loadedmetadata', onOk)
-    v.addEventListener('error', onErr, true)
-    return () => {
-      v.removeEventListener('loadedmetadata', onOk)
-      v.removeEventListener('error', onErr, true)
-    }
+    let cancelled = false
+    fetch(VIDEO_SRC, { method: 'HEAD' })
+      .then(res => { if (!cancelled) setVideoStatus(res.ok ? 'available' : 'unavailable') })
+      .catch(()  => { if (!cancelled) setVideoStatus('unavailable') })
+    return () => { cancelled = true }
   }, [])
 
   const markSeen = () => {
     if (!seen) { writeSeen(); setSeen(true) }
   }
 
-  if (videoStatus === 'unavailable') {
-    return <video ref={probeRef} src="/videos/quorum-research.mp4" preload="metadata" muted style={{ display: 'none' }} />
-  }
+  if (videoStatus !== 'available') return null
 
   const dialedDown = seen || sessionCount >= DIAL_DOWN_AT_SESSION
 
   return (
     <>
-      <video ref={probeRef} src="/videos/quorum-research.mp4" preload="metadata" muted style={{ display: 'none' }} />
-
-      {videoStatus === 'checking' ? null : dialedDown ? (
+      {dialedDown ? (
         /* ── Dialed-down state: persistent line, same position as the card ── */
         <div
           onClick={() => { setModalOpen(true); markSeen() }}
@@ -123,7 +117,7 @@ export default function ResearchVideoCard() {
           <video
             controls
             playsInline
-            preload="metadata"
+            preload="none"
             poster="/videos/quorum-research-poster.jpg"
             onPlay={markSeen}
             style={{
