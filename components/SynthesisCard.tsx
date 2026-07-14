@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'   // S3-07: Observatory mode overlay
 import { useTTSContext } from '@/context/TTSContext'
 import CouncilWeightingStrip from './CouncilWeightingStrip'   // S2-02
+import ResearchVideoCard from './ResearchVideoCard'           // Video 2 — research explainer
 import type { PersonaRelevanceMap } from '@/lib/persona-relevance'  // S2-02
 import { getOrCreateDeviceId } from '@/lib/storage'                  // S2-01
 
@@ -897,6 +898,12 @@ export default function SynthesisCard({
             {(fetchedWeights ?? personaWeights) && (
               <CouncilWeightingStrip weights={(fetchedWeights ?? personaWeights)!} />
             )}
+
+            {/* Video 2 (research explainer) — always rendered here, independent of
+                whether CouncilWeightingStrip itself rendered above, so it reaches
+                every completed session rather than only decisions with an elevated
+                advisor. See ResearchVideoCard.tsx for the seen/session-count logic. */}
+            <ResearchVideoCard />
 
             {/* S2-01: Post-synthesis confidence re-rate — 3-tap widget.
                 Measures clarity delta vs pre_decision_confidence.
