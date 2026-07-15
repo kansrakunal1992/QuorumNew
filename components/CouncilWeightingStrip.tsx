@@ -9,14 +9,16 @@
 // compute persona ordering). The result is passed here as a prop — no additional API call.
 // Shows top 3 advisors by weight with a relative bar chart.
 
-import type { PersonaRelevanceMap } from '@/lib/persona-relevance'
-
 interface Props {
-  weights: PersonaRelevanceMap
+  weights: Record<string, number>
   /** P1: previous synthesis version's weight snapshot — when provided, renders
    *  a ↑/↓ delta next to each score. Omitted entirely (exactly today's
-   *  behaviour) when this prop isn't passed, so existing callers are unaffected. */
-  previousWeights?: PersonaRelevanceMap | null
+   *  behaviour) when this prop isn't passed, so existing callers are unaffected.
+   *  Typed as a plain Record rather than PersonaRelevanceMap: synthesis-version
+   *  snapshots (lib/synthesis-diff.ts) store weights as Record<string, number>,
+   *  and this component never actually relies on all 6 advisor keys being
+   *  guaranteed present — it only sorts/slices whatever entries exist. */
+  previousWeights?: Record<string, number> | null
 }
 
 const LABELS: Record<string, string> = {
