@@ -18,6 +18,19 @@ import { useState, useEffect } from 'react'
 import OnboardingTour, { buildPWAInstallStep } from './OnboardingTour'
 import type { TourStep } from './OnboardingTour'
 
+interface Props {
+  /** P0 fix: real cross-session decision count, resolved server-side in
+   *  app/record/[id]/page.tsx. Previously this component had no way to know
+   *  whether the user was new — it only ever checked localStorage, so an
+   *  established user (e.g. 5 decisions already on record) opening the app on
+   *  a fresh device/PWA install would see a "first decision" tour here too. */
+  totalSessionCount?: number
+  /** P0 fix: server-side truth for "has this user already seen the Record
+   *  tour", resolved from user_profiles.record_tour_completed_at — same
+   *  cross-device durability the Home tour already had. */
+  tourDone?: boolean
+}
+
 const RECORD_STEPS_BASE: TourStep[] = [
   {
     id:               'record-decision',
@@ -60,11 +73,15 @@ const EMAIL_LINK_STEPS: TourStep[] = [
   },
 ]
 
-export default function RecordTour() {
+export default function RecordTour({ totalSessionCount, tourDone = false }: Props) {
   const [active, setActive] = useState(false)
   const [steps,  setSteps]  = useState<TourStep[]>(RECORD_STEPS_BASE)
 
   useEffect(() => {
+    // P0 fix: server truth + real decision count first — localStorage alone
+    // was never enough to tell "new user" from "established user, new device".
+    if (tourDone) return
+    if ((totalSessionCount ?? 0) > 1) return
     try {
       const done    = localStorage.getItem('quorum_tour.record')
       const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
@@ -91,17 +108,39 @@ export default function RecordTour() {
         return () => clearTimeout(t)
       }
     } catch {}
-  }, [])
+  }, [tourDone, totalSessionCount])
 
   if (!active) return null
 
+  // P0 fix: persist completion/skip server-side too, not just localStorage —
+  // mirrors the Home tour's existing cross-device fix. Token is fetched lazily
+  // here (rather than held in state throughout) since it's only ever needed
+  // at this one moment; dynamic import keeps the supabase client out of this
+  // component's initial bundle for the common case where the tour never fires.
+  const persistTourDone = async () => {
+    try {
+      const { createClient } = await import('@/lib/supabase')
+      const sb = createClient()
+      const { data: { session: authSession } } = await sb.auth.getSession()
+      const token = authSession?.access_token
+      if (!token) return
+      fetch('/api/onboarding/complete', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ tour: 'record' }),
+      }).catch(() => {})
+    } catch { /* anonymous session — nothing to persist server-side */ }
+  }
+
   const handleComplete = () => {
     try { localStorage.setItem('quorum_tour.record', 'done') } catch {}
+    persistTourDone()
     setActive(false)
   }
 
   const handleSkip = () => {
     try { localStorage.setItem('quorum_tour.record', 'skip') } catch {}
+    persistTourDone()
     setActive(false)
   }
 

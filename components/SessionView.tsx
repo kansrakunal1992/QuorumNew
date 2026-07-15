@@ -97,6 +97,25 @@ interface Props {
    *  Previously hardcoded false — paying Mirror subscribers were getting free-tier
    *  Council behaviour. Now threaded through to RecordReceipt and PersonaPanel. */
   mirrorActive?: boolean
+  /** P0 tour fix: server-side truth for "has this user already seen the Council tour",
+   *  resolved from user_profiles.council_tour_completed_at. Previously this tour was
+   *  gated on localStorage alone, so a returning/established user on a fresh device
+   *  (e.g. a freshly installed mobile PWA) would see a "first decision" tour again. */
+  councilTourDone?: boolean
+  /** P0 examiner-refire fix: server-side truth for "has the Examiner already been
+   *  submitted or skipped for this session", resolved from sessions_ontology.examiner_status.
+   *  Previously this was never checked on mount, so a page reload (e.g. after a
+   *  network error mid-Council) always re-asked the Examiner questions from scratch,
+   *  even though the answers (or the skip) were already persisted. */
+  examinerAlreadySubmitted?: boolean
+  /** P0 follow-up fix: the persisted Examiner Q&A for this session (decrypted
+   *  server-side), used to reconstruct examinerInitialContext/synthExaminerContext
+   *  on mount when examinerAlreadySubmitted is true. Without this, an advisor
+   *  that hadn't finished streaming before a reload (e.g. a network failure
+   *  mid-Council) would fire fresh with no Examiner context at all — the
+   *  Examiner UI correctly doesn't re-ask, but the context it gathered was
+   *  otherwise lost. Empty array when skipped (no rows) or not yet submitted. */
+  examinerSavedResponses?: Array<{ question_text: string; response_text: string | null; gap: string }>
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -137,7 +156,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, mirrorActive = false }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, mirrorActive = false, councilTourDone = false, examinerAlreadySubmitted = false, examinerSavedResponses = [] }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -193,12 +212,15 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [contextExpanded,  setContextExpanded]  = useState(false)
 
   // Synthesis gate state
-  const [examinerReady,            setExaminerReady]            = useState(false)
+  const [examinerReady,            setExaminerReady]            = useState(examinerAlreadySubmitted)
   const [synthesisVersion,         setSynthesisVersion]         = useState(0)
   const [examinerContextByPersona, setExaminerContextByPersona] = useState<Record<string, string>>({})
 
   // New flow: personas fire AFTER examiner, not before.
-  const [examinerSubmitted,      setExaminerSubmitted]      = useState(false)
+  // P0 fix: seed from server truth (sessions.examiner_status) rather than always
+  // starting false — otherwise a reload (e.g. after a network error mid-Council)
+  // re-asks Examiner questions that were already answered or explicitly skipped.
+  const [examinerSubmitted,      setExaminerSubmitted]      = useState(examinerAlreadySubmitted)
   const [examinerInitialContext, setExaminerInitialContext] = useState<Record<string, string>>({})
   const [synthExaminerContext,   setSynthExaminerContext]   = useState<string | undefined>(undefined)
 
@@ -239,7 +261,7 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [labelText,          setLabelText]          = useState('')
   const pendingOrderRef      = useRef<PersonaKey[] | null>(null)
   const allPersonasDoneRef   = useRef(false)
-  const examinerSubmittedRef = useRef(false)
+  const examinerSubmittedRef = useRef(examinerAlreadySubmitted)
   // Sprint Chunk 1 fix: stores rule text if user clicks "Apply this rule" on
   // RuleRecallBanner BEFORE submitting the examiner. Read by handleExaminerComplete
   // to prepend the rule to every persona's initial context and to synthExaminerContext.
@@ -470,8 +492,15 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [synthesisDone, authTokenSV, totalSessionCount])
 
   // Sprint TOUR-1: fire council tour once after synthesis completes
+  // P0 fix: previously gated on localStorage alone, which is device-local — a
+  // user with real decisions already on record (server truth: councilTourDone,
+  // or a real DB count via totalSessionCount) would still see a "first decision"
+  // tour on any device/browser where that one key had never been set (e.g. a
+  // freshly installed mobile PWA on an account that already has 5 decisions).
   useEffect(() => {
     if (!synthesisDone) return
+    if (councilTourDone) return
+    if ((totalSessionCount ?? 0) > 1) return
     try {
       const done    = localStorage.getItem('quorum_tour.council')
       const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
@@ -484,7 +513,7 @@ export default function SessionView({ session: initialSession, initialMessages =
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [synthesisDone])
+  }, [synthesisDone, councilTourDone, totalSessionCount])
 
   useEffect(() => {
     let attempt = 0
@@ -575,6 +604,15 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [ontologyReady, styleCueReady])
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
+    // P0 fix: defense-in-depth against the "N of 6" overcount bug — completedResponses
+    // is keyed by personaKey and its size drives every "X of 6" display (CouncilStatusBar,
+    // SynthesisCard). initialMessages seeding is already filtered to PERSONA_ORDER keys
+    // (see completedResponses useState above), but that guard only covers the initial
+    // hydration, not this live-update path — if anything ever calls onComplete with a
+    // non-advisor key (e.g. 'synthesis', 'decision_brief', or a future mistake), it would
+    // silently re-open the same leak. Ignore anything outside the canonical 6 here too.
+    if (!(PERSONA_ORDER as string[]).includes(personaKey)) return
+
     // S3-01: capture this persona's lean classification, if present. Only overwrite on a
     // valid match — later calls (pushback replies, examiner updates) send pre-stripped
     // content without the tag, and should never clear a previously captured lean.
@@ -710,6 +748,27 @@ export default function SessionView({ session: initialSession, initialMessages =
     },
     []
   )
+
+  // P0 follow-up fix: on a fresh mount where the Examiner was already
+  // submitted (examinerAlreadySubmitted), the Examiner UI correctly doesn't
+  // re-fire — but nothing was reconstructing examinerInitialContext /
+  // synthExaminerContext, so any advisor that hadn't finished streaming
+  // before the reload (e.g. a network failure mid-Council) would start
+  // fresh with no Examiner context at all. Feeding the persisted Q&A back
+  // through handleExaminerComplete rebuilds those context blocks exactly as
+  // if the Examiner had just been submitted normally. Guarded to sessionKey
+  // === 0 (the page's original session — a "Reanalyze" session starts its
+  // own fresh Examiner flow and shouldn't inherit this) and to run once.
+  const examinerContextRestoredRef = useRef(false)
+  useEffect(() => {
+    if (examinerContextRestoredRef.current) return
+    if (sessionKey !== 0) return
+    if (!examinerAlreadySubmitted) return
+    if (!examinerSavedResponses.length) return
+    examinerContextRestoredRef.current = true
+    handleExaminerComplete(examinerSavedResponses, 'GATE')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const shareContextPendingRef = useRef<Set<string>>(new Set())
 
@@ -1541,15 +1600,22 @@ export default function SessionView({ session: initialSession, initialMessages =
               />
 
               {/* ── 2c. Examiner ── */}
-              <div className="sv-fade sv-fade-2">
-                <ExaminerPanel
-                  key={`examiner-${sessionKey}`}
-                  sessionId={session.id}
-                  visible={true}
-                  onComplete={handleExaminerComplete}
-                  forceDismissed={examinerDismissed}
-                />
-              </div>
+              {/* P0 fix: don't remount/re-fetch the Examiner if it was already
+                  submitted or skipped for this session (examinerSubmitted seeded
+                  from sessions.examiner_status server-side). Without this guard,
+                  a reload — e.g. after a network error mid-Council — always
+                  re-asked the same questions from scratch. */}
+              {!examinerSubmitted && (
+                <div className="sv-fade sv-fade-2">
+                  <ExaminerPanel
+                    key={`examiner-${sessionKey}`}
+                    sessionId={session.id}
+                    visible={true}
+                    onComplete={handleExaminerComplete}
+                    forceDismissed={examinerDismissed}
+                  />
+                </div>
+              )}
 
               {/* ── S2-07: Opening Ceremony — sessions 1–3, gates persona streaming for 3s ── */}
               {ceremonyActive && (
@@ -1995,6 +2061,13 @@ export default function SessionView({ session: initialSession, initialMessages =
           active={showCouncilTour}
           onComplete={() => {
             try { localStorage.setItem('quorum_tour.council', 'done') } catch {}
+            if (authTokenSV) {
+              fetch('/api/onboarding/complete', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authTokenSV}` },
+                body:    JSON.stringify({ tour: 'council' }),
+              }).catch(() => {})
+            }
             setShowCouncilTour(false)
           }}
           onSkip={() => {
@@ -2002,6 +2075,13 @@ export default function SessionView({ session: initialSession, initialMessages =
               ;['quorum_tour.council', 'quorum_tour.record']
                 .forEach(k => localStorage.setItem(k, 'skip'))
             } catch {}
+            if (authTokenSV) {
+              fetch('/api/onboarding/complete', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authTokenSV}` },
+                body:    JSON.stringify({ tour: 'council' }),
+              }).catch(() => {})
+            }
             setShowCouncilTour(false)
           }}
         />

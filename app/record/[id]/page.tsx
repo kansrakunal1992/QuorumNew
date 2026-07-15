@@ -202,6 +202,25 @@ export default async function RecordPage({ params }: Props) {
     ? { ...outcomeResult.data, what_decided: decryptText(outcomeResult.data.what_decided) }
     : null
 
+  // P0 fix: RecordTour previously had no awareness of the user's real decision
+  // count or of prior tour completion — it was gated on localStorage alone, so
+  // an established user (e.g. 5 decisions already on record) opening the app on
+  // a fresh device/PWA install would see a "first decision" tour here too, the
+  // same bug already found and fixed on the Session View / Council tour. Both
+  // queries depend on session.user_id, which isn't known until sessionResult
+  // above has resolved, so this is a second, smaller Promise.all rather than
+  // folded into the first one.
+  const [totalSessionCountResult, tourProfileResult] = await Promise.all([
+    session.user_id
+      ? supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', session.user_id)
+      : Promise.resolve({ count: null }),
+    session.user_id
+      ? supabase.from('user_profiles').select('record_tour_completed_at').eq('user_id', session.user_id).single()
+      : Promise.resolve({ data: null }),
+  ])
+  const totalSessionCount = totalSessionCountResult.count ?? undefined
+  const recordTourDone    = !!tourProfileResult?.data?.record_tour_completed_at
+
   // Note: per-session bias note moved to the live SessionView page (SB-3) —
   // it now surfaces right after synthesis completes, when the user is most
   // engaged, instead of on the static record page after the fact.
@@ -840,7 +859,7 @@ export default async function RecordPage({ params }: Props) {
       </div>
 
       {/* ── Sprint TOUR-1: First-decision record tour (client component) ── */}
-      <RecordTour />
+      <RecordTour totalSessionCount={totalSessionCount} tourDone={recordTourDone} />
     </>
   )
 }

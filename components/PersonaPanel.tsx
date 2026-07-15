@@ -92,7 +92,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [showPushback, setShowPushback]   = useState(false)
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
-  const [contextShared, setContextShared] = useState(false)
+  // P0 fix: was a one-shot boolean (`contextShared`) that hid this button
+  // permanently after its first use, even though the user could keep pushing
+  // back and generating new exchanges. Tracking the index of the last-shared
+  // exchange lets the button reappear whenever there's a NEW exchange that
+  // hasn't been shared yet, while still hiding it right after a share until
+  // the next fresh pushback comes in. -1 = nothing shared yet.
+  const [lastSharedExchangeIndex, setLastSharedExchangeIndex] = useState(-1)
 
   // Header block — parsed from <lens>, <position>, <realcost>, <lean> tags in streamed output
   const [lensText,     setLensText]     = useState('')
@@ -705,14 +711,18 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </p>
         )}
 
-        {/* Sprint 16b Fix 4: Share context button — shown once after pushback completes, gone after click */}
-        {panelState === 'done' && !isPushingBack && exchanges.length > 0 && !contextShared && onShareContext && (
+        {/* P0 fix: shown after any pushback exchange that hasn't been shared yet —
+            reappears on every new challenge round instead of disappearing for good
+            after the first click. */}
+        {panelState === 'done' && !isPushingBack && exchanges.length > 0
+          && lastSharedExchangeIndex < exchanges.length - 1 && onShareContext && (
           <div style={{ marginTop: 16 }}>
             <button
               onClick={() => {
-                const lastExchange = exchanges[exchanges.length - 1]
+                const lastIndex = exchanges.length - 1
+                const lastExchange = exchanges[lastIndex]
                 onShareContext(lastExchange.user)
-                setContextShared(true)
+                setLastSharedExchangeIndex(lastIndex)
               }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
