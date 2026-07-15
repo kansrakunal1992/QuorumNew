@@ -4,8 +4,10 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'   // S3-07: Observatory mode overlay
 import { useTTSContext } from '@/context/TTSContext'
 import CouncilWeightingStrip from './CouncilWeightingStrip'   // S2-02
+import WhatChangedDrawer from './WhatChangedDrawer'            // P1
 import ResearchVideoCard from './ResearchVideoCard'           // Video 2 — research explainer
 import type { PersonaRelevanceMap } from '@/lib/persona-relevance'  // S2-02
+import type { SynthesisVersionSnapshot } from '@/lib/synthesis-diff'  // P1
 import { getOrCreateDeviceId } from '@/lib/storage'                  // S2-01
 
 interface Props {
@@ -41,6 +43,19 @@ interface Props {
    *  cached output. Only consulted for the FIRST synthesis (version 0); explicit
    *  re-syntheses (validation correction, examiner update) still regenerate normally. */
   initialContent?: string
+  /** P1: current lean-classification snapshot (SessionView's personaLeans),
+   *  updated live as pushback replies come in. Used to (a) compute leanShifts
+   *  sent to the synthesis API for the Gap #2 weight boost, and (b) capture
+   *  into each version snapshot for the What Changed drawer's advisor-moves
+   *  diff. Not the same thing as the persisted per-version snapshots below —
+   *  this is always "right now". */
+  personaLeans?: Record<string, string>
+  /** P1: persisted synthesis-version history for this session (verdict/
+   *  weights/leans per version) — reload resilience for the What Changed
+   *  drawer, same pattern as SessionView's examinerSavedResponses. Only
+   *  meaningful for version 0 (SessionView already scopes this to
+   *  sessionKey === 0 before passing it down). */
+  initialSynthesisVersions?: SynthesisVersionSnapshot[]
 }
 
 type State = 'waiting' | 'streaming' | 'done' | 'error'
@@ -60,6 +75,8 @@ export default function SynthesisCard({
   interstitialGateOpen = true, // S3-01 — defaults true so it's never a silent regression if unset
   mirrorActive, // O3
   initialContent, // bug fix: cached synthesis text — skips regeneration when present
+  personaLeans = {},              // P1
+  initialSynthesisVersions = [],  // P1
 }: Props) {
   // Bug fix: strip tags out of cached initialContent the same way the streaming
   // loop's final pass does, so a returning visit renders identically to a freshly
@@ -219,9 +236,15 @@ export default function SynthesisCard({
   const sessionIdRef   = useRef(sessionId)
   const registerRef    = useRef(registerMode)
   const examinerContextRef = useRef(examinerContext)
+  // P1: What Changed drawer state — one snapshot per completed synthesis version.
+  const [versionHistory, setVersionHistory] = useState<SynthesisVersionSnapshot[]>(initialSynthesisVersions)
+  const versionHistoryRef = useRef(versionHistory)
+  const personaLeansRef = useRef(personaLeans)
 
   useEffect(() => { responsesRef.current       = personaResponses }, [personaResponses])
   useEffect(() => { examinerContextRef.current = examinerContext  }, [examinerContext])
+  useEffect(() => { personaLeansRef.current     = personaLeans     }, [personaLeans])
+  useEffect(() => { versionHistoryRef.current   = versionHistory   }, [versionHistory])
 
   useEffect(() => { decisionRef.current  = decisionText  }, [decisionText])
   useEffect(() => { contextRef.current   = contextText   }, [contextText])
@@ -271,6 +294,23 @@ export default function SynthesisCard({
         : ''
       const msg = `DECISION: ${decisionRef.current}${ctx}${examinerBlock}\n\nADVISOR RESPONSES:\n\n${personaBlock}\n\nNow produce the council synthesis.`
 
+      // P1 (Gap #2 fix): diff current leans against the PREVIOUS synthesis
+      // version's lean snapshot (not the very first response ever) — this is
+      // what makes "shifted position" mean "just now", not "at some point".
+      // Empty on the very first synthesis (nothing to diff against yet).
+      const previousVersionSnapshot = versionHistoryRef.current[versionHistoryRef.current.length - 1]
+      const leanShifts: Record<string, { from: string; to: string }> = {}
+      if (previousVersionSnapshot) {
+        for (const [key, currentLean] of Object.entries(personaLeansRef.current)) {
+          const previousLean = previousVersionSnapshot.leans[key]
+          if (previousLean && currentLean && previousLean !== currentLean) {
+            leanShifts[key] = { from: previousLean, to: currentLean }
+          }
+        }
+      }
+
+      let resolvedWeights: PersonaRelevanceMap | null = null
+
       try {
         const res = await fetch('/api/persona', {
           method: 'POST', signal: ctrl.signal,
@@ -292,13 +332,19 @@ export default function SynthesisCard({
                 return id ?? undefined
               } catch { return undefined }
             })(),
+            // P1 (Gap #2 fix): only send when non-empty — keeps the request
+            // body identical to today's for the very first synthesis.
+            leanShifts: Object.keys(leanShifts).length > 0 ? leanShifts : undefined,
           }),
         })
         if (!res.ok || !res.body) { setState('error'); return }
         // S2-02: capture the exact relevance map used in this synthesis run
         const relevanceHeader = res.headers.get('X-Persona-Relevance')
         if (relevanceHeader) {
-          try { setFetchedWeights(JSON.parse(relevanceHeader)) } catch { /* non-blocking */ }
+          try {
+            resolvedWeights = JSON.parse(relevanceHeader)
+            setFetchedWeights(resolvedWeights)
+          } catch { /* non-blocking */ }
         }
         const reader = res.body.getReader()
         const dec    = new TextDecoder()
@@ -391,6 +437,26 @@ export default function SynthesisCard({
         )
         setState('done')
         onSynthesisComplete?.()
+
+        // P1: capture this version's snapshot for the What Changed drawer.
+        // Uses the verdict just parsed above (falls back to whatever was
+        // accumulated via the per-chunk parser, same as the state setters
+        // right above) and the weights resolved from THIS response's header
+        // (resolvedWeights, a local var — reading fetchedWeights state here
+        // would be stale within this same closure).
+        const snapshotVerdict = fv?.[1]?.trim() || verdictAccRef.current || ''
+        const snapshot: SynthesisVersionSnapshot = {
+          version,
+          verdictText: snapshotVerdict,
+          weights:     resolvedWeights ?? {},
+          leans:       personaLeansRef.current,
+        }
+        setVersionHistory(prev => [...prev.filter(v => v.version !== version), snapshot])
+        fetch(`/api/session/${sessionIdRef.current}/synthesis-version`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(snapshot),
+        }).catch(() => { /* non-blocking — drawer still works for this live session */ })
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return
         setState('error')
@@ -898,6 +964,10 @@ export default function SynthesisCard({
             {(fetchedWeights ?? personaWeights) && (
               <CouncilWeightingStrip weights={(fetchedWeights ?? personaWeights)!} />
             )}
+
+            {/* P1: What Changed drawer — renders nothing until there are at least
+                2 synthesis versions, so a single-pass decision shows no extra UI. */}
+            <WhatChangedDrawer versions={versionHistory} />
 
             {/* Video 2 (research explainer) — always rendered here, independent of
                 whether CouncilWeightingStrip itself rendered above, so it reaches

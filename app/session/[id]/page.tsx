@@ -20,7 +20,7 @@ export default async function SessionPage({ params }: Props) {
 
   if (error || !session) { notFound() }
 
-  const [{ data: messages }, { count: totalSessionCount }, mirrorState, tourProfileResult, ontologyStatusResult] = await Promise.all([
+  const [{ data: messages }, { count: totalSessionCount }, mirrorState, tourProfileResult, ontologyStatusResult, synthesisVersionsResult] = await Promise.all([
     supabase.from('messages').select('persona, role, content').eq('session_id', id).order('created_at', { ascending: true }),
     session.user_id
       ? supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', session.user_id)
@@ -40,6 +40,10 @@ export default async function SessionPage({ params }: Props) {
     // the sessions row, where the column doesn't exist, so it silently always
     // evaluated to false. Fetching it here alongside everything else.
     supabase.from('sessions_ontology').select('examiner_status').eq('session_id', id).maybeSingle(),
+    // P1: "What Changed" drawer — restore synthesis-version history (verdict/
+    // weights/leans per version) so a reload mid-deliberation doesn't reset
+    // the drawer back to a single version. See supabase/add_synthesis_versions_table.sql.
+    supabase.from('synthesis_versions').select('version, verdict_text, weights, leans').eq('session_id', id).order('version', { ascending: true }),
   ])
 
   const councilTourDone = !!tourProfileResult?.data?.council_tour_completed_at
@@ -72,6 +76,25 @@ export default async function SessionPage({ params }: Props) {
     }))
   }
 
+  // P1 fix: appliedRuleRef (SessionView) was purely in-memory — a reload after
+  // a network failure lost the user's "Apply this rule" choice from
+  // RuleRecallBanner even though it's already persisted (rule_recall_choice /
+  // rule_recall_rule_text on this same sessions row, written by
+  // PATCH /api/session/commitment). Already present in `session` via
+  // select('*') above — just needs decrypting and gating on choice==='applied'.
+  const appliedRuleFromServer = session.rule_recall_choice === 'applied'
+    ? decryptText(session.rule_recall_rule_text)
+    : null
+
+  // P1: decrypt verdict_text per version — weights/leans are stored plain
+  // (advisor labels/scores/lean classification, not decision content).
+  const initialSynthesisVersions = (synthesisVersionsResult.data ?? []).map(row => ({
+    version:     row.version as number,
+    verdictText: decryptText(row.verdict_text) ?? '',
+    weights:     (row.weights ?? {}) as Record<string, number>,
+    leans:       (row.leans ?? {}) as Record<string, string>,
+  }))
+
   const decryptedSession = {
     ...session,
     decision_text: decryptText(session.decision_text) ?? '',
@@ -96,5 +119,7 @@ export default async function SessionPage({ params }: Props) {
     councilTourDone={councilTourDone}
     examinerAlreadySubmitted={examinerAlreadySubmitted}
     examinerSavedResponses={examinerSavedResponses}
+    appliedRuleFromServer={appliedRuleFromServer}
+    initialSynthesisVersions={initialSynthesisVersions}
   />
 }

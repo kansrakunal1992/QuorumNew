@@ -152,6 +152,7 @@ import {
 import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
 import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5
+import type { AdvisorKey } from '@/lib/persona-relevance'  // P1: Gap #2 leanShifts typing
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
 import { resolveActiveInstitution }   from '@/lib/active-institution'
 import { getBenchmarkForDimension }   from '@/lib/aggregate-benchmark'
@@ -366,6 +367,7 @@ export async function POST(req: Request) {
       examinerContext,
       resubmitAlertId,
       isExaminerContextCall,
+      leanShifts,
     }: {
       sessionId:               string
       personaKey:              PersonaKey
@@ -378,6 +380,10 @@ export async function POST(req: Request) {
       structuralContext?: string
       examinerContext?:   string
       resubmitAlertId?:   string   // Sprint D3: set when session resubmitted from avoidance alert
+      // P1 (Gap #2 fix): personas whose lean changed since the previous synthesis
+      // (computed client-side in SynthesisCard, diffing current personaLeans
+      // against the last-persisted version snapshot). Synthesis-call only.
+      leanShifts?: Partial<Record<string, { from: string; to: string }>>
     } = await req.json()
 
     const persona = PERSONAS[personaKey]
@@ -613,11 +619,16 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
     // map used in the MANDATORY directive, not a client-side recomputation.
     let relevanceMapForHeader: Record<string, number> | null = null
     if (isSynthesisCall) {
+      // P1 (Gap #2 fix): AdvisorKey is a subset of PersonaKey (excludes
+      // synthesis/decision_brief) — cast is safe here since leanShifts keys
+      // can only ever be one of the 6 advisor keys client-side.
+      const typedLeanShifts = leanShifts as Partial<Record<AdvisorKey, { from: string; to: string }>> | undefined
       const relevanceMap = computePersonaRelevance(
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
+        typedLeanShifts ?? null,
       )
 
       relevanceMapForHeader = relevanceMap
@@ -627,6 +638,7 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
+        typedLeanShifts ?? null,
       )
       basePrompt = `${basePrompt}${relevanceBlock}`
       console.log(`[Persona] Council weighting directive injected for synthesis | session ${sessionId}`)

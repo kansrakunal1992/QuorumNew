@@ -116,6 +116,20 @@ interface Props {
    *  Examiner UI correctly doesn't re-ask, but the context it gathered was
    *  otherwise lost. Empty array when skipped (no rows) or not yet submitted. */
   examinerSavedResponses?: Array<{ question_text: string; response_text: string | null; gap: string }>
+  /** P1 fix: server-side truth for a previously "applied" Rule Recall choice
+   *  (sessions.rule_recall_choice/rule_recall_rule_text). appliedRuleRef was
+   *  purely in-memory, so a reload after a network failure silently dropped
+   *  the user's choice even though it was already persisted. */
+  appliedRuleFromServer?: string | null
+  /** P1: persisted synthesis-version snapshots (verdict/weights/leans per
+   *  version), for the What Changed drawer's reload resilience — same
+   *  pattern as examinerSavedResponses above. Empty on a brand-new session. */
+  initialSynthesisVersions?: Array<{
+    version:     number
+    verdictText: string
+    weights:     Record<string, number>
+    leans:       Record<string, string>
+  }>
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -156,7 +170,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, mirrorActive = false, councilTourDone = false, examinerAlreadySubmitted = false, examinerSavedResponses = [] }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, mirrorActive = false, councilTourDone = false, examinerAlreadySubmitted = false, examinerSavedResponses = [], appliedRuleFromServer = null, initialSynthesisVersions = [] }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -208,6 +222,10 @@ export default function SessionView({ session: initialSession, initialMessages =
   // a brand-new session id, this must NOT carry the prior session's synthesis text
   // forward — the new session has no synthesis yet and must generate one for real.
   const initialSynthesisContent = sessionKey === 0 ? initialMessages['synthesis'] : undefined
+  // P1: same sessionKey===0 guard — a "Reanalyze" session is a brand-new
+  // linked session and starts its own fresh version history, it shouldn't
+  // inherit the original session's synthesis-version snapshots.
+  const initialSynthesisVersionsForThisSession = sessionKey === 0 ? initialSynthesisVersions : []
   const [decisionExpanded, setDecisionExpanded] = useState(false)
   const [contextExpanded,  setContextExpanded]  = useState(false)
 
@@ -265,7 +283,9 @@ export default function SessionView({ session: initialSession, initialMessages =
   // Sprint Chunk 1 fix: stores rule text if user clicks "Apply this rule" on
   // RuleRecallBanner BEFORE submitting the examiner. Read by handleExaminerComplete
   // to prepend the rule to every persona's initial context and to synthExaminerContext.
-  const appliedRuleRef = useRef<string | null>(null)
+  // P1 fix: seeded from appliedRuleFromServer (sessions.rule_recall_rule_text)
+  // rather than always null — see Props doc comment above.
+  const appliedRuleRef = useRef<string | null>(appliedRuleFromServer)
   const styleCueRef          = useRef<string | null>(null)
 
   // S1-08: Race fix — track when style cue has resolved (or timed out)
@@ -300,6 +320,14 @@ export default function SessionView({ session: initialSession, initialMessages =
   // S3-01: per-persona lean classification (proceed/wait/mixed), parsed from each
   // persona's raw <lean> header tag in handlePersonaComplete.
   const [personaLeans, setPersonaLeans] = useState<Record<string, Lean>>({})
+  // P1 fix: called when a pushback reply carries a fresh lean that differs
+  // from the persona's original classification (PersonaPanel's onLeanUpdate).
+  // This is the only place personaLeans updates after the initial response —
+  // synthesisVersion itself is already bumped separately by handlePersonaComplete's
+  // isUpdate check on the same pushback event, so no extra version bump needed here.
+  const handleLeanUpdate = useCallback((personaKey: string, lean: Lean) => {
+    setPersonaLeans(prev => (prev[personaKey] === lean ? prev : { ...prev, [personaKey]: lean }))
+  }, [])
   // S3-01: gates synthesis start for a brief tension-interstitial beat
   const [interstitialDismissed, setInterstitialDismissed] = useState(false)
 
@@ -1519,6 +1547,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                   // Bug fix: cached synthesis from a prior visit — skips regenerating
                   // it on remount when already persisted for this session.
                   initialContent={initialSynthesisContent}
+                  // P1: What Changed drawer — current lean snapshot (for the
+                  // lean-shift weight boost + advisor-moves diff) and persisted
+                  // version history (for reload resilience).
+                  personaLeans={personaLeans}
+                  initialSynthesisVersions={initialSynthesisVersionsForThisSession}
                 />
               </div>
 
@@ -1667,6 +1700,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       contextText={session.context_text ?? undefined}
                       registerMode={registerMode}
                       onComplete={handlePersonaComplete}
+                      onLeanUpdate={handleLeanUpdate}
                       examinerContext={examinerContextByPersona[key]}
                       structuralContext={structuralContext ?? undefined}
                       onShareContext={(text) => handleShareContext(key, text)}

@@ -80,11 +80,19 @@ interface Props {
   structuralMatchDate?: string | null
   /** (d): matched past session's id — lets the echo badge link to that decision's record page */
   structuralMatchSessionId?: string | null
+  /** P1 fix: fires when a pushback reply carries a fresh <lean> classification
+   *  that differs from the persona's original one — previously this was always
+   *  discarded (stripHeaderTags stripped <lean> from every non-initial reply,
+   *  by design, so "what did this advisor originally lean" stayed stable). Now
+   *  surfaced separately so SessionView can track it as a genuine *change*
+   *  (see Gap #3 — advisor position evolution) without touching the original
+   *  lens/position/realcost header, which still intentionally stays frozen. */
+  onLeanUpdate?: (personaKey: string, lean: 'proceed' | 'wait' | 'mixed') => void
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -137,6 +145,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const responseRef   = useRef(initialContent ?? '')
   const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
+  const onLeanUpdateRef = useRef(onLeanUpdate)
   const onPersonaCompleteRef = useRef(onPersonaComplete)
   // QC fix: onExaminerUpdateComplete was previously called directly (not via ref),
   // unlike its sibling onComplete/onPersonaComplete above — same stale-closure risk
@@ -145,6 +154,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
   useEffect(() => { exchangesRef.current        = exchanges       }, [exchanges])
   useEffect(() => { onCompleteRef.current       = onComplete      }, [onComplete])
+  useEffect(() => { onLeanUpdateRef.current     = onLeanUpdate    }, [onLeanUpdate])
   useEffect(() => { onPersonaCompleteRef.current = onPersonaComplete }, [onPersonaComplete])
   useEffect(() => { onExaminerUpdateCompleteRef.current = onExaminerUpdateComplete }, [onExaminerUpdateComplete])
 
@@ -262,6 +272,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         onCompleteRef.current?.(persona.key, acc)
       } else {
         const userText = msgs[msgs.length - 1]?.content ?? ''
+        // P1 fix: capture the pushback reply's <lean> BEFORE stripping it —
+        // the model re-emits this on every call (it's baked into the base
+        // persona prompt), but it was previously discarded unconditionally.
+        // Surfaced via a separate callback rather than folded into onComplete
+        // so the original lens/position/realcost header — deliberately frozen
+        // at the initial response — is untouched by this.
+        const leanMatch = acc.match(/<lean>([\s\S]*?)<\/lean>/)
+        if (leanMatch) {
+          const lean = leanMatch[1].trim().toLowerCase()
+          if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
+            onLeanUpdateRef.current?.(persona.key, lean)
+          }
+        }
         // Strip lens/position/realcost tags from pushback reply (keep original header state)
         const cleanReply = stripHeaderTags(acc)
         const newExchanges = [...exchangesRef.current, { user: userText, reply: cleanReply }]

@@ -159,6 +159,15 @@ export function computePersonaRelevance(
   ontologyVector:     OntologyScoreMap | null,
   maxStructuralScore: number | null,
   personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
+  // P1 (Gap #2 fix): personas whose lean changed since the PREVIOUS synthesis
+  // (not their very first response — see SynthesisCard's leanShifts diff).
+  // Every other input to this function is fixed at session-creation time,
+  // which is exactly why re-running this on every re-synthesis previously
+  // always returned identical numbers — nothing here ever moved. An advisor
+  // that changed its recommendation under challenge is real, new evidence
+  // that the deliberation is actually working; this is the one signal that
+  // legitimately shifts as the Council evolves, so it's boosted accordingly.
+  leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
 ): PersonaRelevanceMap {
   const scores: PersonaRelevanceMap = {
     contrarian:         0.50,
@@ -226,7 +235,21 @@ export function computePersonaRelevance(
     scores[persona] += boost
   }
 
-  // ── 4. Clamp all to [0.0, 1.0] ───────────────────────────────────────────
+  // ── 4. Deliberation-evolution boost (Gap #2 fix) ─────────────────────────
+  // A persona whose lean genuinely moved since the last synthesis has just
+  // demonstrated its position isn't fixed — the Council should weigh its
+  // updated view more heavily than a persona that hasn't budged. Deliberately
+  // a flat, fixed boost (same order of magnitude as a mid-tier rule boost)
+  // rather than something scaled by "how far" the lean moved — proceed/wait/
+  // mixed isn't an ordinal scale, so there's no principled distance to scale by.
+  const DELIBERATION_SHIFT_BOOST = 0.15
+  if (leanShifts) {
+    for (const persona of Object.keys(leanShifts) as AdvisorKey[]) {
+      if (persona in scores) scores[persona] += DELIBERATION_SHIFT_BOOST
+    }
+  }
+
+  // ── 5. Clamp all to [0.0, 1.0] ───────────────────────────────────────────
   for (const k of Object.keys(scores) as AdvisorKey[]) {
     scores[k] = Math.min(1.0, Math.max(0.0, scores[k]))
   }
@@ -258,8 +281,13 @@ function buildRationale(
   ontologyVector:     OntologyScoreMap | null,
   maxStructuralScore: number | null,
   personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
+  leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
 ): string {
   const reasons: string[] = []
+
+  if (leanShifts?.[persona]) {
+    reasons.push('shifted position under challenge')
+  }
 
   if (ruleEngineResult) {
     const allRules = [...ruleEngineResult.triggered_rules, ...ruleEngineResult.flag_rules]
@@ -306,6 +334,7 @@ export function buildRelevanceBlock(
   ontologyVector:     OntologyScoreMap | null,
   maxStructuralScore: number | null,
   personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
+  leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
 ): string {
   // Sort descending by score
   const sorted = (Object.entries(map) as [AdvisorKey, number][])
@@ -314,7 +343,7 @@ export function buildRelevanceBlock(
   const lines = sorted.map(([persona, score]) => {
     const label      = PERSONA_DISPLAY[persona]
     const tier       = tierLabel(score)
-    const rationale  = buildRationale(persona, ruleEngineResult, ontologyVector, maxStructuralScore, personalCalibrationZones)
+    const rationale  = buildRationale(persona, ruleEngineResult, ontologyVector, maxStructuralScore, personalCalibrationZones, leanShifts)
     const reasonStr  = rationale ? ` — ${rationale}` : ''
     return `— ${label} [${score.toFixed(2)}] ${tier}${reasonStr}`
   })

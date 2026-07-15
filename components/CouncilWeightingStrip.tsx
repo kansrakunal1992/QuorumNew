@@ -13,6 +13,10 @@ import type { PersonaRelevanceMap } from '@/lib/persona-relevance'
 
 interface Props {
   weights: PersonaRelevanceMap
+  /** P1: previous synthesis version's weight snapshot — when provided, renders
+   *  a ↑/↓ delta next to each score. Omitted entirely (exactly today's
+   *  behaviour) when this prop isn't passed, so existing callers are unaffected. */
+  previousWeights?: PersonaRelevanceMap | null
 }
 
 const LABELS: Record<string, string> = {
@@ -33,7 +37,7 @@ const ACCENTS: Record<string, string> = {
   competitor:         '#5e6830',
 }
 
-export default function CouncilWeightingStrip({ weights }: Props) {
+export default function CouncilWeightingStrip({ weights, previousWeights = null }: Props) {
   const sorted = (Object.entries(weights) as [string, number][])
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3)
@@ -66,6 +70,9 @@ export default function CouncilWeightingStrip({ weights }: Props) {
           const barWidth = Math.round((score / maxScore) * 100)
           const accent   = ACCENTS[key] ?? 'var(--text-4)'
           const pct      = Math.round(score * 100)
+          // P1: delta vs previous synthesis version, if supplied.
+          const prevPct  = previousWeights ? Math.round((previousWeights[key] ?? score) * 100) : null
+          const delta    = prevPct !== null ? pct - prevPct : 0
 
           return (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -115,6 +122,22 @@ export default function CouncilWeightingStrip({ weights }: Props) {
               }}>
                 {pct}
               </span>
+
+              {/* P1: delta badge — only shown when previousWeights supplied and the
+                  change is non-trivial (avoids noisy ±1 rounding flicker). */}
+              {prevPct !== null && Math.abs(delta) >= 2 && (
+                <span style={{
+                  fontSize:   9,
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 700,
+                  width:      28,
+                  textAlign:  'left',
+                  flexShrink: 0,
+                  color:      delta > 0 ? 'var(--positive, #2e8a58)' : 'var(--negative, #b03535)',
+                }}>
+                  {delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}
+                </span>
+              )}
             </div>
           )
         })}
