@@ -909,6 +909,22 @@ VERDICT TAG — rules, no exceptions:
 • The sentence must state a clear directional lean. No hedging verbs inside the tag
 • Close the tag immediately after the first period: <verdict>One sentence here.</verdict>
 
+VERDICT_LEAN TAG — rules, no exceptions:
+• Immediately after the <verdict> tag, add a <verdict_lean> tag classifying that same verdict as exactly one of: proceed, wait, mixed
+• "proceed" = the council is recommending moving forward with the decision as framed
+• "wait" = the council is recommending against it, or recommending holding off
+• "mixed" = the council is genuinely split or the verdict is conditional enough that neither proceed nor wait fairly describes it
+• This is a structured classification, not prose — lowercase, one word, nothing else inside the tag
+• Example: <verdict_lean>proceed</verdict_lean>
+• This must match the directional lean actually stated in <verdict> — never classify against what you just wrote
+
+CONDITIONS TAG — rules, only when genuinely contingent:
+• If — and only if — the verdict is conditional (the kind of thing you'd otherwise phrase as "contingent on Y"), add a <conditions> tag directly after <verdict_lean>
+• Contains 1 to 3 short fragments, each a concrete, checkable assumption the verdict depends on — not restatements of the verdict itself
+• Separate multiple fragments with a pipe character: <conditions>Team culture matches what was described|Hiring manager actually supports hybrid in practice</conditions>
+• Each fragment under 12 words. No sentence-ending punctuation inside a fragment
+• Omit this tag entirely when the verdict is unconditional — do not force conditions that aren't real, and do not use this tag to hedge a verdict that should just be stated plainly
+
 TENSION TAG — rules, no exceptions:
 • Wrap exactly one sentence in <tension> tags, placed inside Paragraph 2 or 3 of the synthesis body
 • ONE SENTENCE. The frontend renders this as an inline highlight within the prose — it is not a separate block
@@ -916,10 +932,10 @@ TENSION TAG — rules, no exceptions:
 • Do NOT put the tension tag in its own paragraph — it must be mid-paragraph, surrounded by other prose
 • Close the tag immediately: <tension>One sentence here.</tension>
 
-Both tags appear exactly once. Outside the tags, write normal prose.
+<verdict>, <verdict_lean>, and <tension> appear exactly once each. <conditions> appears at most once, and only when genuinely applicable. Outside the tags, write normal prose.
 
 EXACT FORMAT TO FOLLOW — copy this structure precisely:
-<verdict>The council leans toward two cities — a third city fragments the trip beyond what eleven nights with a one-year-old can absorb.</verdict>
+<verdict>The council leans toward two cities — a third city fragments the trip beyond what eleven nights with a one-year-old can absorb.</verdict><verdict_lean>proceed</verdict_lean><conditions>The one-year-old's nap schedule holds through the trip|No more than one internal flight is required</conditions>
 
 Opening paragraph continues here with supporting reasoning...
 

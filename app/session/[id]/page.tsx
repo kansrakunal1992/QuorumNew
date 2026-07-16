@@ -43,7 +43,7 @@ export default async function SessionPage({ params }: Props) {
     // P1: "What Changed" drawer — restore synthesis-version history (verdict/
     // weights/leans per version) so a reload mid-deliberation doesn't reset
     // the drawer back to a single version. See supabase/add_synthesis_versions_table.sql.
-    supabase.from('synthesis_versions').select('version, verdict_text, weights, leans').eq('session_id', id).order('version', { ascending: true }),
+    supabase.from('synthesis_versions').select('version, verdict_text, verdict_lean, weights, leans').eq('session_id', id).order('version', { ascending: true }),
   ])
 
   const councilTourDone = !!tourProfileResult?.data?.council_tour_completed_at
@@ -91,6 +91,7 @@ export default async function SessionPage({ params }: Props) {
   const initialSynthesisVersions = (synthesisVersionsResult.data ?? []).map(row => ({
     version:     row.version as number,
     verdictText: decryptText(row.verdict_text) ?? '',
+    verdictLean: (row.verdict_lean ?? '') as string,
     weights:     (row.weights ?? {}) as Record<string, number>,
     leans:       (row.leans ?? {}) as Record<string, string>,
   }))

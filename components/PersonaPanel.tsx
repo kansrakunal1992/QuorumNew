@@ -359,6 +359,20 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         // Update completedResponses in SessionView with the full combined content
         if (acc) {
           const cleanAcc = stripHeaderTags(acc)
+          // P1 fix: this stream loop never parsed <lean> before stripping it —
+          // only the individual-pushback branch in streamResponse() did. Share
+          // to All Advisors goes through THIS function, not that one, so a
+          // lean shift triggered by this path was silently discarded, which
+          // meant leanShifts computed in SynthesisCard was always empty for
+          // anyone using Share to All Advisors instead of per-persona Challenge
+          // — i.e. the weight-delta boost (Gap #2) never actually fired.
+          const leanMatch = acc.match(/<lean>([\s\S]*?)<\/lean>/)
+          if (leanMatch) {
+            const lean = leanMatch[1].trim().toLowerCase()
+            if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
+              onLeanUpdateRef.current?.(persona.key, lean)
+            }
+          }
           const fullContent = [responseRef.current, `[Updated after Examiner answers]\n${cleanAcc}`,
             ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
           ].join('\n\n')

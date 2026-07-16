@@ -27,9 +27,10 @@ export async function POST(req: Request, { params }: Params) {
     const { id: sessionId } = await params
     if (!sessionId) return NextResponse.json({ error: 'sessionId required' }, { status: 400 })
 
-    const { version, verdictText, weights, leans } = await req.json() as {
-      version:     number
+    const { version, verdictText, verdictLean, weights, leans } = await req.json() as {
+      version:      number
       verdictText?: string
+      verdictLean?: string
       weights?:     Record<string, number>
       leans?:       Record<string, string>
     }
@@ -45,6 +46,7 @@ export async function POST(req: Request, { params }: Params) {
         session_id:   sessionId,
         version,
         verdict_text: verdictText ? encrypt(verdictText) : null,
+        verdict_lean: verdictLean || null,
         weights:      weights ?? null,
         leans:        leans ?? null,
       }, { onConflict: 'session_id,version' })
@@ -69,13 +71,14 @@ export async function GET(_req: Request, { params }: Params) {
     const supabase = createServiceClient()
     const { data } = await supabase
       .from('synthesis_versions')
-      .select('version, verdict_text, weights, leans')
+      .select('version, verdict_text, verdict_lean, weights, leans')
       .eq('session_id', sessionId)
       .order('version', { ascending: true })
 
     const versions = (data ?? []).map(row => ({
       version:     row.version,
       verdictText: row.verdict_text ? (decrypt(row.verdict_text) ?? '') : '',
+      verdictLean: row.verdict_lean ?? '',
       weights:     row.weights ?? {},
       leans:       row.leans ?? {},
     }))

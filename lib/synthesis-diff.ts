@@ -10,6 +10,13 @@
 export interface SynthesisVersionSnapshot {
   version:     number
   verdictText: string
+  /** P1 fix: structured proceed|wait|mixed classification of the verdict,
+   *  parsed from the model's <verdict_lean> tag. verdictChanged below
+   *  compares THIS, not verdictText — the prose sentence is near-never
+   *  identical word-for-word between two synthesis runs even when the
+   *  underlying recommendation hasn't actually moved, so a text diff was
+   *  flagging "the verdict changed" on almost every re-synthesis. */
+  verdictLean: string
   weights:     Record<string, number>
   leans:       Record<string, string>
 }
@@ -79,8 +86,14 @@ export function diffSynthesisVersions(
     }
   }
 
-  const verdictChanged = !!curr.verdictText.trim()
-    && prev.verdictText.trim() !== curr.verdictText.trim()
+  // P1 fix: compare verdict_lean (proceed|wait|mixed), not verdictText.
+  // verdictText is free-form prose the model rewords every run — comparing
+  // it directly meant "the council verdict changed" fired on almost every
+  // re-synthesis, even when the actual recommendation hadn't moved. Falls
+  // back to false (not "changed") when either snapshot lacks a lean — e.g.
+  // a version captured before this fix shipped — rather than guessing from text.
+  const verdictChanged = !!prev.verdictLean && !!curr.verdictLean
+    && prev.verdictLean !== curr.verdictLean
 
   // Reconciliation bullets, most-informative first: advisor moves, then the
   // top weight shifts, then whether the verdict itself moved — matches the
@@ -98,7 +111,9 @@ export function diffSynthesisVersions(
     bullets.push(`${label} ${dir}.`)
   }
   if (verdictChanged) {
-    bullets.push('The council verdict changed since the last synthesis.')
+    const from = LEAN_LABELS[prev.verdictLean] ?? prev.verdictLean
+    const to   = LEAN_LABELS[curr.verdictLean] ?? curr.verdictLean
+    bullets.push(`The council verdict shifted from ${from} to ${to}.`)
   }
   if (bullets.length === 0) {
     bullets.push('No material shift since the last synthesis — the council held its position.')

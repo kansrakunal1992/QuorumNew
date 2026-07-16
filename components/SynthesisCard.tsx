@@ -85,6 +85,8 @@ export default function SynthesisCard({
     raw
       .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
       .replace(/<verdict>[\s\S]*/g, '')
+      .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+      .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
       .replace(/<\/?tension>/g, '')
       .trimStart()
 
@@ -123,6 +125,20 @@ export default function SynthesisCard({
     const m = initialContent.match(/<tension>([\s\S]*?)<\/tension>/)
     return m?.[1]?.trim() ?? ''
   })
+  // P2: verdict_lean (structured proceed|wait|mixed classification, used by
+  // the What Changed diff instead of comparing raw verdict prose — see
+  // lib/synthesis-diff.ts) and conditions (optional, only when the verdict
+  // is genuinely contingent).
+  const [verdictLean, setVerdictLean] = useState(() => {
+    if (!initialContent) return ''
+    const m = initialContent.match(/<verdict_lean>([\s\S]*?)<\/verdict_lean>/)
+    return m?.[1]?.trim().toLowerCase() ?? ''
+  })
+  const [conditions, setConditions] = useState<string[]>(() => {
+    if (!initialContent) return []
+    const m = initialContent.match(/<conditions>([\s\S]*?)<\/conditions>/)
+    return m?.[1] ? m[1].split('|').map(s => s.trim()).filter(Boolean) : []
+  })
   const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
   const verdictAccRef  = useRef('')
   const tensionAccRef  = useRef('')
@@ -149,6 +165,8 @@ export default function SynthesisCard({
     const rawNoVerdict = raw
       .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
       .replace(/<verdict>[\s\S]*/g, '')
+      .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+      .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     const tStart = rawNoVerdict.indexOf('<tension>')
     const tEnd   = rawNoVerdict.indexOf('</tension>')
     if (tStart === -1 || tEnd === -1 || tEnd <= tStart) return <>{prose}</>
@@ -415,6 +433,8 @@ export default function SynthesisCard({
             acc
               .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
               .replace(/<verdict>[\s\S]*/g, '')
+              .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+              .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
               .replace(/<\/?tension>/g, '')
           )
         }
@@ -422,16 +442,25 @@ export default function SynthesisCard({
         // if a chunk boundary left the per-chunk parser in an open state (e.g. stream
         // ended with parseModeRef === 'verdict' and no closing tag arrived).
         const finalAcc = acc
-        const fv = finalAcc.match(/<verdict>([\s\S]*?)<\/verdict>/)
-        const ft = finalAcc.match(/<tension>([\s\S]*?)<\/tension>/)
+        const fv  = finalAcc.match(/<verdict>([\s\S]*?)<\/verdict>/)
+        const ft  = finalAcc.match(/<tension>([\s\S]*?)<\/tension>/)
+        // P2: same "final extraction pass" guarantee for the two new tags.
+        const fvl = finalAcc.match(/<verdict_lean>([\s\S]*?)<\/verdict_lean>/)
+        const fc  = finalAcc.match(/<conditions>([\s\S]*?)<\/conditions>/)
         if (fv?.[1]?.trim()) setVerdictText(fv[1].trim())
         if (ft?.[1]?.trim()) setTensionText(ft[1].trim())
+        const finalVerdictLean = fvl?.[1]?.trim().toLowerCase() ?? ''
+        const finalConditions  = fc?.[1] ? fc[1].split('|').map(s => s.trim()).filter(Boolean) : []
+        if (finalVerdictLean) setVerdictLean(finalVerdictLean)
+        setConditions(finalConditions)
         // One final setSynthesis so the prose is fully clean regardless of
         // whether the last setSynthesis inside the loop was on a partial chunk.
         setSynthesis(
           finalAcc
             .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
             .replace(/<verdict>[\s\S]*/g, '')
+            .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+            .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
             .replace(/<\/?tension>/g, '')
             .trimStart()
         )
@@ -448,6 +477,12 @@ export default function SynthesisCard({
         const snapshot: SynthesisVersionSnapshot = {
           version,
           verdictText: snapshotVerdict,
+          // P1 fix: verdictLean (proceed|wait|mixed) drives the "did the verdict
+          // actually change" comparison in the diff — verdictText alone was
+          // flagging every re-synthesis as "changed" even when the model just
+          // reworded the same underlying recommendation, since it's free-form
+          // prose and near-never identical word-for-word between runs.
+          verdictLean: finalVerdictLean,
           weights:     resolvedWeights ?? {},
           leans:       personaLeansRef.current,
         }
@@ -936,6 +971,28 @@ export default function SynthesisCard({
                     <span style={{ opacity: 0.35, marginLeft: 2 }}>▊</span>
                   )}
                 </p>
+                {/* P2: conditions — only rendered when the model actually
+                    supplied them (genuinely contingent verdict). Absent
+                    entirely otherwise, no empty state to design around. */}
+                {conditions.length > 0 && (
+                  <ul style={{
+                    margin:       '10px 0 0',
+                    paddingLeft:  16,
+                    display:      'flex',
+                    flexDirection: 'column',
+                    gap:          3,
+                  }}>
+                    {conditions.map((c, i) => (
+                      <li key={i} style={{
+                        fontSize:   12,
+                        color:      'var(--text-3)',
+                        lineHeight: 1.5,
+                      }}>
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
             {/* Main prose — tension highlighted inline once streaming completes */}
@@ -1238,10 +1295,32 @@ export default function SynthesisCard({
                 color:      'var(--gold)',
                 textAlign:  'center',
                 lineHeight: 1.5,
-                margin:     '0 0 28px',
+                margin:     conditions.length > 0 ? '0 0 12px' : '0 0 28px',
               }}>
                 {firstSentence(verdictText)}
               </p>
+            )}
+            {/* P2: conditions — same "only when supplied" rule as the compact verdict box */}
+            {conditions.length > 0 && (
+              <ul style={{
+                margin:       '0 0 28px',
+                padding:      0,
+                listStyle:    'none',
+                display:      'flex',
+                flexDirection: 'column',
+                gap:          4,
+                textAlign:    'center',
+              }}>
+                {conditions.map((c, i) => (
+                  <li key={i} style={{
+                    fontSize:   13,
+                    color:      'var(--text-3)',
+                    lineHeight: 1.5,
+                  }}>
+                    {c}
+                  </li>
+                ))}
+              </ul>
             )}
             <div style={{
               fontSize:   18,

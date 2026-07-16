@@ -127,6 +127,7 @@ interface Props {
   initialSynthesisVersions?: Array<{
     version:     number
     verdictText: string
+    verdictLean: string
     weights:     Record<string, number>
     leans:       Record<string, string>
   }>
