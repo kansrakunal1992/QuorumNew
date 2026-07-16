@@ -453,6 +453,25 @@ textarea::placeholder { color: var(--text-4); }
   }
 }
 
+/* Fix: institution-mode-badge floats over content (position: fixed, not in
+   document flow) and every page was only ever clearing .theme-toggle above
+   it — nothing reserved space for this badge, so it overlapped whatever a
+   page rendered near the top (institution pill, sharing pill, and page
+   header text all visibly colliding on mobile). Rather than adding top
+   padding to every affected page individually, InstitutionModeBadge toggles
+   this body class itself (only for the users it actually renders for), and
+   this single rule pushes ALL page content down by a fixed buffer — additive
+   margin, not a replacement for whatever top spacing a page already has, so
+   it can't under- or over-shoot a page's existing layout. */
+body.institution-badge-active .app-content {
+  margin-top: 44px;
+}
+@media (max-width: 480px) {
+  body.institution-badge-active .app-content {
+    margin-top: 34px;
+  }
+}
+
 /* ── Semantic outcome badge colours ─────────────────────── */
 [data-theme="dark"] {
   --green-border:    #2a4a2e;

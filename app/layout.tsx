@@ -74,7 +74,10 @@ export default function RootLayout({
         {/* Institutional Sprint 5 — fixed top-right, renders null unless the
             signed-in user actually belongs to an institution */}
         <InstitutionModeBadge />
-        {children}
+        {/* Fix: named wrapper so a single global CSS rule (see .app-content
+            in globals.css) can push content down when InstitutionModeBadge
+            is actually visible, without touching any individual page. */}
+        <div className="app-content">{children}</div>
         {/* S2-04 — legal footer on every page */}
         <AppFooter />
         {/* S2-01 — cookie consent banner; gated to client, no SSR flash */}

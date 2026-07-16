@@ -81,6 +81,16 @@ export default function InstitutionModeBadge() {
 
   useEffect(() => { load() }, [load])
 
+  // Fix: this badge is position:fixed and overlaps page content — nothing
+  // reserved space for it, only for .theme-toggle above it. Toggling this
+  // class lets one global CSS rule (see .app-content in globals.css) push
+  // content down, only for the users this badge actually renders for.
+  const isVisible = !!active?.institutionId && active.memberships.length > 0
+  useEffect(() => {
+    document.body.classList.toggle('institution-badge-active', isVisible)
+    return () => { document.body.classList.remove('institution-badge-active') }
+  }, [isVisible])
+
   const switchTo = async (institutionId: string) => {
     const token = await getAuthToken()
     if (!token) return
