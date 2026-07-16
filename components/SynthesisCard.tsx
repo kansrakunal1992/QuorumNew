@@ -971,27 +971,40 @@ export default function SynthesisCard({
                     <span style={{ opacity: 0.35, marginLeft: 2 }}>▊</span>
                   )}
                 </p>
-                {/* P2: conditions — only rendered when the model actually
-                    supplied them (genuinely contingent verdict). Absent
-                    entirely otherwise, no empty state to design around. */}
+                {/* P2 fix: conditions were rendering as bare bullets with no
+                    framing — added an intro label so it's clear these are
+                    assumptions the verdict depends on, not random fine print. */}
                 {conditions.length > 0 && (
-                  <ul style={{
-                    margin:       '10px 0 0',
-                    paddingLeft:  16,
-                    display:      'flex',
-                    flexDirection: 'column',
-                    gap:          3,
-                  }}>
-                    {conditions.map((c, i) => (
-                      <li key={i} style={{
-                        fontSize:   12,
-                        color:      'var(--text-3)',
-                        lineHeight: 1.5,
-                      }}>
-                        {c}
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <p style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      9,
+                      fontWeight:    700,
+                      letterSpacing: '0.10em',
+                      textTransform: 'uppercase',
+                      color:         'var(--text-4)',
+                      margin:        '12px 0 6px',
+                    }}>
+                      Conditional on
+                    </p>
+                    <ul style={{
+                      margin:       0,
+                      paddingLeft:  16,
+                      display:      'flex',
+                      flexDirection: 'column',
+                      gap:          3,
+                    }}>
+                      {conditions.map((c, i) => (
+                        <li key={i} style={{
+                          fontSize:   12,
+                          color:      'var(--text-3)',
+                          lineHeight: 1.5,
+                        }}>
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
                 )}
               </div>
             )}
@@ -1300,27 +1313,42 @@ export default function SynthesisCard({
                 {firstSentence(verdictText)}
               </p>
             )}
-            {/* P2: conditions — same "only when supplied" rule as the compact verdict box */}
+            {/* P2 fix: same intro-label fix as the compact verdict box — bare
+                bullets read as unexplained fine print without this. */}
             {conditions.length > 0 && (
-              <ul style={{
-                margin:       '0 0 28px',
-                padding:      0,
-                listStyle:    'none',
-                display:      'flex',
-                flexDirection: 'column',
-                gap:          4,
-                textAlign:    'center',
-              }}>
-                {conditions.map((c, i) => (
-                  <li key={i} style={{
-                    fontSize:   13,
-                    color:      'var(--text-3)',
-                    lineHeight: 1.5,
-                  }}>
-                    {c}
-                  </li>
-                ))}
-              </ul>
+              <>
+                <p style={{
+                  fontFamily:    'var(--font-mono)',
+                  fontSize:      10,
+                  fontWeight:    700,
+                  letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  color:         'var(--text-4)',
+                  textAlign:     'center',
+                  margin:        '0 0 8px',
+                }}>
+                  Conditional on
+                </p>
+                <ul style={{
+                  margin:       '0 0 28px',
+                  padding:      0,
+                  listStyle:    'none',
+                  display:      'flex',
+                  flexDirection: 'column',
+                  gap:          4,
+                  textAlign:    'center',
+                }}>
+                  {conditions.map((c, i) => (
+                    <li key={i} style={{
+                      fontSize:   13,
+                      color:      'var(--text-3)',
+                      lineHeight: 1.5,
+                    }}>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
             <div style={{
               fontSize:   18,
