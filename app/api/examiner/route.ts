@@ -46,6 +46,7 @@ import { createServiceClient }   from '@/lib/supabase'
 import { createCompletion }      from '@/lib/ai-client'
 import { fetchExaminerBiasHint } from '@/lib/bias-scorer'  // Sprint R_JC
 import { encrypt, decrypt }      from '@/lib/encryption'
+import { checkR7Resolvable }     from '@/lib/examiner-resolvability-check'  // Audit fix #3
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Template banks — deterministic per session, varied across sessions
@@ -416,6 +417,25 @@ export async function GET(req: Request) {
             ?.upstream_dependency?.rationale ?? null
         : null
 
+    // Audit fix (recommendation #3 — resolvability check): before committing to
+    // an R7 block, ask whether Council could still give useful, honest,
+    // provisional guidance despite the missing information. R1 is NOT checked
+    // here — its prompt-level gate (external + specifically-named blocker) is
+    // already tight and correctly conservative; this check exists specifically
+    // for R7's wider, more overfire-prone condition.
+    let effectiveMode = ruleResult.mode
+    let r7Downgraded = false
+    if (ruleResult.mode === 'REDIRECT' && redirectRule === 'R7') {
+      const infoRationale = (data.ontology_vector as Record<string, { rationale?: string }> | null)
+        ?.decision_discriminating_info?.rationale ?? undefined
+      const resolvability = await checkR7Resolvable(decisionText, infoRationale)
+      if (resolvability.resolvable) {
+        effectiveMode = 'GATE'
+        r7Downgraded = true
+        console.log(`[Examiner GET] R7 downgraded REDIRECT→GATE for session ${sessionId}: ${resolvability.rationale}`)
+      }
+    }
+
     // ── SB-2: S0 trigger — thin brief only (context paste no longer suppresses) ─
     // S0 and context_text serve different purposes:
     //   context_text = background material the user pasted in (emails, term sheets)
@@ -425,7 +445,7 @@ export async function GET(req: Request) {
     //
     // Suppressed in REDIRECT mode (redirect IS the message in that case).
     const decisionWordCount = decisionText.trim().split(/\s+/).filter(Boolean).length
-    const shouldAddS0       = decisionWordCount < 25 && ruleResult.mode !== 'REDIRECT'
+    const shouldAddS0       = decisionWordCount < 25 && effectiveMode !== 'REDIRECT'
 
     // ── SB-2: Slot budget ─────────────────────────────────────────────────────
     // Max 3 questions total. New budget:
@@ -436,18 +456,28 @@ export async function GET(req: Request) {
     //
     // Previous budget (2 rule slots) is replaced. Rule questions compete for
     // slot 2 only when S0 doesn't fire. Maximum 1 rule question per session.
-    const shouldAddE0 = ruleResult.mode !== 'REDIRECT'
-    const shouldAddC0 = ruleResult.mode !== 'REDIRECT'
+    const shouldAddE0 = effectiveMode !== 'REDIRECT'
+    const shouldAddC0 = effectiveMode !== 'REDIRECT'
 
     // Rule slot: 1 max, only when S0 is not firing
     const ruleForSlot2 = !shouldAddS0
       ? [...(ruleResult.triggered_rules ?? []), ...(ruleResult.flag_rules ?? [])].slice(0, 1)
       : []
 
+    // Audit fix (recommendation #6 — block-rate visibility): structured, greppable
+    // log of every REDIRECT/GATE/OPEN outcome. Previously the REDIRECT path had
+    // no logging at all, so the 5-10% target block rate from the product spec
+    // was not observable anywhere.
+    console.log(
+      `[ExaminerMetric] session=${sessionId} mode=${effectiveMode}` +
+      `${ruleResult.mode !== effectiveMode ? ` (raw=${ruleResult.mode}, downgraded=true)` : ''}` +
+      `${redirectRule ? ` rule=${redirectRule}` : ''}`
+    )
+
     // ── Early exit — only when no questions would fire at all ────────────────
     // E0 + C0 always fire on non-REDIRECT, so this only applies to REDIRECT with
     // no questions (which generates its redirect question instead of normal flow).
-    if (ruleResult.mode === 'REDIRECT') {
+    if (effectiveMode === 'REDIRECT') {
       // REDIRECT: generate an exact resolution question and return immediately.
       // The UI (ExaminerPanel) renders questions[0].text as the call-to-action
       // in the REDIRECT banner — so we slot the generated question there.
@@ -513,10 +543,14 @@ export async function GET(req: Request) {
         rule_id: 'S0',
       })
     } else if (ruleForSlot2.length > 0 && s0OrRuleTexts.length > 0) {
+      // r7Downgraded: ruleForSlot2[0].mode still reads 'REDIRECT' here because it
+      // comes straight from the stored rule_engine_result — display the mode the
+      // user actually experienced (GATE), not the raw pre-downgrade label.
+      const displayMode = r7Downgraded && ruleForSlot2[0].rule_id === 'R7' ? 'GATE' : ruleForSlot2[0].mode
       questions.push({
         order:   2,
         text:    s0OrRuleTexts[0],
-        gap:     `${ruleForSlot2[0].rule_id} — ${ruleForSlot2[0].mode}`,
+        gap:     `${ruleForSlot2[0].rule_id} — ${displayMode}`,
         rule_id: ruleForSlot2[0].rule_id,
       })
     }
@@ -532,14 +566,14 @@ export async function GET(req: Request) {
     }
 
     console.log(
-      `[Examiner GET] SB-2 v2.0 | session ${sessionId} | mode: ${ruleResult.mode} | ` +
+      `[Examiner GET] SB-2 v2.0 | session ${sessionId} | mode: ${effectiveMode} | ` +
       `questions: ${questions.map(q => q.rule_id).join(',')} | ` +
       `s0: ${shouldAddS0} (${decisionWordCount}w) | profile: ${!!profileCtx} | fears: ${!!fearProfile}`
     )
 
     return NextResponse.json({
       questions,
-      rule_mode:          ruleResult.mode,
+      rule_mode:          effectiveMode,
       redirect_rule:      null,
       upstream_rationale: null,
       status:             'ready',

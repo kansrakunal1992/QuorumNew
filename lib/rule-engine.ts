@@ -95,12 +95,22 @@ function evaluateR1(sv: ScoredVector): TriggeredRule | null {
 }
 
 // ── R7 — Information-First Redirect [REDIRECT, P1] ────────────────────────────
-// Fires when: decision_discriminating_info >= 4 AND outcome_uncertainty >= 3
-//             AND identity_alignment <= 3
+// Fires when: decision_discriminating_info >= 4 AND outcome_uncertainty >= 4
+//             AND identity_alignment <= 2
 // Rationale: Specific missing information would change this decision, the outcome
-//   is genuinely uncertain, and there is no deep identity conflict (which would
-//   mean the decision is ultimately values-driven, not information-driven).
+//   is genuinely — not just moderately — uncertain without it, and there is no
+//   deep identity conflict (which would mean the decision is ultimately
+//   values-driven, not information-driven).
 // Effect: Synthesis blocked. Redirect user to gather information first.
+//
+// Audit fix (decision architecture review): outcome_uncertainty threshold raised
+// from >= 3 to >= 4. At >= 3 ("moderate uncertainty"), R7 fired on ordinary
+// diligence — hiring reference checks, competitor price checks, a pending
+// earnings report — which the product spec explicitly classifies as execution
+// constraints, not prerequisite decisions (see the "should I build a spaceship"
+// example: missing funding/regulatory approval should NOT block synthesis).
+// Requiring >= 4 restricts R7 to cases where the outcome is genuinely
+// unpredictable without the missing information, not merely "would help."
 function evaluateR7(sv: ScoredVector): TriggeredRule | null {
   const info      = sv.decision_discriminating_info
   const uncert    = sv.outcome_uncertainty
@@ -109,7 +119,7 @@ function evaluateR7(sv: ScoredVector): TriggeredRule | null {
   // identity gate raised from >3 to >2: identity_alignment of 3 (moderate) is enough
   // to suppress R7. The gap between R7's old gate (>3) and R2's trigger (>=5) was
   // swallowing career/life-direction decisions where identity is present but not maximal.
-  if (info.score < 4 || uncert.score < 3 || identity.score > 2) return null
+  if (info.score < 4 || uncert.score < 4 || identity.score > 2) return null
 
   const lowConf = info.confidence < LOW_CONFIDENCE_THRESHOLD
     || uncert.confidence < LOW_CONFIDENCE_THRESHOLD
@@ -366,6 +376,19 @@ function evaluateR12(sv: ScoredVector): TriggeredRule | null {
 
 // ── Main evaluator ─────────────────────────────────────────────────────────────
 
+// Audit fix (decision architecture review, R7 confidence bug):
+// A low-confidence REDIRECT candidate must not reach the final mode check still
+// carrying mode: 'REDIRECT' — `hasRedirect` below only checks the `mode` field,
+// not `low_confidence`, so pushing the rule object unchanged silently forced a
+// full block regardless of confidence. This previously made the documented
+// "low confidence → clarifying question" behavior a no-op for R7 (verified: the
+// only downstream check was `mode === 'REDIRECT'`, and `low_confidence` was
+// never read anywhere outside this file). Downgrading the mode explicitly here
+// is what actually turns a low-confidence block into a GATE-style question.
+function downgradeToGate(rule: TriggeredRule): TriggeredRule {
+  return { ...rule, mode: 'GATE' }
+}
+
 export function evaluateRules(sv: ScoredVector): RuleEngineResult {
   const triggered: TriggeredRule[] = []
   const flags:     TriggeredRule[] = []
@@ -383,7 +406,13 @@ export function evaluateRules(sv: ScoredVector): RuleEngineResult {
       vector_version:  sv.vector_version,
     }
   }
-  if (r1) triggered.push(r1) // low_confidence → clarifying question in Examiner
+  // Note: evaluateR1 currently returns null before constructing the object
+  // whenever confidence is low, so r1.low_confidence can never actually be
+  // true here today. This branch is kept (and now correctly downgrades, via
+  // downgradeToGate) as a defensive guard in case that early-return is ever
+  // relaxed — so a future low-confidence R1 degrades safely instead of
+  // silently blocking.
+  if (r1) triggered.push(downgradeToGate(r1)) // low_confidence → clarifying question, not a block
 
   const r7 = evaluateR7(sv)
   if (r7 && !r7.low_confidence) {
@@ -395,7 +424,7 @@ export function evaluateRules(sv: ScoredVector): RuleEngineResult {
       vector_version:  sv.vector_version,
     }
   }
-  if (r7) triggered.push(r7) // low_confidence → clarifying question in Examiner
+  if (r7) triggered.push(downgradeToGate(r7)) // low_confidence → clarifying question, not a block
 
   // ── GATE rules — collect all that trigger ────────────────────────────────
   const r2  = evaluateR2(sv)
@@ -436,12 +465,50 @@ export function evaluateRules(sv: ScoredVector): RuleEngineResult {
 
   const mode: EngineMode = hasRedirect ? 'REDIRECT' : hasGate ? 'GATE' : 'OPEN'
 
+  assertRuleModesAreExpected(triggered)
+
   return {
     mode,
     triggered_rules: triggered,
     flag_rules:      flags,
     evaluated_at:    new Date().toISOString(),
     vector_version:  sv.vector_version,
+  }
+}
+
+// ── Audit fix (structural separation guard) ────────────────────────────────
+// Per product philosophy, Examiner (REDIRECT: "this decision cannot yet
+// exist") and Clarification (GATE: "I don't know enough") are meant to be
+// fundamentally different mechanisms. In this codebase they share one
+// evaluator and are distinguished only by a `mode` string on each rule
+// object — nothing previously stopped a rule from silently ending up with
+// the wrong mode (which is exactly how the R7 confidence bug happened: a
+// REDIRECT-registered rule reached the final check still tagged 'REDIRECT'
+// even when it was meant to act as a clarifying question).
+//
+// This registry is the single source of truth for "which rule is allowed to
+// be which mode." Any triggered rule found outside its registered mode
+// (including a legitimately-downgraded low-confidence rule, which is
+// expected to show up here as GATE) is logged loudly rather than allowed to
+// pass silently. Non-fatal — logs and continues, consistent with this
+// codebase's existing fire-and-forget error handling — so a mismatch is
+// visible in logs/monitoring without taking synthesis down.
+const REDIRECT_RULE_IDS = new Set(['R1', 'R7'])
+const GATE_RULE_IDS     = new Set(['R2', 'R3', 'R10'])
+
+function assertRuleModesAreExpected(triggered: TriggeredRule[]): void {
+  for (const rule of triggered) {
+    const isRegisteredRedirect = REDIRECT_RULE_IDS.has(rule.rule_id)
+    const isRegisteredGate     = GATE_RULE_IDS.has(rule.rule_id)
+
+    if (rule.mode === 'REDIRECT' && !isRegisteredRedirect) {
+      console.error(`[RuleEngine] Mode integrity violation: ${rule.rule_id} reached REDIRECT but is not a registered REDIRECT rule.`)
+    }
+    if (rule.mode === 'GATE' && !isRegisteredRedirect && !isRegisteredGate) {
+      console.error(`[RuleEngine] Mode integrity violation: ${rule.rule_id} reached GATE but is not a registered REDIRECT or GATE rule.`)
+    }
+    // A registered REDIRECT rule showing up as GATE is expected — that's the
+    // low-confidence downgrade working as intended. Not an error.
   }
 }
 
