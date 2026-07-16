@@ -42,12 +42,17 @@ function stripSynthesisTags(raw: string): string {
   return raw
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')     // guard: open tag without close
+    // P2 fix: this file has its own independent tag-stripping copy — it never
+    // learned about the two tags added for forced-verdict-with-conditions,
+    // so they were leaking through raw into whatever uses this export.
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-    .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|verdict_lean|conditions)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     .replace(/^\s+/, '')
 }

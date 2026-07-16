@@ -16,6 +16,12 @@ function stripTags(raw: string): string {
   return raw
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')
+    // P2 fix: this route has its own independent copy of tag-stripping logic
+    // (not shared with SynthesisCard.tsx) — it never learned about the two
+    // new tags added for the forced-verdict-with-conditions feature, so they
+    // were leaking through raw into "What the Council concluded last time".
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
     .trim()

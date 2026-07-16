@@ -82,15 +82,24 @@ function cleanPushbackText(raw: string): string {
     .trim()
 }
 
-// Strip <lens>, <position>, <realcost>, <verdict>, <tension> tags from advisor text
+// Strip <lens>, <position>, <realcost>, <lean>, <verdict>, <verdict_lean>,
+// <conditions>, <tension> tags from advisor text
 function stripAdvisorTags(raw: string): string {
   return raw
     .replace(/<lens>[\s\S]*?<\/lens>/gi, '')
     .replace(/<position>[\s\S]*?<\/position>/gi, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/gi, '')
+    // Fix: <lean> was never stripped here — every advisor response includes
+    // this tag (base persona prompt), so it could leak into the PDF's advisor
+    // sections. Same bug class as verdict_lean/conditions below, just pre-existing.
+    .replace(/<lean>[\s\S]*?<\/lean>/gi, '')
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/gi, '')
     .replace(/<verdict>[\s\S]*/gi, '')           // guard: open tag without close
-    .replace(/<(?:lens|position|realcost)>[\s\S]*$/i, '') // guard: open tag without close
+    // P2 fix: this file has its own independent tag-stripping copy — it never
+    // learned about the two tags added for forced-verdict-with-conditions.
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/gi, '')
+    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/gi, '')
+    .replace(/<(?:lens|position|realcost|lean|verdict_lean|conditions)>[\s\S]*$/i, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')      // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     .replace(/<\/?tension>/gi, '')
     .replace(/^\s+/, '')
@@ -298,19 +307,25 @@ async function buildPdf(
     return m ? m[0].trim() : text.trim()
   }
 
-  // Strips verdict (returns it separately) and leaves tension tags intact in
-  // `rest` for renderSynthesisBody to locate per-paragraph.
-  const parseVerdictTension = (raw: string): { verdict: string | null; rest: string } => {
+  // Strips verdict + conditions (returned separately) and leaves tension tags
+  // intact in `rest` for renderSynthesisBody to locate per-paragraph.
+  const parseVerdictTension = (raw: string): { verdict: string | null; conditions: string[]; rest: string } => {
     const vMatch = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
     const verdict = vMatch?.[1]?.trim() ? firstSentencePdf(vMatch[1].trim()) : null
+    const cMatch = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
+    const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
     const rest = raw
       .replace(/<verdict>[\s\S]*?<\/verdict>\n*/, '')
       .replace(/<verdict>[\s\S]*/, '')   // guard: open tag without close
+      // P2 fix: these were never stripped here — the actual source of the
+      // raw-tag leak, since `rest` is what gets rendered as the PDF's body text.
+      .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/, '')
+      .replace(/<conditions>[\s\S]*?<\/conditions>\n*/, '')
       .trimStart()
-    return { verdict, rest }
+    return { verdict, conditions, rest }
   }
 
-  const renderVerdictBoxPdf = (verdictText: string) => {
+  const renderVerdictBoxPdf = (verdictText: string, conditions: string[] = []) => {
     // Layout is computed top-down with explicit baseline math (label baseline,
     // then verdict baseline) instead of a fixed labelGap — the previous fixed
     // gap (13pt) was tuned for the label's old font size and didn't account for
@@ -324,7 +339,24 @@ async function buildPdf(
     doc.setFontSize(VERDICT_SIZE)
     const wrapped: string[] = doc.splitTextToSize(verdictText, TW - padX * 2) as string[]
     const lh   = VERDICT_SIZE * 1.4
-    const boxH = padTop + labelToVerdictGap + (wrapped.length * lh) + padBottom
+
+    // P2 fix: conditions were parsed but never rendered anywhere in the PDF —
+    // same "Conditional on" treatment as the web views, added to the box's
+    // height budget up front so the fill rect is sized correctly.
+    const condSize   = 8.5
+    const condLh     = condSize * 1.5
+    const condLabelGap = 12
+    let condWrapped: string[][] = []
+    let condH = 0
+    if (conditions.length > 0) {
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(condSize)
+      condWrapped = conditions.map(c => doc.splitTextToSize(`•  ${c}`, TW - padX * 2 - 6) as string[])
+      const condLines = condWrapped.reduce((n, w) => n + w.length, 0)
+      condH = condLabelGap + labelSize * 1.1 + (condLines * condLh)
+    }
+
+    const boxH = padTop + labelToVerdictGap + (wrapped.length * lh) + condH + padBottom
     ensure(boxH + 14)
     const boxY = Y
     doc.setFillColor(...C.verdictBg)
@@ -347,6 +379,27 @@ async function buildPdf(
       doc.text(wl, ML + padX, ty)
       ty += lh
     }
+
+    if (conditions.length > 0) {
+      ty += condLabelGap
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(labelSize)
+      doc.setTextColor(...C.verdictAccent)
+      doc.setCharSpace(0.6)
+      doc.text('CONDITIONAL ON', ML + padX, ty)
+      doc.setCharSpace(0)
+      ty += labelSize * 1.1
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(condSize)
+      doc.setTextColor(...C.bodyText)
+      for (const wl of condWrapped) {
+        for (const line of wl) {
+          doc.text(line, ML + padX, ty)
+          ty += condLh
+        }
+      }
+    }
+
     Y = boxY + boxH + 14
   }
 
@@ -1102,8 +1155,8 @@ async function buildPdf(
           Y += 10
           bodyBlock(cleanPushbackText(msg.content), 0, 9.5, C.pushbackText)
         } else if (isSynthesis) {
-          const { verdict, rest } = parseVerdictTension(msg.content)
-          if (verdict) renderVerdictBoxPdf(verdict)
+          const { verdict, conditions, rest } = parseVerdictTension(msg.content)
+          if (verdict) renderVerdictBoxPdf(verdict, conditions)
           renderSynthesisBody(rest)
         } else {
           bodyBlock(stripAdvisorTags(msg.content))

@@ -38,6 +38,13 @@ function stripSynthesisTags(raw: string): string {
   return raw
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')
+    // P2 fix: this file has its own independent tag-stripping copy — it never
+    // learned about the two tags added for forced-verdict-with-conditions.
+    // This feeds into an LLM prompt (not direct display), but raw tags here
+    // could still confuse the model or get echoed into its output, which IS
+    // shown to Mirror subscribers.
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
     .trim()

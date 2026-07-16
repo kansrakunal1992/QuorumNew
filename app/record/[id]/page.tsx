@@ -33,6 +33,12 @@ function stripHeaderTags(raw: string): string {
     // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close
+    // P2 fix: this file has its own independent tag-stripping copy (not shared
+    // with SynthesisCard.tsx or synthesis-summary/route.ts) — it never learned
+    // about the two tags added for forced-verdict-with-conditions, so they were
+    // leaking through raw as visible text on this page.
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     // Strip tension wrapper tags but keep the sentence text inline
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
@@ -45,17 +51,24 @@ function firstSentence(text: string): string {
   return m ? m[0].trim() : text.trim()
 }
 
-// Synthesis-only: pulls the <verdict> sentence out separately (rendered in the
-// gold box) and returns the remaining prose with <verdict> removed but
-// <tension> tags still in place, so renderSynthesisProse can locate and
-// highlight the tension sentence inline — mirrors SynthesisCard.tsx exactly,
-// so the static record page matches what was shown live on the session page.
-function parseVerdictTension(raw: string): { verdict: string | null; rest: string } {
+// Synthesis-only: pulls the <verdict> sentence and <conditions> list out
+// separately (rendered in the gold box) and returns the remaining prose with
+// all header tags removed but <tension> tags still in place, so
+// renderSynthesisProse can locate and highlight the tension sentence inline —
+// mirrors SynthesisCard.tsx exactly, so the static record page matches what
+// was shown live on the session page.
+function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; rest: string } {
   const vMatch  = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
   const verdict = vMatch?.[1]?.trim() ? firstSentence(vMatch[1].trim()) : null
+  const cMatch  = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
+  const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
   const rest = raw
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')   // guard: open tag without close
+    // P2 fix: these two were never stripped here — the actual source of the
+    // raw-tag leak the user saw, since "rest" is what gets rendered as body prose.
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
@@ -63,7 +76,7 @@ function parseVerdictTension(raw: string): { verdict: string | null; rest: strin
     .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
     .trimStart()
-  return { verdict, rest }
+  return { verdict, conditions, rest }
 }
 
 // Renders synthesis prose with the <tension> sentence highlighted inline —
@@ -95,7 +108,7 @@ function renderSynthesisProse(rest: string): React.ReactNode {
 // with the tension sentence highlighted inline. Used for both the initial
 // synthesis message and any reanalysis/pushback synthesis responses.
 function renderSynthesisMessage(raw: string): React.ReactNode {
-  const { verdict, rest } = parseVerdictTension(raw)
+  const { verdict, conditions, rest } = parseVerdictTension(raw)
   return (
     <>
       {verdict && (
@@ -129,6 +142,37 @@ function renderSynthesisMessage(raw: string): React.ReactNode {
           }}>
             {verdict}
           </p>
+          {/* P2 parity fix: same "Conditional on" treatment as the live
+              session view (components/SynthesisCard.tsx) — only rendered
+              when conditions were actually supplied. */}
+          {conditions.length > 0 && (
+            <>
+              <p style={{
+                fontFamily:    'var(--font-mono)',
+                fontSize:      9,
+                fontWeight:    700,
+                letterSpacing: '0.10em',
+                textTransform: 'uppercase',
+                color:         'var(--text-4)',
+                margin:        '12px 0 6px',
+              }}>
+                Conditional on
+              </p>
+              <ul style={{
+                margin:        0,
+                paddingLeft:   16,
+                display:       'flex',
+                flexDirection: 'column',
+                gap:           3,
+              }}>
+                {conditions.map((c, i) => (
+                  <li key={i} style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+                    {c}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
       <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap', margin: 0 }}>
