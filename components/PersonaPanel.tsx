@@ -228,6 +228,51 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/^\s+/, '')
   }, [])
 
+  // Sprint 2 (Feature #2, "Evidence Confidence Weighting" — cheap version).
+  // Contrarian and Risk Architect already write a "hidden assumption" /
+  // "assumption risk" beat in every response (lib/personas.ts) — this makes
+  // it visually distinct from the surrounding prose instead of leaving it
+  // unmarked. Deliberately NOT extracted into a separate panel/ledger: the
+  // design intent is a subtle highlight inside the text the person is
+  // already reading, not a new list to parse. <assumption> is intentionally
+  // NOT added to extractHeaderTags/stripHeaderTags above — unlike
+  // lens/position/realcost/lean, it isn't a header tag that moves
+  // elsewhere; it stays exactly where it falls in the paragraph, so
+  // `response` naturally still contains it start to finish.
+  //
+  // Same two-track approach SynthesisCard's renderProse uses for
+  // <tension>: while streaming, any assumption markup (including a
+  // still-open tag mid-stream) is stripped from what's shown, so raw tag
+  // text never flashes on screen; once done, the now-guaranteed-closed tag
+  // is used to slice out that exact span and wrap it in a highlight.
+  const renderAssumption = (text: string, isDone: boolean): React.ReactNode => {
+    if (!isDone) {
+      return <>{text.replace(/<\/?assumption>/g, '').replace(/<assumption>[\s\S]*$/, '')}</>
+    }
+    const start = text.indexOf('<assumption>')
+    const end   = text.indexOf('</assumption>')
+    if (start === -1 || end === -1 || end <= start) {
+      // No tag found (the other four personas, or a rare miss) — render as-is,
+      // still guarding against any stray/unclosed tag rather than assuming none exists.
+      return <>{text.replace(/<\/?assumption>/g, '').replace(/<assumption>[\s\S]*$/, '')}</>
+    }
+    const before  = text.slice(0, start)
+    const content = text.slice(start + '<assumption>'.length, end)
+    const after   = text.slice(end + '</assumption>'.length)
+    return (
+      <>
+        {before}
+        <span style={{
+          background:    'var(--assumption-highlight-bg, rgba(168, 106, 32, 0.08))',
+          borderBottom:  '1px solid var(--assumption-highlight-border, rgba(168, 106, 32, 0.35))',
+          paddingBottom: 1,
+          borderRadius:  2,
+        }}>{content}</span>
+        {after}
+      </>
+    )
+  }
+
   // ── TTS ────────────────────────────────────────────────────────────────────────────────
   const { speak, stop, pause, resume, isSpeaking, isPaused, isLoading, activeSpeakerId, rate, setRate, countdown } = useTTSContext()
   const isThisSpeaking = activeSpeakerId === persona.key
@@ -643,7 +688,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         {/* Original response — never mutated */}
         {response && (
           <p className={`persona-response ${panelState === 'streaming' && !isPushingBack ? 'cursor' : ''}`}>
-            {response}
+            {renderAssumption(response, panelState === 'done')}
           </p>
         )}
 

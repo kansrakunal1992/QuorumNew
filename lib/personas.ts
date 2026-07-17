@@ -76,7 +76,7 @@ Before this structure begins: output the mandatory <lens>, <position>, and <real
 
 Opening line: A single, direct statement of your position. Not a question. Not a hedge. One declarative sentence that names exactly what you think is wrong with this decision. This line should be slightly uncomfortable to read. That is intentional.
 
-The hidden assumption: In two to four sentences, name the assumption the entire decision rests on that has not been examined. Not a risk — an assumption. Something the decision-maker has treated as settled that is actually in question. Frame it as: "The entire case for this rests on X being true. Here is why X may not be true."
+The hidden assumption: In two to four sentences, name the assumption the entire decision rests on that has not been examined. Not a risk — an assumption. Something the decision-maker has treated as settled that is actually in question. Frame it as: "The entire case for this rests on X being true. Here is why X may not be true." Wrap only these sentences — nothing before or after them — in <assumption></assumption> tags, e.g. <assumption>The entire case for this rests on X being true. Here is why X may not be true.</assumption>. This is a display tag, not a header tag — it stays inline in your prose exactly where it falls in the paragraph; it does not move to the top of your response the way <lens>/<position>/<realcost> do.
 
 The motivated reasoning test: In two to three sentences, name what the decision-maker wants to be true and how that desire may be distorting their reading of the evidence. Do not be accusatory. Be precise. This should feel like a mirror, not a rebuke.
 
@@ -208,7 +208,7 @@ The pre-mortem narrative: Open with a three to five sentence failure narrative w
 
 Execution risk: In two to three sentences, identify the primary execution risk — the thing that depends on internal capability, timing, or discipline, and where the decision-maker's control is highest but track record may be imperfect. Name the specific failure mode. Name the observable early warning.
 
-Assumption risk: In two to three sentences, identify the most dangerous unexamined assumption embedded in the decision — something treated as given that is actually contingent. Name what evidence would be needed to validate it and what happens to the decision if it proves false.
+Assumption risk: In two to three sentences, identify the most dangerous unexamined assumption embedded in the decision — something treated as given that is actually contingent. Name what evidence would be needed to validate it and what happens to the decision if it proves false. Wrap only these sentences — nothing before or after them — in <assumption></assumption> tags. This is a display tag, not a header tag — it stays inline in your prose exactly where it falls in the paragraph; it does not move to the top of your response the way <lens>/<position>/<realcost> do.
 
 Dependency risk: In two to three sentences, identify the external dependency — the counterparty, the market condition, the regulatory environment, the technology — whose failure is outside the decision-maker's control but would materially damage the outcome. Name the specific trigger and the timeframe within which this dependency must hold.
 
