@@ -334,26 +334,26 @@ function buildRationale(
 // (not full sentences) since the UI slots this in as a small inline clause
 // next to each advisor's name, not a paragraph.
 const RULE_ID_PLAIN_LABEL: Partial<Record<RuleId, string>> = {
-  R1:  'an earlier decision this one depends on hasn\u2019t been resolved yet',
+  R1:  "an earlier decision this one depends on hasn't been resolved yet",
   R2:  'this touches deep identity questions',
-  R3:  'you\u2019re deciding without much to go on',
+  R3:  "you're deciding without much to go on",
   R4:  'one outcome here would be much harder to live with than the other',
   R5:  'the urgency may be self-generated, not external',
   R6:  'this affects people you may be assuming about, not asking',
   R7:  'specific missing information would change this',
   R8:  'this pits two things you value against each other',
-  R9:  'this is hard to undo, and there\u2019s no real deadline forcing it',
+  R9:  "this is hard to undo, and there's no real deadline forcing it",
   R10: 'this has a lot of moving parts at once',
   R12: 'this involves navigating a close relationship',
 }
 
 const DIM_PLAIN_LABEL: Record<string, string> = {
-  identity_alignment:  'this touches who you are, not just what you\u2019d do',
+  identity_alignment:  "this touches who you are, not just what you'd do",
   reversibility:        'this is hard to undo',
   value_conflict:       'two things you value are pulling against each other',
   regret_asymmetry:     'one wrong turn here would sting more than the other',
   emotional_intensity:  'this carries real emotional weight',
-  time_pressure:        'there\u2019s no real deadline pushing this',
+  time_pressure:        "there's no real deadline pushing this",
   decision_unit:        'other people are affected by this',
   task_complexity:      'this has a lot of interlocking pieces',
   stakes_magnitude:     'this genuinely matters',

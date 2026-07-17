@@ -784,8 +784,24 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
           ? { 'X-Persona-Relevance': JSON.stringify(relevanceMapForHeader) }
           : {}),
         // Sprint 1 follow-on — same delivery pattern as X-Persona-Relevance above.
+        // HOTFIX (post-Sprint-1): this header previously sent raw
+        // JSON.stringify() output, which can contain real Unicode
+        // characters (e.g. the curly apostrophe in "there's" — U+2019).
+        // HTTP header values must be ByteString (Latin-1 only, 0-255);
+        // any header value outside that range throws SYNCHRONOUSLY while
+        // Next.js builds the response — which took the entire response
+        // down with it, including the unrelated X-Persona-Relevance
+        // weights header sitting right next to it in the same object.
+        // That crash is what caused both symptoms reported in production:
+        // missing council weights (whole response failed to build) and
+        // repeating synthesis (client retried a real, costly LLM call on
+        // every failure, deterministically, since the crash always fires
+        // the same way). encodeURIComponent guarantees ASCII-only output
+        // regardless of what characters end up in this text later —
+        // exactly the same safety already applied to X-Worth-Confirming
+        // below, just missed here originally.
         ...(relevanceReasonsForHeader && Object.keys(relevanceReasonsForHeader).length
-          ? { 'X-Persona-Relevance-Reasons': JSON.stringify(relevanceReasonsForHeader) }
+          ? { 'X-Persona-Relevance-Reasons': encodeURIComponent(JSON.stringify(relevanceReasonsForHeader)) }
           : {}),
         // encodeURIComponent: free text (em-dashes, apostrophes) isn't safe to
         // send raw in an HTTP header value — same reasoning as encoding any

@@ -374,9 +374,12 @@ export default function SynthesisCard({
           } catch { /* non-blocking */ }
         }
         // Sprint 1 follow-on — same non-blocking read pattern as above.
+        // HOTFIX: server now sends this encodeURIComponent'd (see route.ts
+        // for why) — decode before parsing, matching X-Worth-Confirming's
+        // existing pattern below.
         const reasonsHeader = res.headers.get('X-Persona-Relevance-Reasons')
         if (reasonsHeader) {
-          try { setFetchedReasons(JSON.parse(reasonsHeader)) } catch { /* non-blocking */ }
+          try { setFetchedReasons(JSON.parse(decodeURIComponent(reasonsHeader))) } catch { /* non-blocking */ }
         }
         const worthConfirmingHeader = res.headers.get('X-Worth-Confirming')
         if (worthConfirmingHeader) {
