@@ -431,44 +431,20 @@ textarea::placeholder { color: var(--text-4); }
   color: var(--gold);
 }
 
-/* ── Institution mode badge (Institutional Sprint 5) ──────
-   Deliberately stacked BELOW .theme-toggle (top: 62px vs its 18px) at the
-   same right edge, rather than sharing its row — .theme-toggle is a single
-   fixed-width button; this badge is two variable-width pieces (institution
-   name + sharing pill) that would collide with it, and with the home page's
-   own fixed navbar (0–56px, "Judgment Operating System" tagline at its
-   right edge) if placed any higher. Only ever rendered for users who've
-   actually joined an institution (see InstitutionModeBadge.tsx), so this
-   never appears for most users regardless. */
-.institution-mode-badge {
-  position: fixed;
-  top: 62px;
-  right: 20px;
-  z-index: 8999;
+/* Institution mode strip (Institutional Sprint 5) — this is now a normal
+   in-flow element mounted at the very top of <body>, before {children}, so
+   it structurally can't overlap any page's own content anymore (that was
+   the old bug — two position:fixed pills floating over whatever a given
+   page rendered near the top, which varied per page and kept needing
+   retuning). The one thing it still needs to clear is .theme-toggle, which
+   remains position:fixed at a constant, always-present spot on every page —
+   a single known height to clear once, not a fragile per-page guess. */
+.institution-mode-strip {
+  margin-top: 54px;
 }
 @media (max-width: 480px) {
-  .institution-mode-badge {
-    top: 52px;
-    right: 12px;
-  }
-}
-
-/* Fix: institution-mode-badge floats over content (position: fixed, not in
-   document flow) and every page was only ever clearing .theme-toggle above
-   it — nothing reserved space for this badge, so it overlapped whatever a
-   page rendered near the top (institution pill, sharing pill, and page
-   header text all visibly colliding on mobile). Rather than adding top
-   padding to every affected page individually, InstitutionModeBadge toggles
-   this body class itself (only for the users it actually renders for), and
-   this single rule pushes ALL page content down by a fixed buffer — additive
-   margin, not a replacement for whatever top spacing a page already has, so
-   it can't under- or over-shoot a page's existing layout. */
-body.institution-badge-active .app-content {
-  margin-top: 44px;
-}
-@media (max-width: 480px) {
-  body.institution-badge-active .app-content {
-    margin-top: 34px;
+  .institution-mode-strip {
+    margin-top: 44px;
   }
 }
 

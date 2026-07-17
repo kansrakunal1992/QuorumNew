@@ -1,7 +1,7 @@
 'use client'
 // components/InstitutionModeBadge.tsx
-// Institutional Sprint 5 (tasks 1+2) — global nav mode badge, multi-
-// institution switcher, and the sharing-status pill.
+// Institutional Sprint 5 (tasks 1+2) — global nav mode strip, multi-
+// institution switcher, and the sharing-status detail.
 //
 // Per the answered question: renders null entirely for a user with zero
 // institution_memberships — no "Individual" badge for the ~100% of users
@@ -12,6 +12,17 @@
 // Mounted in the root layout (app/layout.tsx) so it CAN appear on every
 // route — same "mount globally, render null when irrelevant" pattern as
 // CookieConsent/UpdateBanner already use in that file, not a new pattern.
+//
+// Layout fix: this used to be two separate position:fixed pills floating
+// over page content (institution switcher + sharing-status link). Nothing
+// reserved space for them, so they overlapped whatever a given page rendered
+// near the top — and since every page has a different top structure (Home's
+// header row, Mirror's own sticky nav, Record's page title), a single global
+// buffer to clear them was fragile and kept needing retuning per page as new
+// layouts shipped. Rewritten as one collapsed, fully opaque, in-flow strip
+// that reserves its own real document height — nothing can overlap it
+// because it isn't floating anymore. Tapping it expands a drawer that pushes
+// the rest of the page down, never overlays it.
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
@@ -81,16 +92,6 @@ export default function InstitutionModeBadge() {
 
   useEffect(() => { load() }, [load])
 
-  // Fix: this badge is position:fixed and overlaps page content — nothing
-  // reserved space for it, only for .theme-toggle above it. Toggling this
-  // class lets one global CSS rule (see .app-content in globals.css) push
-  // content down, only for the users this badge actually renders for.
-  const isVisible = !!active?.institutionId && active.memberships.length > 0
-  useEffect(() => {
-    document.body.classList.toggle('institution-badge-active', isVisible)
-    return () => { document.body.classList.remove('institution-badge-active') }
-  }, [isVisible])
-
   const switchTo = async (institutionId: string) => {
     const token = await getAuthToken()
     if (!token) return
@@ -114,64 +115,84 @@ export default function InstitutionModeBadge() {
   if (!active?.institutionId || !active.memberships.length) return null
 
   return (
-    <div className="institution-mode-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-        <button
-          onClick={() => setOpen(v => !v)}
-          disabled={busy}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '5px 12px', borderRadius: 20,
-            border: '1px solid var(--border-mid)', background: 'var(--bg-card)',
-            color: 'var(--text-2)', fontSize: 11.5, fontFamily: 'var(--font-mono)',
-            cursor: 'pointer',
-          }}
-        >
-          {active.institutionName}
-          {active.memberships.length > 1 && <span style={{ fontSize: 9 }}>▾</span>}
-        </button>
+    <div className="institution-mode-strip" style={{
+      background:   'var(--bg-card)',   // fully opaque — no transparency anywhere in the strip
+      borderBottom: '1px solid var(--border-dim)',
+    }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        disabled={busy}
+        style={{
+          display:       'flex',
+          alignItems:    'center',
+          justifyContent: 'center',
+          gap:           6,
+          width:         '100%',
+          padding:       '7px 16px',
+          border:        'none',
+          background:    'transparent',   // transparent to the strip's own opaque background, not to page content
+          color:         'var(--text-3)',
+          fontSize:      11.5,
+          fontFamily:    'var(--font-mono)',
+          cursor:        'pointer',
+        }}
+      >
+        <span style={{ color: 'var(--text-2)' }}>{active.institutionName}</span>
+        <span style={{ opacity: 0.5 }}>·</span>
+        <span>Sharing: {sharing}</span>
+        <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 2, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+      </button>
 
-        {/* Clickable — goes straight to the Institutional Sharing card in
-            Privacy Center, since "how do I change this" was the whole point
-            of surfacing it here in the first place. */}
-        <Link
-          href="/settings/privacy#institutional-sharing"
-          title="Change sharing settings"
-          style={{
-            padding: '3px 10px', borderRadius: 20,
-            border: '1px solid var(--border-dim)', background: 'transparent',
-            color: 'var(--text-4)', fontSize: 10.5, fontFamily: 'var(--font-mono)',
-            textDecoration: 'none', cursor: 'pointer',
-          }}
-        >
-          Sharing: {sharing}
-        </Link>
-
-        {open && active.memberships.length > 1 && (
-          <div style={{
-            position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 501,
-            background: 'var(--bg-card)', border: '1px solid var(--border-mid)',
-            borderRadius: 10, overflow: 'hidden', minWidth: 180,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-          }}>
-            {active.memberships.map(m => (
-              <button
-                key={m.institutionId}
-                onClick={() => switchTo(m.institutionId)}
-                disabled={busy || m.institutionId === active.institutionId}
-                style={{
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: '9px 14px', border: 'none',
-                  background: m.institutionId === active.institutionId ? 'var(--bg-card-alt)' : 'transparent',
-                  color: 'var(--text-2)', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
-                }}
-              >
-                {m.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Drawer — pushes the rest of the page down when open, never overlays it */}
+      {open && (
+        <div style={{
+          borderTop:  '1px solid var(--border-dim)',
+          background: 'var(--bg-card-alt)',
+          padding:    '12px 16px 14px',
+        }}>
+          {active.memberships.length > 1 && (
+            <>
+              <p style={{
+                fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+                color: 'var(--text-4)', margin: '0 0 8px',
+              }}>
+                Switch institution
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 14 }}>
+                {active.memberships.map(m => (
+                  <button
+                    key={m.institutionId}
+                    onClick={() => switchTo(m.institutionId)}
+                    disabled={busy || m.institutionId === active.institutionId}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '8px 10px', borderRadius: 8, border: 'none',
+                      background: m.institutionId === active.institutionId ? 'var(--bg-card)' : 'transparent',
+                      color: 'var(--text-2)', fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer',
+                    }}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          <Link
+            href="/settings/privacy#institutional-sharing"
+            onClick={() => setOpen(false)}
+            style={{
+              display:       'inline-block',
+              fontFamily:    'var(--font-mono)',
+              fontSize:      11.5,
+              color:         'var(--gold)',
+              textDecoration: 'none',
+            }}
+          >
+            Change sharing settings →
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
