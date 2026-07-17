@@ -12,7 +12,7 @@
 
 import { useState } from 'react'
 import CouncilWeightingStrip from './CouncilWeightingStrip'
-import { diffSynthesisVersions, PERSONA_LABELS } from '@/lib/synthesis-diff'
+import { diffSynthesisVersions, buildLeanTrajectories, PERSONA_LABELS } from '@/lib/synthesis-diff'
 import type { SynthesisVersionSnapshot } from '@/lib/synthesis-diff'
 
 interface Props {
@@ -35,6 +35,11 @@ export default function WhatChangedDrawer({ versions }: Props) {
   const curr = versions[versions.length - 1]
   const diff = diffSynthesisVersions(prev, curr)
   const displayVersion = versions.length   // 1-indexed for display
+
+  // Sprint 1 (Feature #3): only worth showing once there's more history than
+  // the "Advisor moves" section above already covers (latest vs. previous).
+  // With exactly 2 versions the two sections would say the same thing.
+  const trajectories = versions.length >= 3 ? buildLeanTrajectories(versions) : []
 
   const chipVerdict = selectedChip !== null ? versions[selectedChip] : null
 
@@ -109,6 +114,33 @@ export default function WhatChangedDrawer({ versions }: Props) {
                     <strong style={{ color: 'var(--text-1)' }}>{PERSONA_LABELS[move.persona] ?? move.persona}</strong>
                     {': '}
                     {LEAN_LABELS[move.from] ?? move.from} → {LEAN_LABELS[move.to] ?? move.to}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 3.5 (Sprint 1, Feature #3) — how positions moved across the WHOLE
+              session, not just the latest step. Cross-advisor, at-a-glance,
+              so seeing this doesn't require opening all 6 cards and scrolling
+              through pushback threads individually. Only rendered when there's
+              real multi-step history and at least one advisor actually moved
+              at some point — matches "only show movers" used everywhere else
+              in this drawer. */}
+          {trajectories.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border-dim)', paddingTop: 12 }}>
+              <p style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase',
+                color: 'var(--text-4)', margin: '0 0 8px',
+              }}>
+                How positions evolved
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {trajectories.map(t => (
+                  <div key={t.persona} style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                    <strong style={{ color: 'var(--text-1)' }}>{PERSONA_LABELS[t.persona] ?? t.persona}</strong>
+                    {': '}
+                    {t.sequence.map(l => LEAN_LABELS[l] ?? l).join(' → ')}
                   </div>
                 ))}
               </div>

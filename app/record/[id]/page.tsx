@@ -37,7 +37,7 @@ function stripHeaderTags(raw: string): string {
     // with SynthesisCard.tsx or synthesis-summary/route.ts) — it never learned
     // about the two tags added for forced-verdict-with-conditions, so they were
     // leaking through raw as visible text on this page.
-    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     // Strip tension wrapper tags but keep the sentence text inline
     .replace(/<\/?tension>/g, '')
@@ -67,7 +67,7 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     .replace(/<verdict>[\s\S]*/g, '')   // guard: open tag without close
     // P2 fix: these two were never stripped here — the actual source of the
     // raw-tag leak the user saw, since "rest" is what gets rendered as body prose.
-    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')

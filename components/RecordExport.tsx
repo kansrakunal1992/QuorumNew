@@ -45,7 +45,7 @@ function stripSynthesisTags(raw: string): string {
     // P2 fix: this file has its own independent tag-stripping copy — it never
     // learned about the two tags added for forced-verdict-with-conditions,
     // so they were leaking through raw into whatever uses this export.
-    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')

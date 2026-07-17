@@ -20,7 +20,7 @@ function stripTags(raw: string): string {
     // (not shared with SynthesisCard.tsx) — it never learned about the two
     // new tags added for the forced-verdict-with-conditions feature, so they
     // were leaking through raw into "What the Council concluded last time".
-    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')

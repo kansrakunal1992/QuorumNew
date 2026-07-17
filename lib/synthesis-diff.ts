@@ -56,6 +56,52 @@ const LEAN_LABELS: Record<string, string> = {
   mixed:   'Mixed',
 }
 
+export interface LeanTrajectory {
+  persona: string
+  /** Collapsed sequence of distinct leans this persona held, in order —
+   *  e.g. ['wait', 'proceed'] for an advisor that moved once, however many
+   *  versions it took. Consecutive repeats are already removed, so this is
+   *  ready to render directly as "Wait → Proceed" without further logic. */
+  sequence: string[]
+}
+
+/** Sprint 1 (Feature #3, "Advisor Evolution Timeline"). Rolls up how each
+ *  advisor's proceed/wait/mixed lean moved across the ENTIRE version
+ *  history, not just the latest-vs-previous pair diffSynthesisVersions()
+ *  already covers. Deliberately reuses only the `leans` field every
+ *  SynthesisVersionSnapshot already carries — no new data capture, no new
+ *  AI call, and no attempt to summarize each advisor's actual argument text
+ *  (that would need a real LLM call and risk paraphrasing something the
+ *  advisor didn't say; the lean tag is already a structured, trustworthy
+ *  signal on its own).
+ *
+ * Only returns personas that actually moved at some point (sequence.length
+ * > 1) — an advisor that held the same position throughout has nothing to
+ * show here, matching the "only show movers" principle the rest of this
+ * file already follows. Callers should also gate on versions.length >= 3:
+ * with only two versions this is identical to diffSynthesisVersions()'s
+ * own leanMoves, so showing both would just repeat the same information. */
+export function buildLeanTrajectories(versions: SynthesisVersionSnapshot[]): LeanTrajectory[] {
+  const personas = new Set<string>()
+  for (const v of versions) {
+    for (const p of Object.keys(v.leans)) personas.add(p)
+  }
+
+  const trajectories: LeanTrajectory[] = []
+  for (const persona of personas) {
+    const sequence: string[] = []
+    for (const v of versions) {
+      const lean = v.leans[persona]
+      if (!lean) continue
+      if (sequence[sequence.length - 1] !== lean) sequence.push(lean)
+    }
+    if (sequence.length > 1) {
+      trajectories.push({ persona, sequence })
+    }
+  }
+  return trajectories
+}
+
 /** Builds the diff between the two most recent synthesis versions. Expects
  *  `prev` immediately before `curr` (i.e. curr.version === prev.version + 1) —
  *  the drawer only ever calls this on the last two entries in versionHistory. */

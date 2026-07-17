@@ -917,6 +917,7 @@ VERDICT_LEAN TAG — rules, no exceptions:
 • This is a structured classification, not prose — lowercase, one word, nothing else inside the tag
 • Example: <verdict_lean>proceed</verdict_lean>
 • This must match the directional lean actually stated in <verdict> — never classify against what you just wrote
+• Close this tag with </verdict_lean> — NOT </verdict>. You just closed <verdict> a moment earlier; do not reuse that closing tag here. The two tags are different and each must be closed with its own name: <verdict_lean>proceed</verdict_lean>, never <verdict_lean>proceed</verdict>
 
 CONDITIONS TAG — rules, only when genuinely contingent:
 • If — and only if — the verdict is conditional (the kind of thing you'd otherwise phrase as "contingent on Y"), add a <conditions> tag directly after <verdict_lean>

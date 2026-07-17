@@ -326,6 +326,106 @@ function buildRationale(
   return reasons.slice(0, 2).join(', ')
 }
 
+// ── Sprint 1 (P1 follow-on) — user-facing plain-English weighting reasons ─────
+// buildRationale() above is deliberately jargon ("R9 fired", "reversibility
+// 5/5") because it's written for the synthesis prompt, not a person. The
+// Council Weighting Strip needs the human version of the same signal — same
+// boost tables, same priority order, different words. Kept as short phrases
+// (not full sentences) since the UI slots this in as a small inline clause
+// next to each advisor's name, not a paragraph.
+const RULE_ID_PLAIN_LABEL: Partial<Record<RuleId, string>> = {
+  R1:  'an earlier decision this one depends on hasn\u2019t been resolved yet',
+  R2:  'this touches deep identity questions',
+  R3:  'you\u2019re deciding without much to go on',
+  R4:  'one outcome here would be much harder to live with than the other',
+  R5:  'the urgency may be self-generated, not external',
+  R6:  'this affects people you may be assuming about, not asking',
+  R7:  'specific missing information would change this',
+  R8:  'this pits two things you value against each other',
+  R9:  'this is hard to undo, and there\u2019s no real deadline forcing it',
+  R10: 'this has a lot of moving parts at once',
+  R12: 'this involves navigating a close relationship',
+}
+
+const DIM_PLAIN_LABEL: Record<string, string> = {
+  identity_alignment:  'this touches who you are, not just what you\u2019d do',
+  reversibility:        'this is hard to undo',
+  value_conflict:       'two things you value are pulling against each other',
+  regret_asymmetry:     'one wrong turn here would sting more than the other',
+  emotional_intensity:  'this carries real emotional weight',
+  time_pressure:        'there\u2019s no real deadline pushing this',
+  decision_unit:        'other people are affected by this',
+  task_complexity:      'this has a lot of interlocking pieces',
+  stakes_magnitude:     'this genuinely matters',
+}
+
+/** Sprint 1: one short, plain-English reason per persona — the human-facing
+ *  counterpart to buildRationale() above. Reuses the exact same boost tables
+ *  and priority order (rule signals checked before dimension signals, in the
+ *  same array order rule-engine/DIM_PERSONA_BOOSTS already define), so a
+ *  persona's displayed "why" can never disagree with what actually drove its
+ *  score. Returns only personas for which a real, specific reason was found —
+ *  the caller falls back to no inline reason (not an invented one) for the
+ *  rest. */
+export function explainPersonaWeights(
+  ruleEngineResult:   RuleEngineResult | null,
+  ontologyVector:     OntologyScoreMap | null,
+  maxStructuralScore: number | null,
+  personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
+  leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
+): Partial<Record<AdvisorKey, string>> {
+  const out: Partial<Record<AdvisorKey, string>> = {}
+  const personas: AdvisorKey[] = [
+    'contrarian', 'risk_architect', 'pattern_analyst',
+    'stakeholder_mirror', 'elder', 'competitor',
+  ]
+
+  for (const persona of personas) {
+    // Priority 1: this advisor visibly changed its own position under challenge —
+    // the most narratively concrete reason available, so it wins outright.
+    if (leanShifts?.[persona]) {
+      out[persona] = 'it changed its own position after your challenge'
+      continue
+    }
+
+    // Priority 2: highest-priority rule (triggered, then flag) that boosts
+    // this persona — arrays are already in rule-engine's evaluation-priority
+    // order, so the first match is the right one to show.
+    if (ruleEngineResult) {
+      const allRules = [...ruleEngineResult.triggered_rules, ...ruleEngineResult.flag_rules]
+      const hit = allRules.find(r => RULE_PERSONA_BOOSTS[r.rule_id as RuleId]?.[persona])
+      if (hit) {
+        const label = RULE_ID_PLAIN_LABEL[hit.rule_id as RuleId]
+        if (label) { out[persona] = label; continue }
+      }
+    }
+
+    // Priority 3: highest-priority ontology dimension boost that fires and
+    // includes this persona — DIM_PERSONA_BOOSTS is already ordered by
+    // rough importance (identity/reversibility/value first).
+    if (ontologyVector) {
+      const hit = DIM_PERSONA_BOOSTS.find(entry => {
+        const dimData = ontologyVector[entry.dim]
+        if (!dimData || !entry.boosts[persona]) return false
+        const s = dimData.score
+        return entry.direction === 'above' ? s >= entry.threshold : s <= entry.threshold
+      })
+      if (hit) {
+        const label = DIM_PLAIN_LABEL[hit.dim]
+        if (label) { out[persona] = label; continue }
+      }
+    }
+
+    // Priority 4: structural match, pattern_analyst only.
+    if (persona === 'pattern_analyst' && maxStructuralScore !== null && maxStructuralScore >= 45) {
+      out[persona] = 'a similar past decision of yours closely matches this one'
+      continue
+    }
+  }
+
+  return out
+}
+
 // ── Public: build synthesis injection block ───────────────────────────────────
 
 export function buildRelevanceBlock(

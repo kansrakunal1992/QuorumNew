@@ -79,9 +79,39 @@ export async function GET(req: Request, { params }: Params) {
     const userEmail = currentSession.user_email ?? null
     const userId    = currentSession.user_id    ?? null
 
-    // No identity → no past-session retrieval possible (mirrors structural-match)
+    // No identity → no past-session retrieval possible (mirrors structural-match).
+    // Also no server-side count is possible here — device-local count is the
+    // only thing that exists for an anonymous session, which is correct: it
+    // really does only span this one device.
     if (!userEmail && !userId) {
       return NextResponse.json({ available: false, reason: 'no_identity' })
+    }
+
+    // ── Bug fix (cross-device count mismatch) ────────────────────────────────
+    // EarlyEchoCard's headline ("Second decision recorded...") is driven by
+    // device-local session count (localStorage), which is correct for an
+    // anonymous user but silently wrong for an identified one: a user with
+    // 200+ decisions on their account who opens Quorum on a brand-new device
+    // has an empty localStorage, so the local count reads 1-2 and the
+    // "3 more to activate pattern memory" milestone re-fires even though
+    // pattern memory has been active on their account for a long time.
+    // Fix: once we know who the user is, get the TRUE total from the
+    // database — a cheap head-only count, not the capped 20-row match list
+    // below — and let the client override/hide the local-count message
+    // whenever the two disagree. This mirrors the same "server truth wins"
+    // pattern MemoryEngineStatus already uses for mirrorUnlocked.
+    let trueSessionCount: number | null = null
+    try {
+      let countQuery = supabase.from('sessions').select('id', { count: 'exact', head: true })
+      countQuery = userId && userEmail
+        ? countQuery.or(`user_id.eq.${userId},user_email.eq.${userEmail}`)
+        : userId
+          ? countQuery.eq('user_id', userId)
+          : countQuery.eq('user_email', userEmail as string)
+      const { count } = await countQuery
+      trueSessionCount = typeof count === 'number' ? count : null
+    } catch (err) {
+      console.warn('[EchoHint] True session count query failed (non-fatal):', err)
     }
 
     // ── 2. Current session's ontology (must be tagged + complete) ───────────
@@ -100,7 +130,7 @@ export async function GET(req: Request, { params }: Params) {
       .maybeSingle()
 
     if (!currentOntology) {
-      return NextResponse.json({ available: false, reason: 'ontology_not_ready' })
+      return NextResponse.json({ available: false, reason: 'ontology_not_ready', trueSessionCount })
     }
 
     // ── 3. Past sessions (same user, complete ontology) — small cap, cheap ──
@@ -131,7 +161,7 @@ export async function GET(req: Request, { params }: Params) {
       .limit(20)
 
     if (!pastOntologies || pastOntologies.length === 0) {
-      return NextResponse.json({ available: false, reason: 'no_past_sessions' })
+      return NextResponse.json({ available: false, reason: 'no_past_sessions', trueSessionCount })
     }
 
     // ── 4. Build snapshots + score (pure, synchronous, no LLM) ──────────────
@@ -187,7 +217,7 @@ export async function GET(req: Request, { params }: Params) {
       .sort((a, b) => b.breakdown.total - a.breakdown.total)[0]
 
     if (!best || best.breakdown.total < MATCH_THRESHOLD) {
-      return NextResponse.json({ available: false, reason: 'no_qualifying_match' })
+      return NextResponse.json({ available: false, reason: 'no_qualifying_match', trueSessionCount })
     }
 
     // ── 5. Extract a single, abstracted dimension label ──────────────────────
@@ -209,6 +239,7 @@ export async function GET(req: Request, { params }: Params) {
       available:      true,
       dimensionLabel,
       matchDate,
+      trueSessionCount,
     })
 
   } catch (err) {

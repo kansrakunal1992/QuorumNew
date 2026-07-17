@@ -85,7 +85,7 @@ export default function SynthesisCard({
     raw
       .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
       .replace(/<verdict>[\s\S]*/g, '')
-      .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+      .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
       .replace(/<\/?tension>/g, '')
       .trimStart()
@@ -103,6 +103,15 @@ export default function SynthesisCard({
   // S2-02: persona relevance weights — read from X-Persona-Relevance response header,
   // the exact map used in the synthesis directive (not a client-side recomputation).
   const [fetchedWeights, setFetchedWeights] = useState<PersonaRelevanceMap | null>(null)
+
+  // Sprint 1 follow-on — same delivery pattern as fetchedWeights above.
+  // reasons: one short plain-English clause per persona explaining its weight
+  //   (Feature #4 polish — replaces the old one-size-fits-all footer line).
+  // worthConfirming: merged Features #1 + #6 — single quiet line surfaced at
+  //   the end of the verdict box. null means nothing worth flagging; the UI
+  //   renders nothing in that case rather than manufacturing a line.
+  const [fetchedReasons, setFetchedReasons] = useState<Record<string, string> | null>(null)
+  const [worthConfirming, setWorthConfirming] = useState<string | null>(null)
 
   // S3-07: Observatory mode — opt-in focus overlay, triggered only by an explicit
   // "Focus mode" button (never automatic on TTS start). Dims everything but the
@@ -131,7 +140,7 @@ export default function SynthesisCard({
   // is genuinely contingent).
   const [verdictLean, setVerdictLean] = useState(() => {
     if (!initialContent) return ''
-    const m = initialContent.match(/<verdict_lean>([\s\S]*?)<\/verdict_lean>/)
+    const m = initialContent.match(/<verdict_lean>([\s\S]*?)<\/verdict(?:_lean)?>/)
     return m?.[1]?.trim().toLowerCase() ?? ''
   })
   const [conditions, setConditions] = useState<string[]>(() => {
@@ -165,7 +174,7 @@ export default function SynthesisCard({
     const rawNoVerdict = raw
       .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
       .replace(/<verdict>[\s\S]*/g, '')
-      .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+      .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
     const tStart = rawNoVerdict.indexOf('<tension>')
     const tEnd   = rawNoVerdict.indexOf('</tension>')
@@ -364,6 +373,15 @@ export default function SynthesisCard({
             setFetchedWeights(resolvedWeights)
           } catch { /* non-blocking */ }
         }
+        // Sprint 1 follow-on — same non-blocking read pattern as above.
+        const reasonsHeader = res.headers.get('X-Persona-Relevance-Reasons')
+        if (reasonsHeader) {
+          try { setFetchedReasons(JSON.parse(reasonsHeader)) } catch { /* non-blocking */ }
+        }
+        const worthConfirmingHeader = res.headers.get('X-Worth-Confirming')
+        if (worthConfirmingHeader) {
+          try { setWorthConfirming(decodeURIComponent(worthConfirmingHeader)) } catch { /* non-blocking */ }
+        }
         const reader = res.body.getReader()
         const dec    = new TextDecoder()
         let acc = ''
@@ -433,7 +451,7 @@ export default function SynthesisCard({
             acc
               .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
               .replace(/<verdict>[\s\S]*/g, '')
-              .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+              .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
               .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
               .replace(/<\/?tension>/g, '')
           )
@@ -445,7 +463,7 @@ export default function SynthesisCard({
         const fv  = finalAcc.match(/<verdict>([\s\S]*?)<\/verdict>/)
         const ft  = finalAcc.match(/<tension>([\s\S]*?)<\/tension>/)
         // P2: same "final extraction pass" guarantee for the two new tags.
-        const fvl = finalAcc.match(/<verdict_lean>([\s\S]*?)<\/verdict_lean>/)
+        const fvl = finalAcc.match(/<verdict_lean>([\s\S]*?)<\/verdict(?:_lean)?>/)
         const fc  = finalAcc.match(/<conditions>([\s\S]*?)<\/conditions>/)
         if (fv?.[1]?.trim()) setVerdictText(fv[1].trim())
         if (ft?.[1]?.trim()) setTensionText(ft[1].trim())
@@ -459,7 +477,7 @@ export default function SynthesisCard({
           finalAcc
             .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
             .replace(/<verdict>[\s\S]*/g, '')
-            .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/g, '')
+            .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
             .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
             .replace(/<\/?tension>/g, '')
             .trimStart()
@@ -1006,6 +1024,25 @@ export default function SynthesisCard({
                     </ul>
                   </>
                 )}
+                {/* Sprint 1 follow-on — merged Features #1 (Highest-Value Unknown)
+                    + #6 (Decision Sensitivity Analysis, cheap proxy). One quiet
+                    line, no header, no icon — reads as a continuation of the
+                    verdict rather than a separate panel. Renders only once
+                    synthesis has finished streaming, and only when the
+                    server found something specific to flag (null → nothing
+                    renders, by design — see lib/worth-confirming.ts). */}
+                {state === 'done' && worthConfirming && (
+                  <p style={{
+                    fontSize:      11.5,
+                    color:         'var(--text-3)',
+                    lineHeight:    1.55,
+                    margin:        '10px 0 0',
+                    paddingTop:    10,
+                    borderTop:     '1px solid var(--border-dim)',
+                  }}>
+                    Worth confirming — {worthConfirming}
+                  </p>
+                )}
               </div>
             )}
             {/* Main prose — tension highlighted inline once streaming completes */}
@@ -1032,7 +1069,7 @@ export default function SynthesisCard({
                 Same for all tiers (locked, teaser, unlocked) — explains the synthesis they
                 already received. Only renders when at least one advisor is elevated above baseline. */}
             {(fetchedWeights ?? personaWeights) && (
-              <CouncilWeightingStrip weights={(fetchedWeights ?? personaWeights)!} />
+              <CouncilWeightingStrip weights={(fetchedWeights ?? personaWeights)!} reasons={fetchedReasons} />
             )}
 
             {/* P1: What Changed drawer — renders nothing until there are at least

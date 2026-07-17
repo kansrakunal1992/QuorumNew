@@ -151,7 +151,8 @@ import {
 }                                            from '@/lib/structural-retrieval'
 import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
-import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5
+import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock, explainPersonaWeights } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5 + Sprint 1 follow-on
+import { getWorthConfirmingText } from '@/lib/worth-confirming'  // Sprint 1 follow-on (merged Features #1 + #6)
 import type { AdvisorKey } from '@/lib/persona-relevance'  // P1: Gap #2 leanShifts typing
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
 import { resolveActiveInstitution }   from '@/lib/active-institution'
@@ -618,6 +619,8 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
     // client via the X-Persona-Relevance response header — this is the exact
     // map used in the MANDATORY directive, not a client-side recomputation.
     let relevanceMapForHeader: Record<string, number> | null = null
+    let relevanceReasonsForHeader: Record<string, string> | null = null   // Sprint 1 follow-on
+    let worthConfirmingForHeader: string | null = null                    // Sprint 1 follow-on
     if (isSynthesisCall) {
       // P1 (Gap #2 fix): AdvisorKey is a subset of PersonaKey (excludes
       // synthesis/decision_brief) — cast is safe here since leanShifts keys
@@ -632,6 +635,23 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
       )
 
       relevanceMapForHeader = relevanceMap
+
+      // Sprint 1 follow-on (Features #4 polish + #1/#6 merged): same inputs
+      // as relevanceMap above, so the displayed "why" and "worth confirming"
+      // text can never contradict what actually drove the synthesis directive.
+      // Both are cheap, synchronous, deterministic — no new AI calls.
+      relevanceReasonsForHeader = explainPersonaWeights(
+        councilResult.ruleEngineResult,
+        councilResult.ontologyVector,
+        councilResult.maxStructuralScore,
+        biasContext.personalCalibrationZones,
+        typedLeanShifts ?? null,
+      )
+      worthConfirmingForHeader = getWorthConfirmingText(
+        councilResult.ruleEngineResult,
+        councilResult.ontologyVector,
+      )
+
       const relevanceBlock = buildRelevanceBlock(
         relevanceMap,
         councilResult.ruleEngineResult,
@@ -762,6 +782,16 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
         // so the client can render the Council Weighting Strip without recomputation.
         ...(relevanceMapForHeader
           ? { 'X-Persona-Relevance': JSON.stringify(relevanceMapForHeader) }
+          : {}),
+        // Sprint 1 follow-on — same delivery pattern as X-Persona-Relevance above.
+        ...(relevanceReasonsForHeader && Object.keys(relevanceReasonsForHeader).length
+          ? { 'X-Persona-Relevance-Reasons': JSON.stringify(relevanceReasonsForHeader) }
+          : {}),
+        // encodeURIComponent: free text (em-dashes, apostrophes) isn't safe to
+        // send raw in an HTTP header value — same reasoning as encoding any
+        // other non-ASCII header content.
+        ...(worthConfirmingForHeader
+          ? { 'X-Worth-Confirming': encodeURIComponent(worthConfirmingForHeader) }
           : {}),
       },
     })

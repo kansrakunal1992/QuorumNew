@@ -97,7 +97,7 @@ function stripAdvisorTags(raw: string): string {
     .replace(/<verdict>[\s\S]*/gi, '')           // guard: open tag without close
     // P2 fix: this file has its own independent tag-stripping copy — it never
     // learned about the two tags added for forced-verdict-with-conditions.
-    .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/gi, '')
+    .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/gi, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/gi, '')
     .replace(/<(?:lens|position|realcost|lean|verdict_lean|conditions)>[\s\S]*$/i, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')      // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
@@ -319,7 +319,7 @@ async function buildPdf(
       .replace(/<verdict>[\s\S]*/, '')   // guard: open tag without close
       // P2 fix: these were never stripped here — the actual source of the
       // raw-tag leak, since `rest` is what gets rendered as the PDF's body text.
-      .replace(/<verdict_lean>[\s\S]*?<\/verdict_lean>\n*/, '')
+      .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/, '')
       .trimStart()
     return { verdict, conditions, rest }

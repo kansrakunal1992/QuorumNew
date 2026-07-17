@@ -34,6 +34,13 @@ interface Props {
   sessionId: string
 }
 
+// Bug fix (cross-device count mismatch): must match MemoryEngineStatus's
+// own PATTERN_MEMORY_THRESHOLD. Not imported from there — that file doesn't
+// export it, and duplicating one small constant here is a smaller diff than
+// introducing a shared-constants module as a side effect of a bug fix. If
+// that threshold ever changes, update both places.
+const PATTERN_MEMORY_THRESHOLD = 5
+
 function getSignal(count: number): { headline: string; sub: string } | null {
   if (count < 2 || count >= 5) return null
   const remaining = 5 - count
@@ -77,13 +84,27 @@ export default function EarlyEchoCard({ sessionId }: Props) {
       setSignal(result)
       setVisible(true)
 
-      // Item C: at session 3+, try to upgrade the sub-line with a named
-      // structural dimension. Fire-and-forget — failure leaves count-only
-      // copy in place, which is already a complete, correct message.
-      if (count >= 3) {
+      // Item C (dimension upgrade, session 3+) + bug fix (count verification,
+      // session 2+): fire-and-forget in both cases — failure leaves count-only
+      // copy in place, which is already a complete, correct message *for a
+      // device with no server-linked history*. For an identified user, the
+      // route also returns trueSessionCount, the real account-wide total —
+      // used below to catch the case this component was built to avoid
+      // (a returning user on a new device, local count 1-2, real count 200+)
+      // and hide the stale milestone instead of showing it.
+      if (count >= 2) {
         fetch(`/api/record/${sessionId}/echo-hint`)
           .then(res => res.ok ? res.json() : null)
-          .then((data: { available?: boolean; dimensionLabel?: string; matchDate?: string | null } | null) => {
+          .then((data: { available?: boolean; dimensionLabel?: string; matchDate?: string | null; trueSessionCount?: number | null } | null) => {
+            // Bug fix: server-verified count wins over local-device count
+            // whenever it disagrees and shows the milestone has already
+            // passed. Anonymous sessions never get trueSessionCount back
+            // (no identity to look up), so this never fires for them — the
+            // local count-only copy remains their correct, only source.
+            if (typeof data?.trueSessionCount === 'number' && data.trueSessionCount >= PATTERN_MEMORY_THRESHOLD) {
+              setVisible(false)
+              return
+            }
             if (data?.available && data.dimensionLabel) {
               const dateClause = data.matchDate ? ` in ${data.matchDate}` : ''
               setSignal({

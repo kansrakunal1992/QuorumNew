@@ -19,6 +19,14 @@ interface Props {
    *  and this component never actually relies on all 6 advisor keys being
    *  guaranteed present — it only sorts/slices whatever entries exist. */
   previousWeights?: Record<string, number> | null
+  /** Sprint 1 follow-on (Feature #4 polish): one short, plain-English clause
+   *  per advisor explaining what actually drove its weight — from
+   *  lib/persona-relevance.ts's explainPersonaWeights(), same inputs as the
+   *  synthesis directive itself. When a key has no entry (nothing specific
+   *  found for that advisor), that row just shows no subline — never an
+   *  invented one. Omitted entirely → the original generic footer line
+   *  stays exactly as it was, so existing callers are unaffected. */
+  reasons?: Record<string, string> | null
 }
 
 const LABELS: Record<string, string> = {
@@ -39,16 +47,50 @@ const ACCENTS: Record<string, string> = {
   competitor:         '#5e6830',
 }
 
-export default function CouncilWeightingStrip({ weights, previousWeights = null }: Props) {
-  const sorted = (Object.entries(weights) as [string, number][])
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 3)
+// Sprint 1 follow-on: an advisor outside the top 3 by raw weight can still
+// have moved a lot since the last version (e.g. Elder dropping 8pts while
+// staying 4th-ranked) — the original "top 3 only" cap made that invisible.
+// A real jump is shown even if it isn't a top-3 weight; capped at one extra
+// slot so this stays a glance, not a leaderboard.
+const MOVER_DELTA_THRESHOLD = 8
+const MAX_SHOWN = 4
+
+export default function CouncilWeightingStrip({ weights, previousWeights = null, reasons = null }: Props) {
+  const allEntries = Object.entries(weights) as [string, number][]
+  const byWeight    = [...allEntries].sort(([, a], [, b]) => b - a)
+  const top3        = byWeight.slice(0, 3)
+  const top3Keys    = new Set(top3.map(([k]) => k))
+
+  // Sprint 1 follow-on: find the single biggest mover outside the top 3, if
+  // previousWeights lets us compute deltas and it's a real jump.
+  let extraMover: [string, number] | null = null
+  if (previousWeights) {
+    const moversOutsideTop3 = byWeight
+      .filter(([k]) => !top3Keys.has(k))
+      .map(([k, s]): [string, number, number] => {
+        const prevPct = Math.round((previousWeights[k] ?? s) * 100)
+        return [k, s, Math.abs(Math.round(s * 100) - prevPct)]
+      })
+      .filter(([, , absDelta]) => absDelta >= MOVER_DELTA_THRESHOLD)
+      .sort((a, b) => b[2] - a[2])
+    if (moversOutsideTop3.length > 0) {
+      extraMover = [moversOutsideTop3[0][0], moversOutsideTop3[0][1]]
+    }
+  }
+
+  const sorted = extraMover ? [...top3, extraMover].slice(0, MAX_SHOWN) : top3
 
   // Baseline is 0.50 — only show strip if at least one advisor is above baseline
   const hasElevated = sorted.some(([, s]) => s > 0.52)
   if (!hasElevated) return null
 
-  const maxScore  = sorted[0]?.[1] ?? 1
+  const maxScore  = byWeight[0]?.[1] ?? 1
+
+  // Only show the generic footer sentence when we have no specific reasons
+  // at all for anything currently shown — once even one advisor has a real
+  // reason, the per-row sublines carry that job instead, and repeating a
+  // generic paragraph underneath would be redundant.
+  const anySpecificReason = sorted.some(([key]) => reasons?.[key])
 
   return (
     <div style={{
@@ -75,69 +117,86 @@ export default function CouncilWeightingStrip({ weights, previousWeights = null 
           // P1: delta vs previous synthesis version, if supplied.
           const prevPct  = previousWeights ? Math.round((previousWeights[key] ?? score) * 100) : null
           const delta    = prevPct !== null ? pct - prevPct : 0
+          const reason   = reasons?.[key]
 
           return (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {/* Persona colour dot */}
-              <div style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: accent, flexShrink: 0, opacity: 0.8,
-              }} />
-
-              {/* Persona label */}
-              <span style={{
-                fontSize:  11.5,
-                color:     'var(--text-3)',
-                width:     118,
-                flexShrink: 0,
-                lineHeight: 1.2,
-              }}>
-                {LABELS[key] ?? key}
-              </span>
-
-              {/* Bar track */}
-              <div style={{
-                flex:         1,
-                height:       3,
-                borderRadius: 2,
-                background:   'var(--border-dim)',
-                overflow:     'hidden',
-              }}>
+            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {/* Persona colour dot */}
                 <div style={{
-                  width:        `${barWidth}%`,
-                  height:       '100%',
-                  borderRadius:  2,
-                  background:    accent,
-                  opacity:       0.65,
-                  transition:    'width 0.4s ease',
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: accent, flexShrink: 0, opacity: 0.8,
                 }} />
+
+                {/* Persona label */}
+                <span style={{
+                  fontSize:  11.5,
+                  color:     'var(--text-3)',
+                  width:     118,
+                  flexShrink: 0,
+                  lineHeight: 1.2,
+                }}>
+                  {LABELS[key] ?? key}
+                </span>
+
+                {/* Bar track */}
+                <div style={{
+                  flex:         1,
+                  height:       3,
+                  borderRadius: 2,
+                  background:   'var(--border-dim)',
+                  overflow:     'hidden',
+                }}>
+                  <div style={{
+                    width:        `${barWidth}%`,
+                    height:       '100%',
+                    borderRadius:  2,
+                    background:    accent,
+                    opacity:       0.65,
+                    transition:    'width 0.4s ease',
+                  }} />
+                </div>
+
+                {/* Score */}
+                <span style={{
+                  fontSize:    10,
+                  fontFamily:  'var(--font-mono)',
+                  color:       'var(--text-4)',
+                  width:       26,
+                  textAlign:   'right',
+                  flexShrink:  0,
+                }}>
+                  {pct}
+                </span>
+
+                {/* P1: delta badge — only shown when previousWeights supplied and the
+                    change is non-trivial (avoids noisy ±1 rounding flicker). */}
+                {prevPct !== null && Math.abs(delta) >= 2 && (
+                  <span style={{
+                    fontSize:   9,
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700,
+                    width:      28,
+                    textAlign:  'left',
+                    flexShrink: 0,
+                    color:      delta > 0 ? 'var(--positive, #2e8a58)' : 'var(--negative, #b03535)',
+                  }}>
+                    {delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}
+                  </span>
+                )}
               </div>
 
-              {/* Score */}
-              <span style={{
-                fontSize:    10,
-                fontFamily:  'var(--font-mono)',
-                color:       'var(--text-4)',
-                width:       26,
-                textAlign:   'right',
-                flexShrink:  0,
-              }}>
-                {pct}
-              </span>
-
-              {/* P1: delta badge — only shown when previousWeights supplied and the
-                  change is non-trivial (avoids noisy ±1 rounding flicker). */}
-              {prevPct !== null && Math.abs(delta) >= 2 && (
+              {/* Sprint 1 follow-on: specific per-advisor reason, indented to
+                  align under the label rather than the dot. Short clause only —
+                  no period, reads as a continuation of the label above it. */}
+              {reason && (
                 <span style={{
-                  fontSize:   9,
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 700,
-                  width:      28,
-                  textAlign:  'left',
-                  flexShrink: 0,
-                  color:      delta > 0 ? 'var(--positive, #2e8a58)' : 'var(--negative, #b03535)',
+                  fontSize:   10.5,
+                  color:      'var(--text-4)',
+                  lineHeight: 1.4,
+                  marginLeft: 16,
                 }}>
-                  {delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}
+                  {reason}
                 </span>
               )}
             </div>
@@ -145,15 +204,17 @@ export default function CouncilWeightingStrip({ weights, previousWeights = null 
         })}
       </div>
 
-      <p style={{
-        fontSize:   10.5,
-        color:      'var(--text-5, var(--text-4))',
-        margin:     '9px 0 0',
-        lineHeight: 1.55,
-      }}>
-        Quorum weighted your Council based on the structural profile of this decision —
-        its reversibility, identity stakes, and rule signals.
-      </p>
+      {!anySpecificReason && (
+        <p style={{
+          fontSize:   10.5,
+          color:      'var(--text-5, var(--text-4))',
+          margin:     '9px 0 0',
+          lineHeight: 1.55,
+        }}>
+          Quorum weighted your Council based on the structural profile of this decision —
+          its reversibility, identity stakes, and rule signals.
+        </p>
+      )}
     </div>
   )
 }
