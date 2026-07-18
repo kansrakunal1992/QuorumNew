@@ -47,13 +47,25 @@ function stripSynthesisTags(raw: string): string {
     // so they were leaking through raw into whatever uses this export.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Sprint 1 follow-on: plain-text export, no separate callout available
+    // here — content-preserving strip keeps the sentence as its own
+    // paragraph (which is how the model already writes it) rather than
+    // losing it entirely.
+    .replace(/<\/?key_question>/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|verdict_lean|conditions)>[\s\S]*$/, '') // guard: open tag without close
+    // Bug fix: <structural> was never stripped here at all — every persona
+    // response with a structural-echo citation (R6) leaked the raw tag
+    // straight into this export.
+    .replace(/<structural>[\s\S]*?<\/structural>/g, '')
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
+    // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
+    // stripHeaderTags — this wraps substantive prose, not a machine value.
+    .replace(/<\/?assumption>/g, '')
     .replace(/^\s+/, '')
 }
 

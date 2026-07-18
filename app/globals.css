@@ -47,8 +47,36 @@
   --verdict-bg:  linear-gradient(135deg, rgba(234,202,120,0.16), rgba(201,168,76,0.24));
   --verdict-accent: var(--gold-bright);
   --verdict-shadow: 0 0 0 1px rgba(234,202,120,0.32), inset 0 0 24px rgba(201,168,76,0.06);
-  --tension-highlight-bg:     rgba(234,202,120,0.20);
-  --tension-highlight-border: rgba(234,202,120,0.55);
+  /* POV follow-up: shifted from gold to coral-red — was sharing the exact
+     hue with --verdict-bg/--verdict-accent below, so a card's "conclusion"
+     color and its "advisors disagree" color were visually identical. Reuses
+     --graph-edge-contradiction's hue (already this app's established color
+     for disagreement/conflict, just applied to a background-wash text
+     highlight here instead of a graph edge stroke) rather than inventing a
+     third convention. Alpha kept identical to the old gold values — only
+     the hue channel changed, so relative intensity vs. the assumption/
+     worth-confirming highlights is unaffected. */
+  --tension-highlight-bg:     rgba(224,90,90,0.20);
+  --tension-highlight-border: rgba(224,90,90,0.55);
+  /* Sprint 2 — assumption highlight (Contrarian/Risk Architect "hidden
+     assumption" beat). Distinct hue from tension's now-coral-red (peachy-
+     orange vs. red) and from verdict's gold — three separate registers. First version of this shipped referencing this variable name
+     before it was actually defined here, silently falling back to a
+     hardcoded rgba(168,106,32,0.08) — invisible over this theme's near-black
+     card background (--bg-card: #101827), leaving only the underline
+     visible. Bumped to intensity matching tension's own register instead
+     of guessing low. */
+  --assumption-highlight-bg:     rgba(214,158,110,0.18);
+  --assumption-highlight-border: rgba(214,158,110,0.50);
+  /* Sprint 1 — "worth confirming" line (merged Highest-Value-Unknown +
+     Decision-Sensitivity features). Blue/informational register — reuses
+     the same hue family as --graph-edge-type above for consistency ("this
+     is a neutral system observation," not a warning or a verdict). Kept at
+     meaningfully lower alpha than tension's 0.20/0.55 on purpose: this
+     should read as present but secondary, never competing with tension for
+     attention in the same card. */
+  --worth-confirming-highlight-bg:     rgba(120,175,220,0.13);
+  --worth-confirming-highlight-border: rgba(120,175,220,0.38);
   /* S3-06: BiasNoteCard pulsing dot — was hardcoded #c98a4c, didn't auto-switch with theme */
   --amber-dot:   #c98a4c;
   --text-1:      #f5f7fb;
@@ -129,8 +157,24 @@
   --verdict-bg:  rgba(192,140,24,0.16);
   --verdict-accent: var(--gold);
   --verdict-shadow: 0 0 0 1px rgba(192,140,24,0.22);
-  --tension-highlight-bg:     rgba(160,100,0,0.09);
-  --tension-highlight-border: rgba(160,100,0,0.28);
+  /* POV follow-up: same hue shift as dark theme above — reuses
+     --graph-edge-contradiction's light-theme RGB, deeper/more saturated
+     than the dark version per this file's own documented light-theme
+     principle, alpha unchanged from the old gold values. */
+  --tension-highlight-bg:     rgba(194,59,59,0.09);
+  --tension-highlight-border: rgba(194,59,59,0.28);
+  /* Sprint 2 — assumption highlight, light theme. Distinct base hue from
+     tension's now-coral-red, at higher alpha than dark theme's equivalent,
+     same reasoning as GRAPH-5 above: this composites over --bg-card #ffffff,
+     not near-black, so it needs real saturation to read at all. */
+  --assumption-highlight-bg:     rgba(168,100,40,0.11);
+  --assumption-highlight-border: rgba(168,100,40,0.34);
+  /* Sprint 1 — worth-confirming highlight, light theme. Same blue register
+     as dark theme, deepened for a light background; still meaningfully
+     lower alpha than tension's light-theme values on purpose (secondary,
+     not competing for attention). */
+  --worth-confirming-highlight-bg:     rgba(40,95,150,0.08);
+  --worth-confirming-highlight-border: rgba(40,95,150,0.26);
   /* S3-06: darker amber for visibility against cream background */
   --amber-dot:   #a86426;
   --text-1:      #060d1c;

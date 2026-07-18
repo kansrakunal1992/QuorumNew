@@ -87,6 +87,7 @@ export default function SynthesisCard({
       .replace(/<verdict>[\s\S]*/g, '')
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+      .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
       .replace(/<\/?tension>/g, '')
       .trimStart()
 
@@ -107,11 +108,29 @@ export default function SynthesisCard({
   // Sprint 1 follow-on — same delivery pattern as fetchedWeights above.
   // reasons: one short plain-English clause per persona explaining its weight
   //   (Feature #4 polish — replaces the old one-size-fits-all footer line).
-  // worthConfirming: merged Features #1 + #6 — single quiet line surfaced at
-  //   the end of the verdict box. null means nothing worth flagging; the UI
-  //   renders nothing in that case rather than manufacturing a line.
   const [fetchedReasons, setFetchedReasons] = useState<Record<string, string> | null>(null)
-  const [worthConfirming, setWorthConfirming] = useState<string | null>(null)
+
+  // worthConfirming: merged Features #1 + #6, "worth confirming" line.
+  // Two sources, in priority order:
+  //   1. keyQuestion — extracted from the synthesis's own <key_question> tag
+  //      (Paragraph 3, "the single most important thing to examine," which
+  //      the synthesis prompt already requires to be specific to THIS
+  //      decision). This is the primary source — it's written with full
+  //      knowledge of all six advisors' reasoning, not computed in isolation.
+  //   2. worthConfirmingFallback — the original rule-engine/ontology-based
+  //      X-Worth-Confirming header (lib/worth-confirming.ts), computed
+  //      BEFORE the council even runs. Kept only as a fallback for the rare
+  //      case the model omits <key_question> — its rule-template text reads
+  //      noticeably more generic than the synthesis's own paragraph, which
+  //      is exactly the "how is this helpful" gap this fallback used to be
+  //      the only source for.
+  const [keyQuestion, setKeyQuestion] = useState<string | null>(() => {
+    if (!initialContent) return null
+    const m = initialContent.match(/<key_question>([\s\S]*?)<\/key_question>/)
+    return m?.[1]?.trim() ?? null
+  })
+  const [worthConfirmingFallback, setWorthConfirmingFallback] = useState<string | null>(null)
+  const worthConfirming = keyQuestion ?? worthConfirmingFallback
 
   // S3-07: Observatory mode — opt-in focus overlay, triggered only by an explicit
   // "Focus mode" button (never automatic on TTS start). Dims everything but the
@@ -176,6 +195,7 @@ export default function SynthesisCard({
       .replace(/<verdict>[\s\S]*/g, '')
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+      .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
     const tStart = rawNoVerdict.indexOf('<tension>')
     const tEnd   = rawNoVerdict.indexOf('</tension>')
     if (tStart === -1 || tEnd === -1 || tEnd <= tStart) return <>{prose}</>
@@ -383,7 +403,7 @@ export default function SynthesisCard({
         }
         const worthConfirmingHeader = res.headers.get('X-Worth-Confirming')
         if (worthConfirmingHeader) {
-          try { setWorthConfirming(decodeURIComponent(worthConfirmingHeader)) } catch { /* non-blocking */ }
+          try { setWorthConfirmingFallback(decodeURIComponent(worthConfirmingHeader)) } catch { /* non-blocking */ }
         }
         const reader = res.body.getReader()
         const dec    = new TextDecoder()
@@ -456,6 +476,7 @@ export default function SynthesisCard({
               .replace(/<verdict>[\s\S]*/g, '')
               .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
               .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+              .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
               .replace(/<\/?tension>/g, '')
           )
         }
@@ -468,12 +489,16 @@ export default function SynthesisCard({
         // P2: same "final extraction pass" guarantee for the two new tags.
         const fvl = finalAcc.match(/<verdict_lean>([\s\S]*?)<\/verdict(?:_lean)?>/)
         const fc  = finalAcc.match(/<conditions>([\s\S]*?)<\/conditions>/)
+        // Sprint 1 follow-on: same guarantee for key_question — the primary
+        // source for the worth-confirming line (see state declaration above).
+        const fkq = finalAcc.match(/<key_question>([\s\S]*?)<\/key_question>/)
         if (fv?.[1]?.trim()) setVerdictText(fv[1].trim())
         if (ft?.[1]?.trim()) setTensionText(ft[1].trim())
         const finalVerdictLean = fvl?.[1]?.trim().toLowerCase() ?? ''
         const finalConditions  = fc?.[1] ? fc[1].split('|').map(s => s.trim()).filter(Boolean) : []
         if (finalVerdictLean) setVerdictLean(finalVerdictLean)
         setConditions(finalConditions)
+        if (fkq?.[1]?.trim()) setKeyQuestion(fkq[1].trim())
         // One final setSynthesis so the prose is fully clean regardless of
         // whether the last setSynthesis inside the loop was on a partial chunk.
         setSynthesis(
@@ -482,6 +507,7 @@ export default function SynthesisCard({
             .replace(/<verdict>[\s\S]*/g, '')
             .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
             .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+            .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
             .replace(/<\/?tension>/g, '')
             .trimStart()
         )
@@ -1028,23 +1054,35 @@ export default function SynthesisCard({
                   </>
                 )}
                 {/* Sprint 1 follow-on — merged Features #1 (Highest-Value Unknown)
-                    + #6 (Decision Sensitivity Analysis, cheap proxy). One quiet
-                    line, no header, no icon — reads as a continuation of the
-                    verdict rather than a separate panel. Renders only once
-                    synthesis has finished streaming, and only when the
-                    server found something specific to flag (null → nothing
-                    renders, by design — see lib/worth-confirming.ts). */}
+                    + #6 (Decision Sensitivity Analysis, cheap proxy). Reads as a
+                    continuation of the verdict rather than a separate panel — but
+                    now genuinely highlighted (was plain muted text before, which
+                    read as an afterthought rather than something worth acting on).
+                    Blue/informational register, distinct from tension's gold and
+                    deliberately lower-intensity (see --worth-confirming-highlight-*
+                    in globals.css) so it never competes with tension for attention
+                    in the same card. Renders only once synthesis has finished
+                    streaming, and only when there's something specific to flag —
+                    see keyQuestion/worthConfirmingFallback declaration above for
+                    why this is now almost always the synthesis's own "single most
+                    important thing to examine" rather than a generic rule template. */}
                 {state === 'done' && worthConfirming && (
-                  <p style={{
-                    fontSize:      11.5,
-                    color:         'var(--text-3)',
-                    lineHeight:    1.55,
+                  <div style={{
+                    background:    'var(--worth-confirming-highlight-bg)',
+                    borderLeft:    '2px solid var(--worth-confirming-highlight-border)',
+                    borderRadius:  4,
+                    padding:       '9px 11px',
                     margin:        '10px 0 0',
-                    paddingTop:    10,
-                    borderTop:     '1px solid var(--border-dim)',
                   }}>
-                    Worth confirming — {worthConfirming}
-                  </p>
+                    <p style={{
+                      fontSize:   11.5,
+                      color:      'var(--text-2)',
+                      lineHeight: 1.55,
+                      margin:     0,
+                    }}>
+                      <strong style={{ color: 'var(--text-1)' }}>Worth confirming</strong> — {worthConfirming}
+                    </p>
+                  </div>
                 )}
               </div>
             )}

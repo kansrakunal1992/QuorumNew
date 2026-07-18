@@ -82,8 +82,9 @@ function cleanPushbackText(raw: string): string {
     .trim()
 }
 
-// Strip <lens>, <position>, <realcost>, <lean>, <verdict>, <verdict_lean>,
-// <conditions>, <tension> tags from advisor text
+// Strip <lens>, <position>, <realcost>, <lean>, <structural>, <verdict>,
+// <verdict_lean>, <conditions>, <key_question>, <tension>, <assumption>
+// tags from advisor/synthesis text before it goes into the PDF
 function stripAdvisorTags(raw: string): string {
   return raw
     .replace(/<lens>[\s\S]*?<\/lens>/gi, '')
@@ -93,15 +94,26 @@ function stripAdvisorTags(raw: string): string {
     // this tag (base persona prompt), so it could leak into the PDF's advisor
     // sections. Same bug class as verdict_lean/conditions below, just pre-existing.
     .replace(/<lean>[\s\S]*?<\/lean>/gi, '')
+    // Bug fix: <structural> was never stripped here either — every persona
+    // response with a structural-echo citation (R6) leaked the raw tag
+    // straight into the generated PDF.
+    .replace(/<structural>[\s\S]*?<\/structural>/gi, '')
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/gi, '')
     .replace(/<verdict>[\s\S]*/gi, '')           // guard: open tag without close
     // P2 fix: this file has its own independent tag-stripping copy — it never
     // learned about the two tags added for forced-verdict-with-conditions.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/gi, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/gi, '')
-    .replace(/<(?:lens|position|realcost|lean|verdict_lean|conditions)>[\s\S]*$/i, '') // guard: open tag without close
+    // Sprint 1 follow-on: PDF has no separate callout mechanism, so this is
+    // content-preserving (keeps the sentence as its own paragraph, which is
+    // how the model already writes it) rather than dropping it entirely.
+    .replace(/<\/?key_question>/gi, '')
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions)>[\s\S]*$/i, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')      // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     .replace(/<\/?tension>/gi, '')
+    // Sprint 2 follow-on: content-preserving, same reasoning as PersonaPanel's
+    // stripHeaderTags — this wraps substantive prose, not a machine value.
+    .replace(/<\/?assumption>/gi, '')
     .replace(/^\s+/, '')
 }
 

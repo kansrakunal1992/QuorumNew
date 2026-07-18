@@ -224,6 +224,14 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/<structural>[\s\S]*?<\/structural>/g, '')
       .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
+      // Sprint 2 follow-on: <assumption> is content-preserving here, unlike the
+      // tags above — it wraps substantive prose (the actual "hidden assumption"
+      // sentences), not a machine-only value or a citation meant to live
+      // elsewhere. Pushback exchanges aren't covered by renderAssumption's
+      // highlight (deliberately scoped to the first response only), so this
+      // just strips the tag markers and keeps the sentences in place, same as
+      // stray-tag guards elsewhere in this file.
+      .replace(/<\/?assumption>/g, '')
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       .replace(/^\s+/, '')
   }, [])
@@ -263,8 +271,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       <>
         {before}
         <span style={{
-          background:    'var(--assumption-highlight-bg, rgba(168, 106, 32, 0.08))',
-          borderBottom:  '1px solid var(--assumption-highlight-border, rgba(168, 106, 32, 0.35))',
+          background:    'var(--assumption-highlight-bg)',
+          borderBottom:  '1px solid var(--assumption-highlight-border)',
           paddingBottom: 1,
           borderRadius:  2,
         }}>{content}</span>

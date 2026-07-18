@@ -28,8 +28,17 @@ function stripHeaderTags(raw: string): string {
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-    .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+    // Bug fix: <structural> was never stripped here at all — every persona
+    // response that includes a structural-echo citation (R6) was leaking
+    // the raw <structural>...</structural> tag straight onto this page.
+    .replace(/<structural>[\s\S]*?<\/structural>/g, '')
+    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
+    // Sprint 2 follow-on: <assumption> is content-preserving, unlike the
+    // tags above — it wraps substantive prose (Contrarian/Risk Architect's
+    // "hidden assumption" sentences), not a machine value or a citation
+    // meant to live elsewhere. Strip only the tag markers, keep the text.
+    .replace(/<\/?assumption>/g, '')
     // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close
@@ -39,6 +48,9 @@ function stripHeaderTags(raw: string): string {
     // leaking through raw as visible text on this page.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Sprint 1 follow-on: same leak risk as verdict_lean/conditions above —
+    // this file never learned about key_question either.
+    .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
     // Strip tension wrapper tags but keep the sentence text inline
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
@@ -57,11 +69,15 @@ function firstSentence(text: string): string {
 // renderSynthesisProse can locate and highlight the tension sentence inline —
 // mirrors SynthesisCard.tsx exactly, so the static record page matches what
 // was shown live on the session page.
-function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; rest: string } {
+function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; keyQuestion: string | null; rest: string } {
   const vMatch  = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
   const verdict = vMatch?.[1]?.trim() ? firstSentence(vMatch[1].trim()) : null
   const cMatch  = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
   const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
+  // Sprint 1 follow-on: same primary source as the live session page
+  // (components/SynthesisCard.tsx) — see that file for the full rationale.
+  const kqMatch    = raw.match(/<key_question>([\s\S]*?)<\/key_question>/)
+  const keyQuestion = kqMatch?.[1]?.trim() ?? null
   const rest = raw
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')   // guard: open tag without close
@@ -69,14 +85,24 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     // raw-tag leak the user saw, since "rest" is what gets rendered as body prose.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Sprint 1 follow-on: extracted above into its own callout, same as
+    // verdict/conditions — must not also remain in the flowing prose.
+    .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-    .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+    // Bug fix: <structural> and <assumption> were never stripped in this
+    // synthesis-specific path either — same leak, different function.
+    // <structural> is a citation meant to live elsewhere (full removal,
+    // matching lens/position/realcost above); <assumption> wraps
+    // substantive prose, so only the tag markers are removed, not the text.
+    .replace(/<structural>[\s\S]*?<\/structural>/g, '')
+    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
+    .replace(/<\/?assumption>/g, '')
     .trimStart()
-  return { verdict, conditions, rest }
+  return { verdict, conditions, keyQuestion, rest }
 }
 
 // Renders synthesis prose with the <tension> sentence highlighted inline —
@@ -108,7 +134,7 @@ function renderSynthesisProse(rest: string): React.ReactNode {
 // with the tension sentence highlighted inline. Used for both the initial
 // synthesis message and any reanalysis/pushback synthesis responses.
 function renderSynthesisMessage(raw: string): React.ReactNode {
-  const { verdict, conditions, rest } = parseVerdictTension(raw)
+  const { verdict, conditions, keyQuestion, rest } = parseVerdictTension(raw)
   return (
     <>
       {verdict && (
@@ -172,6 +198,24 @@ function renderSynthesisMessage(raw: string): React.ReactNode {
                 ))}
               </ul>
             </>
+          )}
+          {/* Sprint 1 follow-on parity fix: same Worth Confirming treatment
+              as the live session view — this file's own header comment says
+              it should match what was shown live, and dropping this content
+              silently on the permanent record would be a real loss, not
+              just a cosmetic gap. */}
+          {keyQuestion && (
+            <div style={{
+              background:   'var(--worth-confirming-highlight-bg)',
+              borderLeft:   '2px solid var(--worth-confirming-highlight-border)',
+              borderRadius: 4,
+              padding:      '9px 11px',
+              margin:       '12px 0 0',
+            }}>
+              <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55, margin: 0 }}>
+                <strong style={{ color: 'var(--text-1)' }}>Worth confirming</strong> — {keyQuestion}
+              </p>
+            </div>
           )}
         </div>
       )}

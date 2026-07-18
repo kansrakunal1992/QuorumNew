@@ -28,8 +28,15 @@ function stripHeaderTags(raw: string): string {
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
     .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-    .replace(/<(?:lens|position|realcost|lean)>[\s\S]*$/, '') // guard: open tag without close
+    // Bug fix: <structural> was never stripped here — this feeds into an LLM
+    // prompt (not direct display), but a raw citation tag in the input is
+    // still noise the observation model has to parse around for no reason.
+    .replace(/<structural>[\s\S]*?<\/structural>/g, '')
+    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
+    // Sprint 2 follow-on: content-preserving — this wraps substantive prose
+    // the observation model should actually read, not a machine value.
+    .replace(/<\/?assumption>/g, '')
     .replace(/^\s+/, '')
     .trim()
 }
@@ -45,6 +52,8 @@ function stripSynthesisTags(raw: string): string {
     // shown to Mirror subscribers.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Sprint 1 follow-on: same reasoning as verdict_lean/conditions above.
+    .replace(/<\/?key_question>/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
     .trim()

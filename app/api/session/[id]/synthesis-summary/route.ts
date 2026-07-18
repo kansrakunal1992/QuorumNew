@@ -22,6 +22,10 @@ function stripTags(raw: string): string {
     // were leaking through raw into "What the Council concluded last time".
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Sprint 1 follow-on: same leak risk as verdict_lean/conditions above —
+    // plain-text preview here, content-preserving strip keeps the sentence
+    // in place as its own paragraph rather than dropping it.
+    .replace(/<\/?key_question>/g, '')
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
     .trim()
