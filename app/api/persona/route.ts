@@ -663,6 +663,81 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
       basePrompt = `${basePrompt}${relevanceBlock}`
       console.log(`[Persona] Council weighting directive injected for synthesis | session ${sessionId}`)
 
+      // ── Change 1 (narrow scope, signed off): "why did the verdict hold" ────
+      // Feeds the new VERDICT STABILITY instruction in lib/personas.ts.
+      // Deliberately reuses existing data rather than computing anything new
+      // twice: relevanceMap above is this call's CURRENT weights; typedLeanShifts
+      // (already destructured from the request, already used by
+      // explainPersonaWeights above) is already exactly "which advisors' leans
+      // changed since the last synthesis version" — computed once, client-side,
+      // for a different purpose, but precisely the data this needs too. The
+      // only genuinely new work here is fetching the PRIOR version's weights
+      // and verdict_lean to diff relevanceMap against.
+      // Non-fatal by design, matching every other optional context block in
+      // this function: a failure here should degrade to "no stability context
+      // injected" (the new prompt instruction simply doesn't fire), never
+      // break synthesis itself.
+      if (sessionId) {
+        try {
+          const supabaseVS = createServiceClient()
+          const { data: priorVersionRow } = await supabaseVS
+            .from('synthesis_versions')
+            .select('verdict_lean, weights')
+            .eq('session_id', sessionId)
+            .order('version', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (priorVersionRow?.weights) {
+            const priorWeights = (priorVersionRow as any).weights as Record<string, number>
+            const priorVerdictLean = (priorVersionRow as any).verdict_lean as string | null
+
+            // Same 8-point bar CouncilWeightingStrip.tsx already uses to decide
+            // whether a weight change counts as a real "mover" — kept identical
+            // so "meaningful shift" means the same thing everywhere in the app.
+            const WEIGHT_MOVER_THRESHOLD = 8
+            const weightMovers = (Object.entries(relevanceMap) as [string, number][])
+              .map(([key, score]) => {
+                const priorPct   = Math.round((priorWeights[key] ?? score) * 100)
+                const currentPct = Math.round(score * 100)
+                return { key, priorPct, currentPct, delta: currentPct - priorPct }
+              })
+              .filter(m => Math.abs(m.delta) >= WEIGHT_MOVER_THRESHOLD)
+
+            const leanFlips = Object.entries(typedLeanShifts ?? {})
+
+            // Gate: only inject when something real shifted — an empty or
+            // near-identical diff means the model has nothing to react to,
+            // and the new prompt instruction is explicit that no context
+            // block present means write nothing. This is what prevents the
+            // model from manufacturing a stability explanation when nothing
+            // actually moved.
+            if (weightMovers.length > 0 || leanFlips.length > 0) {
+              const leanLines = leanFlips
+                .map(([key, shift]) => `- ${key}: ${shift?.from} → ${shift?.to}`)
+                .join('\n')
+              const weightLines = weightMovers
+                .map(m => `- ${m.key}: ${m.priorPct} → ${m.currentPct} (${m.delta > 0 ? '+' : ''}${m.delta})`)
+                .join('\n')
+
+              const sinceLastVersionBlock = `
+
+SINCE LAST VERSION — read this before writing Paragraph 1:
+The previous synthesis for this session leaned "${priorVerdictLean ?? 'unknown'}". Since then:
+${leanFlips.length > 0 ? `Advisor leans that changed:\n${leanLines}` : ''}${leanFlips.length > 0 && weightMovers.length > 0 ? '\n' : ''}${weightMovers.length > 0 ? `Advisor weights that moved meaningfully:\n${weightLines}` : ''}
+Apply the VERDICT STABILITY instruction above using this data.`
+
+              basePrompt = `${basePrompt}${sinceLastVersionBlock}`
+              console.log(`[Persona] Since-last-version context injected for synthesis | ${leanFlips.length} lean flip(s), ${weightMovers.length} weight mover(s) | session ${sessionId}`)
+            }
+          }
+        } catch (err) {
+          // Non-fatal — synthesis proceeds without stability context, same
+          // as the institutional block above.
+          console.error('[Persona] Since-last-version context fetch failed (non-fatal):', err)
+        }
+      }
+
       // ── Institutional Sprint 5 (task 6) — additive, optional context block ──
       // Deliberately separate from relevanceBlock above (which stays exactly
       // as it was): this can only ever ADD text, never change what the
