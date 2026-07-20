@@ -66,10 +66,10 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
   },
   {
     id:             'council-personas',
-    targetSelector: '[data-tour-id="council-personas"]',
+    targetSelector: '[data-tour-id="council-challenge"]',
     heading:        'Six advisors, six different lenses',
-    body:           'Tap any card to read the full analysis. You can challenge an advisor with a follow-up — and once you\'ve exchanged, a "Share this context with all advisors" button appears. Tap it and every advisor re-analyses with your new context. This is the most powerful feature on this page.',
-    preferredSide:  'bottom',
+    body:           'Tap any card to read the full analysis. At the bottom of a finished card you\'ll find "Disagree or ask a follow-up" — use it to push back, and that advisor responds directly. Challenge one, and the same option appears highlighted on the others. Once you have, the verdict below updates to reflect it.',
+    preferredSide:  'top',
   },
   {
     id:             'council-capture',
@@ -820,6 +820,15 @@ export default function SessionView({ session: initialSession, initialMessages =
       }
       return next
     })
+  }, [])
+
+  // Challenge discoverability pass (Phase 3): once ANY card's pushback
+  // completes, every other still-unchallenged card shows a quiet ambient
+  // hint ("You can challenge this one too."). One-way flip for the session —
+  // there's no scenario where it should go back to false mid-session.
+  const [anyCardChallenged, setAnyCardChallenged] = useState(false)
+  const handleFirstChallengeUsed = useCallback(() => {
+    setAnyCardChallenged(true)
   }, [])
 
   const handleOverrideRedirect = useCallback(async () => {
@@ -1705,6 +1714,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                       examinerContext={examinerContextByPersona[key]}
                       structuralContext={structuralContext ?? undefined}
                       onShareContext={(text) => handleShareContext(key, text)}
+                      anyCardChallenged={anyCardChallenged}
+                      onFirstChallengeUsed={handleFirstChallengeUsed}
                       onExaminerUpdateComplete={handleExaminerUpdateComplete}
                       initialContent={sessionKey === 0 ? initialMessages[key] : undefined}
                       // S1-02: Sequential streaming — each persona unlocks only after

@@ -88,11 +88,18 @@ interface Props {
    *  (see Gap #3 — advisor position evolution) without touching the original
    *  lens/position/realcost header, which still intentionally stays frozen. */
   onLeanUpdate?: (personaKey: string, lean: 'proceed' | 'wait' | 'mixed') => void
+  /** Challenge-discoverability pass: true once ANY card in this session has had
+   *  a completed pushback exchange — drives the ambient "You can challenge this
+   *  one too." hint on cards that haven't been challenged yet. */
+  anyCardChallenged?: boolean
+  /** Fires the first time THIS card's pushback completes — SessionView uses this
+   *  to flip anyCardChallenged to true for the rest of the session. */
+  onFirstChallengeUsed?: () => void
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, anyCardChallenged, onFirstChallengeUsed }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -451,6 +458,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     setPushback('')
     setShowPushback(false)
     setIsPushingBack(true)
+    onFirstChallengeUsed?.()
     await streamResponse(updated, false)
   }
 
@@ -585,34 +593,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && !showPushback && (
-            <button
-              title="Disagree with this analysis, add new information, or ask a follow-up"
-              onClick={() => setShowPushback(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                background: 'rgba(201,168,76,0.12)', border: '1px solid var(--gold-dim)',
-                borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
-                color: 'var(--gold)', cursor: 'pointer', transition: 'all 0.2s',
-                fontFamily: 'inherit', letterSpacing: '0.02em', whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.22)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
-                ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 8px rgba(201,168,76,0.35)'
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.12)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
-                ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
-              }}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
-              </svg>
-              Challenge · add context
-            </button>
-          )}
           <StatusBadge />
           {/* Item #9 (revised) — mobile-only card collapse toggle; hidden
               entirely on desktop, and only shown once the response is done */}
@@ -803,7 +783,9 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
         {/* P0 fix: shown after any pushback exchange that hasn't been shared yet —
             reappears on every new challenge round instead of disappearing for good
-            after the first click. */}
+            after the first click. Restyled to the gold/checkmark family (was blue/
+            info) so this reads as the natural next step of Challenge, not a
+            separate, unrelated capability. */}
         {panelState === 'done' && !isPushingBack && exchanges.length > 0
           && lastSharedExchangeIndex < exchanges.length - 1 && onShareContext && (
           <div style={{ marginTop: 16 }}>
@@ -817,21 +799,19 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '7px 14px', borderRadius: 8,
-                border: '1px solid var(--info-border)',
-                background: 'var(--info-bg)',
-                color: 'var(--info-text)', fontSize: 11.5, fontWeight: 600,
+                border: '1px solid var(--gold-dim)',
+                background: 'rgba(201,168,76,0.10)',
+                color: 'var(--gold)', fontSize: 11.5, fontWeight: 600,
                 cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.02em',
                 transition: 'all 0.15s',
               }}
               onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'var(--info-bg)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--info-border)'
-                ;(e.currentTarget as HTMLButtonElement).style.opacity = '0.8'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.20)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
               }}
               onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'var(--info-bg)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--info-border)'
-                ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.10)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
               }}
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -858,6 +838,52 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </div>
         )}
 
+        {/* Challenge discoverability pass: the disagree control now lives at the
+            end of the card's content — where a disagreement actually forms —
+            instead of a small pill in the header before the analysis is even
+            read. Full-width, primary visual weight, impossible to miss on a
+            finished card. Same showPushback/handlePushback state as before,
+            just relocated + relabeled + restyled. */}
+        {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && !showPushback && (
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border-dim)' }}>
+            {/* Ambient hint — only on cards that haven't themselves been
+                challenged yet, once at least one other card has been. */}
+            {anyCardChallenged && exchanges.length === 0 && (
+              <p style={{ fontSize: 11, color: 'var(--gold)', opacity: 0.85, margin: '0 0 8px', fontStyle: 'italic' }}>
+                You can challenge this one too.
+              </p>
+            )}
+            <button
+              data-tour-id="council-challenge"
+              title="Disagree with this analysis, add new information, or ask a follow-up"
+              onClick={() => setShowPushback(true)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                width: '100%',
+                background: 'rgba(201,168,76,0.12)', border: '1px solid var(--gold-dim)',
+                borderRadius: 8, padding: '11px 14px', fontSize: 13, fontWeight: 600,
+                color: 'var(--gold)', cursor: 'pointer', transition: 'all 0.2s',
+                fontFamily: 'inherit', letterSpacing: '0.02em',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.22)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
+                ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 8px rgba(201,168,76,0.35)'
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.12)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
+                ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+              </svg>
+              Disagree or ask a follow-up
+            </button>
+          </div>
+        )}
+
         {panelState === 'idle' && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 50 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--border-mid)', animation: 'blink 1.2s ease-in-out infinite' }} />
@@ -865,7 +891,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
       </div>
 
-      {/* Pushback input — shown below content when triggered from header button */}
+      {/* Pushback input — shown below content when triggered from the
+          bottom-of-card "Disagree or ask a follow-up" control */}
       {panelState === 'done' && !isPushingBack && examinerUpdateState !== 'streaming' && showPushback && (
         <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border-dim)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

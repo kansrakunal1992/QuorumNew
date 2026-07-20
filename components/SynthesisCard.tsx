@@ -1100,6 +1100,23 @@ export default function SynthesisCard({
                 {renderProse(synthesis, state === 'done')}
               </p>
             )}
+
+            {/* Phase 3: permanent, always-on-screen nudge — replaces the old
+                one-shot onboarding tooltip that said the same thing. Signals
+                the verdict is provisional and names the exact next action,
+                without requiring the user to have seen (or remembered) a
+                tour step. */}
+            {state === 'done' && synthesis && (
+              <p style={{
+                fontSize:   11.5,
+                color:      'var(--text-4)',
+                lineHeight: 1.6,
+                fontStyle:  'italic',
+                margin:     '14px 0 0',
+              }}>
+                Disagree with something? Challenge any advisor above and the verdict updates.
+              </p>
+            )}
           </>
         )}
 

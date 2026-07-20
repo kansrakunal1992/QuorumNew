@@ -43,28 +43,39 @@ export default function WhatChangedDrawer({ versions }: Props) {
 
   const chipVerdict = selectedChip !== null ? versions[selectedChip] : null
 
+  // Phase 1: name the actual outcome instead of a generic version bump, when
+  // there's something to name. diff.leanMoves is already computed above (used
+  // by the "Advisor moves" section) — reused here, not recomputed.
+  const movedCount = diff.leanMoves.length
+  const pillLabel = movedCount > 0
+    ? `Verdict updated · ${movedCount} advisor${movedCount !== 1 ? 's' : ''} shifted`
+    : `Updated · v${displayVersion}`
+
   return (
     <div style={{ marginTop: 14 }}>
-      {/* Collapsed pill */}
+      {/* Collapsed pill — restyled to the gold accent family used by the
+          Challenge / Share-to-all-advisors controls, so this reads as the
+          visible payoff of that same action rather than a separate, generic
+          "something changed" indicator. */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
           display:       'flex',
           alignItems:    'center',
           gap:           6,
-          background:    'var(--surface-2, transparent)',
-          border:        '1px solid var(--border-dim)',
+          background:    'rgba(201,168,76,0.10)',
+          border:        '1px solid var(--gold-dim)',
           borderRadius:  20,
           padding:       '6px 12px',
           fontSize:      11,
           fontFamily:    'var(--font-mono)',
           fontWeight:    700,
           letterSpacing: '0.04em',
-          color:         'var(--text-3)',
+          color:         'var(--gold)',
           cursor:        'pointer',
         }}
       >
-        Updated · v{displayVersion}
+        {pillLabel}
         <span style={{ fontSize: 9, opacity: 0.7, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▾</span>
       </button>
 
