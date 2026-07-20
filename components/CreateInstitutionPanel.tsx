@@ -22,6 +22,12 @@ interface Institution {
   k_floor_override: number | null
   deactivated_at: string | null
   created_at: string
+  // Tech-debt-fix addition: an institution admin can request deactivation
+  // (POST .../admin/request-deactivation) — the actual gate stays here,
+  // platform-admin-only, per KDD. This just surfaces the ask.
+  deactivation_requested_at: string | null
+  deactivation_requested_by: string | null
+  deactivation_requested_by_email: string | null
 }
 
 export default function CreateInstitutionPanel({ adminCode }: { adminCode: string }) {
@@ -104,6 +110,25 @@ export default function CreateInstitutionPanel({ adminCode }: { adminCode: strin
       await load()
     } catch {
       setError('Network error updating institution')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const dismissRequest = async (institution: Institution) => {
+    setBusy(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/create-institution', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${adminCode}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ institutionId: institution.id, dismissDeactivationRequest: true }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error ?? 'Dismiss failed'); return }
+      await load()
+    } catch {
+      setError('Network error dismissing request')
     } finally {
       setBusy(false)
     }
@@ -201,30 +226,57 @@ export default function CreateInstitutionPanel({ adminCode }: { adminCode: strin
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {institutions.map(i => (
               <div key={i.id} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '8px 0', borderTop: '1px solid var(--border-dim)',
+                borderTop: '1px solid var(--border-dim)',
+                padding: '8px 0',
               }}>
-                <span style={{ fontSize: 12.5, color: i.deactivated_at ? 'var(--text-4)' : 'var(--text-2)' }}>
-                  {i.parent_institution_id && '↳ '}{i.name}
-                  {i.deactivated_at && <span style={{ marginLeft: 6, fontSize: 10, color: '#f87171' }}>deactivated</span>}
-                </span>
-                <span style={{ fontSize: 10.5, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
-                  {i.admin_seat_claimed ? 'admin claimed' : 'awaiting first redemption'}
-                  {i.k_floor_override ? `  ·  K_FLOOR=${i.k_floor_override}` : ''}
-                </span>
-                <button
-                  onClick={() => void toggleDeactivate(i)}
-                  disabled={busy}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8 }}
-                >
-                  {i.deactivated_at ? 'Reactivate' : 'Deactivate'}
-                </button>
-                <button
-                  onClick={() => setEditingId(editingId === i.id ? null : i.id)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8 }}
-                >
-                  {editingId === i.id ? 'Close' : 'Edit'}
-                </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12.5, color: i.deactivated_at ? 'var(--text-4)' : 'var(--text-2)' }}>
+                    {i.parent_institution_id && '↳ '}{i.name}
+                    {i.deactivated_at && <span style={{ marginLeft: 6, fontSize: 10, color: '#f87171' }}>deactivated</span>}
+                  </span>
+                  <span style={{ fontSize: 10.5, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+                    {i.admin_seat_claimed ? 'admin claimed' : 'awaiting first redemption'}
+                    {i.k_floor_override ? `  ·  K_FLOOR=${i.k_floor_override}` : ''}
+                  </span>
+                  <button
+                    onClick={() => void toggleDeactivate(i)}
+                    disabled={busy}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8 }}
+                  >
+                    {i.deactivated_at ? 'Reactivate' : 'Deactivate'}
+                  </button>
+                  <button
+                    onClick={() => setEditingId(editingId === i.id ? null : i.id)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8 }}
+                  >
+                    {editingId === i.id ? 'Close' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Tech-debt-fix addition: flag, don't auto-act on, an
+                    institution admin's deactivation request. Only shown
+                    while deactivation_requested_at is set — cleared the
+                    moment either "Deactivate" above or "Dismiss" below is
+                    used, so this never lingers once reviewed. */}
+                {i.deactivation_requested_at && !i.deactivated_at && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    marginTop: 6, padding: '6px 10px', borderRadius: 8,
+                    background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.28)',
+                  }}>
+                    <span style={{ fontSize: 11, color: '#f87171' }}>
+                      ⚑ Deactivation requested {new Date(i.deactivation_requested_at).toLocaleDateString()}
+                      {i.deactivation_requested_by_email ? ` by ${i.deactivation_requested_by_email}` : ''}
+                    </span>
+                    <button
+                      onClick={() => void dismissRequest(i)}
+                      disabled={busy}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8, textDecoration: 'underline' }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

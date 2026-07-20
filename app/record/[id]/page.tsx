@@ -256,6 +256,52 @@ function decryptText(value: string | null | undefined): string {
   return decrypt(value) ?? ''
 }
 
+// TSD §2.7.3 / handover PENDING fix: the Decision Arc timeline used to be
+// built from `childSessions` alone — direct children of the root only
+// (single hop). Correct for a decision reanalyzed once (root ← revisit),
+// but a decision reanalyzed twice or more (root ← B ← C) has a grandchild
+// (C) that never satisfies `parent_session_id = root.id`, so it silently
+// never appeared in the timeline when viewed from the root — even though
+// each individual link (root←B, B←C) was itself perfectly correct.
+//
+// Walks the chain outward one level at a time, breadth-first, starting
+// from the root's already-fetched direct children, until a level returns
+// nothing new. An application-level loop rather than a recursive SQL CTE
+// on purpose: reanalyze chains are expected to stay short in practice (a
+// handful of revisits at most), so a few extra sequential round trips for
+// the rare long chain is simpler to reason about, debug, and test than a
+// WITH RECURSIVE query for a case this uncommon.
+async function walkDescendantChain(
+  rootId: string,
+  directChildren: { id: string; created_at: string }[],
+  supabase: ReturnType<typeof createServiceClient>,
+): Promise<{ id: string; created_at: string }[]> {
+  const all: { id: string; created_at: string }[] = [...directChildren]
+  let frontier = directChildren.map(c => c.id)
+  const seen = new Set<string>([rootId, ...frontier])
+
+  // Hard cap, not just a loop-terminator: bounds the worst case if a data
+  // integrity bug ever produced a cycle, so one page load can't turn into
+  // an unbounded number of queries. 25 hops is far beyond any realistic
+  // reanalyze chain — this is a safety rail, not an expected depth.
+  const MAX_HOPS = 25
+  for (let hop = 0; hop < MAX_HOPS && frontier.length > 0; hop++) {
+    const { data: nextLevel } = await supabase
+      .from('sessions')
+      .select('id, created_at')
+      .in('parent_session_id', frontier)
+
+    const fresh = (nextLevel ?? []).filter(c => !seen.has(c.id))
+    if (fresh.length === 0) break
+
+    for (const c of fresh) seen.add(c.id)
+    all.push(...fresh)
+    frontier = fresh.map(c => c.id)
+  }
+
+  return all
+}
+
 export default async function RecordPage({ params }: Props) {
   const { id } = await params
   const supabase = createServiceClient()
@@ -336,8 +382,21 @@ export default async function RecordPage({ params }: Props) {
   }
 
   const childSessions = childSessionsResult.data ?? []
+
+  // Same underlying gap as the root timeline below, fixed the same way:
+  // childLink's count used to be childSessions.length (direct children of
+  // THIS session only) — correct for one revisit, wrong for a chain that
+  // continues past this session's own immediate child (e.g. viewing B in
+  // A ← B ← C ← D would only ever count C, never D). Walk once here,
+  // unconditionally (not just when this session is a chain root), so both
+  // the breadcrumb and the root timeline below draw from the same correct
+  // full-chain data.
+  const fullDescendants = childSessions.length > 0
+    ? await walkDescendantChain(session.id, childSessions, supabase)
+    : []
+
   const childLink = childSessions[0]
-    ? { id: childSessions[0].id, createdAt: childSessions[0].created_at, count: childSessions.length }
+    ? { id: childSessions[0].id, createdAt: childSessions[0].created_at, count: fullDescendants.length }
     : null
 
   // ── RET-5 Sprint 3: Decision Arc timeline — only on root sessions with ≥1 revisit ──
@@ -350,7 +409,13 @@ export default async function RecordPage({ params }: Props) {
   const isChainRoot = !session.parent_session_id && childSessions.length > 0
 
   if (isChainRoot) {
-    const childIds = childSessions.map((c: { id: string }) => c.id)
+    // Reuses fullDescendants computed above (for the breadcrumb) — a root
+    // session's full descendant chain is exactly what the timeline needs
+    // too, no reason to walk it twice. Was `childSessions.map(...)`
+    // (direct children only) before this fix; see walkDescendantChain's
+    // own comment for why that silently dropped anything past the first
+    // revisit.
+    const childIds = fullDescendants.map((c: { id: string }) => c.id)
     const allIds   = [session.id, ...childIds]
 
     const [childDetailsResult, allOutcomesResult] = await Promise.all([

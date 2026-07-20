@@ -31,11 +31,10 @@ export async function GET(
 
   const supabase = createServiceClient()
 
+  // Tech debt fix (aggregate_reader wiring) — see the aggregate-dashboard
+  // route's equivalent comment for the full rationale.
   const { data: rows, error } = await supabase
-    .from('institutional_rollup_benchmark_segments')
-    .select('*')
-    .eq('parent_institution_id', institutionId)
-    .order('dim', { ascending: true })
+    .rpc('aggregate_read_rollup_benchmark', { p_parent_institution_id: institutionId, p_dim: null })
 
   if (error) {
     console.error('[admin/rollup-dashboard] query failed:', error.message)

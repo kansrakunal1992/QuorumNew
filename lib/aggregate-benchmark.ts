@@ -96,17 +96,19 @@ export async function getBenchmarkForDimension(
 async function queryInstitutionView(
   supabase: ServiceClient, institutionId: string, dim: string,
 ): Promise<DimensionBenchmark | null> {
-  const { data, error } = await supabase
-    .from('institutional_benchmark_segments')
-    .select('*')
-    .eq('institution_id', institutionId)
-    .eq('dim', dim)
-    .maybeSingle()
+  // Tech debt fix (aggregate_reader wiring — see supabase/institutional_
+  // tech_debt_fixes.sql Part 6): routed through a SECURITY DEFINER function
+  // owned by the restricted aggregate_reader role instead of reading
+  // institutional_benchmark_segments directly off the full-access
+  // service-role client. Same effective query, narrower blast radius.
+  const { data: rows, error } = await supabase
+    .rpc('aggregate_read_institution_benchmark', { p_institution_id: institutionId, p_dim: dim })
 
   if (error) {
     console.error('[aggregate-benchmark] institution view query failed:', error.message)
     return null
   }
+  const data = rows?.[0]
   if (!data) return null
 
   const { data: institution } = await supabase
@@ -120,16 +122,15 @@ async function queryInstitutionView(
 }
 
 async function queryPlatformView(supabase: ServiceClient, dim: string): Promise<DimensionBenchmark | null> {
-  const { data, error } = await supabase
-    .from('institutional_platform_benchmark_segments')
-    .select('*')
-    .eq('dim', dim)
-    .maybeSingle()
+  // Tech debt fix — see queryInstitutionView above for the full rationale.
+  const { data: rows, error } = await supabase
+    .rpc('aggregate_read_platform_benchmark', { p_dim: dim })
 
   if (error) {
     console.error('[aggregate-benchmark] platform view query failed:', error.message)
     return null
   }
+  const data = rows?.[0]
   if (!data) return null
 
   const n = (data.high_n ?? 0) + (data.low_n ?? 0)
@@ -147,16 +148,14 @@ export async function getRollupBenchmarkForDimension(
 ): Promise<DimensionBenchmark> {
   const supabase = createServiceClient()
 
-  const { data, error } = await supabase
-    .from('institutional_rollup_benchmark_segments')
-    .select('*')
-    .eq('parent_institution_id', parentInstitutionId)
-    .eq('dim', dim)
-    .maybeSingle()
+  // Tech debt fix — see queryInstitutionView above for the full rationale.
+  const { data: rows, error } = await supabase
+    .rpc('aggregate_read_rollup_benchmark', { p_parent_institution_id: parentInstitutionId, p_dim: dim })
 
   if (error) {
     console.error('[aggregate-benchmark] rollup view query failed:', error.message)
   }
+  const data = rows?.[0]
   if (!data) {
     return { dim, gap: 0, isSignal: false, buckets: [], scope: { type: 'insufficient' } }
   }

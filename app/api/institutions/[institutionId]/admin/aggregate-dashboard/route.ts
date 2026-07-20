@@ -36,11 +36,11 @@ export async function GET(
 
   const supabase = createServiceClient()
 
+  // Tech debt fix (aggregate_reader wiring): p_dim omitted (null) returns
+  // every dimension for this institution in one call — same shape and
+  // ordering as the direct table read this replaces, still one round trip.
   const { data: rows, error } = await supabase
-    .from('institutional_benchmark_segments')
-    .select('*')
-    .eq('institution_id', institutionId)
-    .order('dim', { ascending: true })
+    .rpc('aggregate_read_institution_benchmark', { p_institution_id: institutionId, p_dim: null })
 
   if (error) {
     console.error('[admin/aggregate-dashboard] query failed:', error.message)

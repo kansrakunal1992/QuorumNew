@@ -113,6 +113,39 @@ export default function InstitutionAdminPage() {
   const [busy, setBusy]               = useState(false)
   const [notice, setNotice]           = useState<string | null>(null)
 
+  // Tech-debt-fix addition: an institution admin can ask the platform
+  // admin to deactivate their org — the actual gate stays platform-admin-
+  // only (see app/api/institutions/[institutionId]/admin/request-
+  // deactivation/route.ts for the KDD this follows). This just files the
+  // request and reuses the existing busy/notice state rather than adding
+  // dedicated state for one action.
+  const requestDeactivation = async () => {
+    if (!selectedInstitutionId || !authToken) return
+    if (!confirm(
+      'Request deactivation of this institution? This does not deactivate it immediately — ' +
+      'it flags the request for review. Existing members keep their data and settings either way.',
+    )) return
+
+    setBusy(true)
+    setNotice(null)
+    try {
+      const res = await fetch(`/api/institutions/${selectedInstitutionId}/admin/request-deactivation`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (res.ok) {
+        setNotice('Deactivation requested — this has been flagged for review.')
+      } else {
+        const json = await res.json().catch(() => ({}))
+        setNotice(json.error ?? 'Request failed — try again.')
+      }
+    } catch {
+      setNotice('Network error — request not sent.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // ── 1. Auth token, then discover which institutions this user administers ──
   useEffect(() => {
     if (!isInstitutionalModeEnabled()) { setLoading(false); return }
@@ -313,6 +346,20 @@ export default function InstitutionAdminPage() {
         <p style={{ fontSize: 12, color: 'var(--gold)', margin: '0 0 16px', fontFamily: 'var(--font-mono)' }}>
           {notice}
         </p>
+      )}
+
+      {selectedInstitutionId && (
+        <button
+          onClick={() => void requestDeactivation()}
+          disabled={busy}
+          style={{
+            background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 11,
+            textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit',
+            padding: 0, margin: '0 0 18px', display: 'block',
+          }}
+        >
+          Request deactivation of this institution
+        </button>
       )}
 
       {/* ── Roster ──────────────────────────────────────────────────────── */}

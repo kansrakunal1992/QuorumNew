@@ -20,14 +20,18 @@
 //   - No institutionId param: this sprint has no "active institution"
 //     concept yet (that's Sprint 5's mode switcher), so this walks every
 //     cohort the user belongs to across every institution they're in.
-//   - bias_library is keyed by user_email, not user_id (a pre-institutional
-//     table) — this function bridges that via one auth.admin lookup per
-//     peer. Fine at small-cohort scale (this is Source #1, deliberately
-//     small consensual groups); would need batching before it's reused
-//     anywhere at institution-roster scale.
 //   - independence-score + calibration averaging both do real per-session
 //     work (decrypt + score) per peer, per call, live. No caching yet.
 //     Acceptable for small cohorts; revisit if cohort sizes grow.
+//
+// TECH_DEBT.md #2 fix: bias_library is keyed by user_email, not user_id (a
+// pre-institutional table) — this function bridges that, and used to do so
+// via one auth.admin.getUserById() call per peer (N+1, same pattern as the
+// roster route). Now batched: one get_user_emails() RPC call per cohort's
+// consenting-peer set, resolved before buildPeerInsight() runs rather than
+// inside it. Not batched *across* cohorts in one global call — a user in
+// several cohorts still makes one call per cohort — but the per-peer
+// pattern the tracker actually flagged is gone.
 
 import { createServiceClient }        from '@/lib/supabase'
 import { calculateIndependenceScore } from '@/lib/independence-score'
@@ -101,8 +105,22 @@ export async function getCohortInsightsForUser(userId: string): Promise<CohortIn
     const consentingPeerIds = (consentingPeers ?? []).map(p => p.user_id)
     if (!consentingPeerIds.length) continue
 
+    // One batch lookup for this cohort's whole consenting-peer set, instead
+    // of one auth.admin.getUserById() call per peer inside buildPeerInsight.
+    const emailByUserId = new Map<string, string>()
+    const { data: emailRows, error: emailError } = await supabase
+      .rpc('get_user_emails', { p_user_ids: consentingPeerIds })
+    if (emailError) {
+      console.error('[cohort-insights] get_user_emails failed:', emailError.message)
+    } else {
+      for (const row of (emailRows ?? []) as { user_id: string; email: string | null }[]) {
+        if (row.email) emailByUserId.set(row.user_id, row.email)
+      }
+    }
+
     const peers = await Promise.all(
-      consentingPeerIds.map(peerId => buildPeerInsight(peerId, supabase)),
+      consentingPeerIds.map(peerId =>
+        buildPeerInsight(peerId, emailByUserId.get(peerId) ?? null, supabase)),
     )
 
     results.push({
@@ -116,9 +134,9 @@ export async function getCohortInsightsForUser(userId: string): Promise<CohortIn
   return results
 }
 
-async function buildPeerInsight(peerId: string, supabase: ServiceClient): Promise<CohortPeerInsight> {
-  const email = await resolveEmail(peerId, supabase)
-
+async function buildPeerInsight(
+  peerId: string, email: string | null, supabase: ServiceClient,
+): Promise<CohortPeerInsight> {
   const [independence, calibrationDeltaAvg, biasParameters] = await Promise.all([
     calculateIndependenceScore(peerId).catch(() => null),
     averageCalibrationDelta(peerId, supabase),
@@ -132,15 +150,6 @@ async function buildPeerInsight(peerId: string, supabase: ServiceClient): Promis
     sessionScoreDelta:   independence?.delta ?? null,
     calibrationDeltaAvg,
     biasParameters,
-  }
-}
-
-async function resolveEmail(userId: string, supabase: ServiceClient): Promise<string | null> {
-  try {
-    const { data } = await supabase.auth.admin.getUserById(userId)
-    return data.user?.email ?? null
-  } catch {
-    return null
   }
 }
 

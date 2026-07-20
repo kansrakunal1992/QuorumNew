@@ -64,7 +64,7 @@ export async function GET(req: Request) {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('institutions')
-    .select('id, name, parent_institution_id, admin_seat_claimed, k_floor_override, deactivated_at, created_at')
+    .select('id, name, parent_institution_id, admin_seat_claimed, k_floor_override, deactivated_at, deactivation_requested_at, deactivation_requested_by, created_at')
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -72,7 +72,37 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Failed to load institutions' }, { status: 500 })
   }
 
-  return NextResponse.json({ institutions: data ?? [] })
+  // Tech-debt-fix addition: resolve requester emails for any institution
+  // with a pending deactivation request, so the panel can show "requested
+  // by [email]" rather than a bare userId. Same get_user_emails() RPC as
+  // the roster/cohort-insights fixes — one batch call, not one per
+  // institution.
+  const requesterIds = (data ?? [])
+    .map(i => i.deactivation_requested_by)
+    .filter((id): id is string => !!id)
+
+  let institutions = data ?? []
+  if (requesterIds.length > 0) {
+    const { data: emailRows, error: emailError } = await supabase
+      .rpc('get_user_emails', { p_user_ids: requesterIds })
+    if (emailError) {
+      console.error('[create-institution] get_user_emails failed:', emailError.message)
+    } else {
+      const emailById = new Map<string, string>(
+        ((emailRows ?? []) as { user_id: string; email: string | null }[])
+          .filter(r => r.email)
+          .map(r => [r.user_id, r.email as string]),
+      )
+      institutions = institutions.map(i => ({
+        ...i,
+        deactivation_requested_by_email: i.deactivation_requested_by
+          ? emailById.get(i.deactivation_requested_by) ?? null
+          : null,
+      }))
+    }
+  }
+
+  return NextResponse.json({ institutions })
 }
 
 export async function POST(req: Request) {
@@ -140,7 +170,13 @@ export async function PATCH(req: Request) {
   if (!isInstitutionalModeEnabled()) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (!checkAdminAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { institutionId?: string; kFloorOverride?: number | null; allowedEmailDomains?: string[] | null; deactivate?: boolean }
+  let body: {
+    institutionId?: string
+    kFloorOverride?: number | null
+    allowedEmailDomains?: string[] | null
+    deactivate?: boolean
+    dismissDeactivationRequest?: boolean
+  }
   try {
     body = await req.json()
   } catch {
@@ -151,7 +187,21 @@ export async function PATCH(req: Request) {
   const update: Record<string, unknown> = {}
   if ('kFloorOverride' in body) update.k_floor_override = body.kFloorOverride
   if ('allowedEmailDomains' in body) update.allowed_email_domains = body.allowedEmailDomains
-  if ('deactivate' in body) update.deactivated_at = body.deactivate ? new Date().toISOString() : null
+  if ('deactivate' in body) {
+    update.deactivated_at = body.deactivate ? new Date().toISOString() : null
+    // Deactivating fulfills any pending request; reactivating doesn't need
+    // to touch the request fields either way, but clearing them here too
+    // keeps "reactivate" from leaving a stale request behind by accident.
+    update.deactivation_requested_at = null
+    update.deactivation_requested_by = null
+  }
+  // Explicit dismiss — the platform admin looked at the request and
+  // decided not to deactivate. Separate from the deactivate branch above
+  // so a dismiss never has to also be a deactivate/reactivate call.
+  if (body.dismissDeactivationRequest) {
+    update.deactivation_requested_at = null
+    update.deactivation_requested_by = null
+  }
   if (!Object.keys(update).length) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
@@ -161,7 +211,7 @@ export async function PATCH(req: Request) {
     .from('institutions')
     .update(update)
     .eq('id', body.institutionId)
-    .select('id, name, k_floor_override, allowed_email_domains, deactivated_at')
+    .select('id, name, k_floor_override, allowed_email_domains, deactivated_at, deactivation_requested_at, deactivation_requested_by')
     .maybeSingle()
 
   if (error) {

@@ -19,13 +19,17 @@
 // Gated behind NEXT_PUBLIC_INSTITUTIONAL_MODE_ENABLED, same as every other
 // institution route.
 //
-// Note on atomicity: the update + audit-log insert are two separate calls,
-// not one DB transaction. If the audit insert fails after the update
-// succeeds, the consent change still took effect but goes unlogged (an
-// error is logged server-side either way). Worth tightening to a single
-// supabase.rpc() call wrapping both writes in a Postgres function if that
-// gap matters enough to close before Sprint 3 — flagging it rather than
-// quietly shipping best-effort logging as if it were guaranteed.
+// Tech debt #1 fix: the update + audit-log insert used to be two separate
+// calls, not one DB transaction — see git history / TECH_DEBT.md for the
+// old version and the gap it left. Now routed through toggle_consent(),
+// a single Postgres function (supabase/institutional_tech_debt_fixes.sql
+// Part 2) that does both writes in one transaction, so an audit-insert
+// failure can no longer leave the membership row changed with no logged
+// record of it. That function also owns the consent_aggregate_granted_at
+// side effect (Part 1 of the same file) that makes consent_aggregate_
+// backfill's existing UI (InstitutionConsentSettings.tsx's modal) actually
+// mean something to the aggregate views, instead of being collected and
+// silently ignored.
 
 import { NextResponse }                      from 'next/server'
 import { createServiceClient, createClient } from '@/lib/supabase'
@@ -87,46 +91,34 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const supabase = createServiceClient()
 
-  const { data: existing, error: fetchError } = await supabase
-    .from('institution_memberships')
-    .select(`id, ${toggleField}`)
-    .eq('institution_id', institutionId)
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (fetchError) {
-    console.error('[institutions/consent] fetch failed:', fetchError.message)
-    return NextResponse.json({ error: 'Update failed' }, { status: 500 })
-  }
-  if (!existing) return NextResponse.json({ error: 'Not a member of this institution' }, { status: 403 })
-
-  const oldValue = Boolean((existing as Record<string, unknown>)[toggleField])
-
-  const { error: updateError } = await supabase
-    .from('institution_memberships')
-    .update({ [toggleField]: value })
-    .eq('id', (existing as { id: string }).id)
-
-  if (updateError) {
-    console.error('[institutions/consent] update failed:', updateError.message)
-    return NextResponse.json({ error: 'Update failed' }, { status: 500 })
-  }
-
-  const { error: auditError } = await supabase
-    .from('consent_audit_log')
-    .insert({
-      user_id:        userId,
-      institution_id: institutionId,
-      field_changed:  toggleField,
-      old_value:      oldValue,
-      new_value:      value,
+  // One transaction: validates membership exists, applies the field
+  // change, manages consent_aggregate_granted_at when relevant, and writes
+  // the audit log row — all inside toggle_consent() itself. No separate
+  // pre-fetch needed here; the function raises if there's no membership
+  // row, which we translate to the same 403 this route always returned.
+  const { data: rows, error } = await supabase
+    .rpc('toggle_consent', {
+      p_user_id:        userId,
+      p_institution_id: institutionId,
+      p_field:          toggleField,
+      p_value:          value,
     })
 
-  if (auditError) {
-    // Consent change already took effect — log the gap, don't roll back or
-    // fail the request over it (see atomicity note above).
-    console.error('[institutions/consent] audit log insert failed (change still applied):', auditError.message)
+  if (error) {
+    if (error.message?.includes('no membership')) {
+      return NextResponse.json({ error: 'Not a member of this institution' }, { status: 403 })
+    }
+    console.error('[institutions/consent] toggle_consent failed:', error.message)
+    return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 
-  return NextResponse.json({ field: toggleField, value })
+  const updated = rows?.[0]
+  return NextResponse.json({
+    field: toggleField,
+    value,
+    // Returned so the client can show the new "since when" date without a
+    // second round trip — not currently read by InstitutionConsentSettings.tsx,
+    // available if that ever wants to surface it (e.g. "sharing since Jul 17").
+    consentAggregateGrantedAt: updated?.consent_aggregate_granted_at ?? null,
+  })
 }

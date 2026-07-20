@@ -7,16 +7,15 @@
 // consent flags, no session/bias data — this route is membership metadata
 // only, matching plan Section 4 task 3's roster scope exactly.
 //
-// Note on cost (flagged, not fixed this sprint): there's no bulk
-// "getUsersByIds" in supabase-js, so this resolves one email per member via
-// auth.admin.getUserById — an N+1 pattern. Fine for a skeleton-stage roster
-// at small-to-mid institution size; before rolling out to the largest
-// institution tier (plan Section 1.1's higher-seat tiers), replace this
-// with a Postgres function that joins institution_memberships to
-// auth.users directly in one round trip. There is also no separate "name"
-// field anywhere in this codebase yet (no profiles table) — email is the
-// only identifier available, same as bias_library's existing user_email
-// convention.
+// TECH_DEBT.md #2 fix: email resolution used to be one auth.admin.getUserById()
+// call per member (N+1). Now a single get_user_emails() RPC call
+// (supabase/institutional_tech_debt_fixes.sql Part 3) joining directly to
+// auth.users for the whole roster at once — one round trip regardless of
+// institution size. lib/cohort-insights.ts moved to the same function in
+// the same pass, per the tracker's own note that both call sites should be
+// fixed together. There is still no separate "name" field anywhere in this
+// codebase (no profiles table) — email remains the only identifier
+// available, same as bias_library's existing user_email convention.
 
 import { NextResponse }               from 'next/server'
 import { createServiceClient }        from '@/lib/supabase'
@@ -46,18 +45,30 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to load roster' }, { status: 500 })
   }
 
-  const roster = await Promise.all(
-    (memberships ?? []).map(async m => {
-      let email: string | null = null
-      try {
-        const { data } = await supabase.auth.admin.getUserById(m.user_id)
-        email = data.user?.email ?? null
-      } catch {
-        // leave email null rather than failing the whole roster over one lookup
+  const userIds = (memberships ?? []).map(m => m.user_id)
+  const emailByUserId = new Map<string, string>()
+
+  if (userIds.length > 0) {
+    const { data: emailRows, error: emailError } = await supabase
+      .rpc('get_user_emails', { p_user_ids: userIds })
+
+    if (emailError) {
+      // Same fallback posture as before: don't fail the whole roster over
+      // email resolution — return it with emails null rather than a 500.
+      console.error('[admin/roster] get_user_emails failed:', emailError.message)
+    } else {
+      for (const row of (emailRows ?? []) as { user_id: string; email: string | null }[]) {
+        if (row.email) emailByUserId.set(row.user_id, row.email)
       }
-      return { userId: m.user_id, email, role: m.role, joinedAt: m.joined_at }
-    }),
-  )
+    }
+  }
+
+  const roster = (memberships ?? []).map(m => ({
+    userId:  m.user_id,
+    email:   emailByUserId.get(m.user_id) ?? null,
+    role:    m.role,
+    joinedAt: m.joined_at,
+  }))
 
   return NextResponse.json({ roster })
 }

@@ -46,17 +46,18 @@ export async function getBiasParameterBenchmark(
 async function queryInstitutionView(
   supabase: ServiceClient, institutionId: string, biasParameter: string,
 ): Promise<BiasParameterBenchmark | null> {
-  const { data, error } = await supabase
-    .from('institutional_bias_parameter_segments')
-    .select('*')
-    .eq('institution_id', institutionId)
-    .eq('bias_parameter', biasParameter)
-    .maybeSingle()
+  // Tech debt fix (aggregate_reader wiring — see supabase/institutional_
+  // tech_debt_fixes.sql Part 6): routed through a SECURITY DEFINER function
+  // owned by the restricted aggregate_reader role, same pattern and same
+  // rationale as lib/aggregate-benchmark.ts's two equivalent functions.
+  const { data: rows, error } = await supabase
+    .rpc('aggregate_read_institution_bias_parameter', { p_institution_id: institutionId, p_bias_parameter: biasParameter })
 
   if (error) {
     console.error('[bias-parameter-benchmark] institution view query failed:', error.message)
     return null
   }
+  const data = rows?.[0]
   if (!data) return null
 
   const { data: institution } = await supabase
@@ -76,16 +77,15 @@ async function queryInstitutionView(
 async function queryPlatformView(
   supabase: ServiceClient, biasParameter: string,
 ): Promise<BiasParameterBenchmark | null> {
-  const { data, error } = await supabase
-    .from('institutional_platform_bias_parameter_segments')
-    .select('*')
-    .eq('bias_parameter', biasParameter)
-    .maybeSingle()
+  // Tech debt fix — see queryInstitutionView above for the full rationale.
+  const { data: rows, error } = await supabase
+    .rpc('aggregate_read_platform_bias_parameter', { p_bias_parameter: biasParameter })
 
   if (error) {
     console.error('[bias-parameter-benchmark] platform view query failed:', error.message)
     return null
   }
+  const data = rows?.[0]
   if (!data) return null
 
   return {
