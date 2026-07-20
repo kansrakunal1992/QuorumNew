@@ -561,7 +561,7 @@ export default function Home() {
             Quorum
           </span>
         </div>
-        <span className="nav-tagline">Judgment Operating System</span>
+        <span className="nav-tagline">Decision Intelligence for high-stakes calls</span>
       </nav>
 
       {/* ── Main ─────────────────────────────────────────── */}
@@ -572,6 +572,67 @@ export default function Home() {
         background: 'var(--bg-void)',
       }}>
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 16px' }}>
+
+          {/* ── Positioning block (first-time visitors only) ──────────
+              Added per homepage messaging redesign (implementation plan,
+              Phase 2). Static, always visible, no tap required — carries
+              the category statement, mechanism, chatbot pre-empt, "who
+              this is for," and one proof example that previously only
+              existed buried in the collapsed FAQ / Meet the Council
+              sections. Nothing below this block changes; this only adds
+              a first-viewport explanation ahead of it. */}
+          {!isReturning && !loadingHist && (
+            <div style={{
+              marginTop:    8,
+              marginBottom: 24,
+              padding:      '22px 24px',
+              background:   'var(--bg-card)',
+              border:       '1px solid var(--border-dim)',
+              borderRadius: 14,
+            }}>
+              <p style={{
+                fontFamily:    'var(--font-display)',
+                fontSize:      'clamp(19px, 4vw, 24px)',
+                fontWeight:    400,
+                color:         'var(--text-1)',
+                lineHeight:    1.35,
+                margin:        '0 0 6px',
+                letterSpacing: '-0.01em',
+              }}>
+                Decision Intelligence for high-stakes calls.
+              </p>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 16px', fontStyle: 'italic' }}>
+                Not a chatbot. A structured second opinion before you commit.
+              </p>
+              <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.65, margin: '0 0 12px' }}>
+                Every decision you bring is first read at a structural level — what kind of decision this actually is — then stress-tested from six independent angles, and kept, so your next decision benefits from every one before it.
+              </p>
+              <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.65, margin: '0 0 12px' }}>
+                A chatbot answers what you ask. Quorum questions what you assumed — then remembers the call, so it can hold you to it.
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.6, margin: '0 0 18px' }}>
+                Built for founders, operators, and principals making decisions where being wrong is expensive — not for everyday choices.
+              </p>
+              <div style={{ borderTop: '1px solid var(--border-dim)', paddingTop: 16 }}>
+                <p style={{
+                  fontFamily:    'var(--font-mono)',
+                  fontSize:      10,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color:         'var(--text-4)',
+                  margin:        '0 0 10px',
+                }}>
+                  Example · one advisor&apos;s actual response
+                </p>
+                <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 8px', fontStyle: 'italic' }}>
+                  &quot;I&apos;m considering selling my 40% stake to a PE firm at 8× EBITDA. Offer expires in 3 weeks.&quot;
+                </p>
+                <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+                  <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Risk Architect</span> — Runs a pre-mortem before you commit: where this fails, in what order, and which failure you are least prepared for.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ── Judgment Record strip (all users) ───────── */}
           <div style={{
@@ -871,7 +932,7 @@ export default function Home() {
                     textAlign:     'center',
                     transition:    'color 0.3s ease, letter-spacing 0.35s ease',
                   }}>
-                    Tap to add to your judgment record
+                    Tap to try it on a real decision
                   </p>
                 </>
               )}
@@ -1036,10 +1097,10 @@ export default function Home() {
                     }}
                   >
                     <p style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: framingIntent === 'clarify' ? 'var(--green-text)' : 'var(--text-2)', marginBottom: 3 }}>
-                      <IconMirror /> Help me understand what I want
+                      <IconMirror /> Help me clarify what I actually want
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
-                      Values, identity, what matters most here.
+                      What I&apos;m optimizing for, and what I&apos;d regret.
                     </p>
                   </button>
                   {/* Option 3: Right — SB-1 */}
