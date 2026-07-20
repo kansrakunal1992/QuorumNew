@@ -632,6 +632,13 @@ export default function SessionView({ session: initialSession, initialMessages =
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ontologyReady, styleCueReady])
 
+  // Fix #3: tracks which advisors have a "Share to all advisors" update still
+  // in flight. Declared here (rather than down near handleShareContext) so
+  // handlePersonaComplete below can consult it. See handlePersonaComplete and
+  // handleExaminerUpdateComplete for how this collapses N per-advisor
+  // synthesis re-runs into one.
+  const shareContextPendingRef = useRef<Set<string>>(new Set())
+
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
     // P0 fix: defense-in-depth against the "N of 6" overcount bug — completedResponses
     // is keyed by personaKey and its size drives every "X of 6" display (CouncilStatusBar,
@@ -655,7 +662,17 @@ export default function SessionView({ session: initialSession, initialMessages =
 
     setCompletedResponses(prev => {
       const isUpdate = personaKey in prev
-      if (isUpdate) setSynthesisVersion(v => v + 1)
+      // Fix #3: during "Share to all advisors", each of the (up to 5) other
+      // advisors completes independently, and previously each one bumped
+      // synthesisVersion here — triggering, then immediately aborting, up to
+      // 4 redundant synthesis re-runs before the real final one. When this
+      // completion is part of a pending share-context batch, defer to
+      // handleExaminerUpdateComplete, which bumps exactly once after the
+      // whole batch has landed (with a timeout safety net in
+      // handleShareContext in case one advisor's update fails).
+      if (isUpdate && !shareContextPendingRef.current.has(personaKey)) {
+        setSynthesisVersion(v => v + 1)
+      }
       const next = { ...prev, [personaKey]: content }
 
       if (!isUpdate && Object.keys(next).length >= PERSONA_ORDER.length) {
@@ -799,8 +816,6 @@ export default function SessionView({ session: initialSession, initialMessages =
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const shareContextPendingRef = useRef<Set<string>>(new Set())
-
   const handleExaminerUpdateComplete = useCallback((personaKey: string) => {
     if (!shareContextPendingRef.current.has(personaKey)) return
     shareContextPendingRef.current.delete(personaKey)
@@ -812,7 +827,21 @@ export default function SessionView({ session: initialSession, initialMessages =
   const handleShareContext = useCallback((originPersonaKey: string, text: string) => {
     const examinerMsg = `The user submitted the following new information while challenging another advisor. Review it and update your position if it changes your assessment:\n\n"${text}"\n\nProvide a concise update (under 200 words). If this materially changes your view, say so directly. If it confirms your original analysis, say that — and why.`
     const pendingKeys = PERSONA_ORDER.filter(k => k !== originPersonaKey)
-    shareContextPendingRef.current = new Set(pendingKeys)
+    const thisBatch = new Set(pendingKeys)
+    shareContextPendingRef.current = thisBatch
+    // Safety net: if any advisor's share-context update fails or hangs, it
+    // never calls handleExaminerUpdateComplete, so the batch would otherwise
+    // sit at size > 0 forever and synthesis would never re-run — silently
+    // dropping the advisors that DID succeed too. Force a bump after a
+    // generous window. The reference-equality check no-ops this if the batch
+    // already completed normally, or if a newer share-context batch has since
+    // replaced this one.
+    setTimeout(() => {
+      if (shareContextPendingRef.current === thisBatch && shareContextPendingRef.current.size > 0) {
+        shareContextPendingRef.current = new Set()
+        setSynthesisVersion(v => v + 1)
+      }
+    }, 25000)
     setExaminerContextByPersona(prev => {
       const next = { ...prev }
       for (const key of pendingKeys) {

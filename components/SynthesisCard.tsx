@@ -153,15 +153,14 @@ export default function SynthesisCard({
     const m = initialContent.match(/<tension>([\s\S]*?)<\/tension>/)
     return m?.[1]?.trim() ?? ''
   })
-  // P2: verdict_lean (structured proceed|wait|mixed classification, used by
-  // the What Changed diff instead of comparing raw verdict prose — see
-  // lib/synthesis-diff.ts) and conditions (optional, only when the verdict
-  // is genuinely contingent).
-  const [verdictLean, setVerdictLean] = useState(() => {
-    if (!initialContent) return ''
-    const m = initialContent.match(/<verdict_lean>([\s\S]*?)<\/verdict(?:_lean)?>/)
-    return m?.[1]?.trim().toLowerCase() ?? ''
-  })
+  // P2: conditions (optional, only when the verdict is genuinely contingent).
+  // NOTE: verdict_lean itself (proceed|wait|mixed) is deliberately NOT held as
+  // component state here — it's parsed fresh into the local `finalVerdictLean`
+  // const inside each run() below, which is what actually drives the What
+  // Changed diff (lib/synthesis-diff.ts) and the persisted version snapshot.
+  // A `[verdictLean, setVerdictLean]` state used to exist alongside this but
+  // was write-only — nothing in this file ever read it — so it was removed
+  // rather than left as dead state for a future change to build on by mistake.
   const [conditions, setConditions] = useState<string[]>(() => {
     if (!initialContent) return []
     const m = initialContent.match(/<conditions>([\s\S]*?)<\/conditions>/)
@@ -323,6 +322,17 @@ export default function SynthesisCard({
     // Reset verdict/tension accumulators on each new synthesis run
     setVerdictText('')
     setTensionText('')
+    // BUGFIX: keyQuestion ("Worth confirming") was never reset here, only
+    // conditionally overwritten at the end IF this run's <key_question> tag
+    // was found (see final extraction pass below). On a re-synthesis where
+    // the model's output happened to omit that tag, the UI kept showing the
+    // PREVIOUS version's "Worth confirming" text while the synthesis prose
+    // above it correctly moved on — looking like only synthesis updated.
+    // Resetting to null here means a missing tag now correctly falls back to
+    // worthConfirmingFallback (the deterministic rule-engine text) instead of
+    // stale content. conditions doesn't need this — it's already always
+    // overwritten unconditionally at the end, even to [].
+    setKeyQuestion(null)
     parseModeRef.current  = 'prose'
     verdictAccRef.current = ''
     tensionAccRef.current = ''
@@ -496,7 +506,6 @@ export default function SynthesisCard({
         if (ft?.[1]?.trim()) setTensionText(ft[1].trim())
         const finalVerdictLean = fvl?.[1]?.trim().toLowerCase() ?? ''
         const finalConditions  = fc?.[1] ? fc[1].split('|').map(s => s.trim()).filter(Boolean) : []
-        if (finalVerdictLean) setVerdictLean(finalVerdictLean)
         setConditions(finalConditions)
         if (fkq?.[1]?.trim()) setKeyQuestion(fkq[1].trim())
         // One final setSynthesis so the prose is fully clean regardless of
