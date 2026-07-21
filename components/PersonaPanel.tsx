@@ -4,6 +4,17 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import RateLimitBanner, { parseRateLimit, type RateLimitInfo } from '@/components/RateLimitBanner'
 import { useTTSContext } from '@/context/TTSContext'
 import type { PersonaMeta, Message } from '@/lib/types'
+import type { Lean } from './TensionInterstitial'
+
+// Vet-fix (b): labels for the "shifted" badge below — same wording as
+// WhatChangedDrawer's LEAN_LABELS, so a lean shift reads the same way
+// wherever it's shown (this card, the What Changed drawer, the Tension
+// interstitial).
+const LEAN_LABELS: Record<Lean, string> = {
+  proceed: 'Proceed',
+  wait:    'Wait',
+  mixed:   'Mixed',
+}
 
 const ICONS: Record<string, React.ReactNode> = {
   contrarian: (
@@ -93,6 +104,15 @@ interface Props {
    *  (see Gap #3 — advisor position evolution) without touching the original
    *  lens/position/realcost header, which still intentionally stays frozen. */
   onLeanUpdate?: (personaKey: string, lean: 'proceed' | 'wait' | 'mixed') => void
+  /** Vet-fix (b): SessionView's live personaLeans[key] for this persona, passed
+   *  back down so the card can compare "what it leaned initially" against
+   *  "what it leans now" and show a small shift badge — without touching the
+   *  frozen lens/position/realcost header above. This is the same value this
+   *  card feeds SessionView via onLeanUpdate; it just comes back down once
+   *  SessionView has committed it, so the card and the rest of the session
+   *  (synthesis weighting, What Changed drawer, Tension interstitial) are
+   *  reading the same number instead of the card silently lagging behind. */
+  currentLean?: Lean
   /** Challenge-discoverability pass: true once ANY card in this session has had
    *  a completed pushback exchange — drives the ambient "You can challenge this
    *  one too." hint on cards that haven't been challenged yet. */
@@ -104,7 +124,7 @@ interface Props {
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, anyCardChallenged, onFirstChallengeUsed }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -117,8 +137,16 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [lensText,     setLensText]     = useState('')
   const [positionText, setPositionText] = useState('')
   const [realCostText, setRealCostText] = useState('')
-  // S3-01: machine-readable lean classification — never rendered, used only by SessionView
-  // to build the pre-synthesis tension interstitial. Surfaced via onComplete's raw content.
+  // S3-01: machine-readable lean classification — never rendered directly (no
+  // proceed/wait/mixed pill on the card), used by SessionView to build the
+  // pre-synthesis tension interstitial. Surfaced via onComplete's raw content.
+  // Vet-fix (b): also captured here, once, from the persona's ORIGINAL
+  // response — purely so this card can compare it against `currentLean`
+  // (SessionView's live value, which onLeanUpdate keeps current through
+  // pushback) and show a small "shifted" badge. Never overwritten after the
+  // initial response settles, same convergence behavior as lensText/
+  // positionText/realCostText above.
+  const [initialLean, setInitialLean] = useState<Lean | ''>('')
 
   // R6: per-persona structural citation — parsed from <structural> tag. Empty means
   // this specific persona did not find the structural record relevant to its angle;
@@ -182,10 +210,14 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     const position = get('position')
     const realcost = get('realcost')
     const structural = get('structural')
+    const lean     = get('lean').toLowerCase()
     if (lens)     setLensText(lens)
     if (position) setPositionText(position)
     if (realcost) setRealCostText(realcost)
     if (structural) setStructuralCitationText(structural)
+    if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
+      setInitialLean(prev => prev || lean)
+    }
     // Strip all four tag blocks + any leading blank line from prose.
     // <lean> is a machine-readable classification only — never state, never displayed.
     //
@@ -656,6 +688,29 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             }}>
               {positionText}
             </p>
+            {/* Vet-fix (b): positionText/realCostText above are deliberately
+                frozen at the original response — kept that way so "what did
+                this advisor originally think" stays a stable reference point
+                while the pushback thread below shows the prose evolution.
+                But this persona's <lean> classification does keep updating
+                on pushback (onLeanUpdate → SessionView's personaLeans →
+                fed back in as currentLean), and that updated value already
+                drives synthesis weighting and the What Changed drawer
+                elsewhere in the session — so leaving this card with no
+                visible sign of it meant the card could visibly say
+                "Proceed" while the system had already moved this advisor to
+                "Wait". This badge doesn't rewrite the header; it just makes
+                the shift the system already knows about visible here too. */}
+            {initialLean && currentLean && currentLean !== initialLean && (
+              <p style={{
+                margin:     '6px 0 0',
+                fontSize:   11.5,
+                fontWeight: 500,
+                color:      'var(--gold)',
+              }}>
+                Shifted after pushback → now leaning {LEAN_LABELS[currentLean]}
+              </p>
+            )}
             <div style={{ marginTop: 12, borderTop: '1px solid var(--border-dim)' }} />
           </div>
         )}

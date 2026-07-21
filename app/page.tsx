@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
@@ -507,6 +508,12 @@ export default function Home() {
 
   // ── Derived values ────────────────────────────────────
   const isReturning  = sessions.length > 0
+  // Vet-fix (d): "first three user sessions" = while 0, 1, or 2 decisions
+  // exist yet (i.e. walking into session 1, 2, or 3) — sessions.length is a
+  // count of already-completed decisions, so < 3 covers exactly those three.
+  // From the 4th session on (sessions.length >= 3) this is false and the
+  // methodology positioning block below no longer renders.
+  const showMethodologyIntro = sessions.length < 3 && !loadingHist
   const pending      = sessions.filter(s => !s.outcome)
   const decided      = sessions.filter(s =>  s.outcome)
   const filtered     = activeTab === 'all' ? sessions : activeTab === 'pending' ? pending : decided
@@ -1110,7 +1117,7 @@ export default function Home() {
             )}
           </div>
 
-          {/* ── Positioning block (first-time visitors only) ──────────
+          {/* ── Positioning block (first three sessions) ──────────────
               Redesign, v2: same clarity content (category statement,
               mechanism, chatbot pre-empt, audience, proof example) but
               restyled as open editorial copy instead of a bordered card,
@@ -1118,8 +1125,19 @@ export default function Home() {
               the first thing a first-time visitor sees — one object,
               lots of air, matching the original premium feel — and this
               explanation reads as a quiet follow-up once they've scrolled,
-              not a wall of text blocking the entry point. */}
-          {!isReturning && !loadingHist && (
+              not a wall of text blocking the entry point.
+              Vet-fix (d): was gated on `!isReturning` — sessions.length === 0
+              — so it vanished forever the moment a user's first decision
+              landed, along with the only visible explanation of how the
+              Council actually works (the footer's "How Quorum Works" link,
+              same size/weight as Privacy Policy and Terms, was all that was
+              left). Extended to sessions.length < 3 so a new user still gets
+              this context walking into their 2nd and 3rd decisions, not just
+              their 1st, and a direct link to the full methodology page is
+              now part of the block itself rather than only living in the
+              footer. From the 4th session on this reverts to exactly the
+              prior default: no block, footer link only. */}
+          {showMethodologyIntro && (
             <div style={{ marginTop: 56, marginBottom: 8, padding: '0 6px' }}>
               <div style={{
                 width: 36, height: 1, margin: '0 auto 26px',
@@ -1160,6 +1178,30 @@ export default function Home() {
                 <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
                   <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Risk Architect</span> — runs a pre-mortem before you commit: where this fails, in what order, and which failure you&apos;re least prepared for.
                 </p>
+              </div>
+
+              {/* Vet-fix (d): the only other place this exists is a footer
+                  link the same size/weight as Privacy Policy and Terms. */}
+              <div style={{ textAlign: 'center', marginTop: 22 }}>
+                <Link
+                  href="/methodology"
+                  style={{
+                    display:       'inline-flex',
+                    alignItems:    'center',
+                    gap:           6,
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      10.5,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    textDecoration:'none',
+                    borderBottom:  '1px solid var(--gold-dim)',
+                    paddingBottom: 2,
+                  }}
+                >
+                  See how Quorum works
+                  <span aria-hidden="true">→</span>
+                </Link>
               </div>
             </div>
           )}

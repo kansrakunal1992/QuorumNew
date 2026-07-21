@@ -639,6 +639,16 @@ export default function SessionView({ session: initialSession, initialMessages =
   // handlePersonaComplete and handleExaminerUpdateComplete for how this
   // collapses what used to be up to 6 separate synthesis re-runs into one.
   const shareContextPendingRef = useRef<Set<string>>(new Set())
+  // Vet-fix (a): shareContextPendingRef alone isn't enough to gate UI — it's a
+  // ref, so mutating it doesn't re-render. Save Record / View Record had no
+  // way to know a percolation batch was in flight, so the record page and PDF
+  // (which both read the `messages` table fresh at request time) could be
+  // opened while the batch — and the single synthesis re-run it triggers —
+  // was still resolving, showing the pre-pushback verdict/conditions/worth
+  // confirming instead of the final one. This mirrors the ref's size in
+  // reactive state purely so JSX can gate on it; the ref stays the source of
+  // truth for the actual batch bookkeeping.
+  const [pendingAdvisorUpdates, setPendingAdvisorUpdates] = useState(0)
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
     // P0 fix: defense-in-depth against the "N of 6" overcount bug — completedResponses
@@ -822,6 +832,7 @@ export default function SessionView({ session: initialSession, initialMessages =
   const handleExaminerUpdateComplete = useCallback((personaKey: string) => {
     if (!shareContextPendingRef.current.has(personaKey)) return
     shareContextPendingRef.current.delete(personaKey)
+    setPendingAdvisorUpdates(shareContextPendingRef.current.size)
     if (shareContextPendingRef.current.size === 0) {
       setSynthesisVersion(v => v + 1)
     }
@@ -853,6 +864,7 @@ export default function SessionView({ session: initialSession, initialMessages =
     const thisBatch = new Set(shareContextPendingRef.current)
     for (const k of allKeys) thisBatch.add(k)
     shareContextPendingRef.current = thisBatch
+    setPendingAdvisorUpdates(thisBatch.size)
     // Safety net: if any advisor's update fails or hangs, it never calls
     // handleExaminerUpdateComplete, so the batch would otherwise sit at
     // size > 0 forever and synthesis would never re-run — silently dropping
@@ -863,6 +875,7 @@ export default function SessionView({ session: initialSession, initialMessages =
     setTimeout(() => {
       if (shareContextPendingRef.current === thisBatch && shareContextPendingRef.current.size > 0) {
         shareContextPendingRef.current = new Set()
+        setPendingAdvisorUpdates(0)
         setSynthesisVersion(v => v + 1)
       }
     }, 25000)
@@ -944,7 +957,18 @@ export default function SessionView({ session: initialSession, initialMessages =
     router.push('/')
   }
 
+  // Vet-fix (a): true while the Council is between a settled state and the
+  // record page's own read of the `messages` table — either an advisor
+  // percolation batch is still resolving (pendingAdvisorUpdates > 0) or the
+  // synthesis re-run it triggers is still streaming (synthesisStreaming).
+  // Only once both are false is the DB guaranteed to hold the final verdict.
+  const councilSettling = synthesisStreaming || pendingAdvisorUpdates > 0
+
   const handleSaveRecord = async () => {
+    // Defense-in-depth: the buttons below are already disabled while this is
+    // true, but guard the handler itself too in case it's ever wired up
+    // elsewhere without that disabled state.
+    if (councilSettling) return
     setSaving(true)
     try {
       const res = await fetch('/api/record', {
@@ -1285,10 +1309,15 @@ export default function SessionView({ session: initialSession, initialMessages =
             <button
               className="btn-primary"
               onClick={handleSaveRecord}
-              disabled={saving}
+              disabled={saving || councilSettling}
+              title={councilSettling ? 'Council is still updating after your last challenge — one moment.' : undefined}
               data-tour-id="council-save"
             >
-              {saving ? 'Saving…' : <><span className="sv-save-full">Save Record</span><span className="sv-save-short">Save</span></>}
+              {saving
+                ? 'Saving…'
+                : councilSettling
+                ? <><span className="sv-save-full">Updating…</span><span className="sv-save-short">Updating…</span></>
+                : <><span className="sv-save-full">Save Record</span><span className="sv-save-short">Save</span></>}
             </button>
           </div>
         </nav>
@@ -1764,6 +1793,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       registerMode={registerMode}
                       onComplete={handlePersonaComplete}
                       onLeanUpdate={handleLeanUpdate}
+                      currentLean={personaLeans[key]}
                       examinerContext={examinerContextByPersona[key]}
                       structuralContext={structuralContext ?? undefined}
                       onShareContext={(text) => handleShareContext(key, text)}
@@ -1846,9 +1876,10 @@ export default function SessionView({ session: initialSession, initialMessages =
                   className="btn-primary"
                   style={{ fontSize: 13, padding: '12px 28px', minHeight: 44 }}
                   onClick={handleSaveRecord}
-                  disabled={saving}
+                  disabled={saving || councilSettling}
+                  title={councilSettling ? 'Council is still updating after your last challenge — one moment.' : undefined}
                 >
-                  {saving ? 'Saving…' : 'Save to Record'}
+                  {saving ? 'Saving…' : councilSettling ? 'Council updating…' : 'Save to Record'}
                 </button>
               </div>
             </div>
