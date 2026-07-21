@@ -22,6 +22,7 @@ import { buildPWAInstallStep, buildWatchlistTourStep } from '@/components/Onboar
 import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
 import MeetTheCouncil from '@/components/MeetTheCouncil' // Item #4
 import FAQSection from '@/components/FAQSection' // Item #10
+import TrustBadgeStrip from '@/components/TrustBadgeStrip' // Trust Audit P0-3: pre-input trust strip
 import ReferralLink from '@/components/ReferralLink' // Item #17
 
 // ── Icons ────────────────────────────────────────────────
@@ -195,7 +196,7 @@ export default function Home() {
   // ── UI state ──────────────────────────────────────────
   const [inputRevealed,  setInputRevealed]  = useState(false)
   const [cardHovered,    setCardHovered]    = useState(false)
-  const [onboardingPanel, setOnboardingPanel] = useState(0)   // 0 = intro video, 1 = Council, 2 = Mirror, 3 = QUORUM face
+  const [onboardingPanel, setOnboardingPanel] = useState(0)   // 0 = intro video, 1 = Council, 2 = Mirror, 3 = Privacy (Trust Audit P1-1), 4 = QUORUM face
   const [isOnboarding,    setIsOnboarding]    = useState(false)
   // Video 1 (intro/self-help) — shown once, only to genuinely new users, as
   // onboarding panel 0, before Council/Mirror/input. If the file 404s (not
@@ -278,10 +279,12 @@ export default function Home() {
     } catch {}
   }, [inputRevealed, serverCheckDone, serverTourDone])
 
-  // Sprint TOUR-1: auto-advance panel 3 (QUORUM card) → input reveal after 1800ms
+  // Sprint TOUR-1: auto-advance panel 4 (QUORUM card) → input reveal after 1800ms
   // User can still click to fast-forward. This removes the "dead end" on the QUORUM card.
+  // Renumbered from panel 3 → panel 4 when the Privacy panel (Trust Audit
+  // P1-1) was inserted at index 3, between Mirror and the QUORUM face.
   useEffect(() => {
-    if (!isOnboarding || onboardingPanel !== 3) return
+    if (!isOnboarding || onboardingPanel !== 4) return
     const t = setTimeout(() => {
       markOnboarded()
       handleReveal()
@@ -396,7 +399,7 @@ export default function Home() {
 
   const handleCardClick = () => {
     if (isOnboarding) {
-      if (onboardingPanel < 3) {
+      if (onboardingPanel < 4) {
         setOnboardingPanel(p => p + 1)
       } else {
         markOnboarded()
@@ -628,8 +631,8 @@ export default function Home() {
                 userSelect:    'none',
               }}
             >
-              {/* Skip — shown during onboarding panels 0, 1 & 2 (video, Council, Mirror) */}
-              {isOnboarding && onboardingPanel < 3 && (
+              {/* Skip — shown during onboarding panels 0, 1, 2 & 3 (video, Council, Mirror, Privacy) */}
+              {isOnboarding && onboardingPanel < 4 && (
                 <button
                   onClick={handleSkipOnboarding}
                   style={{
@@ -801,8 +804,57 @@ export default function Home() {
                 </>
               )}
 
-              {/* ── Panel 3 / Default — QUORUM face ────────── */}
-              {(!isOnboarding || onboardingPanel === 3) && (
+              {/* ── Panel 3 — PRIVACY (Trust Audit P1-1) ─────
+                  Onboarding sold capability (Council, Mirror) with zero
+                  accompanying privacy statement, and was one tap to skip
+                  entirely. Same font treatment/rhythm as panels 1 & 2 so it
+                  doesn't feel bolted on; copy matches the encryption /
+                  no-training / export-anytime facts already reviewed for
+                  /security and FAQSection.tsx, not new claims. ── */}
+              {isOnboarding && onboardingPanel === 3 && (
+                <>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    margin:        '0 0 28px',
+                    opacity:       0.75,
+                  }}>
+                    03 · Built to Earn Trust
+                  </p>
+                  <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(28px, 5vw, 38px)',
+                    fontWeight:    400,
+                    color:         'var(--text-1)',
+                    letterSpacing: '-0.01em',
+                    lineHeight:    1.35,
+                    textAlign:     'center',
+                    margin:        0,
+                    maxWidth:      340,
+                  }}>
+                    Encrypted, private, and yours to delete
+                  </p>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      13,
+                    color:         'var(--text-4)',
+                    lineHeight:    1.65,
+                    textAlign:     'center',
+                    margin:        '20px 0 0',
+                    maxWidth:      320,
+                    letterSpacing: '0.02em',
+                  }}>
+                    Your decisions are encrypted at the field level and never used to train AI models. Export or delete your full record any time from Settings.
+                  </p>
+                </>
+              )}
+
+              {/* ── Panel 4 / Default — QUORUM face ────────── */}
+              {(!isOnboarding || onboardingPanel === 4) && (
                 <>
                   <div style={{
                     width:      56, height: 1,
@@ -860,7 +912,7 @@ export default function Home() {
                 {/* Dot indicators — only during onboarding */}
                 {isOnboarding && (
                   <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                    {[0, 1, 2, 3].map(i => (
+                    {[0, 1, 2, 3, 4].map(i => (
                       <div key={i} style={{
                         width:        i === onboardingPanel ? 18 : 6,
                         height:       6,
@@ -873,10 +925,10 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Tap prompt — Council (1) & Mirror (2) only. Video panel (0)
-                    has its own "Skip video →" link + native controls;
-                    QUORUM panel (3) has its own CTA copy below. */}
-                {isOnboarding && onboardingPanel > 0 && onboardingPanel < 3 && (
+                {/* Tap prompt — Council (1), Mirror (2) & Privacy (3) only.
+                    Video panel (0) has its own "Skip video →" link + native
+                    controls; QUORUM panel (4) has its own CTA copy below. */}
+                {isOnboarding && onboardingPanel > 0 && onboardingPanel < 4 && (
                   <p style={{
                     fontFamily:    'var(--font-mono)',
                     fontSize:      9,
@@ -921,9 +973,55 @@ export default function Home() {
               }}>
                 What decision are you bringing to your record?
               </h1>
-              <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 18, lineHeight: 1.6, fontStyle: 'italic' }}>
+              <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 14, lineHeight: 1.6, fontStyle: 'italic' }}>
                 Add it to your judgment record. The Council runs on every decision you bring.
               </p>
+
+              {/* ── Trust Audit fix (P0-1/P0-3/P2-1): trust signals now render
+                  ABOVE the textarea, before the user has typed or submitted
+                  anything. TrustBadgeStrip previously only rendered on
+                  /record/[id] — after a decision was already processed. The
+                  two lines below are condensed versions of the strongest
+                  existing FAQ answers (full text in FAQSection.tsx, linked
+                  via #faq — not duplicated verbatim here), and /security
+                  (previously reachable only from the footer) is now linked
+                  directly from the one place a skeptical first-time user is
+                  actually looking. encryptionEnabled mirrors the same
+                  guarantee lib/encryption.ts enforces: DB_ENCRYPTION_KEY is
+                  required and fails closed in production, so encryption is
+                  on whenever this is a real deployment — this can't drift
+                  from the truth the way an independently-set flag could. */}
+              <TrustBadgeStrip encryptionEnabled={process.env.NODE_ENV === 'production'} />
+              <div style={{ margin: '0 0 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.55, margin: 0 }}>
+                  <span style={{ color: 'var(--text-3)' }}>Not a chatbot.</span> Every decision is read at a structural level before any advisor responds.
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.55, margin: 0 }}>
+                  <span style={{ color: 'var(--text-3)' }}>Your data.</span> Encrypted at rest, private by URL, never used to train AI models.
+                </p>
+                <div style={{ display: 'flex', gap: 16, marginTop: 3, flexWrap: 'wrap' }}>
+                  <a
+                    href="#faq"
+                    style={{
+                      fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
+                      color: 'var(--gold)', textDecoration: 'none',
+                      borderBottom: '1px solid var(--gold-dim)', paddingBottom: 1,
+                    }}
+                  >
+                    Full FAQ ↓
+                  </a>
+                  <Link
+                    href="/security"
+                    style={{
+                      fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
+                      color: 'var(--gold)', textDecoration: 'none',
+                      borderBottom: '1px solid var(--gold-dim)', paddingBottom: 1,
+                    }}
+                  >
+                    See exactly what we encrypt →
+                  </Link>
+                </div>
+              </div>
 
               <textarea
                 ref={textareaRef}
