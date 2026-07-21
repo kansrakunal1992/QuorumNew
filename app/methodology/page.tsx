@@ -38,6 +38,11 @@ const SESSION_STEPS: { label: string; detail: string }[] = [
     detail:
       'Where the six perspectives agree, that gets weight. Where they genuinely conflict, the synthesis says so directly rather than averaging it away — a decision that six advisors are split on is different from one they agree on, and you should be able to tell the difference.',
   },
+  {
+    label: 'Challenging one advisor reaches all six',
+    detail:
+      "If you push back on an advisor or add context they missed, that's treated as new information for the whole council, not a private exchange with one advisor — it reaches every advisor automatically. Each one reassesses independently through its own lens and may keep, strengthen, weaken, or reverse its position; being told the same thing never means reaching the same conclusion. The Council synthesizes once, after every advisor has had the chance to weigh in.",
+  },
 ]
 
 const MIRROR_ITEMS: { label: string; detail: string }[] = [

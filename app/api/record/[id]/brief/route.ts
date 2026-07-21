@@ -66,18 +66,19 @@ function sanitise(text: string): string {
     .replace(/[^\x00-\xFF]/g, '?')
 }
 
-// Strip the examiner-style wrapper that "share to all advisors" prepends to
-// user pushback messages before they are saved to the DB, leaving only the
-// raw pushback text the decision-maker actually typed.
+// Strip the examiner-style wrapper that automatic advisor-to-advisor context
+// sharing prepends to pushback messages before they are saved to the DB,
+// leaving only the raw pushback text the decision-maker actually typed.
 function cleanPushbackText(raw: string): string {
   return raw
-    // Remove "The user submitted the following new information while
-    // challenging another advisor. Review it and update your position
-    // if it changes your assessment:" preamble
-    .replace(/^The user submitted the following[^"\n]*[:\n]+\s*/i, '')
+    // Strip any wrapper preamble (old or current wording) that precedes the
+    // quoted pushback text — matched structurally (a line ending in ':' or
+    // a newline run, right before the opening quote) rather than one exact
+    // sentence, so this survives future wording changes to the wrapper.
+    .replace(/^[^"\n]*[:\n]+\s*/i, '')
     // Remove the quoted wrapper if present: "..."
     .replace(/^"([\s\S]*)"\s*$/, '$1')
-    // Remove the trailing instruction block
+    // Remove the trailing instruction block (old or current wording)
     .replace(/\s*Provide a concise update[\s\S]*$/i, '')
     .trim()
 }

@@ -58,6 +58,10 @@ const FAQS: FAQItem[] = [
     a: 'Your decision is first tagged structurally — the kind of decision it is, what it structurally resembles from your own history — and each of the six advisors responds from that read, not from a single generic model pass.',
   },
   {
+    q: 'If I push back on one advisor, do the others find out?',
+    a: "Yes, automatically. A challenge is treated as new information for the whole council, not a private exchange with one advisor — so it reaches all six. Each advisor still reassesses it independently through its own lens and may keep, strengthen, weaken, or reverse its position; sharing the information never means they share a conclusion. The Council synthesizes once, after every advisor has had a chance to weigh in.",
+  },
+  {
     q: "What's the Advisory tier?",
     a: "A founder-led, capped relationship for decisions where the cost of being wrong is measured in crores, not lakhs. Pricing is shared once we've understood the decision, not published upfront.",
   },

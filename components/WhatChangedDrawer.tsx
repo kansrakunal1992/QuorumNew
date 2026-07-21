@@ -54,9 +54,9 @@ export default function WhatChangedDrawer({ versions }: Props) {
   return (
     <div style={{ marginTop: 14 }}>
       {/* Collapsed pill — restyled to the gold accent family used by the
-          Challenge / Share-to-all-advisors controls, so this reads as the
-          visible payoff of that same action rather than a separate, generic
-          "something changed" indicator. */}
+          Challenge flow and its automatic council-wide share, so this reads
+          as the visible payoff of that same action rather than a separate,
+          generic "something changed" indicator. */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{

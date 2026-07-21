@@ -226,12 +226,13 @@ function renderSynthesisMessage(raw: string): React.ReactNode {
   )
 }
 
-// Strip the examiner-style wrapper that "share to all advisors" prepends to user
-// pushback messages before they are saved to the DB — mirrors the same function
-// in the brief PDF route so both surfaces show only the raw pushback text.
+// Strip the examiner-style wrapper that automatic advisor-to-advisor context
+// sharing prepends to pushback messages before they are saved to the DB —
+// mirrors the same function in the brief PDF route so both surfaces show
+// only the raw pushback text.
 function cleanPushbackText(raw: string): string {
   return raw
-    .replace(/^The user submitted the following[^"\n]*[:\n]+\s*/i, '')
+    .replace(/^[^"\n]*[:\n]+\s*/i, '')
     .replace(/^"([\s\S]*)"[\s]*$/, '$1')
     .replace(/\s*Provide a concise update[\s\S]*$/i, '')
     .trim()

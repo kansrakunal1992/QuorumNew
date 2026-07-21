@@ -1241,7 +1241,7 @@ export default function Home() {
                     <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>Challenge the advisors</p>
                   </div>
                   <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
-                    After each advisor responds, you&apos;ll see a <span style={{ color: 'var(--gold)', fontWeight: 600 }}>&quot;Challenge this · add context&quot;</span> button. Disagree, add information they missed, or ask a follow-up.
+                    After each advisor responds, you&apos;ll see a <span style={{ color: 'var(--gold)', fontWeight: 600 }}>&quot;Challenge this · add context&quot;</span> button. Disagree, add information they missed, or ask a follow-up — it&apos;s automatically shared with the rest of the council as new evidence, and each advisor reassesses independently. The Council synthesizes once, after everyone has weighed in.
                   </p>
                 </div>
                 <div style={{ background: 'var(--green-soft)', border: '1px solid var(--green-border)', borderRadius: 12, padding: '14px 16px' }}>

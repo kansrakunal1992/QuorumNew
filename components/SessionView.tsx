@@ -632,11 +632,12 @@ export default function SessionView({ session: initialSession, initialMessages =
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ontologyReady, styleCueReady])
 
-  // Fix #3: tracks which advisors have a "Share to all advisors" update still
-  // in flight. Declared here (rather than down near handleShareContext) so
-  // handlePersonaComplete below can consult it. See handlePersonaComplete and
-  // handleExaminerUpdateComplete for how this collapses N per-advisor
-  // synthesis re-runs into one.
+  // Automatic percolation batch: tracks which of the 6 advisors (the
+  // challenged one + the other 5) still have an in-flight update from a
+  // challenge's automatic broadcast. Declared here (rather than down near
+  // handleShareContext) so handlePersonaComplete below can consult it. See
+  // handlePersonaComplete and handleExaminerUpdateComplete for how this
+  // collapses what used to be up to 6 separate synthesis re-runs into one.
   const shareContextPendingRef = useRef<Set<string>>(new Set())
 
   const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
@@ -662,14 +663,16 @@ export default function SessionView({ session: initialSession, initialMessages =
 
     setCompletedResponses(prev => {
       const isUpdate = personaKey in prev
-      // Fix #3: during "Share to all advisors", each of the (up to 5) other
-      // advisors completes independently, and previously each one bumped
-      // synthesisVersion here — triggering, then immediately aborting, up to
-      // 4 redundant synthesis re-runs before the real final one. When this
-      // completion is part of a pending share-context batch, defer to
-      // handleExaminerUpdateComplete, which bumps exactly once after the
-      // whole batch has landed (with a timeout safety net in
-      // handleShareContext in case one advisor's update fails).
+      // Automatic percolation: every challenge now broadcasts to the whole
+      // council (the challenged advisor + the other 5), and each of the 6
+      // completes independently. Previously (and still, if this check is
+      // ever bypassed) each one bumped synthesisVersion here — triggering,
+      // then immediately aborting, up to 5 redundant synthesis re-runs
+      // before the real final one. When this completion is part of a
+      // pending broadcast batch, defer to handleExaminerUpdateComplete,
+      // which bumps exactly once after the whole batch has landed (with a
+      // timeout safety net in handleShareContext in case one advisor's
+      // update fails).
       if (isUpdate && !shareContextPendingRef.current.has(personaKey)) {
         setSynthesisVersion(v => v + 1)
       }
@@ -825,16 +828,37 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [])
 
   const handleShareContext = useCallback((originPersonaKey: string, text: string) => {
-    const examinerMsg = `The user submitted the following new information while challenging another advisor. Review it and update your position if it changes your assessment:\n\n"${text}"\n\nProvide a concise update (under 200 words). If this materially changes your view, say so directly. If it confirms your original analysis, say that — and why.`
-    const pendingKeys = PERSONA_ORDER.filter(k => k !== originPersonaKey)
-    const thisBatch = new Set(pendingKeys)
+    // Independence-preserving framing: this is presented as new evidence
+    // that surfaced during the session, never as "advisor X's reasoning" or
+    // "advisor X disagrees" — the other advisors should reassess the
+    // information itself through their own lens, not react to another
+    // advisor's take on it. Explicitly permits moving in any direction
+    // (including not moving at all) so a non-move reads as a genuine
+    // independent judgment, not a failure to engage.
+    const examinerMsg = `New information has surfaced during this review:\n\n"${text}"\n\nReassess it independently through your own lens — you may keep, strengthen, weaken, or reverse your position based on it. Provide a concise update (under 200 words) either way: state plainly whether this changes your view, and why.`
+    const allKeys   = PERSONA_ORDER as string[]
+    const otherKeys = allKeys.filter(k => k !== originPersonaKey)
+
+    // Automatic percolation: the origin advisor's own completion (its
+    // detailed pushback reply, handled separately in PersonaPanel's
+    // streamResponse) is folded into THIS SAME batch — see
+    // handlePersonaComplete's shareContextPendingRef check — so the whole
+    // council (origin + other 5) settles before exactly one synthesis
+    // re-run fires, not two.
+    //
+    // Merge rather than overwrite: if a second challenge (on a different
+    // advisor) fires while an earlier one is still resolving, union the
+    // pending sets instead of replacing the ref outright, so the earlier
+    // batch's still-in-flight advisors don't silently fall out of tracking.
+    const thisBatch = new Set(shareContextPendingRef.current)
+    for (const k of allKeys) thisBatch.add(k)
     shareContextPendingRef.current = thisBatch
-    // Safety net: if any advisor's share-context update fails or hangs, it
-    // never calls handleExaminerUpdateComplete, so the batch would otherwise
-    // sit at size > 0 forever and synthesis would never re-run — silently
-    // dropping the advisors that DID succeed too. Force a bump after a
-    // generous window. The reference-equality check no-ops this if the batch
-    // already completed normally, or if a newer share-context batch has since
+    // Safety net: if any advisor's update fails or hangs, it never calls
+    // handleExaminerUpdateComplete, so the batch would otherwise sit at
+    // size > 0 forever and synthesis would never re-run — silently dropping
+    // the advisors that DID succeed too. Force a bump after a generous
+    // window. The reference-equality check no-ops this if the batch already
+    // completed normally, or if a newer share-context batch has since
     // replaced this one.
     setTimeout(() => {
       if (shareContextPendingRef.current === thisBatch && shareContextPendingRef.current.size > 0) {
@@ -844,7 +868,7 @@ export default function SessionView({ session: initialSession, initialMessages =
     }, 25000)
     setExaminerContextByPersona(prev => {
       const next = { ...prev }
-      for (const key of pendingKeys) {
+      for (const key of otherKeys) {
         next[key] = examinerMsg
       }
       return next

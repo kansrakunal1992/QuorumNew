@@ -62,9 +62,14 @@ interface Props {
   examinerContext?: string
   /** Sprint 5: structural context from past sessions — injected for Pattern Analyst, Risk Architect, Elder */
   structuralContext?: string
-  /** Sprint 16b Fix 4: called after pushback completes — fans the pushback text out to all other advisors */
+  /** Automatic percolation: fires the moment a challenge is submitted (not
+   *  after the reply completes) — fans the raw challenge text out to all
+   *  other advisors as new evidence for independent reassessment. */
   onShareContext?: (text: string) => void
-  /** Sprint 16b Fix 4b: called when an examiner/share-context update stream finishes — used to trigger synthesis re-run */
+  /** Called both when a broadcast-received update finishes AND when this
+   *  advisor's own pushback reply finishes (if it's part of an active
+   *  broadcast batch) — used to fold everyone's completion into exactly one
+   *  downstream synthesis re-run instead of one per advisor. */
   onExaminerUpdateComplete?: (personaKey: string, content: string) => void
   /** Pre-loaded content from DB — skips the AI call entirely (used on Back to Council navigation) */
   initialContent?: string
@@ -107,13 +112,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [showPushback, setShowPushback]   = useState(false)
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
-  // P0 fix: was a one-shot boolean (`contextShared`) that hid this button
-  // permanently after its first use, even though the user could keep pushing
-  // back and generating new exchanges. Tracking the index of the last-shared
-  // exchange lets the button reappear whenever there's a NEW exchange that
-  // hasn't been shared yet, while still hiding it right after a share until
-  // the next fresh pushback comes in. -1 = nothing shared yet.
-  const [lastSharedExchangeIndex, setLastSharedExchangeIndex] = useState(-1)
 
   // Header block — parsed from <lens>, <position>, <realcost>, <lean> tags in streamed output
   const [lensText,     setLensText]     = useState('')
@@ -352,6 +350,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         setIsPushingBack(false)
         const fullContent = [responseRef.current, ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)].join('\n\n')
         onCompleteRef.current?.(persona.key, fullContent)
+        // Automatic percolation: this advisor's own completion is now part of
+        // the same "whole council reassessing this new information" batch as
+        // the other 5 (see handleShareContext / handleExaminerUpdateComplete
+        // in SessionView) — notify so the batch can close and fire exactly
+        // one synthesis re-run once everyone (including this advisor) has
+        // landed, instead of one bump here plus a second one after the other
+        // five finish. No-ops harmlessly if this key isn't part of an active
+        // batch (e.g. onShareContext wasn't wired for this card).
+        onExaminerUpdateCompleteRef.current?.(persona.key, fullContent)
       }
     } catch {
       setPanelState('error')
@@ -450,15 +457,27 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
   const handlePushback = async () => {
     if (!pushback.trim()) return
+    const challengeText = pushback
     const updated: Message[] = [
       ...messages,
-      { id: Date.now().toString(), session_id: sessionId, persona: persona.key, role: 'user', content: pushback, created_at: new Date().toISOString() },
+      { id: Date.now().toString(), session_id: sessionId, persona: persona.key, role: 'user', content: challengeText, created_at: new Date().toISOString() },
     ]
     setMessages(updated)
     setPushback('')
     setShowPushback(false)
     setIsPushingBack(true)
     onFirstChallengeUsed?.()
+    // Automatic percolation: a challenge is new evidence, not reasoning
+    // specific to this one advisor — broadcast it to the rest of the council
+    // immediately, in parallel with this advisor's own detailed reply below,
+    // rather than waiting for a manual "Share to all advisors" click. Each of
+    // the other advisors reassesses independently through its own lens (see
+    // the examinerMsg wording in handleShareContext, SessionView.tsx) — this
+    // call shares the raw new information only, never this advisor's take on
+    // it. See handleShareContext / handleExaminerUpdateComplete in
+    // SessionView for how this advisor's own completion below and the other
+    // five's are folded into exactly one downstream synthesis re-run.
+    onShareContext?.(challengeText)
     await streamResponse(updated, false)
   }
 
@@ -781,45 +800,25 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </p>
         )}
 
-        {/* P0 fix: shown after any pushback exchange that hasn't been shared yet —
-            reappears on every new challenge round instead of disappearing for good
-            after the first click. Restyled to the gold/checkmark family (was blue/
-            info) so this reads as the natural next step of Challenge, not a
-            separate, unrelated capability. */}
-        {panelState === 'done' && !isPushingBack && exchanges.length > 0
-          && lastSharedExchangeIndex < exchanges.length - 1 && onShareContext && (
-          <div style={{ marginTop: 16 }}>
-            <button
-              onClick={() => {
-                const lastIndex = exchanges.length - 1
-                const lastExchange = exchanges[lastIndex]
-                onShareContext(lastExchange.user)
-                setLastSharedExchangeIndex(lastIndex)
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '7px 14px', borderRadius: 8,
-                border: '1px solid var(--gold-dim)',
-                background: 'rgba(201,168,76,0.10)',
-                color: 'var(--gold)', fontSize: 11.5, fontWeight: 600,
-                cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.02em',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.20)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold)'
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.10)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--gold-dim)'
-              }}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-              </svg>
-              Share this context with all advisors
-            </button>
+        {/* Automatic percolation: challenging this advisor now shares that new
+            information with the rest of the council automatically, fired the
+            moment the challenge was submitted (see handlePushback) — well
+            before this reply even finished streaming. Purely informational;
+            there's nothing left to click. Each advisor reassesses
+            independently through its own lens (they may keep, strengthen,
+            weaken, or reverse their stance) — this note doesn't imply they
+            reached the same conclusion, only that they saw the same new
+            information. */}
+        {panelState === 'done' && !isPushingBack && exchanges.length > 0 && onShareContext && (
+          <div style={{
+            marginTop: 16, display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 11.5, fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.02em',
+          }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            Shared with the full council — each advisor is reassessing independently
           </div>
         )}
 
