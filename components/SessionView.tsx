@@ -963,7 +963,18 @@ export default function SessionView({ session: initialSession, initialMessages =
   // percolation batch is still resolving (pendingAdvisorUpdates > 0) or the
   // synthesis re-run it triggers is still streaming (synthesisStreaming).
   // Only once both are false is the DB guaranteed to hold the final verdict.
-  const councilSettling = synthesisStreaming || pendingAdvisorUpdates > 0
+  //
+  // Vet-fix (a2): also true before the FIRST synthesis has ever completed
+  // (!synthesisDone). The navbar Save button is fixed chrome, mounted from
+  // the moment this page loads — before that, synthesisStreaming and
+  // pendingAdvisorUpdates are both still their false/0 defaults (nothing has
+  // started yet), so without this the button was live and clickable while
+  // the examiner was still running and persona cards were still streaming
+  // their first responses — there wasn't even a synthesis message in the DB
+  // yet to save. synthesisDone only flips true once the first synthesis
+  // completes, so this closes that window the same way the rest of
+  // councilSettling closes the post-pushback one.
+  const councilSettling = !synthesisDone || synthesisStreaming || pendingAdvisorUpdates > 0
 
   const handleSaveRecord = async () => {
     // Defense-in-depth: the buttons below are already disabled while this is
@@ -1311,7 +1322,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               className="btn-primary"
               onClick={handleSaveRecord}
               disabled={saving || councilSettling}
-              title={councilSettling ? 'Council is still updating after your last challenge — one moment.' : undefined}
+              title={councilSettling ? 'Council is still working — one moment.' : undefined}
               data-tour-id="council-save"
             >
               {saving
@@ -1890,7 +1901,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                   style={{ fontSize: 13, padding: '12px 28px', minHeight: 44 }}
                   onClick={handleSaveRecord}
                   disabled={saving || councilSettling}
-                  title={councilSettling ? 'Council is still updating after your last challenge — one moment.' : undefined}
+                  title={councilSettling ? 'Council is still working — one moment.' : undefined}
                 >
                   {saving ? 'Saving…' : councilSettling ? 'Council updating…' : 'Save to Record'}
                 </button>
