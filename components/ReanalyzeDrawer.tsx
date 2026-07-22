@@ -3,15 +3,22 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getOrCreateDeviceId } from '@/lib/storage'
+import TrustBadgeStrip from '@/components/TrustBadgeStrip'
 
 interface Props {
   sessionId:    string
   decisionText: string
   contextText?: string | null
   userId?:      string | null  // passed from server component; component falls back to getSession if null
+  /** Vet fix: this drawer is another moment where the user retypes/edits
+   *  their (often sensitive) decision text, same as the homepage textarea —
+   *  but had zero trust signal anywhere in it. Passed from the caller (same
+   *  DB_ENCRYPTION_KEY check used for the record page's own TrustBadgeStrip)
+   *  rather than re-derived here, so it can't drift between the two. */
+  encryptionEnabled?: boolean
 }
 
-export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, userId: userIdProp }: Props) {
+export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, userId: userIdProp, encryptionEnabled }: Props) {
   const router = useRouter()
 
   const [drawerOpen,     setDrawerOpen]     = useState(false)
@@ -139,6 +146,11 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
                 ✕ Close
               </button>
             </div>
+
+            {/* Vet fix: same trust signal as the homepage and record page,
+                kept to just the strip — no extra copy — since this is
+                already a focused, single-purpose drawer. */}
+            <TrustBadgeStrip encryptionEnabled={encryptionEnabled} securityHref="/security" />
 
             {/* S2-08: prior Council summary — reminds the user what was already concluded */}
             {priorSynthesisFull && (

@@ -977,50 +977,37 @@ export default function Home() {
                 Add it to your judgment record. The Council runs on every decision you bring.
               </p>
 
-              {/* ── Trust Audit fix (P0-1/P0-3/P2-1): trust signals now render
-                  ABOVE the textarea, before the user has typed or submitted
-                  anything. TrustBadgeStrip previously only rendered on
-                  /record/[id] — after a decision was already processed. The
-                  two lines below are condensed versions of the strongest
-                  existing FAQ answers (full text in FAQSection.tsx, linked
-                  via #faq — not duplicated verbatim here), and /security
-                  (previously reachable only from the footer) is now linked
-                  directly from the one place a skeptical first-time user is
-                  actually looking. encryptionEnabled mirrors the same
+              {/* ── Trust Audit fix (P0-1/P0-3/P2-1): trust signal renders
+                  ABOVE the textarea. encryptionEnabled mirrors the same
                   guarantee lib/encryption.ts enforces: DB_ENCRYPTION_KEY is
                   required and fails closed in production, so encryption is
                   on whenever this is a real deployment — this can't drift
-                  from the truth the way an independently-set flag could. */}
-              <TrustBadgeStrip encryptionEnabled={process.env.NODE_ENV === 'production'} />
-              <div style={{ margin: '0 0 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.55, margin: 0 }}>
-                  <span style={{ color: 'var(--text-3)' }}>Not a chatbot.</span> Every decision is read at a structural level before any advisor responds.
-                </p>
-                <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.55, margin: 0 }}>
-                  <span style={{ color: 'var(--text-3)' }}>Your data.</span> Encrypted at rest, private by URL, never used to train AI models.
-                </p>
-                <div style={{ display: 'flex', gap: 16, marginTop: 3, flexWrap: 'wrap' }}>
-                  <a
-                    href="#faq"
-                    style={{
-                      fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
-                      color: 'var(--gold)', textDecoration: 'none',
-                      borderBottom: '1px solid var(--gold-dim)', paddingBottom: 1,
-                    }}
-                  >
-                    Full FAQ ↓
-                  </a>
-                  <Link
-                    href="/security"
-                    style={{
-                      fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
-                      color: 'var(--gold)', textDecoration: 'none',
-                      borderBottom: '1px solid var(--gold-dim)', paddingBottom: 1,
-                    }}
-                  >
-                    See exactly what we encrypt →
-                  </Link>
-                </div>
+                  from the truth the way an independently-set flag could.
+                  Declutter pass: dropped the "Not a chatbot" line (already
+                  covered in onboarding panel 1) and "Your data" line
+                  (restated what the strip above it already says), plus the
+                  separate "Full FAQ" and "See exactly what we encrypt"
+                  links — the latter is now securityHref on the strip
+                  itself, so "Encrypted" IS the link to /security rather
+                  than needing a second line to point at it.
+                  Engagement-gated pass: only reveals once the person has
+                  actually started typing (one word in — decision.trim()
+                  non-empty), not on page load. Reassurance for someone
+                  already writing their decision is useful; the same badge
+                  in front of an empty textarea is friction before they've
+                  even engaged. Record/session/drawer surfaces show it
+                  immediately since the user has already committed to being
+                  there by the time they reach those. */}
+              <div style={{
+                maxHeight:  decision.trim().length > 0 ? 32 : 0,
+                opacity:    decision.trim().length > 0 ? 1 : 0,
+                overflow:   'hidden',
+                transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease',
+              }}>
+                <TrustBadgeStrip
+                  encryptionEnabled={process.env.NODE_ENV === 'production'}
+                  securityHref="/security"
+                />
               </div>
 
               <textarea

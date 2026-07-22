@@ -755,7 +755,7 @@ export default async function RecordPage({ params }: Props) {
           </div>
 
           {/* S2-03 — Trust badge strip: encryption, visibility, AI disclosure */}
-          <TrustBadgeStrip encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY} />
+          <TrustBadgeStrip encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY} securityHref="/security" />
 
           {/* ── Decision Hero Card ─────────────────────────────── */}
           <div className="rec-hero rec-fade rec-fade-2" data-tour-id="record-decision">
@@ -983,6 +983,7 @@ export default async function RecordPage({ params }: Props) {
                   decisionText={session.decision_text}
                   contextText={session.context_text}
                   userId={session.user_id ?? null}
+                  encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY}
                 />
               </div>
               <Link href="/">

@@ -32,7 +32,6 @@ import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesi
 import EarlyEchoCard        from './EarlyEchoCard'         // Sprint: second-use early signal, sessions 2-4
 import type { Lean }        from './TensionInterstitial'
 import SessionCompleteBadge from './SessionCompleteBadge' // S1-06: Council complete timestamp
-import TrustBadgeStrip      from './TrustBadgeStrip'       // Trust Audit P0-3/P1-2: shown at top of live session
 import {
   DECISION_TYPE_LABELS,
   REVERSIBILITY_LABELS,
@@ -1338,17 +1337,12 @@ export default function SessionView({ session: initialSession, initialMessages =
         <div style={{ paddingTop: 72, paddingBottom: 60, paddingLeft: 16, paddingRight: 16 }}>
           <div style={{ maxWidth: '80rem', margin: '0 auto' }}>
 
-            {/* ── Trust Audit fix (P0-3/P1-2): trust strip now renders here,
-                at the very top of the live session — before the Decision
-                Hero card and before the Council has processed anything.
-                TrustBadgeStrip previously only rendered on /record/[id],
-                after processing was already complete. The hero card's own
-                "Private by URL / encrypted at rest" line further down stays
-                as-is — it carries session-specific info (linked to account
-                vs. anonymous) that this shared strip doesn't have. ── */}
-            <div className="sv-fade sv-fade-1" style={{ marginBottom: 14 }}>
-              <TrustBadgeStrip encryptionEnabled={encryptionEnabled} />
-            </div>
+            {/* Declutter pass: the standalone TrustBadgeStrip that used to render
+                here (Trust Audit P0-3/P1-2) duplicated the hero card's own
+                "Private by URL · encrypted at rest" footer line just below it —
+                same claim, two places, one screen. Removed; the hero footer
+                line (see encryptionEnabled usage further down) is the single
+                source for this now. */}
 
             {/* ── Decision Hero Card ────────────────────────────────── */}
             <div className="sv-hero sv-fade sv-fade-1" style={{ marginBottom: 20 }}>
