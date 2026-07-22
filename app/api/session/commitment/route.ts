@@ -14,9 +14,10 @@
 // No auth required — sessionId is the access control (same as all session routes).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { NextResponse }        from 'next/server'
-import { createServiceClient } from '@/lib/supabase'
-import { encrypt, decrypt }    from '@/lib/encryption'
+import { NextResponse }           from 'next/server'
+import { createServiceClient }    from '@/lib/supabase'
+import { encrypt, decrypt }       from '@/lib/encryption'
+import { detectAdvisorDivergence } from '@/lib/advisor-divergence'
 
 // ── POST — save DecisionStateCard submission ───────────────────────────────
 
@@ -43,6 +44,25 @@ export async function POST(req: Request) {
     if (error) {
       console.error('[commitment POST] supabase error:', error)
       return NextResponse.json({ error: 'Failed to save commitment' }, { status: 500 })
+    }
+
+    // Advisor-divergence detection — compares this stated leaning against
+    // each advisor's final lean in the session's synthesis, for the
+    // cross-session "which advisor you tend to go against" pattern (see
+    // lib/advisor-divergence.ts). Deliberately NOT true fire-and-forget:
+    // there's no waitUntil/after() primitive in use anywhere else in this
+    // Next.js setup, and a truly detached call risks the write never landing
+    // in a serverless environment. Instead it's awaited here but wrapped in
+    // its own try/catch, so a failure (classification error, missing
+    // synthesis, etc.) can never fail or slow down the save response the
+    // user is already relying on — it's a single lightweight classification
+    // call plus two small queries, so the added latency is minimal.
+    if (leaning?.trim()) {
+      try {
+        await detectAdvisorDivergence(sessionId, leaning.trim())
+      } catch (err) {
+        console.error('[commitment POST] detectAdvisorDivergence failed (non-fatal):', err)
+      }
     }
 
     return NextResponse.json({ ok: true })
