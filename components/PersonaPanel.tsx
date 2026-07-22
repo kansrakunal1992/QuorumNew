@@ -261,7 +261,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/<structural>[\s\S]*?<\/structural>/g, '')
       // Same treatment as <lean> — machine-only value, never shown, full removal.
-      .replace(/<pushback_classification>[\s\S]*?<\/pushback_classification>/g, '')
+      // Tolerant close: model sometimes closes with </pushback> instead of the
+      // full </pushback_classification> (same drift pattern as verdict_lean/
+      // </verdict> below) — without this, the tag leaks straight into the UI.
+      .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
       .replace(/<(?:lens|position|realcost|lean|structural|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
       // Sprint 2 follow-on: <assumption> is content-preserving here, unlike the
       // tags above — it wraps substantive prose (the actual "hidden assumption"
@@ -383,7 +386,11 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         // instant this reply finished streaming. Same extract-before-strip
         // pattern as leanMatch above, fire-and-forget POST (non-blocking —
         // a failure here should never affect the pushback reply itself).
-        const classificationMatch = acc.match(/<pushback_classification>([\s\S]*?)<\/pushback_classification>/)
+        // Tolerant close here too — same drift as the strip regex above. If this
+        // stays strict while the strip regex is tolerant, a drifted response
+        // would have its tag correctly hidden from the user but silently never
+        // recorded for mind-change tracking (data loss with no visible symptom).
+        const classificationMatch = acc.match(/<pushback_classification>([\s\S]*?)<\/(?:pushback_classification|pushback)>/)
         if (classificationMatch) {
           const classification = classificationMatch[1].trim().toLowerCase()
           const validClassifications = ['weak', 'partially_valid', 'materially_valid', 'recommendation_changing']

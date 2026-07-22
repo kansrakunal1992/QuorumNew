@@ -38,7 +38,9 @@ function stripHeaderTags(raw: string): string {
     // the observation model should actually read, not a machine value.
     .replace(/<\/?assumption>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
-    .replace(/<pushback_classification>[\s\S]*?<\/pushback_classification>/g, '')
+    // Tolerant close: model sometimes closes with </pushback> instead of the
+    // full tag name (same drift as verdict_lean) — leaked tags are noise to the model.
+    .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
     .replace(/^\s+/, '')
     .trim()
 }
