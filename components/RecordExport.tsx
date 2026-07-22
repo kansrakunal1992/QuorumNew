@@ -66,6 +66,8 @@ function stripSynthesisTags(raw: string): string {
     // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.
     .replace(/<\/?assumption>/g, '')
+    // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
+    .replace(/<pushback_classification>[\s\S]*?<\/pushback_classification>/g, '')
     .replace(/^\s+/, '')
 }
 

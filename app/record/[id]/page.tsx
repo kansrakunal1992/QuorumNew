@@ -39,6 +39,8 @@ function stripHeaderTags(raw: string): string {
     // "hidden assumption" sentences), not a machine value or a citation
     // meant to live elsewhere. Strip only the tag markers, keep the text.
     .replace(/<\/?assumption>/g, '')
+    // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
+    .replace(/<pushback_classification>[\s\S]*?<\/pushback_classification>/g, '')
     // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close

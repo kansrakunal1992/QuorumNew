@@ -154,6 +154,19 @@ function getStructuralBoost(maxStructuralScore: number | null): PersonaBoost {
 
 // ── Public: compute relevance map ────────────────────────────────────────────
 
+// Sprint — boost-constant logging (instrumentation only, see
+// supabase/sprint_weight_boost_events.sql for why this exists). Deliberately
+// NOT a change to computePersonaRelevance's return type — that would ripple
+// into every caller for a capability only one caller actually wants. An
+// optional mutable output array is the narrower change: pass it in to
+// collect events, omit it and behavior is 100% identical to before this
+// existed.
+export interface BoostEvent {
+  persona:    AdvisorKey
+  boostType:  string
+  boostValue: number
+}
+
 export function computePersonaRelevance(
   ruleEngineResult:   RuleEngineResult | null,
   ontologyVector:     OntologyScoreMap | null,
@@ -168,6 +181,9 @@ export function computePersonaRelevance(
   // that the deliberation is actually working; this is the one signal that
   // legitimately shifts as the Council evolves, so it's boosted accordingly.
   leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
+  // Sprint — optional. When provided, every boost applied below is also
+  // pushed here for persistence by the caller. See BoostEvent above.
+  boostEventsOut?: BoostEvent[],
 ): PersonaRelevanceMap {
   const scores: PersonaRelevanceMap = {
     contrarian:         0.50,
@@ -189,6 +205,7 @@ export function computePersonaRelevance(
       if (!boosts) continue
       for (const [persona, boost] of Object.entries(boosts) as [AdvisorKey, number][]) {
         scores[persona] += boost
+        boostEventsOut?.push({ persona, boostType: 'rule_signal', boostValue: boost })
       }
     }
   }
@@ -205,6 +222,7 @@ export function computePersonaRelevance(
       if (!fires) continue
       for (const [persona, boost] of Object.entries(entry.boosts) as [AdvisorKey, number][]) {
         scores[persona] += boost
+        boostEventsOut?.push({ persona, boostType: 'dimension_signal', boostValue: boost })
       }
     }
   }
@@ -225,6 +243,7 @@ export function computePersonaRelevance(
       if (!entry) continue
       for (const persona of Object.keys(entry.boosts) as AdvisorKey[]) {
         scores[persona] += CALIBRATION_ZONE_BOOST
+        boostEventsOut?.push({ persona, boostType: 'calibration_zone', boostValue: CALIBRATION_ZONE_BOOST })
       }
     }
   }
@@ -233,6 +252,7 @@ export function computePersonaRelevance(
   const structBoost = getStructuralBoost(maxStructuralScore)
   for (const [persona, boost] of Object.entries(structBoost) as [AdvisorKey, number][]) {
     scores[persona] += boost
+    boostEventsOut?.push({ persona, boostType: 'structural_match', boostValue: boost })
   }
 
   // ── 4. Deliberation-evolution boost (Gap #2 fix) ─────────────────────────
@@ -245,7 +265,10 @@ export function computePersonaRelevance(
   const DELIBERATION_SHIFT_BOOST = 0.15
   if (leanShifts) {
     for (const persona of Object.keys(leanShifts) as AdvisorKey[]) {
-      if (persona in scores) scores[persona] += DELIBERATION_SHIFT_BOOST
+      if (persona in scores) {
+        scores[persona] += DELIBERATION_SHIFT_BOOST
+        boostEventsOut?.push({ persona, boostType: 'deliberation_shift', boostValue: DELIBERATION_SHIFT_BOOST })
+      }
     }
   }
 

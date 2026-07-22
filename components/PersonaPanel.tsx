@@ -209,8 +209,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     const lens     = get('lens')
     const position = get('position')
     const realcost = get('realcost')
-    const structural = get('structural')
     const lean     = get('lean').toLowerCase()
+    const structural = get('structural')
     if (lens)     setLensText(lens)
     if (position) setPositionText(position)
     if (realcost) setRealCostText(realcost)
@@ -260,7 +260,9 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-      .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
+      // Same treatment as <lean> — machine-only value, never shown, full removal.
+      .replace(/<pushback_classification>[\s\S]*?<\/pushback_classification>/g, '')
+      .replace(/<(?:lens|position|realcost|lean|structural|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
       // Sprint 2 follow-on: <assumption> is content-preserving here, unlike the
       // tags above — it wraps substantive prose (the actual "hidden assumption"
       // sentences), not a machine-only value or a citation meant to live
@@ -373,6 +375,24 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           const lean = leanMatch[1].trim().toLowerCase()
           if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
             onLeanUpdateRef.current?.(persona.key, lean)
+          }
+        }
+        // Persistence layer for cross-session "what changes your mind" tracking.
+        // The model already computes this classification internally every
+        // pushback (Step 1, lib/personas.ts) — it was previously discarded the
+        // instant this reply finished streaming. Same extract-before-strip
+        // pattern as leanMatch above, fire-and-forget POST (non-blocking —
+        // a failure here should never affect the pushback reply itself).
+        const classificationMatch = acc.match(/<pushback_classification>([\s\S]*?)<\/pushback_classification>/)
+        if (classificationMatch) {
+          const classification = classificationMatch[1].trim().toLowerCase()
+          const validClassifications = ['weak', 'partially_valid', 'materially_valid', 'recommendation_changing']
+          if (validClassifications.includes(classification) && sessionId) {
+            fetch(`/api/session/${sessionId}/pushback-classification`, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({ personaKey: persona.key, classification }),
+            }).catch(() => { /* non-blocking, silent */ })
           }
         }
         // Strip lens/position/realcost tags from pushback reply (keep original header state)

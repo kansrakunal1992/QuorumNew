@@ -151,7 +151,7 @@ import {
 }                                            from '@/lib/structural-retrieval'
 import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
-import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock, explainPersonaWeights } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5 + Sprint 1 follow-on
+import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock, explainPersonaWeights, type BoostEvent } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5 + Sprint 1 follow-on + boost logging
 import { getWorthConfirmingText } from '@/lib/worth-confirming'  // Sprint 1 follow-on (merged Features #1 + #6)
 import type { AdvisorKey } from '@/lib/persona-relevance'  // P1: Gap #2 leanShifts typing
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
@@ -514,7 +514,7 @@ export async function POST(req: Request) {
         ...chatMessages[0],
         content: `${continuityCtx.personaBlock}\n\n${chatMessages[0].content}`,
       }
-      console.log(`[Persona] Continuity block injected for ${personaKey} | parent ${continuityCtx.parentSessionId?.slice(0, 8)} | session ${sessionId}`)
+      console.log(`[Persona] Continuity block injected for ${personaKey} | ${continuityCtx.isInferredMatch ? 'inferred match' : `parent ${continuityCtx.parentSessionId?.slice(0, 8)}`} | session ${sessionId}`)
     }
 
     // ── Pushback acknowledgment protocol ──────────────────────────────────────
@@ -626,12 +626,18 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
       // synthesis/decision_brief) — cast is safe here since leanShifts keys
       // can only ever be one of the 6 advisor keys client-side.
       const typedLeanShifts = leanShifts as Partial<Record<AdvisorKey, { from: string; to: string }>> | undefined
+      // Boost-constant logging — see supabase/sprint_weight_boost_events.sql.
+      // Populated by computePersonaRelevance below, persisted further down
+      // (after synthesis_version is known — see that block for why).
+      const boostEvents: BoostEvent[] = []
+
       const relevanceMap = computePersonaRelevance(
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
         typedLeanShifts ?? null,
+        boostEvents,
       )
 
       relevanceMapForHeader = relevanceMap
@@ -735,6 +741,43 @@ Apply the VERDICT STABILITY instruction above using this data.`
           // Non-fatal — synthesis proceeds without stability context, same
           // as the institutional block above.
           console.error('[Persona] Since-last-version context fetch failed (non-fatal):', err)
+        }
+      }
+
+      // ── Boost-constant logging (instrumentation only) ────────────────────
+      // Deliberately a separate query rather than reusing priorVersionRow
+      // above — that variable is scoped inside a conditional that only runs
+      // when a prior version exists, but boosts fire (and are worth logging)
+      // on the very first synthesis too. A little redundant querying here
+      // is a fair trade for not coupling this block to the internals of the
+      // one above. Non-fatal: a failed log write must never affect synthesis.
+      if (sessionId && boostEvents.length > 0) {
+        try {
+          const supabaseBoostLog = createServiceClient()
+          const { data: latestVersionRow } = await supabaseBoostLog
+            .from('synthesis_versions')
+            .select('version')
+            .eq('session_id', sessionId)
+            .order('version', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const currentSynthesisVersion = ((latestVersionRow as any)?.version ?? 0) + 1
+
+          const { error: boostLogError } = await supabaseBoostLog
+            .from('weight_boost_events')
+            .insert(boostEvents.map(e => ({
+              session_id:        sessionId,
+              persona_key:       e.persona,
+              boost_type:        e.boostType,
+              boost_value:       e.boostValue,
+              synthesis_version: currentSynthesisVersion,
+            })))
+
+          if (boostLogError) {
+            console.error('[Persona] Boost event log insert failed (non-fatal):', boostLogError)
+          }
+        } catch (err) {
+          console.error('[Persona] Boost event logging failed (non-fatal):', err)
         }
       }
 
