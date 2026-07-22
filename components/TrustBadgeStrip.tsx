@@ -75,6 +75,7 @@ export default function TrustBadgeStrip({ encryptionEnabled, securityHref }: Pro
   const encryptedBadgeText = securityHref ? (
     <Link
       href={securityHref}
+      className="trust-badge-link"
       style={{ color: 'inherit', textDecoration: 'none', borderBottom: '1px solid var(--border-mid)' }}
     >
       Encrypted

@@ -394,6 +394,17 @@ textarea:focus {
 .decision-input::placeholder,
 textarea::placeholder { color: var(--text-4); }
 
+/* ── TrustBadgeStrip: "Encrypted" link ──────────────────────────
+   Muted by design (states the claim as fact, doesn't sell it) — this
+   just adds a subtle hover cue so it still reads as interactive. */
+.trust-badge-link {
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.trust-badge-link:hover {
+  color: var(--text-3);
+  border-bottom-color: var(--text-3);
+}
+
 /* ── Buttons ─────────────────────────────────────────────────── */
 .btn-primary {
   background: linear-gradient(180deg, #D2B66B 0%, #B89445 100%);
