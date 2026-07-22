@@ -153,6 +153,8 @@ import { buildCouncilContext }               from '@/lib/rule-engine'
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
 import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock, explainPersonaWeights, type BoostEvent } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5 + Sprint 1 follow-on + boost logging
 import { getWorthConfirmingText } from '@/lib/worth-confirming'  // Sprint 1 follow-on (merged Features #1 + #6)
+import { getMindChangePattern } from '@/lib/mind-change-patterns'  // Phase 3
+import { getAdvisorDivergencePattern } from '@/lib/advisor-divergence'  // Phase 3
 import type { AdvisorKey } from '@/lib/persona-relevance'  // P1: Gap #2 leanShifts typing
 import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
 import { resolveActiveInstitution }   from '@/lib/active-institution'
@@ -227,7 +229,7 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
         // S2-05: read validation_correction_carry (prior session's correction, copied at
         // session creation) rather than validation_correction (current session's own correction,
         // which doesn't exist yet at persona-call time — it's only set after synthesis + validation).
-        .select('user_id, framing_intent, validation_correction_carry')
+        .select('user_id, user_email, framing_intent, validation_correction_carry')
         .eq('id', sessionId)
         .single(),
       // BUGFIX: matches_json's real source — structural_matches, not sessions_ontology.
@@ -242,6 +244,7 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
     ])
 
     const userId             = sessionResult.data?.user_id ?? null
+    const userEmail          = sessionResult.data?.user_email ?? null
     const framingIntent      = (sessionResult.data as { framing_intent?: string | null } | null)?.framing_intent ?? null
     const validationCorrection = (sessionResult.data as { validation_correction_carry?: string | null } | null)?.validation_correction_carry ?? null
 
@@ -253,15 +256,15 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
     // surfaces immediately in logs instead of silently degrading synthesis quality.
     if (error || !data) {
       if (error) console.warn('[fetchCouncilContext] sessions_ontology query failed:', JSON.stringify(error), '| sessionId:', sessionId)
-      return { ...EMPTY_COUNCIL_CONTEXT, userId }
+      return { ...EMPTY_COUNCIL_CONTEXT, userId, userEmail }
     }
     // .trim() guards against trailing whitespace/control chars in the stored
     // value causing a silent strict-equality mismatch on tagger_version.
     if (data.tagger_version?.trim() !== 'v2.0') {
-      return { ...EMPTY_COUNCIL_CONTEXT, userId }
+      return { ...EMPTY_COUNCIL_CONTEXT, userId, userEmail }
     }
     if (!data.ontology_vector || !data.rule_engine_result) {
-      return { ...EMPTY_COUNCIL_CONTEXT, userId }
+      return { ...EMPTY_COUNCIL_CONTEXT, userId, userEmail }
     }
 
     // Sprint R3 / BUGFIX: extract max structural score from matches_json —
@@ -305,6 +308,7 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
       ),
       ontologyVector:     data.ontology_vector as OntologyScoreMap,
       userId,
+      userEmail,
       ruleEngineResult,                    // Sprint R3
       maxStructuralScore,                  // Sprint R3
       decisionTypePrimary: (data.decision_type_primary as string) ?? null,  // Sprint BT Phase 2b
@@ -631,12 +635,23 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
       // (after synthesis_version is known — see that block for why).
       const boostEvents: BoostEvent[] = []
 
+      // Phase 3 — cross-session personalization signals. Both are cheap,
+      // read-only, fail-open (return null on any error) — see their own
+      // modules for the MINIMUM_EVENTS gating that keeps a "pattern" from
+      // being one or two data points dressed up as a trend.
+      const [mindChangePattern, advisorDivergencePattern] = await Promise.all([
+        getMindChangePattern(councilResult.userId, councilResult.userEmail),
+        getAdvisorDivergencePattern(councilResult.userId, councilResult.userEmail),
+      ])
+
       const relevanceMap = computePersonaRelevance(
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
         typedLeanShifts ?? null,
+        mindChangePattern,
+        advisorDivergencePattern,
         boostEvents,
       )
 
@@ -652,6 +667,8 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
         typedLeanShifts ?? null,
+        mindChangePattern,
+        advisorDivergencePattern,
       )
       worthConfirmingForHeader = getWorthConfirmingText(
         councilResult.ruleEngineResult,
@@ -665,6 +682,8 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
         councilResult.maxStructuralScore,
         biasContext.personalCalibrationZones,
         typedLeanShifts ?? null,
+        mindChangePattern,
+        advisorDivergencePattern,
       )
       basePrompt = `${basePrompt}${relevanceBlock}`
       console.log(`[Persona] Council weighting directive injected for synthesis | session ${sessionId}`)

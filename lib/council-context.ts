@@ -24,6 +24,7 @@ export interface CouncilContext {
   councilContextStr:  string | null
   ontologyVector:     OntologyScoreMap | null
   userId:             string | null
+  userEmail:          string | null           // Phase 3 — needed by getMindChangePattern/getAdvisorDivergencePattern
   ruleEngineResult:   RuleEngineResult | null   // Sprint R3
   maxStructuralScore: number | null             // Sprint R3
   decisionTypePrimary: string | null            // Sprint BT Phase 2b
@@ -34,6 +35,7 @@ export const EMPTY_COUNCIL_CONTEXT: CouncilContext = {
   councilContextStr:   null,
   ontologyVector:      null,
   userId:              null,
+  userEmail:           null,
   ruleEngineResult:    null,
   maxStructuralScore:  null,
   decisionTypePrimary: null,

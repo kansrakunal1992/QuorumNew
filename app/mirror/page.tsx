@@ -43,6 +43,7 @@ import MirrorNav               from '@/components/MirrorNav'           // Sprint
 import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
 import AttentionZone          from '@/components/AttentionZone'         // Sprint M5
 import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprint M6
+import MindChangeTile         from '@/components/MindChangeTile'        // Phase 4
 import type { SummaryData }   from '@/components/MirrorSummaryCard'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier } from '@/lib/types'
 import AdvisoryUpsellCard      from '@/components/AdvisoryUpsellCard'      // Phase 4/5
@@ -1573,6 +1574,18 @@ function UnlockedView({
         badge={status.sessionCount >= 3 ? <span style={{ fontSize: 10, color: 'var(--text-4)' }}>From {status.sessionCount} decisions</span> : undefined}>
         <PatternStore authToken={authToken} />
       </SectionWrapper>
+      <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
+
+      {/* Phase 4: Mind-change / advisor-divergence pattern tile — self-fetches,
+          renders nothing until a persona clears MINIMUM_EVENTS in either signal.
+          Placed alongside "What Keeps Coming Up" rather than at top-of-stack
+          with MirrorInsightCard: both this and PatternStore are slow-moving
+          cross-session aggregates (recompute only as new events accrue), unlike
+          MirrorInsightCard's fresh-every-visit synthesis from live session data —
+          cadence match, not just stylistic similarity. Left unwrapped (no
+          SectionWrapper chrome) since it's a light companion observation to
+          the pattern section above it, not its own deep-dive module. */}
+      <MindChangeTile authToken={authToken} />
       <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
 
       {/* Institutional Sprint 3 — supplies its own chrome and divider, and

@@ -18,6 +18,11 @@
  *                        over/underconfidence pattern (lib/calibration-engine.ts). A
  *                        refinement on the ontology boost above, not a new signal.
  *   Structural boost  : pattern_analyst gets extra weight when a structural match exists
+ *   Persuasiveness boost (Phase 3): +0.10 to the one persona this user has, across OTHER
+ *                        sessions, most often changed their mind for (lib/mind-change-patterns.ts).
+ *   Divergence boost  (Phase 3): +0.10 to the one persona this user has, across OTHER
+ *                        sessions, most often ended up going against (lib/advisor-divergence.ts) —
+ *                        a counterbalance for a persona that may be structurally underweighted.
  *   Clamp             : final scores bounded to [0.0, 1.0]
  *
  * ── Config maintenance ───────────────────────────────────────────────────────
@@ -41,6 +46,14 @@ import type { RuleEngineResult } from './rule-engine'
 import type { OntologyScoreMap }  from './bias-scorer'
 import { isZoneActiveForVector, type DimensionalCalibrationZone } from './calibration-engine'
 import { DIM_LABELS, VECTOR_DIMS, type VectorDimName } from './structural-retrieval'   // Institutional Sprint 5 (task 6)
+// Phase 3 — type-only imports. Both lib/mind-change-patterns.ts and
+// lib/advisor-divergence.ts import AdvisorKey FROM this file, so importing
+// anything but a type back from them would create a circular import at
+// runtime. `import type` is erased entirely at compile time, so this is safe
+// regardless. The actual pattern-fetch functions are called in the route
+// layer (app/api/persona/route.ts), never from within this file.
+import type { MindChangePattern } from './mind-change-patterns'
+import type { AdvisorDivergencePattern } from './advisor-divergence'
 
 // ── Persona key subset — the 6 Council advisors (not synthesis/decision_brief) ─
 export type AdvisorKey =
@@ -181,6 +194,11 @@ export function computePersonaRelevance(
   // that the deliberation is actually working; this is the one signal that
   // legitimately shifts as the Council evolves, so it's boosted accordingly.
   leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
+  // Phase 3 — cross-session personalization signals. Both null-safe/optional
+  // so every existing call site (currently just app/api/persona/route.ts)
+  // keeps working unchanged if it doesn't pass them.
+  mindChangePattern: MindChangePattern | null = null,
+  advisorDivergencePattern: AdvisorDivergencePattern | null = null,
   // Sprint — optional. When provided, every boost applied below is also
   // pushed here for persistence by the caller. See BoostEvent above.
   boostEventsOut?: BoostEvent[],
@@ -272,6 +290,44 @@ export function computePersonaRelevance(
     }
   }
 
+  // ── 4.5. Advisor-persuasiveness boost (Phase 3 — cross-session "what
+  // changes your mind" pattern, lib/mind-change-patterns.ts) ───────────────
+  // This user has, across their OTHER sessions, changed their mind after
+  // this specific advisor materially/recommendation-changingly often enough
+  // to clear that module's MINIMUM_EVENTS gate. A real personal signal about
+  // which advisor's read tends to land for this specific person — distinct
+  // from every boost above, which is derived from THIS decision's structure,
+  // not this user's history with the Council. Same magnitude as the
+  // calibration-zone boost: this refines weighting, it doesn't dominate the
+  // structural signals above it.
+  const ADVISOR_PERSUASIVENESS_BOOST = 0.10
+  if (mindChangePattern && mindChangePattern.persona in scores) {
+    scores[mindChangePattern.persona] += ADVISOR_PERSUASIVENESS_BOOST
+    boostEventsOut?.push({
+      persona:    mindChangePattern.persona,
+      boostType:  'advisor_persuasiveness',
+      boostValue: ADVISOR_PERSUASIVENESS_BOOST,
+    })
+  }
+
+  // ── 4.6. Stated-divergence counterbalance boost (Phase 3 — mirror image,
+  // lib/advisor-divergence.ts) ─────────────────────────────────────────────
+  // This user has, across their OTHER sessions, ended up going against this
+  // specific advisor's final lean often enough to clear the same gate. Not a
+  // claim the advisor is "wrong" — a signal it may be structurally
+  // underweighted relative to how often the user overrides it, so a gentle
+  // counterbalance nudge is applied. Same magnitude as the persuasiveness
+  // boost above, for the same reason.
+  const STATED_DIVERGENCE_BOOST = 0.10
+  if (advisorDivergencePattern && advisorDivergencePattern.persona in scores) {
+    scores[advisorDivergencePattern.persona] += STATED_DIVERGENCE_BOOST
+    boostEventsOut?.push({
+      persona:    advisorDivergencePattern.persona,
+      boostType:  'stated_divergence',
+      boostValue: STATED_DIVERGENCE_BOOST,
+    })
+  }
+
   // ── 5. Clamp all to [0.0, 1.0] ───────────────────────────────────────────
   for (const k of Object.keys(scores) as AdvisorKey[]) {
     scores[k] = Math.min(1.0, Math.max(0.0, scores[k]))
@@ -305,6 +361,8 @@ function buildRationale(
   maxStructuralScore: number | null,
   personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
   leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
+  mindChangePattern: MindChangePattern | null = null,
+  advisorDivergencePattern: AdvisorDivergencePattern | null = null,
 ): string {
   const reasons: string[] = []
 
@@ -344,6 +402,14 @@ function buildRationale(
 
   if (persona === 'pattern_analyst' && maxStructuralScore !== null && maxStructuralScore >= 45) {
     reasons.push(`structural match ${maxStructuralScore}/100`)
+  }
+
+  if (mindChangePattern?.persona === persona) {
+    reasons.push(`user has changed their mind after this advisor ${mindChangePattern.persuasiveCount}x historically`)
+  }
+
+  if (advisorDivergencePattern?.persona === persona) {
+    reasons.push(`user has diverged from this advisor's final lean ${advisorDivergencePattern.divergentCount}x historically`)
   }
 
   return reasons.slice(0, 2).join(', ')
@@ -396,6 +462,8 @@ export function explainPersonaWeights(
   maxStructuralScore: number | null,
   personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
   leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
+  mindChangePattern: MindChangePattern | null = null,
+  advisorDivergencePattern: AdvisorDivergencePattern | null = null,
 ): Partial<Record<AdvisorKey, string>> {
   const out: Partial<Record<AdvisorKey, string>> = {}
   const personas: AdvisorKey[] = [
@@ -444,6 +512,23 @@ export function explainPersonaWeights(
       out[persona] = 'a similar past decision of yours closely matches this one'
       continue
     }
+
+    // Priority 5: cross-session "what changes your mind" pattern
+    // (lib/mind-change-patterns.ts). Deliberately lower priority than
+    // everything above — it's a pattern about this user's history with the
+    // Council in general, not something specific to this decision, so it
+    // only surfaces when nothing more concrete already explained the weight.
+    if (mindChangePattern?.persona === persona) {
+      out[persona] = `you've changed your mind after ${mindChangePattern.personaLabel} before`
+      continue
+    }
+
+    // Priority 6: cross-session "stated divergence" pattern
+    // (lib/advisor-divergence.ts) — same reasoning, lowest priority.
+    if (advisorDivergencePattern?.persona === persona) {
+      out[persona] = `you tend to go against ${advisorDivergencePattern.personaLabel}'s read`
+      continue
+    }
   }
 
   return out
@@ -458,6 +543,8 @@ export function buildRelevanceBlock(
   maxStructuralScore: number | null,
   personalCalibrationZones: DimensionalCalibrationZone[] | null = null,
   leanShifts: Partial<Record<AdvisorKey, { from: string; to: string }>> | null = null,
+  mindChangePattern: MindChangePattern | null = null,
+  advisorDivergencePattern: AdvisorDivergencePattern | null = null,
 ): string {
   // Sort descending by score
   const sorted = (Object.entries(map) as [AdvisorKey, number][])
@@ -466,7 +553,7 @@ export function buildRelevanceBlock(
   const lines = sorted.map(([persona, score]) => {
     const label      = PERSONA_DISPLAY[persona]
     const tier       = tierLabel(score)
-    const rationale  = buildRationale(persona, ruleEngineResult, ontologyVector, maxStructuralScore, personalCalibrationZones, leanShifts)
+    const rationale  = buildRationale(persona, ruleEngineResult, ontologyVector, maxStructuralScore, personalCalibrationZones, leanShifts, mindChangePattern, advisorDivergencePattern)
     const reasonStr  = rationale ? ` — ${rationale}` : ''
     return `— ${label} [${score.toFixed(2)}] ${tier}${reasonStr}`
   })
