@@ -34,20 +34,25 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
   const [reanalyzeError, setReanalyzeError] = useState('')
 
   // S2-08: prior Council summary — fetched once when the drawer opens, so the user
-  // recalls what was already concluded before choosing what to change. Full text is
-  // fetched; a short preview shows by default with a toggle to expand (fix: previously
-  // truncated server-side with no way to see the rest).
-  const [priorSynthesisFull,    setPriorSynthesisFull]    = useState<string | null>(null)
+  // recalls what was already concluded before choosing what to change.
+  // Bug fix (July 2026): this used to fetch the FULL leftover synthesis prose and
+  // character-slice it client-side at 220 chars — cutting off mid-sentence and, since
+  // the actual verdict sentence had already been stripped server-side, never even
+  // showing the conclusion. The route now returns a short, purpose-built summary
+  // (the verdict + the one key question worth confirming), so it's shown in full by
+  // default — the expand toggle is kept only as a safety net for the rare case where
+  // that combined text still runs long.
+  const [priorSummaryText,      setPriorSummaryText]      = useState<string | null>(null)
   const [priorSummaryLoaded,    setPriorSummaryLoaded]    = useState(false)
   const [priorSummaryExpanded,  setPriorSummaryExpanded]  = useState(false)
-  const PRIOR_SUMMARY_PREVIEW_CHARS = 220
+  const PRIOR_SUMMARY_PREVIEW_CHARS = 500
   useEffect(() => {
     if (!drawerOpen || priorSummaryLoaded) return
     setPriorSummaryLoaded(true)
     fetch(`/api/session/${sessionId}/synthesis-summary`)
       .then(r => r.json())
-      .then(data => setPriorSynthesisFull(data.full ?? null))
-      .catch(() => setPriorSynthesisFull(null))
+      .then(data => setPriorSummaryText(data.summary ?? null))
+      .catch(() => setPriorSummaryText(null))
   }, [drawerOpen, priorSummaryLoaded, sessionId])
 
   const handleReanalyze = useCallback(async () => {
@@ -152,8 +157,9 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
                 already a focused, single-purpose drawer. */}
             <TrustBadgeStrip encryptionEnabled={encryptionEnabled} securityHref="/security" />
 
-            {/* S2-08: prior Council summary — reminds the user what was already concluded */}
-            {priorSynthesisFull && (
+            {/* S2-08: prior Council summary — reminds the user what was already concluded.
+                Now the verdict + key question, not truncated leftover prose (see fetch above). */}
+            {priorSummaryText && (
               <div style={{
                 padding:      '11px 14px',
                 borderRadius:  9,
@@ -173,11 +179,11 @@ export default function ReanalyzeDrawer({ sessionId, decisionText, contextText, 
                   What the Council concluded last time
                 </p>
                 <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
-                  {priorSummaryExpanded || priorSynthesisFull.length <= PRIOR_SUMMARY_PREVIEW_CHARS
-                    ? priorSynthesisFull
-                    : `${priorSynthesisFull.slice(0, PRIOR_SUMMARY_PREVIEW_CHARS).trimEnd()}…`}
+                  {priorSummaryExpanded || priorSummaryText.length <= PRIOR_SUMMARY_PREVIEW_CHARS
+                    ? priorSummaryText
+                    : `${priorSummaryText.slice(0, PRIOR_SUMMARY_PREVIEW_CHARS).trimEnd()}…`}
                 </p>
-                {priorSynthesisFull.length > PRIOR_SUMMARY_PREVIEW_CHARS && (
+                {priorSummaryText.length > PRIOR_SUMMARY_PREVIEW_CHARS && (
                   <button
                     onClick={() => setPriorSummaryExpanded(v => !v)}
                     style={{

@@ -47,6 +47,13 @@ const RECORD_STEPS_BASE: TourStep[] = [
     preferredSide:    'bottom',
   },
   {
+    id:               'record-decision-brief',
+    targetSelector:   '[data-tour-id="record-decision-brief"]',
+    heading:          'Take the full analysis with you',
+    body:             'Download this decision as a formatted PDF — every advisor\'s position, the synthesis, and any pushbacks you raised. Useful for sharing with a partner or co-founder, or just for your own records outside Quorum.',
+    preferredSide:    'bottom',
+  },
+  {
     id:               'record-new-decision',
     targetSelector:   '[data-tour-id="record-new-decision"]',
     heading:          'Your next decision is already waiting',

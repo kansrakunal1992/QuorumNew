@@ -32,6 +32,7 @@ import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesi
 import EarlyEchoCard        from './EarlyEchoCard'         // Sprint: second-use early signal, sessions 2-4
 import type { Lean }        from './TensionInterstitial'
 import SessionCompleteBadge from './SessionCompleteBadge' // S1-06: Council complete timestamp
+import TrustBadgeStrip      from './TrustBadgeStrip'      // same shared strip as home page / record page
 import {
   DECISION_TYPE_LABELS,
   REVERSIBILITY_LABELS,
@@ -82,7 +83,7 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     id:             'council-save',
     targetSelector: '[data-tour-id="council-save"]',
     heading:        'Save this as a permanent record',
-    body:           'Once you\'ve absorbed the Council\'s analysis, save this decision. It becomes a permanent entry in your judgment record — synthesis, every advisor\'s position, and your confidence rating. This is how your Judgment OS compounds over time.',
+    body:           'Once you\'ve absorbed the Council\'s analysis, save this decision. It becomes a permanent entry in your judgment record — synthesis, every advisor\'s position, and your confidence rating. This is how your Judgment OS compounds over time. From the record page you can also download it as a formatted Decision Brief PDF.',
     preferredSide:  'bottom',
   },
 ]
@@ -931,20 +932,26 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [reFramingIntent, setReFramingIntent] = useState<'challenge' | 'clarify' | 'right'>('challenge')
 
   // S2-08: prior Council summary — fetched once when the drawer opens, so the user
-  // recalls what was already concluded before choosing what to change. Full text is
-  // fetched; a short preview shows by default with a toggle to expand (fix: previously
-  // truncated server-side with no way to see the rest).
-  const [priorSynthesisFull,   setPriorSynthesisFull]   = useState<string | null>(null)
+  // recalls what was already concluded before choosing what to change.
+  // Bug fix (July 2026): this used to fetch the FULL leftover synthesis prose and
+  // character-slice it client-side at 220 chars — cutting off mid-sentence and, since
+  // the actual verdict sentence had already been stripped server-side, never even
+  // showing the conclusion. The route now returns a short, purpose-built summary
+  // (the verdict + the one key question worth confirming), so it's shown in full by
+  // default — the expand toggle is kept only as a safety net for the rare case where
+  // that combined text still runs long. Same fix as ReanalyzeDrawer.tsx, which this
+  // component duplicates rather than reuses.
+  const [priorSummaryText,     setPriorSummaryText]    = useState<string | null>(null)
   const [prioSummaryLoaded,    setPrioSummaryLoaded]    = useState(false)
   const [priorSummaryExpanded, setPriorSummaryExpanded] = useState(false)
-  const PRIOR_SUMMARY_PREVIEW_CHARS = 220
+  const PRIOR_SUMMARY_PREVIEW_CHARS = 500
   useEffect(() => {
     if (!drawerOpen || prioSummaryLoaded) return
     setPrioSummaryLoaded(true)
     fetch(`/api/session/${session.id}/synthesis-summary`)
       .then(r => r.json())
-      .then(data => setPriorSynthesisFull(data.full ?? null))
-      .catch(() => setPriorSynthesisFull(null))
+      .then(data => setPriorSummaryText(data.summary ?? null))
+      .catch(() => setPriorSummaryText(null))
   }, [drawerOpen, prioSummaryLoaded, session.id])
 
   const handleNewDecision = () => {
@@ -1337,13 +1344,6 @@ export default function SessionView({ session: initialSession, initialMessages =
         <div style={{ paddingTop: 72, paddingBottom: 60, paddingLeft: 16, paddingRight: 16 }}>
           <div style={{ maxWidth: '80rem', margin: '0 auto' }}>
 
-            {/* Declutter pass: the standalone TrustBadgeStrip that used to render
-                here (Trust Audit P0-3/P1-2) duplicated the hero card's own
-                "Private by URL · encrypted at rest" footer line just below it —
-                same claim, two places, one screen. Removed; the hero footer
-                line (see encryptionEnabled usage further down) is the single
-                source for this now. */}
-
             {/* ── Decision Hero Card ────────────────────────────────── */}
             <div className="sv-hero sv-fade sv-fade-1" style={{ marginBottom: 20 }}>
               {/* Section label */}
@@ -1496,38 +1496,37 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </>
               )}
 
-              {/* Privacy notice + AI disclosure — footer inside hero card */}
+              {/* Privacy notice — footer inside hero card */}
               <div style={{
                 marginTop: 14,
                 paddingTop: 12,
                 borderTop: '1px solid var(--border-dim)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 3,
               }}>
-                {/* Session scope */}
+                {/* Session scope — page-specific (account-linkage), not covered by
+                    TrustBadgeStrip below, so this stays as its own line. The
+                    "encrypted at rest" claim moved into the strip itself (below)
+                    rather than being stated twice on this screen. */}
                 <p style={{
                   fontSize: 11,
                   color: 'var(--text-4)',
                   fontFamily: 'var(--font-mono)',
                   letterSpacing: '0.04em',
-                  margin: 0,
+                  margin: '0 0 4px',
                 }}>
                   {session.user_id
-                    ? `Linked to your account · included in decision memory${encryptionEnabled ? ' · encrypted at rest' : ''}`
-                    : `Private by URL · no account or identity linked${encryptionEnabled ? ' · encrypted at rest' : ''}`
+                    ? 'Linked to your account · included in decision memory'
+                    : 'Private by URL · no account or identity linked'
                   }
                 </p>
-                {/* S2-02: AI processing disclosure */}
-                <p style={{
-                  fontSize: 11,
-                  color: 'var(--text-4)',
-                  fontFamily: 'var(--font-mono)',
-                  letterSpacing: '0.04em',
-                  margin: 0,
-                }}>
-                  Analysed by AI · not used for model training
-                </p>
+                {/* Same shared strip as the home page and record page — encryption
+                    (linked to /security), visibility, and AI-training disclosure.
+                    Was previously two bespoke text lines here ("· encrypted at
+                    rest" appended above, plus "Analysed by AI · not used for
+                    model training" as its own paragraph) that said the same
+                    things as the strip in different words with no link back to
+                    /security — now a single consistent source across all three
+                    pages. */}
+                <TrustBadgeStrip encryptionEnabled={encryptionEnabled} securityHref="/security" />
               </div>
             </div>
 
@@ -1990,8 +1989,9 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </button>
               </div>
 
-              {/* S2-08: prior Council summary — reminds the user what was already concluded */}
-              {priorSynthesisFull && (
+              {/* S2-08: prior Council summary — reminds the user what was already concluded.
+                  Now the verdict + key question, not truncated leftover prose (see fetch above). */}
+              {priorSummaryText && (
                 <div style={{
                   padding:      '11px 14px',
                   borderRadius:  9,
@@ -2011,11 +2011,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                     What the Council concluded last time
                   </p>
                   <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
-                    {priorSummaryExpanded || priorSynthesisFull.length <= PRIOR_SUMMARY_PREVIEW_CHARS
-                      ? priorSynthesisFull
-                      : `${priorSynthesisFull.slice(0, PRIOR_SUMMARY_PREVIEW_CHARS).trimEnd()}…`}
+                    {priorSummaryExpanded || priorSummaryText.length <= PRIOR_SUMMARY_PREVIEW_CHARS
+                      ? priorSummaryText
+                      : `${priorSummaryText.slice(0, PRIOR_SUMMARY_PREVIEW_CHARS).trimEnd()}…`}
                   </p>
-                  {priorSynthesisFull.length > PRIOR_SUMMARY_PREVIEW_CHARS && (
+                  {priorSummaryText.length > PRIOR_SUMMARY_PREVIEW_CHARS && (
                     <button
                       onClick={() => setPriorSummaryExpanded(v => !v)}
                       style={{

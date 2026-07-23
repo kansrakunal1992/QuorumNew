@@ -802,7 +802,7 @@ export default async function RecordPage({ params }: Props) {
           </div>
 
           {/* ── Decision Brief CTA ─────────────────────────────── */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
+          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }} data-tour-id="record-decision-brief">
             <BriefCTA sessionId={session.id} />
           </div>
 
