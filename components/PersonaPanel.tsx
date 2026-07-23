@@ -246,7 +246,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
       .replace(/<lean>[\s\S]*?<\/lean>/g, '')
       .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-      .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
+      // Bug fix (hydration leak, July 2026): this function rebuilds initialContent
+      // on reload by concatenating every raw assistant row for a persona — initial
+      // response + every pushback reply. Pushback replies carry <pushback_classification>,
+      // which this function never stripped (unlike stripHeaderTags on the live path),
+      // so the raw tag rendered on every reload of a session with pushback history.
+      // Tolerant close: model sometimes closes with </pushback> instead of the full
+      // </pushback_classification> — same drift pattern as <lean>/<structural> above.
+      .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
+      .replace(/<(?:lens|position|realcost|lean|structural|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       .replace(/^\s+/, '')
   }, [])

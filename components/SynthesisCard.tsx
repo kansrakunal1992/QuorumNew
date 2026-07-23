@@ -520,6 +520,13 @@ export default function SynthesisCard({
             .replace(/<\/?tension>/g, '')
             .trimStart()
         )
+        // Defensive reset: the per-chunk parser may have ended stuck on
+        // 'verdict' if a chunk boundary split the </verdict> close tag (see
+        // cursor-glyph fix above). Nothing downstream depends on parseModeRef
+        // once streaming is done, but resetting it here means the ref never
+        // carries a stale 'verdict' value forward — belt-and-suspenders
+        // alongside the state === 'streaming' gate on the cursor render.
+        parseModeRef.current = 'prose'
         setState('done')
         onSynthesisComplete?.()
 
@@ -1023,7 +1030,17 @@ export default function SynthesisCard({
                   margin:        0,
                 }}>
                   {firstSentence(verdictText)}
-                  {parseModeRef.current === 'verdict' && (
+                  {/* Bug fix (stuck cursor, sporadic): parseModeRef flips back to 'prose'
+                      only when the literal string "</verdict>" is found intact within a
+                      single chunk. If a chunk boundary splits those 10 characters across
+                      two chunks, the flip never happens and parseModeRef stays stuck on
+                      'verdict' — including after streaming has finished and state is
+                      'done'. The content is unaffected (a separate whole-string final
+                      extraction pass still recovers verdictText correctly), but the
+                      cursor glyph rendered forever on an already-completed synthesis.
+                      Gating on state === 'streaming' as well ensures the glyph can never
+                      outlive the stream regardless of parseModeRef's stuck value. */}
+                  {parseModeRef.current === 'verdict' && state === 'streaming' && (
                     <span style={{ opacity: 0.35, marginLeft: 2 }}>▊</span>
                   )}
                 </p>
