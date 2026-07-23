@@ -60,12 +60,16 @@ export default function DecisionStateCard({ sessionId }: Props) {
   const [saved,    setSaved]    = useState<Commitment | null>(null)
   const [showMore, setShowMore] = useState(false)
 
-  const handleSave = async () => {
-    // At least leaning or a review date required — rest optional
-    if (!leaning.trim() && !date) {
-      setError('Add where you\'re leaning or a review date — even one is useful.')
-      return
-    }
+  // Review-date nudge: review_date is the primary retention hook (see file
+  // header), but it's still meant to be genuinely optional — this is a single
+  // soft confirmation, not a hard gate. Fires at most once per card: whichever
+  // of Save/Skip the user first triggers without a date shows the nudge;
+  // choosing to proceed anyway (or setting a date and trying again) resolves
+  // it for good, since both paths take the card out of 'form' mode.
+  const [confirmMode, setConfirmMode] = useState<'save' | 'skip' | null>(null)
+  const [nudged,      setNudged]      = useState(false)
+
+  const proceedSave = async () => {
     setSaving(true)
     setError('')
     try {
@@ -87,6 +91,29 @@ export default function DecisionStateCard({ sessionId }: Props) {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSaveClick = () => {
+    // At least leaning or a review date required — rest optional
+    if (!leaning.trim() && !date) {
+      setError('Add where you\'re leaning or a review date — even one is useful.')
+      return
+    }
+    if (!date && !nudged) {
+      setNudged(true)
+      setConfirmMode('save')
+      return
+    }
+    proceedSave()
+  }
+
+  const handleSkipClick = () => {
+    if (!date && !nudged) {
+      setNudged(true)
+      setConfirmMode('skip')
+      return
+    }
+    setMode('skipped')
   }
 
   // ── Form ─────────────────────────────────────────────────────────────────
@@ -251,34 +278,77 @@ export default function DecisionStateCard({ sessionId }: Props) {
           <p style={{ fontSize: 12, color: '#e05050', marginBottom: 12 }}>{error}</p>
         )}
 
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button
-            className="btn-primary"
-            style={{ fontSize: 13, padding: '9px 22px' }}
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? 'Saving…' : 'Save position'}
-          </button>
-          {/* S3-02: de-emphasized — plain text, no border, lower contrast than the */}
-          {/* primary "Save position" button beside it. This is the one-click skip. */}
-          <button
-            style={{
-              fontSize:   12,
-              padding:    '9px 4px',
-              background: 'none',
-              border:     'none',
-              color:      'var(--text-4)',
-              cursor:     'pointer',
-              fontFamily: 'inherit',
-              textDecoration: 'underline',
-              textUnderlineOffset: 2,
-            }}
-            onClick={() => setMode('skipped')}
-          >
-            Skip
-          </button>
-        </div>
+        {/* One-time nudge: only reachable via handleSaveClick/handleSkipClick
+            when no date is set yet, and only ever shown once (see `nudged`). */}
+        {confirmMode ? (
+          <div style={{
+            borderRadius: 10,
+            border:       '1px solid var(--gold-dim)',
+            background:   'var(--gold-glow)',
+            padding:      '12px 14px',
+          }}>
+            <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 10 }}>
+              No review date yet — that&apos;s what brings this decision back to you later.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className="btn-primary"
+                style={{ fontSize: 12.5, padding: '8px 16px', minHeight: 40 }}
+                onClick={() => setConfirmMode(null)}
+              >
+                Add a date
+              </button>
+              <button
+                style={{
+                  fontSize:     12.5,
+                  padding:      '8px 14px',
+                  minHeight:    40,
+                  background:   'none',
+                  border:       '1px solid var(--border-dim)',
+                  borderRadius: 8,
+                  color:        'var(--text-3)',
+                  cursor:       'pointer',
+                  fontFamily:   'inherit',
+                }}
+                disabled={saving}
+                onClick={() => confirmMode === 'save' ? proceedSave() : setMode('skipped')}
+              >
+                {confirmMode === 'save'
+                  ? (saving ? 'Saving…' : 'Save without a date')
+                  : 'Skip anyway'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              className="btn-primary"
+              style={{ fontSize: 13, padding: '9px 22px' }}
+              onClick={handleSaveClick}
+              disabled={saving}
+            >
+              {saving ? 'Saving…' : 'Save position'}
+            </button>
+            {/* S3-02: de-emphasized — plain text, no border, lower contrast than the */}
+            {/* primary "Save position" button beside it. This is the one-click skip. */}
+            <button
+              style={{
+                fontSize:   12,
+                padding:    '9px 4px',
+                background: 'none',
+                border:     'none',
+                color:      'var(--text-4)',
+                cursor:     'pointer',
+                fontFamily: 'inherit',
+                textDecoration: 'underline',
+                textUnderlineOffset: 2,
+              }}
+              onClick={handleSkipClick}
+            >
+              Skip
+            </button>
+          </div>
+        )}
       </div>
     )
   }

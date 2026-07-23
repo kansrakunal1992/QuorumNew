@@ -1899,6 +1899,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                   {saving ? 'Saving…' : councilSettling ? 'Council updating…' : 'Save to Record'}
                 </button>
               </div>
+              {/* Standalone line, not a tray flex child — so it can't change the
+                  button's width/stretch behavior on the 480px column layout above. */}
+              <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '6px 0 0', textAlign: 'right' }}>
+                Unlocks your six-advisor Decision PDF
+              </p>
             </div>
 
             {/* QW-3: 6+ session graph nudge — deliberately the very last thing in
