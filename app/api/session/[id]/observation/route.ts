@@ -56,6 +56,11 @@ function stripSynthesisTags(raw: string): string {
     // shown to Mirror subscribers.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Tag-wiring guardrail fix: same drift as verdict_lean/conditions above —
+    // this file's independent copy never learned about the two newest
+    // synthesis tags either. Full removal, matching SynthesisCard.tsx.
+    .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
+    .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
     // Sprint 1 follow-on: same reasoning as verdict_lean/conditions above.
     .replace(/<\/?key_question>/g, '')
     .replace(/<\/?tension>/g, '')

@@ -47,6 +47,15 @@ function stripSynthesisTags(raw: string): string {
     // so they were leaking through raw into whatever uses this export.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Tag-wiring guardrail fix: this file's independent copy never learned
+    // about the two newest synthesis tags either — same drift as the
+    // verdict_lean/conditions fix above. Full removal, matching how
+    // SynthesisCard.tsx's own copy already treats them (pipe-separated
+    // markup doesn't read as flowing prose without dedicated parsing, same
+    // reasoning that made <conditions> a full removal rather than
+    // content-preserved here).
+    .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
+    .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
     // Sprint 1 follow-on: plain-text export, no separate callout available
     // here — content-preserving strip keeps the sentence as its own
     // paragraph (which is how the model already writes it) rather than
@@ -61,7 +70,7 @@ function stripSynthesisTags(raw: string): string {
     // response with a structural-echo citation (R6) leaked the raw tag
     // straight into this export.
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|action_plan|confidence_to_act)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.
