@@ -30,6 +30,7 @@ import GraphNudgeLine       from './GraphNudgeLine'        // QW-3: Graph nudge 
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
 import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesis tension beat
 import EarlyEchoCard        from './EarlyEchoCard'         // Sprint: second-use early signal, sessions 2-4
+import MirrorEchoCard       from './MirrorEchoCard'        // Sprint: live in-session Mirror signal, sessions 5+
 import type { Lean }        from './TensionInterstitial'
 import SessionCompleteBadge from './SessionCompleteBadge' // S1-06: Council complete timestamp
 import TrustBadgeStrip      from './TrustBadgeStrip'      // same shared strip as home page / record page
@@ -1724,6 +1725,19 @@ export default function SessionView({ session: initialSession, initialMessages =
                 <div className="sv-fade sv-fade-2">
                   <EarlyEchoCard sessionId={session.id} />
                 </div>
+              )}
+
+              {/* ── Mirror Echo Card — live in-session signal, sessions 5+ ── */}
+              {/* Picks up exactly where EarlyEchoCard hands off. Self-gates      */}
+              {/* internally (< 5 sessions, no auth, or no signal yet renders     */}
+              {/* nothing) — no additional session-count logic needed here.       */}
+              {synthesisDone && (
+                <MirrorEchoCard
+                  sessionId={session.id}
+                  authToken={authTokenSV}
+                  sessionCount={totalSessionCount ?? getStoredSessionIds().length}
+                  mirrorActive={mirrorActive}
+                />
               )}
 
 
