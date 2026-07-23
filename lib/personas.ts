@@ -962,7 +962,17 @@ ACTION PLAN TAG — wraps 3 to 4 concrete next steps, rules, no exceptions:
 • Each item must be concrete and specific to this decision — a named action with a named object (who to call, what to price, what to write down), never generic advice like "do more research" or "weigh the options carefully"
 • This tag is mandatory — every synthesis includes exactly one.
 
-<verdict>, <verdict_lean>, <tension>, <key_question>, and <action_plan> appear exactly once each. <conditions> appears at most once, and only when genuinely applicable. Outside the tags, write normal prose.
+CONFIDENCE TO ACT TAG — one execution-risk flag, only when genuinely warranted:
+• Place a single <confidence_to_act> tag directly after </action_plan>, only if there is a real, distinct execution risk worth flagging — omit entirely rather than force one. Most syntheses should still include it, but never invent one just to fill the tag
+• This tag exists to catch ONE failure mode in HOW the plan gets carried out — not whether the verdict is right. Everything above it already covers "is this the right call" and "what should I do"; this tag alone covers "what could make doing it go wrong"
+• Answers a specifically different question from all three tags above it — check each before writing:
+  – NOT <conditions>: a condition is a pre-verdict threshold ("the verdict changes if X"). This tag assumes the verdict already holds
+  – NOT <key_question>: the key question is the fact most likely to change today's recommendation. This tag assumes the recommendation is settled and looks only at execution risk
+  – NOT <action_plan>: never restate, rephrase, or add caution to a step already listed in <action_plan> — this tag must name a risk none of those 3–4 items already cover. If every real risk you can find is already inside one of those items, omit this tag
+• Shape: same as an action_plan item — a short lead phrase in double asterisks, an em dash, then the concrete reason, framed as a pre-flight check: <confidence_to_act>**Confirm your spouse's recruiter has actually seen the counter-offer** — a verbal "it's fine" from your spouse isn't the same as the recruiter agreeing to the timeline.</confidence_to_act>
+• Must name a specific person, document, or fact to check — never a vague hedge like "make sure you're ready" or "double-check the details"
+
+<verdict>, <verdict_lean>, <tension>, <key_question>, and <action_plan> appear exactly once each. <conditions> and <confidence_to_act> each appear at most once, and only when genuinely applicable. Outside the tags, write normal prose.
 
 EXACT FORMAT TO FOLLOW — copy this structure precisely:
 <verdict>The council leans toward two cities — a third city fragments the trip beyond what eleven nights with a one-year-old can absorb.</verdict><verdict_lean>proceed</verdict_lean><conditions>The one-year-old's nap schedule holds through the trip|No more than one internal flight is required</conditions>
@@ -975,7 +985,7 @@ Second paragraph with <tension>The Contrarian and the Elder agree the child is t
 
 Remaining paragraphs, alternative paths if applicable, inward observation...
 
-<action_plan>**Check the layover length today** — most airlines list it before booking, and this is the one number that decides two cities versus one.|**Book the higher-leverage city first** — locks in the harder-to-move reservation while flexibility still exists on the second.|**Set a nap-schedule contingency** — agree in advance what changes if the one-year-old's routine breaks on travel days.</action_plan>`
+<action_plan>**Check the layover length today** — most airlines list it before booking, and this is the one number that decides two cities versus one.|**Book the higher-leverage city first** — locks in the harder-to-move reservation while flexibility still exists on the second.|**Set a nap-schedule contingency** — agree in advance what changes if the one-year-old's routine breaks on travel days.</action_plan><confidence_to_act>**Confirm the second city's reservation is actually flexible** — some fares marketed as changeable still charge a fee that erases the savings from booking two cities.</confidence_to_act>`
 
 export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
   contrarian: {

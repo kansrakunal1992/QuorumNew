@@ -89,6 +89,7 @@ export default function SynthesisCard({
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
       .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
       .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
+      .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
       .replace(/<\/?tension>/g, '')
       .trimStart()
 
@@ -147,6 +148,16 @@ export default function SynthesisCard({
     if (!initialContent) return []
     const m = initialContent.match(/<action_plan>([\s\S]*?)<\/action_plan>/)
     return m?.[1] ? parseActionPlan(m[1]) : []
+  })
+
+  // Confidence to Act: single optional execution-risk flag, same {lead, rest}
+  // shape and parser as action_plan items — just never more than one, and only
+  // present when the model found a real risk distinct from conditions/
+  // key_question/action_plan (see prompt rules in lib/personas.ts).
+  const [confidenceToAct, setConfidenceToAct] = useState<{ lead: string; rest: string } | null>(() => {
+    if (!initialContent) return null
+    const m = initialContent.match(/<confidence_to_act>([\s\S]*?)<\/confidence_to_act>/)
+    return m?.[1] ? (parseActionPlan(m[1])[0] ?? null) : null
   })
 
   // S3-07: Observatory mode — opt-in focus overlay, triggered only by an explicit
@@ -213,6 +224,7 @@ export default function SynthesisCard({
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
       .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
       .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
+      .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
     const tStart = rawNoVerdict.indexOf('<tension>')
     const tEnd   = rawNoVerdict.indexOf('</tension>')
     if (tStart === -1 || tEnd === -1 || tEnd <= tStart) return <>{prose}</>
@@ -352,6 +364,7 @@ export default function SynthesisCard({
     // overwritten unconditionally at the end, even to [].
     setKeyQuestion(null)
     setActionPlan([])
+    setConfidenceToAct(null)
     parseModeRef.current  = 'prose'
     verdictAccRef.current = ''
     tensionAccRef.current = ''
@@ -507,6 +520,7 @@ export default function SynthesisCard({
               .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
               .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
               .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
+              .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
               .replace(/<\/?tension>/g, '')
           )
         }
@@ -525,6 +539,8 @@ export default function SynthesisCard({
         // Same final-pass guarantee for the action plan — parsed once the full
         // stream is in, never incrementally (it can only render once complete).
         const fap = finalAcc.match(/<action_plan>([\s\S]*?)<\/action_plan>/)
+        // Same final-pass guarantee — optional tag, so absence is expected and fine.
+        const fca = finalAcc.match(/<confidence_to_act>([\s\S]*?)<\/confidence_to_act>/)
         if (fv?.[1]?.trim()) setVerdictText(fv[1].trim())
         if (ft?.[1]?.trim()) setTensionText(ft[1].trim())
         const finalVerdictLean = fvl?.[1]?.trim().toLowerCase() ?? ''
@@ -532,6 +548,7 @@ export default function SynthesisCard({
         setConditions(finalConditions)
         if (fkq?.[1]?.trim()) setKeyQuestion(fkq[1].trim())
         if (fap?.[1]?.trim()) setActionPlan(parseActionPlan(fap[1]))
+        setConfidenceToAct(fca?.[1]?.trim() ? (parseActionPlan(fca[1])[0] ?? null) : null)
         // One final setSynthesis so the prose is fully clean regardless of
         // whether the last setSynthesis inside the loop was on a partial chunk.
         setSynthesis(
@@ -542,6 +559,7 @@ export default function SynthesisCard({
             .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
             .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
             .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
+            .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
             .replace(/<\/?tension>/g, '')
             .trimStart()
         )
@@ -1225,6 +1243,41 @@ export default function SynthesisCard({
                   {item.rest}
                 </p>
               ))}
+              {/* Confidence to Act — nested closing note, not a peer section. Deliberately
+                  quieter (--action-note-bg/border vs. the card's own --action-bg/border) so
+                  it reads as "one more thing before you go" rather than a 5th action item.
+                  Optional by design — see prompt rules; absence is the common case, not a bug. */}
+              {confidenceToAct && (
+                <div style={{
+                  marginTop:    12,
+                  paddingTop:   10,
+                  borderTop:    '1px solid var(--action-note-border)',
+                }}>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9,
+                    fontWeight:    700,
+                    letterSpacing: '0.10em',
+                    textTransform: 'uppercase',
+                    color:         'var(--text-4)',
+                    margin:        '0 0 6px',
+                  }}>
+                    Before you act
+                  </p>
+                  <p style={{
+                    fontSize:   12,
+                    color:      'var(--text-2)',
+                    lineHeight: 1.6,
+                    margin:     0,
+                  }}>
+                    {confidenceToAct.lead && (
+                      <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
+                    )}
+                    {confidenceToAct.lead && ' — '}
+                    {confidenceToAct.rest}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

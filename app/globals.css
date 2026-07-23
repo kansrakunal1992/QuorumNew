@@ -85,6 +85,12 @@
   --action-accent: #6fc7b8;
   --action-bg:     linear-gradient(135deg, rgba(111,199,184,0.09), rgba(111,199,184,0.14));
   --action-border: rgba(111,199,184,0.42);
+  /* Confidence to Act — nested closing note inside the Action Plan card, same
+     hue family (extension, not a competing register) but deliberately quieter
+     than --action-bg/--action-border, same relationship as verdict-bg vs.
+     worth-confirming-highlight-bg above (subordinate, not equal). */
+  --action-note-bg:     rgba(111,199,184,0.06);
+  --action-note-border: rgba(111,199,184,0.28);
   /* S3-06: BiasNoteCard pulsing dot — was hardcoded #c98a4c, didn't auto-switch with theme */
   --amber-dot:   #c98a4c;
   --text-1:      #f5f7fb;
@@ -189,6 +195,10 @@
   --action-accent: #1a8a76;
   --action-bg:     linear-gradient(135deg, rgba(20,130,110,0.06), rgba(20,130,110,0.10));
   --action-border: rgba(20,130,110,0.32);
+  /* Confidence to Act — nested closing note, light theme. Same quieter-than-
+     parent relationship as the dark theme pair above. */
+  --action-note-bg:     rgba(20,130,110,0.045);
+  --action-note-border: rgba(20,130,110,0.22);
   /* S3-06: darker amber for visibility against cream background */
   --amber-dot:   #a86426;
   --text-1:      #060d1c;
