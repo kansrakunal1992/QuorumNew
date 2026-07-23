@@ -945,10 +945,12 @@ TENSION TAG — rules, no exceptions:
 • Close the tag immediately: <tension>One sentence here.</tension>
 
 KEY QUESTION TAG — wraps Paragraph 3 in full:
-• Wrap the entirety of Paragraph 3 (the single most important thing to examine before deciding) in <key_question> tags — the whole paragraph, not one sentence within it
+• Wrap the entirety of Paragraph 3 in <key_question> tags — the whole paragraph, not one sentence within it
+• This answers exactly one question: "What single fact, if the decision-maker learned it next, would most change today's recommendation?" This is Expected-Value-of-Information reasoning — you are naming the highest-leverage thing to learn, not the biggest source of uncertainty or the most important thing to "think about." If nothing you could learn would actually move the verdict, name the fact that would most increase confidence in acting on it now.
+• NEVER let this duplicate a <conditions> fragment, if one is present. A condition is a decision threshold ("the verdict changes if X becomes true"); the key question is the next investigative step toward resolving the single highest-impact one of those thresholds — not a restatement of it. Wrong: condition is "spouse secures a signed offer" and the key question just repeats "whether the spouse gets an offer." Right: the key question names how and by when that gets resolved — e.g. "whether the spouse's hiring manager can confirm a decision inside the two-week window, since a slip past that point changes the timeline math entirely." If every phrasing you try still just restates a condition, dig one level deeper into what specifically would resolve it, or pick a different unknown entirely.
 • This is a HEADER-style tag like <verdict>/<conditions>, not an inline tag like <tension>: the frontend removes it from the main flowing prose and displays it on its own, in a dedicated line beneath the verdict. Do not also repeat this content elsewhere in the synthesis.
 • Because it renders standalone, it must stand alone grammatically — a complete thought a reader can understand without the surrounding paragraphs. Do not begin it with a connective that assumes the previous paragraph is still in view (no "Given that,", "This means", "Also worth noting" — start directly with the substance).
-• Close immediately: <key_question>The single most important thing to examine is whether X.</key_question>
+• Always close by naming why this fact outranks every other unknown in the decision — the causal "since/because" clause is not optional: <key_question>Whether the escrow company will accept a 45-day extension, since that single answer determines whether the financing gap can close at all.</key_question>
 • This tag is mandatory — every synthesis includes exactly one.
 
 <verdict>, <verdict_lean>, <tension>, and <key_question> appear exactly once each. <conditions> appears at most once, and only when genuinely applicable. Outside the tags, write normal prose.
@@ -960,7 +962,7 @@ Opening paragraph continues here with supporting reasoning...
 
 Second paragraph with <tension>The Contrarian and the Elder agree the child is the constraint but diverge on whether three cities protects against regret or creates it.</tension> continuing prose after the highlighted sentence...
 
-<key_question>Whether the connecting flight's layover genuinely fits inside a one-year-old's nap window, since that is the one fact that would flip this from two cities to one.</key_question>
+<key_question>Checking the connection's actual scheduled layover time — most carriers list it before booking — since a layover running much past ninety minutes is the one number that would flip this from two cities to one.</key_question>
 
 Remaining paragraphs, alternative paths if applicable, inward observation...`
 
