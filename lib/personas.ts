@@ -953,7 +953,16 @@ KEY QUESTION TAG — wraps Paragraph 3 in full:
 • Always close by naming why this fact outranks every other unknown in the decision — the causal "since/because" clause is not optional: <key_question>Whether the escrow company will accept a 45-day extension, since that single answer determines whether the financing gap can close at all.</key_question>
 • This tag is mandatory — every synthesis includes exactly one.
 
-<verdict>, <verdict_lean>, <tension>, and <key_question> appear exactly once each. <conditions> appears at most once, and only when genuinely applicable. Outside the tags, write normal prose.
+ACTION PLAN TAG — wraps 3 to 4 concrete next steps, rules, no exceptions:
+• Place a single <action_plan> tag last, after everything else in the synthesis (after the trade-off summary and any SB-3 additions)
+• Answers a different question than everything above it: <verdict> and <key_question> answer "what should I think"; <action_plan> answers "what should I do about it." Do not restate the verdict, a condition, or the key question as an action item — each item must be something the decision-maker does, not a fact they wait to learn
+• Contains 3 to 4 items, ordered by impact — the first item is the single highest-leverage action, not just the first chronological step
+• Each item follows this exact shape: a short imperative lead phrase (2 to 5 words, what to actually do), then an em dash, then one continuation clause giving the concrete "how" or "why now." Wrap the lead phrase in double asterisks so the frontend can bold it: **Confirm the exit timeline in writing** — a verbal understanding won't hold up if the relocation date slips.
+• Separate items with a pipe character, same convention as <conditions>: <action_plan>**Lead one** — clause one.|**Lead two** — clause two.|**Lead three** — clause three.</action_plan>
+• Each item must be concrete and specific to this decision — a named action with a named object (who to call, what to price, what to write down), never generic advice like "do more research" or "weigh the options carefully"
+• This tag is mandatory — every synthesis includes exactly one.
+
+<verdict>, <verdict_lean>, <tension>, <key_question>, and <action_plan> appear exactly once each. <conditions> appears at most once, and only when genuinely applicable. Outside the tags, write normal prose.
 
 EXACT FORMAT TO FOLLOW — copy this structure precisely:
 <verdict>The council leans toward two cities — a third city fragments the trip beyond what eleven nights with a one-year-old can absorb.</verdict><verdict_lean>proceed</verdict_lean><conditions>The one-year-old's nap schedule holds through the trip|No more than one internal flight is required</conditions>
@@ -964,7 +973,9 @@ Second paragraph with <tension>The Contrarian and the Elder agree the child is t
 
 <key_question>Checking the connection's actual scheduled layover time — most carriers list it before booking — since a layover running much past ninety minutes is the one number that would flip this from two cities to one.</key_question>
 
-Remaining paragraphs, alternative paths if applicable, inward observation...`
+Remaining paragraphs, alternative paths if applicable, inward observation...
+
+<action_plan>**Check the layover length today** — most airlines list it before booking, and this is the one number that decides two cities versus one.|**Book the higher-leverage city first** — locks in the harder-to-move reservation while flexibility still exists on the second.|**Set a nap-schedule contingency** — agree in advance what changes if the one-year-old's routine breaks on travel days.</action_plan>`
 
 export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
   contrarian: {

@@ -77,6 +77,14 @@
      attention in the same card. */
   --worth-confirming-highlight-bg:     rgba(120,175,220,0.13);
   --worth-confirming-highlight-border: rgba(120,175,220,0.38);
+  /* Decision Action Plan — new register, distinct hue from every existing
+     tag: gold=verdict, coral=tension, peach=assumption, blue=worth-
+     confirming, green=success/pattern-analyst, violet=stakeholder. Teal
+     reads as "forward motion" without borrowing meaning from anything
+     already on screen. */
+  --action-accent: #6fc7b8;
+  --action-bg:     linear-gradient(135deg, rgba(111,199,184,0.09), rgba(111,199,184,0.14));
+  --action-border: rgba(111,199,184,0.42);
   /* S3-06: BiasNoteCard pulsing dot — was hardcoded #c98a4c, didn't auto-switch with theme */
   --amber-dot:   #c98a4c;
   --text-1:      #f5f7fb;
@@ -175,6 +183,12 @@
      not competing for attention). */
   --worth-confirming-highlight-bg:     rgba(40,95,150,0.08);
   --worth-confirming-highlight-border: rgba(40,95,150,0.26);
+  /* Decision Action Plan — light theme. Same teal register as dark theme,
+     deepened/desaturated for contrast against --bg-card #ffffff, same
+     reasoning as every other highlight pair in this file. */
+  --action-accent: #1a8a76;
+  --action-bg:     linear-gradient(135deg, rgba(20,130,110,0.06), rgba(20,130,110,0.10));
+  --action-border: rgba(20,130,110,0.32);
   /* S3-06: darker amber for visibility against cream background */
   --amber-dot:   #a86426;
   --text-1:      #060d1c;

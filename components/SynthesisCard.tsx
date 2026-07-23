@@ -88,6 +88,7 @@ export default function SynthesisCard({
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
       .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+      .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
       .replace(/<\/?tension>/g, '')
       .trimStart()
 
@@ -131,6 +132,22 @@ export default function SynthesisCard({
   })
   const [worthConfirmingFallback, setWorthConfirmingFallback] = useState<string | null>(null)
   const worthConfirming = keyQuestion ?? worthConfirmingFallback
+
+  // Decision Action Plan: 3–4 items, each "**lead phrase** — clause", pipe-separated
+  // (same wire format as <conditions>). Parsed once per item into {lead, rest} so the
+  // frontend controls the bold styling rather than trusting raw markdown in prose.
+  // Falls back to { lead: '', rest: raw } if the model ever omits the ** markers —
+  // still renders as a plain line rather than disappearing.
+  const parseActionPlan = (raw: string): { lead: string; rest: string }[] =>
+    raw.split('|').map(s => s.trim()).filter(Boolean).map(item => {
+      const m = item.match(/^\*\*(.+?)\*\*\s*[—-]\s*(.*)$/)
+      return m ? { lead: m[1].trim(), rest: m[2].trim() } : { lead: '', rest: item }
+    })
+  const [actionPlan, setActionPlan] = useState<{ lead: string; rest: string }[]>(() => {
+    if (!initialContent) return []
+    const m = initialContent.match(/<action_plan>([\s\S]*?)<\/action_plan>/)
+    return m?.[1] ? parseActionPlan(m[1]) : []
+  })
 
   // S3-07: Observatory mode — opt-in focus overlay, triggered only by an explicit
   // "Focus mode" button (never automatic on TTS start). Dims everything but the
@@ -195,6 +212,7 @@ export default function SynthesisCard({
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
       .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+      .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
     const tStart = rawNoVerdict.indexOf('<tension>')
     const tEnd   = rawNoVerdict.indexOf('</tension>')
     if (tStart === -1 || tEnd === -1 || tEnd <= tStart) return <>{prose}</>
@@ -333,6 +351,7 @@ export default function SynthesisCard({
     // stale content. conditions doesn't need this — it's already always
     // overwritten unconditionally at the end, even to [].
     setKeyQuestion(null)
+    setActionPlan([])
     parseModeRef.current  = 'prose'
     verdictAccRef.current = ''
     tensionAccRef.current = ''
@@ -487,6 +506,7 @@ export default function SynthesisCard({
               .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
               .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
               .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+              .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
               .replace(/<\/?tension>/g, '')
           )
         }
@@ -502,12 +522,16 @@ export default function SynthesisCard({
         // Sprint 1 follow-on: same guarantee for key_question — the primary
         // source for the worth-confirming line (see state declaration above).
         const fkq = finalAcc.match(/<key_question>([\s\S]*?)<\/key_question>/)
+        // Same final-pass guarantee for the action plan — parsed once the full
+        // stream is in, never incrementally (it can only render once complete).
+        const fap = finalAcc.match(/<action_plan>([\s\S]*?)<\/action_plan>/)
         if (fv?.[1]?.trim()) setVerdictText(fv[1].trim())
         if (ft?.[1]?.trim()) setTensionText(ft[1].trim())
         const finalVerdictLean = fvl?.[1]?.trim().toLowerCase() ?? ''
         const finalConditions  = fc?.[1] ? fc[1].split('|').map(s => s.trim()).filter(Boolean) : []
         setConditions(finalConditions)
         if (fkq?.[1]?.trim()) setKeyQuestion(fkq[1].trim())
+        if (fap?.[1]?.trim()) setActionPlan(parseActionPlan(fap[1]))
         // One final setSynthesis so the prose is fully clean regardless of
         // whether the last setSynthesis inside the loop was on a partial chunk.
         setSynthesis(
@@ -517,6 +541,7 @@ export default function SynthesisCard({
             .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
             .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
             .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+            .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
             .replace(/<\/?tension>/g, '')
             .trimStart()
         )
@@ -1144,6 +1169,64 @@ export default function SynthesisCard({
               </p>
             )}
           </>
+        )}
+
+        {/* Decision Action Plan — own sub-section, own accent (teal), sits after the
+            synthesis card and before Council Weighting Strip. Deliberately NOT inside
+            the verdict card: verdict/conditions/worth-confirming answer "what should I
+            think," this answers "what should I do." Flowing lines with a bolded lead
+            phrase, no bullets/numbers — reads as continued counsel, not a checklist
+            (POV-approved mockup, Variant A). Gated on state==='done' only, same as
+            worthConfirming — never shown mid-stream since it can only render once the
+            full <action_plan> tag has arrived. Not shown in Observatory/focus mode,
+            same precedent as worthConfirming there. */}
+        {state === 'done' && synthesis && actionPlan.length > 0 && (
+          <div style={{
+            marginTop:  16,
+            paddingTop: 14,
+            borderTop:  '1px solid var(--border-dim)',
+          }}>
+            <div style={{
+              borderLeft:   '3px solid var(--action-accent)',
+              background:   'var(--action-bg)',
+              borderRadius: '0 10px 10px 0',
+              padding:      '14px 20px',
+            }}>
+              <p style={{
+                fontFamily:    'var(--font-mono)',
+                fontSize:      9,
+                fontWeight:    700,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color:         'var(--action-accent)',
+                margin:        '0 0 2px',
+              }}>
+                What to do next
+              </p>
+              <p style={{
+                fontSize:   10,
+                color:      'var(--text-4)',
+                fontStyle:  'italic',
+                margin:     '0 0 12px',
+              }}>
+                in order of impact
+              </p>
+              {actionPlan.map((item, i) => (
+                <p key={i} style={{
+                  fontSize:   13,
+                  color:      'var(--text-2)',
+                  lineHeight: 1.7,
+                  margin:     i === actionPlan.length - 1 ? 0 : '0 0 10px',
+                }}>
+                  {item.lead && (
+                    <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
+                  )}
+                  {item.lead && ' — '}
+                  {item.rest}
+                </p>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Mirror nudge — shown once synthesis completes (Sprint 19) */}
