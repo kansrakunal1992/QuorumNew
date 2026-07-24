@@ -103,11 +103,22 @@ export default async function SessionPage({ params }: Props) {
   }
 
   // Build personaKey → full assistant content map from stored messages
+  // Bug fix: this previously concatenated multiple rows for the same persona
+  // (initial response + every pushback reply — the messages table gets a new
+  // row per call, see app/api/persona/route.ts) with NO separator at all,
+  // so on reload the last sentence of one response ran directly into the
+  // first word of the next with no paragraph break. Noted here rather than
+  // fully reconstructed: this map only feeds PersonaPanel's initialContent
+  // (used to re-derive the header tags + the flowing "response" prose on
+  // reload) — it does not restore per-exchange "You challenged" dividers,
+  // since PersonaPanel doesn't parse that structure back out of a single
+  // string. Restoring that history structure would be a separate, larger
+  // change; this fix only stops prose from visibly running together.
   const initialMessages: Record<string, string> = {}
   for (const msg of messages ?? []) {
     if (msg.role === 'assistant' && msg.persona && msg.content) {
-      initialMessages[msg.persona] =
-        (initialMessages[msg.persona] ?? '') + (decrypt(msg.content) ?? '')
+      const prev = initialMessages[msg.persona]
+      initialMessages[msg.persona] = (prev ? prev + '\n\n' : '') + (decrypt(msg.content) ?? '')
     }
   }
 

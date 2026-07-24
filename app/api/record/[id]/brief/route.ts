@@ -1433,9 +1433,28 @@ export async function GET(req: Request, { params }: Params) {
     content: decrypt(m.content) ?? '',
   }))
 
-  // ── Auto-generate Decision Brief if not yet created ─────────────────────────
-  const hasBrief = messages.some(m => m.persona === 'decision_brief' && m.role === 'assistant')
-  if (!hasBrief) {
+  // ── Auto-generate Decision Brief if missing or stale ────────────────────────
+  // Bug fix: this previously only checked `hasBrief` (does ANY decision_brief
+  // row exist at all) — once one existed, whether from this same
+  // auto-generation path or the live "Generate Decision Brief" button on the
+  // session page, it was never regenerated no matter how much newer content
+  // (pushbacks, "Share to All Advisors" updates) arrived afterward.
+  // Downloading the PDF after challenging an advisor post-brief-generation
+  // silently kept serving the STALE brief — picked from whatever the council
+  // looked like at generation time, not the latest synthesis/pushback state.
+  // Now regenerates whenever any advisor message is newer than the most
+  // recent decision_brief message, not just when none exists at all.
+  // byPersona's existing "take the last assistant message" logic (see the
+  // .slice(-1) above) already means the newest row wins automatically, so
+  // inserting a fresh row here is sufficient — no need to delete the stale
+  // one(s); they simply stop being the one that renders.
+  const briefRows       = messages.filter(m => m.persona === 'decision_brief' && m.role === 'assistant')
+  const latestBriefTime = briefRows.length ? briefRows[briefRows.length - 1].created_at : null
+  const latestOtherTime = messages
+    .filter(m => m.persona !== 'decision_brief' && m.role === 'assistant')
+    .reduce((max: string, m) => (m.created_at > max ? m.created_at : max), '')
+  const briefIsStale = !latestBriefTime || (!!latestOtherTime && latestOtherTime > latestBriefTime)
+  if (briefIsStale) {
     // Build context string from all existing persona assistant messages
     const personaContext = APPENDIX_ORDER
       .map(key => {

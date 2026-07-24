@@ -9,6 +9,7 @@ import ResearchVideoCard from './ResearchVideoCard'           // Video 2 — res
 import type { PersonaRelevanceMap } from '@/lib/persona-relevance'  // S2-02
 import type { SynthesisVersionSnapshot } from '@/lib/synthesis-diff'  // P1
 import { getOrCreateDeviceId } from '@/lib/storage'                  // S2-01
+import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent } from '@/lib/brief-markdown'
 
 interface Props {
   sessionId:         string
@@ -100,6 +101,18 @@ export default function SynthesisCard({
   const [briefText,    setBriefText]   = useState('')
   const [briefState,   setBriefState]  = useState<'idle'|'streaming'|'done'|'error'>('idle')
   const [showBrief,    setShowBrief]   = useState(false)
+  // Bug fix ("does the brief auto-update after a pushback?" — it didn't, at
+  // all): the brief was generated once from whatever personaResponses looked
+  // like at the moment of the click, then never touched again — no matter
+  // how many further pushbacks or "Share to All Advisors" updates changed the
+  // underlying analysis afterward. Rather than silently regenerating (another
+  // AI call the user didn't ask for, mid-review), this tracks the `version`
+  // the brief was generated at and surfaces a visible "may be outdated" note
+  // with a one-click regenerate once `version` has since moved on — matching
+  // how the PDF route now behaves (see app/api/record/[id]/brief/route.ts's
+  // briefIsStale check), just made visible here instead of automatic.
+  const [briefGeneratedAtVersion, setBriefGeneratedAtVersion] = useState<number | null>(null)
+  const briefIsStale = briefState === 'done' && briefGeneratedAtVersion !== null && briefGeneratedAtVersion !== version
 
   // S2-01: post-synthesis confidence re-rate
   const [confidenceRated,     setConfidenceRated]     = useState(false)
@@ -622,6 +635,7 @@ export default function SynthesisCard({
     setBriefText('')
     setBriefState('streaming')
     setShowBrief(true)
+    setBriefGeneratedAtVersion(version)
 
     const latest = responsesRef.current
     const personaBlock = Object.entries(latest)
@@ -1016,9 +1030,23 @@ export default function SynthesisCard({
             </span>
           )}
           {briefState === 'done' && (
-            <button onClick={() => setShowBrief(b => !b)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid var(--synthesis-btn-border)', background: 'transparent', color: 'var(--synthesis-btn-text)', cursor: 'pointer', fontFamily: 'inherit' }}>
-              {showBrief ? 'Hide Brief' : 'Show Brief'}
-            </button>
+            <>
+              <button onClick={() => setShowBrief(b => !b)} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid var(--synthesis-btn-border)', background: 'transparent', color: 'var(--synthesis-btn-text)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {showBrief ? 'Hide Brief' : 'Show Brief'}
+              </button>
+              {briefIsStale && (
+                <button
+                  onClick={handleGenerateBrief}
+                  title="The council's analysis has changed since this brief was written"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid var(--gold-dim)', background: 'rgba(201,168,76,0.1)', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                  Brief may be outdated — Regenerate
+                </button>
+              )}
+            </>
           )}
 
           {state === 'waiting' && (
@@ -1204,8 +1232,10 @@ export default function SynthesisCard({
             phrase, no bullets/numbers — reads as continued counsel, not a checklist
             (POV-approved mockup, Variant A). Gated on state==='done' only, same as
             worthConfirming — never shown mid-stream since it can only render once the
-            full <action_plan> tag has arrived. Not shown in Observatory/focus mode,
-            same precedent as worthConfirming there. */}
+            full <action_plan> tag has arrived. Also rendered inside focus mode (see the
+            focusModeActive portal below) — it and worthConfirming used to be excluded
+            there, which meant reading the synthesis in focus mode hid its most
+            actionable parts; fixed. */}
         {state === 'done' && synthesis && actionPlan.length > 0 && (
           <div style={{
             marginTop:  16,
@@ -1460,21 +1490,54 @@ export default function SynthesisCard({
             marginBottom: 20,
           }}>
             {briefText && (
-              <div style={{ fontSize: 13, lineHeight: 1.9, color: 'var(--text-1)', whiteSpace: 'pre-wrap', fontFamily: 'Georgia, var(--font-serif), serif' }}
+              <div style={{ fontSize: 13, lineHeight: 1.9, color: 'var(--text-1)', fontFamily: 'Georgia, var(--font-serif), serif' }}
                 className={briefState === 'streaming' ? 'cursor' : ''}>
+                {/* Bug fix: this only ever recognized a bare ALL-CAPS line as a
+                    section header, and never parsed **bold** spans at all. The
+                    model's actual output for this same persona (lib/personas.ts
+                    DECISION_BRIEF) commonly uses "## Header" and "**Header**"
+                    markdown instead — which isn't ALL-CAPS, so it fell through
+                    to the plain-line branch and rendered with the literal ##/**
+                    characters visible. Parsing now shared with the record
+                    page's brief renderer (lib/brief-markdown.ts) so both
+                    recognize the same three header conventions and the same
+                    inline bold spans, instead of drifting independently. */}
                 {briefText.split('\n').map((line, i) => {
-                  const isLabel = /^[A-Z][A-Z\s]+$/.test(line.trim()) && line.trim().length > 2 && line.trim().length < 40
+                  const trimmed = line.trim()
+                  if (!trimmed) return <p key={i} style={{ margin: '0 0 2px' }}>{'\u00A0'}</p>
+                  const header = briefLineHeader(trimmed)
+                  if (header) {
+                    return (
+                      <p key={i} style={{
+                        margin:        i === 0 ? '0 0 4px' : '16px 0 4px',
+                        fontSize:      10.5,
+                        fontWeight:    700,
+                        color:         'var(--gold)',
+                        fontFamily:    'var(--font-sans)',
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase',
+                      }}>
+                        {header}
+                      </p>
+                    )
+                  }
+                  const isBullet = briefLineIsBullet(trimmed)
+                  const content  = isBullet ? briefBulletContent(trimmed) : trimmed
                   return (
                     <p key={i} style={{
-                      margin: isLabel ? '16px 0 4px' : '0 0 2px',
-                      fontSize: isLabel ? 10.5 : 13,
-                      fontWeight: isLabel ? 700 : 400,
-                      color: isLabel ? 'var(--gold)' : 'var(--text-1)',
-                      fontFamily: isLabel ? 'var(--font-sans)' : 'Georgia, serif',
-                      letterSpacing: isLabel ? '0.12em' : '0.01em',
-                      textTransform: isLabel ? 'uppercase' : 'none',
+                      margin:        '0 0 2px',
+                      fontSize:      13,
+                      fontWeight:    400,
+                      color:         'var(--text-1)',
+                      fontFamily:    'Georgia, serif',
+                      letterSpacing: '0.01em',
+                      paddingLeft:   isBullet ? 14 : 0,
+                      position:      'relative',
                     }}>
-                      {line || '\u00A0'}
+                      {isBullet && <span style={{ position: 'absolute', left: 0 }}>–</span>}
+                      {parseBriefInline(content).map((s, si) => s.bold
+                        ? <strong key={si} style={{ color: 'var(--text-1)', fontWeight: 700 }}>{s.text}</strong>
+                        : <span key={si}>{s.text}</span>)}
                     </p>
                   )
                 })}
@@ -1623,6 +1686,93 @@ export default function SynthesisCard({
             }}>
               {renderProse(synthesis, true)}
             </div>
+
+            {/* Bug fix: worthConfirming/actionPlan/confidenceToAct were
+                previously excluded from focus mode entirely (see the comment
+                on the compact-card action-plan block above: "Not shown in
+                Observatory/focus mode, same precedent as worthConfirming
+                there") — a deliberate original design choice, not a bug, but
+                one that meant anyone using focus mode to read the synthesis
+                never saw the most actionable parts of it. Added here with
+                focus mode's own larger, centered typography rather than
+                reusing the compact card's styles verbatim. */}
+            {worthConfirming && (
+              <div style={{
+                marginTop:    28,
+                paddingTop:   24,
+                borderTop:    '1px solid var(--border-dim)',
+                textAlign:    'center',
+              }}>
+                <p style={{
+                  fontSize:   15,
+                  color:      'var(--text-2)',
+                  lineHeight: 1.7,
+                  margin:     0,
+                  fontFamily: 'var(--font-display)',
+                }}>
+                  <strong style={{ color: 'var(--text-1)' }}>Worth confirming</strong> — {worthConfirming}
+                </p>
+              </div>
+            )}
+
+            {actionPlan.length > 0 && (
+              <div style={{ marginTop: worthConfirming ? 24 : 28, paddingTop: worthConfirming ? 0 : 24, borderTop: worthConfirming ? 'none' : '1px solid var(--border-dim)' }}>
+                <p style={{
+                  fontFamily:    'var(--font-mono)',
+                  fontSize:      10,
+                  fontWeight:    700,
+                  letterSpacing: '0.14em',
+                  textTransform: 'uppercase',
+                  color:         'var(--action-accent)',
+                  textAlign:     'center',
+                  margin:        '0 0 4px',
+                }}>
+                  What to do next
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic', textAlign: 'center', margin: '0 0 16px' }}>
+                  in order of impact
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {actionPlan.map((item, i) => (
+                    <p key={i} style={{
+                      fontSize:   15,
+                      color:      'var(--text-2)',
+                      lineHeight: 1.7,
+                      margin:     0,
+                      textAlign:  'center',
+                    }}>
+                      {item.lead && (
+                        <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
+                      )}
+                      {item.lead && ' — '}
+                      {item.rest}
+                    </p>
+                  ))}
+                </div>
+                {confidenceToAct && (
+                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--action-note-border)', textAlign: 'center' }}>
+                    <p style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      10,
+                      fontWeight:    700,
+                      letterSpacing: '0.10em',
+                      textTransform: 'uppercase',
+                      color:         'var(--text-4)',
+                      margin:        '0 0 8px',
+                    }}>
+                      Before you act
+                    </p>
+                    <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
+                      {confidenceToAct.lead && (
+                        <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
+                      )}
+                      {confidenceToAct.lead && ' — '}
+                      {confidenceToAct.rest}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Playback controls stay reachable inside focus mode */}

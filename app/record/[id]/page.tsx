@@ -18,6 +18,7 @@ import type { TimelineEntry } from '@/components/DecisionTimeline'
 import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
 import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
 import RecordDecisionHero from '@/components/RecordDecisionHero'
+import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent } from '@/lib/brief-markdown'
 
 // Strip <lens>, <position>, <realcost>, <lean> tags stored in DB — rendered separately
 // in PersonaPanel (lean is never rendered, only used for the S3-01 tension interstitial)
@@ -143,47 +144,24 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
   return { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest }
 }
 
-// ── Decision Brief markdown-lite renderer ───────────────────────────────────
+// ── Decision Brief renderer (record page presentation) ──────────────────────
 // The Decision Brief persona (lib/personas.ts DECISION_BRIEF) writes "Key
 // insights / Risks / Contradictions / Recommended direction / Open questions"
 // as plain markdown — **bold** spans, section titles, "- " bullets — but
 // nothing on this page ever parsed it. stripHeaderTags only removes machine
 // tags (<lens>, <verdict>, etc.), so brief content fell through to the same
 // plain whiteSpace:pre-wrap <p> used for ordinary advisor prose, leaving
-// literal asterisks and dashes visible instead of headers/bold/bullets.
-// Ports the same **bold**/header parsing components/RecordExport.tsx already
-// does correctly for the PDF export, so this page matches it.
-type BriefSegment = { text: string; bold: boolean }
-
-function parseBriefInline(line: string): BriefSegment[] {
-  const segments: BriefSegment[] = []
-  const regex = /\*\*(.+?)\*\*/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = regex.exec(line)) !== null) {
-    if (m.index > last) segments.push({ text: line.slice(last, m.index), bold: false })
-    segments.push({ text: m[1], bold: true })
-    last = regex.lastIndex
-  }
-  if (last < line.length) segments.push({ text: line.slice(last), bold: false })
-  return segments.length ? segments : [{ text: line, bold: false }]
-}
-
+// literal asterisks/hashes/dashes visible instead of headers/bold/bullets.
+// Parsing itself now lives in lib/brief-markdown.ts, shared with the live
+// "Generate Decision Brief" renderer in components/SynthesisCard.tsx, so the
+// two can only drift in styling from here on, not in what counts as a
+// header/bold span — that per-file drift is exactly what let one of them
+// (SynthesisCard's, which only ever recognized plain ALL-CAPS lines) fail to
+// recognize the "## Header" / "**Header**" conventions the model also uses.
 function renderBriefInline(line: string): React.ReactNode {
   return parseBriefInline(line).map((s, i) => s.bold
     ? <strong key={i} style={{ color: 'var(--text-1)', fontWeight: 600 }}>{s.text}</strong>
     : <span key={i}>{s.text}</span>)
-}
-
-// A standalone section header: either "**Header**" / "**Header**:" (the
-// model's more common convention) or a short ALL-CAPS line with no markdown
-// (the alternate convention it sometimes uses instead) — this page has to
-// handle both since the same persona produces either depending on the run.
-function briefLineHeader(trimmed: string): string | null {
-  const mdMatch = trimmed.match(/^\*\*(.+?)\*\*:?\s*$/)
-  if (mdMatch) return mdMatch[1]
-  if (/^[A-Z][A-Z\s/&-]+$/.test(trimmed) && trimmed.length > 2 && trimmed.length < 40) return trimmed
-  return null
 }
 
 function renderBriefBody(raw: string): React.ReactNode {
@@ -209,8 +187,8 @@ function renderBriefBody(raw: string): React.ReactNode {
             </p>
           )
         }
-        const isBullet = /^[-*]\s+/.test(trimmed)
-        const content  = isBullet ? trimmed.replace(/^[-*]\s+/, '') : trimmed
+        const isBullet = briefLineIsBullet(trimmed)
+        const content  = isBullet ? briefBulletContent(trimmed) : trimmed
         return (
           <p key={i} style={{
             fontSize:    13.5,

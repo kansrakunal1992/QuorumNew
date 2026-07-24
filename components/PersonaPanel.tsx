@@ -176,6 +176,26 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const clearRateLimit = useCallback(() => setRateLimitInfo(null), [])
 
   const responseRef   = useRef(initialContent ?? '')
+  // Bug fix: rebuilding `fullContent` for persistence after any pushback or
+  // examiner-update previously reused `responseRef.current` — which by that
+  // point already holds the STRIPPED prose (see the `isFirst` streaming loop
+  // below, which overwrites responseRef.current with tag-stripped text on
+  // every chunk, for display purposes). That stripped text is what got saved
+  // as the new "original response" segment going forward, permanently
+  // erasing <lens>/<position>/<realcost>/<lean> from what's persisted after
+  // the FIRST save. On a later reload, extractHeaderTags(initialContent)
+  // then found no <lean> tag anywhere in that persona's stored content, so
+  // initialLean never got set — which silently breaks the "Shifted after
+  // pushback" badge (initialLean && currentLean && currentLean !== initialLean
+  // requires initialLean to be truthy) for exactly the personas that had
+  // already been challenged before the page was reloaded, and only becomes
+  // visible on that reload — matching the "vanishes sometimes, only for some
+  // personas" symptom. This ref tracks the RAW (tag-intact) original response
+  // separately, so it — not the display-cleaned responseRef — is what gets
+  // reused when reconstructing fullContent for every subsequent save.
+  const rawInitialRef = useRef(
+    initialContent ? initialContent.split(/\n\n\[(?:Pushback|Updated after Examiner)/)[0] : '',
+  )
   const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
   const onLeanUpdateRef = useRef(onLeanUpdate)
@@ -372,6 +392,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       setPanelState('done')
 
       if (isFirst) {
+        rawInitialRef.current = acc   // preserve tag-intact original response for future saves
         onCompleteRef.current?.(persona.key, acc)
       } else {
         const userText = msgs[msgs.length - 1]?.content ?? ''
@@ -415,7 +436,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         const newExchanges = [...exchangesRef.current, { user: userText, reply: cleanReply }]
         setExchanges(newExchanges)
         setIsPushingBack(false)
-        const fullContent = [responseRef.current, ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)].join('\n\n')
+        const fullContent = [rawInitialRef.current || responseRef.current, ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)].join('\n\n')
         onCompleteRef.current?.(persona.key, fullContent)
         // Automatic percolation: this advisor's own completion is now part of
         // the same "whole council reassessing this new information" batch as
@@ -439,6 +460,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     const prose = extractHeaderTags(initialContent)
     setResponse(prose)
     responseRef.current = prose
+    // Keep the raw (tag-intact) original-response segment current too — see
+    // rawInitialRef's definition above for why this must stay separate from
+    // responseRef.current.
+    rawInitialRef.current = initialContent.split(/\n\n\[(?:Pushback|Updated after Examiner)/)[0]
   }, [initialContent, extractHeaderTags])
 
   useEffect(() => {
@@ -507,7 +532,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               onLeanUpdateRef.current?.(persona.key, lean)
             }
           }
-          const fullContent = [responseRef.current, `[Updated after Examiner answers]\n${cleanAcc}`,
+          const fullContent = [rawInitialRef.current || responseRef.current, `[Updated after Examiner answers]\n${cleanAcc}`,
             ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
           ].join('\n\n')
           onCompleteRef.current?.(persona.key, fullContent)

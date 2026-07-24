@@ -215,6 +215,13 @@ export default function SessionView({ session: initialSession, initialMessages =
       Object.entries(initialMessages).filter(([key]) => (PERSONA_ORDER as string[]).includes(key))
     )
   )
+  // Bug fix: handlePersonaComplete needs to know synchronously, before calling
+  // any setters, whether this is the persona's FIRST completion or a later one
+  // (pushback / examiner-update) — see the leanMatch guard below for why.
+  // completedResponses itself can't be read synchronously inside the same
+  // callback that's about to update it, hence this ref mirror.
+  const completedResponsesRef = useRef(completedResponses)
+  useEffect(() => { completedResponsesRef.current = completedResponses }, [completedResponses])
   // Bug fix (council synthesis re-run on back-navigation): the persisted synthesis
   // text for this session, if any — passed to SynthesisCard so it renders the cached
   // result instead of firing a brand-new AI synthesis call every time SessionView
@@ -662,14 +669,32 @@ export default function SessionView({ session: initialSession, initialMessages =
     // silently re-open the same leak. Ignore anything outside the canonical 6 here too.
     if (!(PERSONA_ORDER as string[]).includes(personaKey)) return
 
-    // S3-01: capture this persona's lean classification, if present. Only overwrite on a
-    // valid match — later calls (pushback replies, examiner updates) send pre-stripped
-    // content without the tag, and should never clear a previously captured lean.
-    const leanMatch = content.match(/<lean>([\s\S]*?)<\/lean>/)
-    if (leanMatch) {
-      const lean = leanMatch[1].trim().toLowerCase()
-      if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
-        setPersonaLeans(prev => ({ ...prev, [personaKey]: lean as Lean }))
+    // Bug fix ("lean badge silently reverts after a real shift"): this used to
+    // re-parse <lean> from `content` on EVERY call, not just the first. After a
+    // pushback, `content` is PersonaPanel's reconstructed fullContent, which by
+    // then has had the pushback reply's OWN <lean> already stripped out (see
+    // PersonaPanel.tsx's stripHeaderTags on cleanReply) — so the only <lean>
+    // tag left anywhere in it is the ORIGINAL one. Re-running this match on
+    // every completion therefore kept re-applying the ORIGINAL lean here,
+    // immediately after PersonaPanel's separate, correct onLeanUpdate call
+    // (handleLeanUpdate below) had just set the NEW, shifted lean — both
+    // setPersonaLeans calls land in the same batch, so this one, running
+    // second, always won and silently reverted the shift. That's exactly what
+    // the comment on personaLeans/handleLeanUpdate below already says should
+    // never happen ("the only place personaLeans updates after the initial
+    // response") — this block just wasn't actually honoring it. Gating on
+    // isUpdate (this persona's first completion only) fixes it: the initial
+    // seed still happens here (there's no pushback yet to have a competing
+    // handleLeanUpdate call), and every later completion leaves personaLeans
+    // alone, matching the comment's original intent.
+    const isUpdate = personaKey in completedResponsesRef.current
+    if (!isUpdate) {
+      const leanMatch = content.match(/<lean>([\s\S]*?)<\/lean>/)
+      if (leanMatch) {
+        const lean = leanMatch[1].trim().toLowerCase()
+        if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
+          setPersonaLeans(prev => ({ ...prev, [personaKey]: lean as Lean }))
+        }
       }
     }
 
