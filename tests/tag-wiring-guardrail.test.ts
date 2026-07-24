@@ -7,12 +7,15 @@
 //
 // This is the one narrow slice of it that IS mechanical: lib/personas.ts's
 // SYNTHESIS prompt instructs the model to wrap specific content in tags
-// (<verdict>, <conditions>, <action_plan>, etc). Three other files each keep
+// (<verdict>, <conditions>, <action_plan>, etc). Five other files each keep
 // their OWN independent copy of tag-handling logic for that same synthesis
 // text — components/SynthesisCard.tsx (live render), components/
-// RecordExport.tsx (PDF export), and app/api/session/[id]/observation/
-// route.ts (Mirror observation-feed prompt). Nothing enforces that adding a
-// tag to the prompt also means updating all three copies.
+// RecordExport.tsx (a persona-card PDF export used from PersonaPanel.tsx,
+// distinct from the main brief PDF below), app/api/session/[id]/observation/
+// route.ts (Mirror observation-feed prompt), app/record/[id]/page.tsx (the
+// permanent-record page), and app/api/record/[id]/brief/route.ts (the actual
+// "Download PDF" brief the record page links to). Nothing enforces that
+// adding a tag to the prompt also means updating all five copies.
 //
 // That's exactly the gap that let <action_plan> and <confidence_to_act> ship
 // working in the live UI while silently leaking as raw markup in the PDF
@@ -20,6 +23,17 @@
 // missing/broken output that only a human happening to look would catch.
 // This test would have failed the day those two tags were added, instead of
 // sitting undetected until now.
+//
+// Update, same root cause, different sinks: this test's own SINK_FILES list
+// was itself incomplete — it never included app/record/[id]/page.tsx or
+// app/api/record/[id]/brief/route.ts, so it kept passing throughout while
+// both of those independently-maintained copies were unaware <action_plan>/
+// <confidence_to_act> existed at all. That's why a "passing" guardrail
+// coexisted with raw <action_plan>/<confidence_to_act> tags visible on the
+// record page and in the downloaded PDF, plus the record page never even
+// having a <verdict_lean>/<structural>/<assumption> strip. Fixed by adding
+// both files below — but the meta-lesson is: whenever a new sink file is
+// added to the app, it has to be added here too, or this test can't see it.
 //
 // Re-run automatically by `npm test`. If this ever fails, the fix is almost
 // always: add the missing tag's strip pattern to the named file, matching
@@ -43,6 +57,11 @@ const SINK_FILES = [
   'components/SynthesisCard.tsx',
   'components/RecordExport.tsx',
   'app/api/session/[id]/observation/route.ts',
+  // Added: these two were the actual cause of the reported record-page and
+  // PDF bugs — this test didn't know they existed, so it couldn't catch that
+  // they'd never been taught about <action_plan>/<confidence_to_act>.
+  'app/record/[id]/page.tsx',
+  'app/api/record/[id]/brief/route.ts',
 ]
 
 // Pull just the SYNTHESIS prompt template literal out of lib/personas.ts —

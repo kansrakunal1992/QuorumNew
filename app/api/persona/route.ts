@@ -853,10 +853,18 @@ Apply the VERDICT STABILITY instruction above using this data.`
     }
 
     // ── Stream ────────────────────────────────────────────────────────────────
+    // Bug fix: synthesis needs materially more room than a single advisor
+    // persona — verdict + conditions + several paragraphs + optional SB-3
+    // additions + <action_plan> + <confidence_to_act>, with the latter two
+    // mandated last. At the old universal 1200-token cap, a normal-length
+    // synthesis regularly ran out of budget mid-tag on those trailing
+    // sections (see lib/ai-client.ts createStream doc comment) — raising it
+    // here only for synthesis leaves every advisor call's budget untouched.
     const { readable, getContent } = await createStream(
       systemPrompt,
       chatMessages,
       personaKey === 'synthesis' ? 'anthropic' : 'deepseek',
+      personaKey === 'synthesis' ? 2200 : 1200,
     )
 
     const passthrough = new ReadableStream<Uint8Array>({

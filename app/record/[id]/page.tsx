@@ -65,13 +65,27 @@ function firstSentence(text: string): string {
   return m ? m[0].trim() : text.trim()
 }
 
-// Synthesis-only: pulls the <verdict> sentence and <conditions> list out
-// separately (rendered in the gold box) and returns the remaining prose with
-// all header tags removed but <tension> tags still in place, so
-// renderSynthesisProse can locate and highlight the tension sentence inline —
-// mirrors SynthesisCard.tsx exactly, so the static record page matches what
-// was shown live on the session page.
-function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; keyQuestion: string | null; rest: string } {
+// Decision Action Plan / Confidence to Act: 3–4 items (resp. at most 1), each
+// "**lead phrase** — clause", pipe-separated (same wire format as <conditions>).
+// Mirrors components/SynthesisCard.tsx's parseActionPlan exactly, so the
+// static record page can render the same "What to do next" / "Before you
+// act" sections the live session view shows. Falls back to { lead: '', rest: raw }
+// if the model ever omits the ** markers — still renders as a plain line
+// rather than disappearing.
+function parseActionPlan(raw: string): { lead: string; rest: string }[] {
+  return raw.split('|').map(s => s.trim()).filter(Boolean).map(item => {
+    const m = item.match(/^\*\*(.+?)\*\*\s*[—-]\s*(.*)$/)
+    return m ? { lead: m[1].trim(), rest: m[2].trim() } : { lead: '', rest: item }
+  })
+}
+
+// Synthesis-only: pulls the <verdict> sentence, <conditions> list, <action_plan>
+// items and <confidence_to_act> note out separately (rendered in dedicated
+// callouts) and returns the remaining prose with all header tags removed but
+// <tension> tags still in place, so renderSynthesisProse can locate and
+// highlight the tension sentence inline — mirrors SynthesisCard.tsx exactly,
+// so the static record page matches what was shown live on the session page.
+function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; keyQuestion: string | null; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } {
   const vMatch  = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
   const verdict = vMatch?.[1]?.trim() ? firstSentence(vMatch[1].trim()) : null
   const cMatch  = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
@@ -80,6 +94,19 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
   // (components/SynthesisCard.tsx) — see that file for the full rationale.
   const kqMatch    = raw.match(/<key_question>([\s\S]*?)<\/key_question>/)
   const keyQuestion = kqMatch?.[1]?.trim() ?? null
+  // Bug fix (tag-wiring guardrail gap): this file keeps its own independent copy
+  // of tag-handling logic, separate from SynthesisCard.tsx, RecordExport.tsx and
+  // the observation route — and it never learned about <action_plan> or
+  // <confidence_to_act> at all. Since those two tags were absent from every
+  // replace() below, they were never removed from "rest" (the flowing prose),
+  // so they rendered as raw, visible <action_plan>/<confidence_to_act> markup
+  // on this page instead of the styled sections SessionView shows. Extracting
+  // them here — same shape/parser as SynthesisCard.tsx — fixes both the raw-tag
+  // leak and the missing content in one pass.
+  const apMatch = raw.match(/<action_plan>([\s\S]*?)<\/action_plan>/)
+  const actionPlan = apMatch?.[1] ? parseActionPlan(apMatch[1]) : []
+  const caMatch = raw.match(/<confidence_to_act>([\s\S]*?)<\/confidence_to_act>/)
+  const confidenceToAct = caMatch?.[1] ? (parseActionPlan(caMatch[1])[0] ?? null) : null
   const rest = raw
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')   // guard: open tag without close
@@ -90,6 +117,15 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     // Sprint 1 follow-on: extracted above into its own callout, same as
     // verdict/conditions — must not also remain in the flowing prose.
     .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+    // Same fix as above: extracted into their own callouts, must not also
+    // remain in the flowing prose. Includes a guard for the unclosed-tag case
+    // (a synthesis run that got cut short before </action_plan>/</confidence_to_act>
+    // arrived — see lib/ai-client.ts max_tokens note) so a truncated run degrades
+    // to "missing section" rather than "raw tag markup visible on the page".
+    .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
+    .replace(/<action_plan>[\s\S]*$/, '')          // guard: open tag without close
+    .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
+    .replace(/<confidence_to_act>[\s\S]*$/, '')     // guard: open tag without close
     .replace(/<lens>[\s\S]*?<\/lens>/g, '')
     .replace(/<position>[\s\S]*?<\/position>/g, '')
     .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
@@ -104,7 +140,93 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
     .replace(/<\/?assumption>/g, '')
     .trimStart()
-  return { verdict, conditions, keyQuestion, rest }
+  return { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest }
+}
+
+// ── Decision Brief markdown-lite renderer ───────────────────────────────────
+// The Decision Brief persona (lib/personas.ts DECISION_BRIEF) writes "Key
+// insights / Risks / Contradictions / Recommended direction / Open questions"
+// as plain markdown — **bold** spans, section titles, "- " bullets — but
+// nothing on this page ever parsed it. stripHeaderTags only removes machine
+// tags (<lens>, <verdict>, etc.), so brief content fell through to the same
+// plain whiteSpace:pre-wrap <p> used for ordinary advisor prose, leaving
+// literal asterisks and dashes visible instead of headers/bold/bullets.
+// Ports the same **bold**/header parsing components/RecordExport.tsx already
+// does correctly for the PDF export, so this page matches it.
+type BriefSegment = { text: string; bold: boolean }
+
+function parseBriefInline(line: string): BriefSegment[] {
+  const segments: BriefSegment[] = []
+  const regex = /\*\*(.+?)\*\*/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = regex.exec(line)) !== null) {
+    if (m.index > last) segments.push({ text: line.slice(last, m.index), bold: false })
+    segments.push({ text: m[1], bold: true })
+    last = regex.lastIndex
+  }
+  if (last < line.length) segments.push({ text: line.slice(last), bold: false })
+  return segments.length ? segments : [{ text: line, bold: false }]
+}
+
+function renderBriefInline(line: string): React.ReactNode {
+  return parseBriefInline(line).map((s, i) => s.bold
+    ? <strong key={i} style={{ color: 'var(--text-1)', fontWeight: 600 }}>{s.text}</strong>
+    : <span key={i}>{s.text}</span>)
+}
+
+// A standalone section header: either "**Header**" / "**Header**:" (the
+// model's more common convention) or a short ALL-CAPS line with no markdown
+// (the alternate convention it sometimes uses instead) — this page has to
+// handle both since the same persona produces either depending on the run.
+function briefLineHeader(trimmed: string): string | null {
+  const mdMatch = trimmed.match(/^\*\*(.+?)\*\*:?\s*$/)
+  if (mdMatch) return mdMatch[1]
+  if (/^[A-Z][A-Z\s/&-]+$/.test(trimmed) && trimmed.length > 2 && trimmed.length < 40) return trimmed
+  return null
+}
+
+function renderBriefBody(raw: string): React.ReactNode {
+  const lines = stripHeaderTags(raw).split('\n')
+  return (
+    <>
+      {lines.map((line, i) => {
+        const trimmed = line.trim()
+        if (!trimmed) return null
+        const header = briefLineHeader(trimmed)
+        if (header) {
+          return (
+            <p key={i} style={{
+              fontFamily:    'var(--font-mono)',
+              fontSize:      10.5,
+              fontWeight:    700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color:         'var(--gold)',
+              margin:        i === 0 ? '0 0 8px' : '16px 0 8px',
+            }}>
+              {header}
+            </p>
+          )
+        }
+        const isBullet = /^[-*]\s+/.test(trimmed)
+        const content  = isBullet ? trimmed.replace(/^[-*]\s+/, '') : trimmed
+        return (
+          <p key={i} style={{
+            fontSize:    13.5,
+            lineHeight:  1.75,
+            color:       'var(--text-2)',
+            margin:      '0 0 6px',
+            paddingLeft: isBullet ? 14 : 0,
+            position:    'relative',
+          }}>
+            {isBullet && <span style={{ position: 'absolute', left: 0 }}>–</span>}
+            {renderBriefInline(content)}
+          </p>
+        )
+      })}
+    </>
+  )
 }
 
 // Renders synthesis prose with the <tension> sentence highlighted inline —
@@ -136,7 +258,7 @@ function renderSynthesisProse(rest: string): React.ReactNode {
 // with the tension sentence highlighted inline. Used for both the initial
 // synthesis message and any reanalysis/pushback synthesis responses.
 function renderSynthesisMessage(raw: string): React.ReactNode {
-  const { verdict, conditions, keyQuestion, rest } = parseVerdictTension(raw)
+  const { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest } = parseVerdictTension(raw)
   return (
     <>
       {verdict && (
@@ -224,6 +346,74 @@ function renderSynthesisMessage(raw: string): React.ReactNode {
       <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap', margin: 0 }}>
         {renderSynthesisProse(rest)}
       </p>
+      {/* Parity fix: same "What to do next" / "Before you act" treatment as the
+          live session view (components/SynthesisCard.tsx) — this content was
+          previously extracted nowhere on this page, so it either leaked as raw
+          <action_plan>/<confidence_to_act> markup or (when the tag opened but
+          never closed, e.g. a truncated run) got silently swallowed by the
+          unclosed-tag guard above. Rendering it here keeps the permanent record
+          matching what was shown live. */}
+      {actionPlan.length > 0 && (
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-dim)' }}>
+          <div style={{
+            borderLeft:   '3px solid var(--action-accent)',
+            background:   'var(--action-bg)',
+            borderRadius: '0 10px 10px 0',
+            padding:      '14px 20px',
+          }}>
+            <p style={{
+              fontFamily:    'var(--font-mono)',
+              fontSize:      9,
+              fontWeight:    700,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color:         'var(--action-accent)',
+              margin:        '0 0 2px',
+            }}>
+              What to do next
+            </p>
+            <p style={{ fontSize: 10, color: 'var(--text-4)', fontStyle: 'italic', margin: '0 0 12px' }}>
+              in order of impact
+            </p>
+            {actionPlan.map((item, i) => (
+              <p key={i} style={{
+                fontSize:   13,
+                color:      'var(--text-2)',
+                lineHeight: 1.7,
+                margin:     i === actionPlan.length - 1 ? 0 : '0 0 10px',
+              }}>
+                {item.lead && (
+                  <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
+                )}
+                {item.lead && ' — '}
+                {item.rest}
+              </p>
+            ))}
+            {confidenceToAct && (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--action-note-border)' }}>
+                <p style={{
+                  fontFamily:    'var(--font-mono)',
+                  fontSize:      9,
+                  fontWeight:    700,
+                  letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  color:         'var(--text-4)',
+                  margin:        '0 0 6px',
+                }}>
+                  Before you act
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
+                  {confidenceToAct.lead && (
+                    <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
+                  )}
+                  {confidenceToAct.lead && ' — '}
+                  {confidenceToAct.rest}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -235,7 +425,21 @@ function renderSynthesisMessage(raw: string): React.ReactNode {
 function cleanPushbackText(raw: string): string {
   return raw
     .replace(/^[^"\n]*[:\n]+\s*/i, '')
-    .replace(/^"([\s\S]*)"[\s]*$/, '$1')
+    // Bug fix: this required the closing quote to sit at (or right near) the
+    // end of the string. That was true for the directly-challenged advisor
+    // (PersonaPanel.tsx stores the raw challenge text with no wrapper at all),
+    // but the five auto-shared advisors receive the full examinerMsg template
+    // (components/SessionView.tsx, handleShareContext) — which appends
+    // "Reassess it independently through your own lens..." and "Provide a
+    // concise update..." AFTER the closing quote. Since nothing used to
+    // follow the quote, that instructional tail was left in place and
+    // rendered as if it were part of the pushback. Matching the FIRST quoted
+    // segment (non-greedy, no end anchor) instead of "everything to the end
+    // is one big quote" fixes this regardless of what trails it.
+    .replace(/^"([\s\S]*?)"[\s\S]*$/, '$1')
+    // Belt-and-suspenders for the same wrapper's instruction lines, in case a
+    // stored message ever lacks the quote marks.
+    .replace(/\s*Reassess it independently through your own lens[\s\S]*$/i, '')
     .replace(/\s*Provide a concise update[\s\S]*$/i, '')
     .trim()
 }
@@ -936,14 +1140,14 @@ export default async function RecordPage({ params }: Props) {
                           /* If this assistant message follows a user pushback, indent it */
                           i > 0 && msgs[i - 1]?.role === 'user' ? (
                             <div className="rec-pushback-response">
-                              {isSynthesis ? renderSynthesisMessage(msg.content) : (
+                              {isSynthesis ? renderSynthesisMessage(msg.content) : isBrief ? renderBriefBody(msg.content) : (
                                 <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
                                   {stripHeaderTags(msg.content)}
                                 </p>
                               )}
                             </div>
                           ) : (
-                            isSynthesis ? renderSynthesisMessage(msg.content) : (
+                            isSynthesis ? renderSynthesisMessage(msg.content) : isBrief ? renderBriefBody(msg.content) : (
                               <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
                                 {stripHeaderTags(msg.content)}
                               </p>

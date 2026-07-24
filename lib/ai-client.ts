@@ -134,26 +134,43 @@ export interface CompletionOptions {
  *   'deepseek'  → all 6 persona analyses, pushbacks, decision_brief persona
  *
  * In deepseek_only mode all calls are forced to DeepSeek regardless.
+ *
+ * maxTokens (bug fix): every call used a hardcoded 1200, regardless of how
+ * much output the prompt actually demands. That's enough for a single advisor
+ * persona, but the SYNTHESIS prompt (lib/personas.ts) mandates a long list of
+ * sections — verdict, conditions, 2–4 paragraphs of prose, optional SB-3
+ * additions, then <action_plan> (3–4 items) and <confidence_to_act> LAST,
+ * after everything else. A verbose-but-otherwise-normal synthesis routinely
+ * runs past 1200 tokens (~900 words), and since the two action tags are
+ * mandated to be the final thing the model writes, they are the first thing
+ * to get cut off mid-tag when the limit hits — which is exactly what left
+ * raw, unclosed <action_plan>/<confidence_to_act> markup visible on the
+ * session page in hybrid mode (where synthesis runs on Claude specifically;
+ * see resolveProvider above). Not a timeout — a token ceiling. Callers that
+ * need more room now pass maxTokens explicitly; anything that doesn't is
+ * unaffected (default matches the old hardcoded value exactly).
  */
 export async function createStream(
   systemPrompt: string,
   messages:     { role: 'user' | 'assistant'; content: string }[],
   provider?:    'anthropic' | 'deepseek',
+  maxTokens:    number = 1200,
 ): Promise<StreamResult> {
   const p = resolveProvider(provider)
-  console.log(`[AIClient] createStream → ${p}${ROUTING_MODE === 'deepseek_only' ? ' (deepseek_only override)' : ''}`)
+  console.log(`[AIClient] createStream → ${p} (${maxTokens} max tokens)${ROUTING_MODE === 'deepseek_only' ? ' (deepseek_only override)' : ''}`)
   return p === 'deepseek'
-    ? streamDeepSeek(systemPrompt, messages)
-    : streamAnthropic(systemPrompt, messages)
+    ? streamDeepSeek(systemPrompt, messages, maxTokens)
+    : streamAnthropic(systemPrompt, messages, maxTokens)
 }
 
 async function streamAnthropic(
   systemPrompt: string,
   messages:     { role: 'user' | 'assistant'; content: string }[],
+  maxTokens:    number = 1200,
 ): Promise<StreamResult> {
   const stream = await anthropic.messages.stream({
     model:      ANTHROPIC_MODEL,
-    max_tokens: 1200,
+    max_tokens: maxTokens,
     system:     systemPrompt,
     messages:   messages as Anthropic.MessageParam[],
   })
@@ -178,11 +195,12 @@ async function streamAnthropic(
 async function streamDeepSeek(
   systemPrompt: string,
   messages:     { role: 'user' | 'assistant'; content: string }[],
+  maxTokens:    number = 1200,
 ): Promise<StreamResult> {
   const stream = await withRetry(
     () => deepseek.chat.completions.create({
       model:      DEEPSEEK_MODEL,
-      max_tokens: 1200,
+      max_tokens: maxTokens,
       stream:     true,
       messages:   [{ role: 'system', content: systemPrompt }, ...messages],
       thinking:   { type: DEEPSEEK_THINKING },

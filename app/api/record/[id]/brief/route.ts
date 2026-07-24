@@ -76,8 +76,22 @@ function cleanPushbackText(raw: string): string {
     // a newline run, right before the opening quote) rather than one exact
     // sentence, so this survives future wording changes to the wrapper.
     .replace(/^[^"\n]*[:\n]+\s*/i, '')
-    // Remove the quoted wrapper if present: "..."
-    .replace(/^"([\s\S]*)"\s*$/, '$1')
+    // Bug fix: this required the closing quote to sit at (or right near) the
+    // end of the string. That's true for a directly-challenged advisor
+    // (PersonaPanel.tsx stores the raw challenge text with no wrapper at
+    // all), but the five auto-shared advisors receive the full examinerMsg
+    // template (components/SessionView.tsx, handleShareContext) — which
+    // appends "Reassess it independently through your own lens..." and
+    // "Provide a concise update..." AFTER the closing quote. Since nothing
+    // used to follow the quote, that instructional tail was left in place
+    // and printed into the PDF as if it were part of the pushback. Matching
+    // the FIRST quoted segment (non-greedy, no end anchor) instead of
+    // "everything to the end is one big quote" fixes this regardless of
+    // what trails it.
+    .replace(/^"([\s\S]*?)"[\s\S]*$/, '$1')
+    // Belt-and-suspenders for the same wrapper's instruction lines, in case
+    // a stored message ever lacks the quote marks.
+    .replace(/\s*Reassess it independently through your own lens[\s\S]*$/i, '')
     // Remove the trailing instruction block (old or current wording)
     .replace(/\s*Provide a concise update[\s\S]*$/i, '')
     .trim()
@@ -149,6 +163,15 @@ type Palette = {
   verdictBg:           [number, number, number]
   verdictAccent:       [number, number, number]
   tensionHighlightBg:  [number, number, number]
+  // P2 fix: action_plan/confidence_to_act had no box treatment at all in this
+  // file, unlike every other synthesis tag — added here to match the teal
+  // "action" accent already used for this content on the live session view
+  // (app/globals.css --action-accent/--action-bg/--action-note-border),
+  // approximated as flat RGB since jsPDF fills don't support the CSS
+  // gradient/opacity these are defined with.
+  actionBg:            [number, number, number]
+  actionAccent:        [number, number, number]
+  actionNoteBorder:    [number, number, number]
 }
 
 const DARK_PALETTE: Palette = {
@@ -172,6 +195,9 @@ const DARK_PALETTE: Palette = {
   verdictBg:           [44, 36, 15],
   verdictAccent:       [222, 184, 96],
   tensionHighlightBg:  [56, 47, 21],
+  actionBg:            [17, 29, 35],
+  actionAccent:        [111, 199, 184],
+  actionNoteBorder:    [34, 60, 62],
 }
 
 // Light palette — warm off-white pages, deep bronze gold, near-black text.
@@ -197,6 +223,9 @@ const LIGHT_PALETTE: Palette = {
   verdictBg:           [249, 238, 211],
   verdictAccent:       [150, 108, 20],
   tensionHighlightBg:  [251, 243, 222],
+  actionBg:            [232, 239, 233],
+  actionAccent:        [26, 138, 118],
+  actionNoteBorder:    [199, 222, 214],
 }
 
 // Persona accent backgrounds — dark vs light
@@ -324,13 +353,35 @@ async function buildPdf(
     return m ? m[0].trim() : text.trim()
   }
 
+  // Decision Action Plan / Confidence to Act: 3–4 items (resp. at most 1),
+  // each "**lead phrase** — clause", pipe-separated (same wire format as
+  // <conditions>). Mirrors components/SynthesisCard.tsx's parseActionPlan
+  // exactly, so the PDF's own box (renderActionPlanBoxPdf below) matches the
+  // "What to do next" / "Before you act" sections shown live.
+  const parseActionPlanPdf = (raw: string): { lead: string; rest: string }[] =>
+    raw.split('|').map(s => s.trim()).filter(Boolean).map(item => {
+      const m = item.match(/^\*\*(.+?)\*\*\s*[—-]\s*(.*)$/)
+      return m ? { lead: m[1].trim(), rest: m[2].trim() } : { lead: '', rest: item }
+    })
+
   // Strips verdict + conditions (returned separately) and leaves tension tags
   // intact in `rest` for renderSynthesisBody to locate per-paragraph.
-  const parseVerdictTension = (raw: string): { verdict: string | null; conditions: string[]; rest: string } => {
+  const parseVerdictTension = (raw: string): { verdict: string | null; conditions: string[]; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } => {
     const vMatch = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
     const verdict = vMatch?.[1]?.trim() ? firstSentencePdf(vMatch[1].trim()) : null
     const cMatch = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
     const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
+    // Bug fix (tag-wiring guardrail gap): this file's independent copy of
+    // tag-handling never learned about <action_plan>/<confidence_to_act> at
+    // all — unlike every other synthesis tag here, there wasn't even a
+    // strip-and-discard line for them, so they printed as raw, visible
+    // <action_plan>/<confidence_to_act> markup in the generated PDF. Extract
+    // them the same way <conditions> already is, so renderActionPlanBoxPdf
+    // below can give them their own box instead of just deleting them.
+    const apMatch = raw.match(/<action_plan>([\s\S]*?)<\/action_plan>/)
+    const actionPlan = apMatch?.[1] ? parseActionPlanPdf(apMatch[1]) : []
+    const caMatch = raw.match(/<confidence_to_act>([\s\S]*?)<\/confidence_to_act>/)
+    const confidenceToAct = caMatch?.[1] ? (parseActionPlanPdf(caMatch[1])[0] ?? null) : null
     const rest = raw
       .replace(/<verdict>[\s\S]*?<\/verdict>\n*/, '')
       .replace(/<verdict>[\s\S]*/, '')   // guard: open tag without close
@@ -338,8 +389,18 @@ async function buildPdf(
       // raw-tag leak, since `rest` is what gets rendered as the PDF's body text.
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/, '')
+      // Same fix as above: extracted into their own box, must not also
+      // remain in the flowing body text. Includes a guard for the
+      // unclosed-tag case (a synthesis run cut short before
+      // </action_plan>/</confidence_to_act> arrived — see lib/ai-client.ts
+      // max_tokens note) so a truncated run degrades to "missing section"
+      // rather than "raw tag markup printed in the PDF".
+      .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/, '')
+      .replace(/<action_plan>[\s\S]*$/, '')            // guard: open tag without close
+      .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/, '')
+      .replace(/<confidence_to_act>[\s\S]*$/, '')       // guard: open tag without close
       .trimStart()
-    return { verdict, conditions, rest }
+    return { verdict, conditions, actionPlan, confidenceToAct, rest }
   }
 
   const renderVerdictBoxPdf = (verdictText: string, conditions: string[] = []) => {
@@ -415,6 +476,137 @@ async function buildPdf(
           ty += condLh
         }
       }
+    }
+
+    Y = boxY + boxH + 14
+  }
+
+  // P2 fix: <action_plan>/<confidence_to_act> previously had no rendering
+  // path in this file at all — not even a "strip and discard" line, so they
+  // printed as raw tag markup. This mirrors renderVerdictBoxPdf's box
+  // treatment (measure-then-draw, matching term-by-term so the fill rect's
+  // height always agrees with what's actually drawn inside it) and gives
+  // this content the same "What to do next" / "Before you act" sections
+  // already shown on the live session view (components/SynthesisCard.tsx).
+  //
+  // jsPDF has no native inline bold-run support, so each item's lead phrase
+  // is bolded by re-using jsPDF's own word-wrap (doc.splitTextToSize on the
+  // plain "lead — rest" string) and then, on the second draw pass, walking
+  // those same wrapped lines to find where the lead phrase's character span
+  // falls and switching font/color at that exact point — the bold/normal
+  // split can never disagree with where the text actually wrapped, since
+  // it's derived from the same wrapped lines being drawn.
+  const drawLeadRestWrapped = (
+    wrappedLines: string[], boldLen: number, x: number, startY: number, lh: number, size: number,
+  ): number => {
+    let consumed = 0
+    let ty = startY
+    for (const line of wrappedLines) {
+      ensure(lh + 2)
+      const lineLen = line.length
+      doc.setFontSize(size)
+      if (consumed >= boldLen) {
+        doc.setFont('Helvetica', 'normal'); doc.setTextColor(...C.bodyText)
+        doc.text(line, x, ty)
+      } else if (consumed + lineLen <= boldLen) {
+        doc.setFont('Helvetica', 'bold'); doc.setTextColor(...C.actionAccent)
+        doc.text(line, x, ty)
+      } else {
+        const splitAt   = boldLen - consumed
+        const boldPart  = line.slice(0, splitAt)
+        const restPart  = line.slice(splitAt)
+        doc.setFont('Helvetica', 'bold'); doc.setTextColor(...C.actionAccent)
+        doc.text(boldPart, x, ty)
+        const w = doc.getTextWidth(boldPart)
+        doc.setFont('Helvetica', 'normal'); doc.setTextColor(...C.bodyText)
+        doc.text(restPart, x + w, ty)
+      }
+      consumed += lineLen
+      ty += lh
+    }
+    return ty
+  }
+
+  const renderActionPlanBoxPdf = (
+    items: { lead: string; rest: string }[],
+    confidenceToAct: { lead: string; rest: string } | null,
+  ) => {
+    if (items.length === 0) return
+    const padTop = 14, padBottom = 14, padX = 16
+    const labelSize = 7.5
+    const labelGap  = labelSize * 1.9
+    const itemSize  = 9.5
+    const itemLh    = itemSize * 1.55
+    const itemGap   = 8
+
+    doc.setFont('Helvetica', 'normal')
+    doc.setFontSize(itemSize)
+    const itemWraps = items.map(it => {
+      const combined = it.lead ? `${it.lead} — ${it.rest}` : it.rest
+      const wrapped = doc.splitTextToSize(combined, TW - padX * 2) as string[]
+      return { wrapped, boldLen: it.lead ? it.lead.length : 0 }
+    })
+    const itemsLines = itemWraps.reduce((n, iw) => n + iw.wrapped.length, 0)
+    const itemsH = itemsLines * itemLh + Math.max(0, items.length - 1) * itemGap
+
+    const caSize        = 9
+    const caLh           = caSize * 1.45
+    const caTopGap       = 12
+    const caLabelToBody  = labelSize * 1.3
+    let caWrapped: string[] = []
+    let caBoldLen = 0
+    let caH = 0
+    if (confidenceToAct) {
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(caSize)
+      const combined = confidenceToAct.lead ? `${confidenceToAct.lead} — ${confidenceToAct.rest}` : confidenceToAct.rest
+      caWrapped = doc.splitTextToSize(combined, TW - padX * 2) as string[]
+      caBoldLen = confidenceToAct.lead ? confidenceToAct.lead.length : 0
+      caH = caTopGap + caLabelToBody + (caWrapped.length * caLh)
+    }
+
+    const boxH = padTop + labelGap + itemsH + caH + padBottom
+    ensure(boxH + 14)
+    const boxY = Y
+    doc.setFillColor(...C.actionBg)
+    doc.rect(ML, boxY, TW, boxH, 'F')
+    doc.setFillColor(...C.actionAccent)
+    doc.rect(ML, boxY, 3, boxH, 'F')
+
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(labelSize)
+    doc.setTextColor(...C.actionAccent)
+    doc.setCharSpace(0.8)
+    doc.text('WHAT TO DO NEXT', ML + padX, boxY + padTop + labelSize * 0.75)
+    doc.setCharSpace(0)
+    doc.setFont('Helvetica', 'italic')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...C.mutedText)
+    doc.text(
+      'in order of impact',
+      ML + padX + doc.getTextWidth('WHAT TO DO NEXT') + 10,
+      boxY + padTop + labelSize * 0.75,
+    )
+
+    let ty = boxY + padTop + labelGap
+    itemWraps.forEach((iw, i) => {
+      ty = drawLeadRestWrapped(iw.wrapped, iw.boldLen, ML + padX, ty, itemLh, itemSize)
+      if (i < itemWraps.length - 1) ty += itemGap
+    })
+
+    if (confidenceToAct) {
+      ty += caTopGap
+      doc.setDrawColor(...C.actionNoteBorder)
+      doc.setLineWidth(0.5)
+      doc.line(ML + padX, ty - caTopGap / 2, ML + TW - padX, ty - caTopGap / 2)
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(labelSize)
+      doc.setTextColor(...C.mutedText)
+      doc.setCharSpace(0.6)
+      doc.text('BEFORE YOU ACT', ML + padX, ty)
+      doc.setCharSpace(0)
+      ty += caLabelToBody
+      ty = drawLeadRestWrapped(caWrapped, caBoldLen, ML + padX, ty, caLh, caSize)
     }
 
     Y = boxY + boxH + 14
@@ -1172,9 +1364,10 @@ async function buildPdf(
           Y += 10
           bodyBlock(cleanPushbackText(msg.content), 0, 9.5, C.pushbackText)
         } else if (isSynthesis) {
-          const { verdict, conditions, rest } = parseVerdictTension(msg.content)
+          const { verdict, conditions, actionPlan, confidenceToAct, rest } = parseVerdictTension(msg.content)
           if (verdict) renderVerdictBoxPdf(verdict, conditions)
           renderSynthesisBody(rest)
+          renderActionPlanBoxPdf(actionPlan, confidenceToAct)
         } else {
           bodyBlock(stripAdvisorTags(msg.content))
         }
