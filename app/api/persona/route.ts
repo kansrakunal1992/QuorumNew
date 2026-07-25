@@ -880,6 +880,28 @@ Apply the VERDICT STABILITY instruction above using this data.`
           const assistantContent = getContent()?.trim()
           const supabase         = createServiceClient()
 
+          // Audit: lib/personas.ts's SYNTHESIS prompt marks <verdict>,
+          // <tension>, <key_question>, and <action_plan> as mandatory — every
+          // synthesis is supposed to include exactly one of each. There's no
+          // code enforcement of that (synthesis is free-form model output),
+          // so a mandatory tag can go missing silently — either the model
+          // didn't follow the instruction, or the run was truncated before
+          // reaching it (most likely for <action_plan>, since it's placed
+          // last). The frontend guards already make a missing tag degrade
+          // silently rather than leak raw markup, which is correct for
+          // display but means this would otherwise be undiagnosable without
+          // someone noticing by eye. Non-blocking — logs only, doesn't alter
+          // the response or retry anything.
+          if (personaKey === 'synthesis' && assistantContent) {
+            const missingMandatory = ['verdict', 'tension', 'key_question', 'action_plan']
+              .filter(tag => !new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`).test(assistantContent))
+            if (missingMandatory.length > 0) {
+              console.warn(
+                `[SynthesisAudit] session=${sessionId ?? 'unknown'} missing mandatory tag(s): ${missingMandatory.join(', ')}`
+              )
+            }
+          }
+
           // Save pushback / share-context user message.
           // For isExaminerContextCall, this is the examiner wrapper; the brief PDF
           // strips it via cleanPushbackText() and the record page does the same.
