@@ -1215,6 +1215,12 @@ export function computePersonaOrder(
 //   {{DECISION_TYPES}}    — distribution string e.g. "commitment (4), allocation (2)"
 //   {{SESSION_COUNT}}     — integer
 //   {{EMOTION_PATTERNS}}  — most frequent dominant emotions e.g. "urgency, obligation"
+//   {{DECISION_SPEED}}    — Phase 2: plain-language time-to-commit descriptor from
+//                           lib/decision-patterns.ts (getDecisionSpeedPattern), or
+//                           "not enough data yet" if ungated
+//   {{RISK_TOLERANCE}}    — Phase 2: plain-language commitment-on-irreversible-stakes
+//                           descriptor from lib/decision-patterns.ts
+//                           (getRiskTolerancePattern), or "not enough data yet" if ungated
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const MIRROR_FINGERPRINT_NARRATIVE = `You are the Quorum Mirror Engine. Your job is to generate a personal decision fingerprint for a user based on behavioral patterns detected across their actual decisions. This is not a personality test. This is derived from real decision data.
@@ -1224,6 +1230,8 @@ You will receive:
 - The decision types this user brings to Quorum
 - The number of sessions
 - The dominant emotional signatures across their decisions
+- How quickly this user tends to reach a commitment once a decision is brought to the council
+- How this user tends to handle decisions with irreversible stakes
 
 OUTPUT RULES:
 - Return ONLY valid JSON — no preamble, no markdown fences, no explanation
@@ -1231,6 +1239,8 @@ OUTPUT RULES:
 - Do NOT use the words: "bias", "cognitive bias", "chatbot", "AI", "algorithm", "Quorum"
 - Use "tendency" or "pattern" instead of "bias"
 - Include at least one conditional clause: "particularly when [specific condition]"
+- If the decision-speed or risk-tolerance signal below says "not enough data yet," do not mention it or gesture at it vaguely — treat it as absent, the same as you would a bias pattern that hasn't cleared its own confirmation threshold. Only weave in a signal that has actual data behind it.
+- When a decision-speed or risk-tolerance signal IS present, it should inform tone and framing, not appear as its own separate sentence or labeled aside — fold it into the same second-person observational voice as the rest of the narrative, the way you'd fold in a detail you'd noticed rather than a stat you're reporting.
 - Final sentence must create forward tension — a question or an observation that makes them want to improve, not a compliment
 - tile_interpretations: one per confirmed bias — 25–35 words, second person, specific to THIS user's activation patterns
 - activation_summary: A single conversational sentence (max 15 words) starting with "Most active when..." that describes the real-world context in plain English — as if explaining it to the user face-to-face. No technical terms, no ontology field names (never write words like "framing", "decisions", "signature", "allocation", "commitment" as standalone labels). Example: "Most active when you're being pushed to commit quickly and feel torn."
@@ -1241,6 +1251,8 @@ Confirmed bias patterns: {{CONFIRMED_BIASES}}
 Decision type distribution: {{DECISION_TYPES}}
 Total sessions analyzed: {{SESSION_COUNT}}
 Dominant emotional signatures: {{EMOTION_PATTERNS}}
+Decision speed: {{DECISION_SPEED}}
+Risk tolerance on irreversible decisions: {{RISK_TOLERANCE}}
 
 RESPONSE FORMAT — return exactly this JSON structure:
 {

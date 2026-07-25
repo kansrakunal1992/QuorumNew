@@ -124,7 +124,7 @@ function stripAdvisorTags(raw: string): string {
     // content-preserving (keeps the sentence as its own paragraph, which is
     // how the model already writes it) rather than dropping it entirely.
     .replace(/<\/?key_question>/gi, '')
-    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions)>[\s\S]*$/i, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|pushback_classification)>[\s\S]*$/i, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')      // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     .replace(/<\/?tension>/gi, '')
     // Sprint 2 follow-on: content-preserving, same reasoning as PersonaPanel's

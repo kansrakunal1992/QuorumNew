@@ -32,7 +32,7 @@ function stripHeaderTags(raw: string): string {
     // prompt (not direct display), but a raw citation tag in the input is
     // still noise the observation model has to parse around for no reason.
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Sprint 2 follow-on: content-preserving — this wraps substantive prose
     // the observation model should actually read, not a machine value.

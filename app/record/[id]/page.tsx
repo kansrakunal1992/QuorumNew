@@ -33,7 +33,7 @@ function stripHeaderTags(raw: string): string {
     // response that includes a structural-echo citation (R6) was leaking
     // the raw <structural>...</structural> tag straight onto this page.
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Sprint 2 follow-on: <assumption> is content-preserving, unlike the
     // tags above — it wraps substantive prose (Contrarian/Risk Architect's
@@ -41,7 +41,11 @@ function stripHeaderTags(raw: string): string {
     // meant to live elsewhere. Strip only the tag markers, keep the text.
     .replace(/<\/?assumption>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
-    .replace(/<pushback_classification>[\s\S]*?<\/pushback_classification>/g, '')
+    // Tolerant close: model sometimes closes with </pushback> instead of the
+    // full tag name (same drift as verdict_lean/pushback_classification
+    // elsewhere) — this was the one sink file still missing the tolerance,
+    // so a drifted close leaked raw markup onto the permanent record page.
+    .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
     // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close

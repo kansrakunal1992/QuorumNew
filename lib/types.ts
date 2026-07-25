@@ -207,6 +207,12 @@ export interface FingerprintData {
   sessionCount: number
   generatedAt: string
   personalBiasTriggers: import('@/lib/bias-trigger-engine').PersonalBiasTrigger[]  // Sprint BT
+  // Phase 2 (backend improvement roadmap): fed into the narrative prompt via
+  // lib/decision-patterns.ts; also returned here for any future direct
+  // surfacing. Null when the underlying pattern hasn't cleared its
+  // MINIMUM_EVENTS gate yet — same meaning as narrative: null.
+  decisionSpeedSummary: string | null
+  riskToleranceSummary: string | null
 }
 
 // ── Session preview (Sprint 20: source-decision drawer) ──────────────────────

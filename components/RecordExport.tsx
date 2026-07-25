@@ -69,7 +69,7 @@ function stripSynthesisTags(raw: string): string {
     // response with a structural-echo citation (R6) leaked the raw tag
     // straight into this export.
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|counterfactual|action_plan|confidence_to_act)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|counterfactual|action_plan|confidence_to_act|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.

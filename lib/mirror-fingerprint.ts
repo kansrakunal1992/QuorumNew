@@ -25,7 +25,12 @@ import { createCompletion }    from '@/lib/ai-client'
 import { MIRROR_FINGERPRINT_NARRATIVE } from '@/lib/personas'
 import { BIAS_PARAMETERS, getPredominantSignal } from '@/lib/bias-scorer'
 import { computePersonalBiasTriggers } from '@/lib/bias-trigger-engine'
+// Phase 2 (backend improvement roadmap): decision-speed + risk-tolerance
+// signals feeding the narrative prompt's new INPUT DATA fields.
+import { getDecisionSpeedPattern, getRiskTolerancePattern } from '@/lib/decision-patterns'
 import type { FingerprintTile, FingerprintData } from '@/lib/types'
+
+const NO_DATA_YET = 'not enough data yet'
 
 // ── Bias label lookup ─────────────────────────────────────────────────────────
 
@@ -161,6 +166,8 @@ async function generateFingerprintContent(
   decisionTypeDistribution: string,
   sessionCount: number,
   emotionPatterns: string,
+  decisionSpeedSummary: string,   // Phase 2 — NO_DATA_YET when ungated
+  riskToleranceSummary: string,   // Phase 2 — NO_DATA_YET when ungated
 ): Promise<AIFingerprintResponse> {
   const confirmedBiasesJson = confirmedBiasRows.map(b => ({
     bias_key:        b.biasKey,
@@ -191,6 +198,8 @@ async function generateFingerprintContent(
     .replace('{{DECISION_TYPES}}',    decisionTypeDistribution)
     .replace('{{SESSION_COUNT}}',     String(sessionCount))
     .replace('{{EMOTION_PATTERNS}}',  emotionPatterns)
+    .replace('{{DECISION_SPEED}}',    decisionSpeedSummary)   // Phase 2
+    .replace('{{RISK_TOLERANCE}}',    riskToleranceSummary)   // Phase 2
 
   // Append forming-tile guidance after the base prompt.
   // This supplements the existing template without altering the stored prompt.
@@ -235,6 +244,8 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       sessionCount:   0,
       generatedAt:    new Date().toISOString(),
       personalBiasTriggers:  [],
+      decisionSpeedSummary:  null,
+      riskToleranceSummary:  null,
     }
   }
 
@@ -290,6 +301,18 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
   const confirmedRows = biasRows.filter(b => b.detection_count >= 3)
   const formingRows   = biasRows.filter(b => b.detection_count >= 1 && b.detection_count < 3)
 
+  // ── 4b. Phase 2: decision-speed + risk-tolerance signals ──────────────────
+  // Computed unconditionally (not gated on bias data existing at all) since
+  // they're independent of bias_library entirely — a user can have 3+
+  // sessions with commitment data and no confirmed bias pattern yet. Each
+  // already fails open to null internally, so a problem in either one never
+  // blocks the narrative or tile content that worked before this phase
+  // existed.
+  const [decisionSpeedPattern, riskTolerancePattern] = await Promise.all([
+    getDecisionSpeedPattern(userId),
+    getRiskTolerancePattern(userId),
+  ])
+
   // ── 5. Generate AI content ────────────────────────────────────────────────
   // Sprint R2: generateFingerprintContent() now always runs when there are ANY
   // bias rows — confirmed or forming. Previously it only ran for confirmedRows.
@@ -325,6 +348,8 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       decisionTypeDistribution,
       sessionCount ?? 0,
       emotionPatterns,
+      decisionSpeedPattern?.summary ?? NO_DATA_YET,
+      riskTolerancePattern?.summary ?? NO_DATA_YET,
     )
   }
 
@@ -451,5 +476,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     sessionCount:   sessionCount ?? 0,
     generatedAt:    new Date().toISOString(),
     personalBiasTriggers,
+    decisionSpeedSummary: decisionSpeedPattern?.summary ?? null,
+    riskToleranceSummary: riskTolerancePattern?.summary ?? null,
   }
 }
