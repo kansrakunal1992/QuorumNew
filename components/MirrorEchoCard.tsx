@@ -29,6 +29,18 @@
 // EarlyEchoCard's PATTERN_MEMORY_THRESHOLD duplication (small, stable
 // constant/logic; not worth a shared-module refactor as a side effect of
 // this change).
+//
+// Phase 3 (backend improvement roadmap): MindChangeTile.tsx's lines were
+// extended with a forward-looking actionable clause ("next time it
+// happens, it's worth noticing/pausing on..."). That clause was
+// DELIBERATELY NOT carried over here. This card renders mid-session, live,
+// while the user is actively working through a decision — a nudge toward
+// self-reflection is appropriate on the Mirror page, where the user has
+// gone specifically to review patterns, but reads as intrusive dropped
+// into the middle of a live session. This card keeps the bare observation
+// only. If MindChangeTile's base clause (not the trailing actionable
+// sentence) ever changes, that part still needs to be mirrored here per
+// the note below — only the actionable addition is intentionally exempt.
 
 import { useState, useEffect } from 'react'
 import type { MindChangePattern }        from '@/lib/mind-change-patterns'
@@ -59,8 +71,10 @@ interface Props {
   mirrorActive:  boolean  // server-resolved getMirrorAccessState() === 'unlocked', same prop already threaded into SessionView
 }
 
-// Duplicated verbatim from MindChangeTile.tsx's persuasivenessLine/divergenceLine —
-// see file header for why this isn't imported instead.
+// Base clause duplicated from MindChangeTile.tsx's persuasivenessLine/
+// divergenceLine — see file header for why this isn't imported instead,
+// and why the actionable trailing clause added there in Phase 3 isn't
+// mirrored here.
 function persuasivenessLine(p: MindChangePattern): string {
   return `${p.personaLabel} has shifted your final read in ${p.persuasiveCount} of your last ${p.totalCount} challenges to it — the advisor whose pushback most often moves where you land.`
 }

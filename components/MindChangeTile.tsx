@@ -23,6 +23,17 @@
 // cleared its MINIMUM_EVENTS gate yet — that's the common, expected state
 // for most users, not an error.
 //
+// Phase 3 (backend improvement roadmap): both lines were flagged as
+// descriptive-only — they named the pattern but gave the user nothing to
+// do with it. Each now ends with a short forward-looking clause instead of
+// (persuasiveness) / alongside (divergence) the neutrality disclaimer —
+// something the user can actually do next time the pattern recurs, still
+// staying inside the neutrality discipline above: the suggested action is
+// about the user's own process (notice, pause, name it to yourself), never
+// a claim that one side was right. See components/MirrorEchoCard.tsx's
+// header for why its shorter in-session lines were deliberately left
+// terser rather than mirrored word-for-word.
+//
 // Design note: when BOTH patterns are present, both are shown as separate
 // lines in one tile rather than picking one — they're independent signals
 // (which advisor persuades you vs. which one you tend to override), and
@@ -42,11 +53,11 @@ interface MindChangeData {
 interface Props { authToken: string }
 
 function persuasivenessLine(p: MindChangePattern): string {
-  return `${p.personaLabel} has shifted your final read in ${p.persuasiveCount} of your last ${p.totalCount} challenges to it — the advisor whose pushback most often moves where you land. A count of outcomes, not a verdict on whose read is better.`
+  return `${p.personaLabel} has shifted your final read in ${p.persuasiveCount} of your last ${p.totalCount} challenges to it — the advisor whose pushback most often moves where you land. A count of outcomes, not a verdict on whose read is better — but next time it happens, it's worth naming to yourself whether it's genuinely new information, or just repetition wearing you down.`
 }
 
 function divergenceLine(p: AdvisorDivergencePattern): string {
-  return `You've landed against ${p.personaLabel}'s final read in ${p.divergentCount} decisions — more than any other advisor. Not a sign either of you is wrong, just a pattern in where you two tend to part ways.`
+  return `You've landed against ${p.personaLabel}'s final read in ${p.divergentCount} decisions — more than any other advisor. Not a sign either of you is wrong — but next time, it's worth pausing on that pushback a beat longer before deciding, so you're overriding it on purpose rather than out of habit.`
 }
 
 export default function MindChangeTile({ authToken }: Props) {
