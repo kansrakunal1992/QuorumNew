@@ -33,7 +33,7 @@ function stripHeaderTags(raw: string): string {
     // response that includes a structural-echo citation (R6) was leaking
     // the raw <structural>...</structural> tag straight onto this page.
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Sprint 2 follow-on: <assumption> is content-preserving, unlike the
     // tags above — it wraps substantive prose (Contrarian/Risk Architect's
@@ -46,6 +46,17 @@ function stripHeaderTags(raw: string): string {
     // elsewhere) — this was the one sink file still missing the tolerance,
     // so a drifted close leaked raw markup onto the permanent record page.
     .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
+    // Root-cause fix: this guard was previously combined into the early
+    // lens/position/realcost/lean/structural guard ABOVE the proper strip
+    // (see git history) — since that guard has no closing-tag requirement,
+    // it matched the FIRST <pushback_classification> it found (whether
+    // closed or not) and deleted everything from there to the end of the
+    // string, including the tag's own valid close and every word of the
+    // actual reply that followed it. That's what was silently wiping out
+    // assistant replies to a challenge on this page. Sequencing this guard
+    // AFTER the real strip (matching PersonaPanel.tsx's already-correct
+    // order) means it only ever fires on a genuinely unclosed tag.
+    .replace(/<pushback_classification>[\s\S]*$/, '') // guard: open tag without close
     // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
     .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
     .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close

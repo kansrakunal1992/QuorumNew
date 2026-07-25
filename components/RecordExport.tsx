@@ -69,7 +69,7 @@ function stripSynthesisTags(raw: string): string {
     // response with a structural-echo citation (R6) leaked the raw tag
     // straight into this export.
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|counterfactual|action_plan|confidence_to_act|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|counterfactual|action_plan|confidence_to_act)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.
@@ -78,6 +78,12 @@ function stripSynthesisTags(raw: string): string {
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — without this it leaks into export.
     .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
+    // Root-cause fix: same ordering bug as the record page — this guard was
+    // combined into the early catch-all ABOVE, before the proper strip had a
+    // chance to run, so any validly-closed tag got treated as unclosed and
+    // everything after it (the actual reply text) was deleted. Sequencing
+    // after the real strip means it only fires on a genuinely truncated tag.
+    .replace(/<pushback_classification>[\s\S]*$/, '') // guard: open tag without close
     .replace(/^\s+/, '')
 }
 

@@ -124,7 +124,7 @@ function stripAdvisorTags(raw: string): string {
     // content-preserving (keeps the sentence as its own paragraph, which is
     // how the model already writes it) rather than dropping it entirely.
     .replace(/<\/?key_question>/gi, '')
-    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|pushback_classification)>[\s\S]*$/i, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions)>[\s\S]*$/i, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')      // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     .replace(/<\/?tension>/gi, '')
     // Sprint 2 follow-on: content-preserving, same reasoning as PersonaPanel's
@@ -134,6 +134,13 @@ function stripAdvisorTags(raw: string): string {
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — without this it leaks into the PDF.
     .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/gi, '')
+    // Root-cause fix: same ordering bug found on the record page and in
+    // RecordExport.tsx — this guard ran BEFORE the proper strip above, so it
+    // treated every validly-closed <pushback_classification> tag as if it
+    // were unclosed and deleted everything after it, including the actual
+    // reply text. This is the confirmed cause of the PDF showing the same
+    // missing-reply-after-a-challenge issue as the record page.
+    .replace(/<pushback_classification>[\s\S]*$/i, '') // guard: open tag without close
     .replace(/^\s+/, '')
 }
 
