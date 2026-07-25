@@ -5,8 +5,8 @@
  * Phase 2 of the backend improvement roadmap: extends
  * lib/mirror-fingerprint.ts's narrative prompt (MIRROR_FINGERPRINT_NARRATIVE)
  * with two new behavioral signals. Computed mechanically from stored data —
- * no new AI classification call — same "don't claim a signal you can't
- * defend" discipline as lib/mind-change-patterns.ts and
+ * no new AI classification call in this module — same "don't claim a signal
+ * you can't defend" discipline as lib/mind-change-patterns.ts and
  * lib/advisor-divergence.ts.
  *
  * decisionSpeedSummary — derived from sessions.created_at ->
@@ -18,18 +18,29 @@
  * already applies to activation_summary.
  *
  * riskToleranceSummary — derived from sessions_ontology.stakes_reversibility
- * ('irreversible') crossed with whether the user ultimately reached a
- * stated commitment (commitment_leaning non-null) on those specific
- * sessions. Deliberately does NOT classify commitment_leaning into
- * proceed/wait/mixed the way advisor-divergence.ts does — reusing that
- * table's classification would silently under-count, since
- * advisor_divergence_events only has rows for sessions where at least one
- * persona diverged from the user, and a second independent AI
- * classification call would duplicate cost for a Phase 2 signal that
- * doesn't need proceed/wait granularity to be useful. The real limitation
- * this leaves: it can say "reached a stated commitment" vs "left it open,"
- * not "proceeded" vs "waited." Documented here so it isn't mistaken for
- * more than it is.
+ * ('irreversible') crossed with the user's classified final lean
+ * (proceed/wait/mixed) on those specific sessions. Reuses
+ * advisor_divergence_events.user_stated_lean rather than paying for a
+ * second AI classification call on commitment_leaning — that table already
+ * classifies every session where the user's stated leaning diverged from
+ * at least one advisor, via lib/advisor-divergence.ts's
+ * classifyStatedLeaning(). Join is via session_id only (that table also
+ * carries user_id/user_email, but session_id is already scoped to this
+ * user's own sessions by the query below, so no second identity filter is
+ * needed).
+ *
+ * Real, unavoidable limitation of reusing this table: advisor_divergence_events
+ * only has rows for sessions where the user's stated lean diverged from at
+ * least one advisor. An irreversible-stakes session where the user agreed
+ * with every advisor has no row and can't be counted — it's silently
+ * excluded from the denominator, not counted as a "wait" or folded in some
+ * other way. That's a real skew (this signal is really "risk tolerance when
+ * pushed back on," not "risk tolerance overall") worth knowing about if the
+ * narrative's framing of it ever needs to get more precise than the current
+ * "how this user tends to handle decisions with irreversible stakes" prompt
+ * wording allows. MINIMUM_EVENTS below gates on the count of sessions that
+ * actually got classified, not on all irreversible-stakes sessions, so the
+ * pattern stays hidden rather than extrapolating past what it has.
  *
  * MINIMUM_EVENTS gate — same value and same discipline as
  * mind-change-patterns.ts / advisor-divergence.ts: below this, a pattern
@@ -40,6 +51,10 @@ import { createServiceClient } from '@/lib/supabase'
 
 const MINIMUM_EVENTS = 3
 
+// Mirrors advisor-divergence.ts's Lean type exactly (that file doesn't
+// export it, so re-declared here rather than reaching into its internals).
+type Lean = 'proceed' | 'wait' | 'mixed'
+
 export interface DecisionSpeedPattern {
   summary: string       // plain-language, ready to drop into the narrative prompt's INPUT DATA
   sessionCount: number  // qualifying sessions (both timestamps present, non-negative delta)
@@ -47,7 +62,7 @@ export interface DecisionSpeedPattern {
 
 export interface RiskTolerancePattern {
   summary: string
-  irreversibleCount: number  // qualifying sessions (stakes_reversibility = 'irreversible')
+  irreversibleCount: number  // qualifying sessions (irreversible-stakes AND advisor-divergence-classified)
 }
 
 function bucketSpeed(medianHours: number): string {
@@ -109,7 +124,7 @@ export async function getRiskTolerancePattern(userId: string): Promise<RiskToler
     // keyed by session_id, not assumed on the parent row).
     const { data: userSessions } = await supabase
       .from('sessions')
-      .select('id, commitment_leaning')
+      .select('id')
       .eq('user_id', userId)
 
     if (!userSessions || userSessions.length === 0) return null
@@ -123,21 +138,47 @@ export async function getRiskTolerancePattern(userId: string): Promise<RiskToler
       .in('session_id', sessionIds)
       .eq('stakes_reversibility', 'irreversible')
 
-    if (!ontologyRows || ontologyRows.length < MINIMUM_EVENTS) return null
+    if (!ontologyRows || ontologyRows.length === 0) return null
 
-    const committedMap = new Map(userSessions.map(s => [s.id as string, !!s.commitment_leaning]))
-    const irreversibleCount = ontologyRows.length
-    const committedCount = ontologyRows.filter(
-      row => committedMap.get(row.session_id as string),
-    ).length
+    const irreversibleSessionIds = ontologyRows.map(r => r.session_id as string)
 
-    const committedRate = committedCount / irreversibleCount
+    // Reuse the classification advisor-divergence.ts already paid for. See
+    // the module header for the coverage caveat this brings: only sessions
+    // where the user diverged from at least one advisor have a row here.
+    const { data: divergenceRows } = await supabase
+      .from('advisor_divergence_events')
+      .select('session_id, user_stated_lean')
+      .in('session_id', irreversibleSessionIds)
 
-    const summary = committedRate >= 0.6
-      ? "tends to reach a firm commitment even on decisions that can't be undone"
-      : 'tends to bring irreversible decisions to the council but often leaves them without a stated commitment'
+    if (!divergenceRows || divergenceRows.length === 0) return null
 
-    return { summary, irreversibleCount }
+    // Multiple rows per session (one per diverging advisor) all carry the
+    // same user_stated_lean for that session — dedupe to one classified
+    // lean per session before counting.
+    const leanBySession = new Map<string, Lean>()
+    for (const row of divergenceRows as { session_id: string; user_stated_lean: Lean }[]) {
+      leanBySession.set(row.session_id, row.user_stated_lean)
+    }
+
+    if (leanBySession.size < MINIMUM_EVENTS) return null
+
+    const leans = [...leanBySession.values()]
+    const proceedCount = leans.filter(l => l === 'proceed').length
+    const waitCount    = leans.filter(l => l === 'wait').length
+
+    const proceedRate = proceedCount / leans.length
+    const waitRate    = waitCount / leans.length
+
+    let summary: string
+    if (proceedRate >= 0.6) {
+      summary = 'tends to proceed on irreversible decisions even when an advisor pushes back on them'
+    } else if (waitRate >= 0.6) {
+      summary = 'tends to hold off on irreversible decisions when an advisor pushes back on them'
+    } else {
+      summary = "response to pushback on irreversible decisions is mixed — sometimes proceeding anyway, sometimes holding off"
+    }
+
+    return { summary, irreversibleCount: leans.length }
   } catch (err) {
     console.error('[DecisionPatterns] getRiskTolerancePattern failed (non-fatal):', err)
     return null
