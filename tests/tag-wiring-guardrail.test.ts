@@ -140,5 +140,49 @@ describe('Tag-wiring guardrail — every synthesis tag reaches every sink file',
   it('sanity check: the two most recently added tags are actually detected', () => {
     expect(instructedTags).toContain('action_plan')
     expect(instructedTags).toContain('confidence_to_act')
+    expect(instructedTags).toContain('counterfactual')
+  })
+
+  // Deeper check than "tag name appears somewhere". A sink file can strip
+  // <tag>...</tag> correctly when the AI closes it, yet still leak raw
+  // markup if that same generation gets truncated mid-tag (see
+  // lib/ai-client.ts's max_tokens note) and no fallback for "open tag, no
+  // close" exists. This is a real failure mode that hit multiple sink files
+  // independently, was fixed, and then silently reverted when an external
+  // edit was merged back in from a branch that predated the fix — the
+  // tag-name check above stayed green through all of that, because the tag
+  // name was still present via the (now-incomplete) closing-tag pattern.
+  //
+  // Rule enforced: if a file uses the truncation-guard idiom
+  // (`<tag>[\s\S]*$`, marked with a "guard: open tag without close" comment)
+  // for ANY tag, every tag in that file stripped via the "requires a
+  // closing tag" idiom (`<tag>[\s\S]*?<\/tag`) must also appear in a guard.
+  // A file that uses the guard idiom for none of its tags is left alone —
+  // that's a file that hasn't adopted the pattern at all yet, a separate,
+  // more foundational gap the first check above already surfaces.
+  it('every sink file applies its truncation guard consistently to every tag it strips', () => {
+    const problems: string[] = []
+    for (const { relPath, content } of sinkContents) {
+      const guardLines = content.split('\n').filter(l => l.includes('guard: open tag without close'))
+      if (guardLines.length === 0) continue
+      const guardedTags = new Set<string>()
+      for (const line of guardLines) {
+        for (const tag of instructedTags) {
+          if (line.includes(`<${tag}>`) || line.includes(`|${tag}|`) || line.includes(`(?:${tag}`) || line.includes(`${tag}|`) || line.includes(`|${tag})`)) {
+            guardedTags.add(tag)
+          }
+        }
+      }
+      for (const tag of instructedTags) {
+        const requiresCloseIdiom = `<${tag}>[\\s\\S]*?<\\/`
+        if (content.includes(requiresCloseIdiom) && !guardedTags.has(tag)) {
+          problems.push(`${relPath}: "<${tag}>" is stripped with a pattern requiring a closing tag, but has no truncation-guard fallback even though this file uses that pattern for other tags — a cut-off generation would leak raw "<${tag}>" markup here.`)
+        }
+      }
+    }
+    expect(
+      problems,
+      `\n${problems.join('\n')}\n\nFix: add a guard line for the missing tag(s) — e.g. ".replace(/<TAG>[\\\\s\\\\S]*$/, '')" or fold TAG into an existing combined guard — right after its normal strip line, matching the pattern already used for other tags in the same file.`,
+    ).toEqual([])
   })
 })

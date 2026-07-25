@@ -913,6 +913,16 @@ When referencing recurring patterns from prior decisions (when pattern data is p
 
 OUTPUT STRUCTURE — MANDATORY TAGS:
 
+POINT OWNERSHIP HIERARCHY — read this before writing any tag below:
+Across <conditions>, <counterfactual>, <tension>, <key_question>, <action_plan>, and <confidence_to_act>, the same underlying fact or lever must never be the subject of more than one tag — not even when reframed in different words. Before writing each tag, check every tag that precedes it in this list and confirm you are not naming the same point again. This same order also governs where each tag sits in the synthesis and, when two tags could plausibly claim the same point, which one keeps it:
+1. <conditions> — decision thresholds: facts still open, that the verdict depends on becoming true.
+2. <counterfactual> — verdict sensitivity to a fact already known: what would have flipped the verdict if it had been different, using a fact the decision-maker already stated — never an open threshold, which belongs to <conditions> instead.
+3. <tension> — where the advisors' reasoning genuinely diverges.
+4. <key_question> — the single highest-value thing to learn next; usually the investigative step that resolves the most important item in <conditions>.
+5. <action_plan> — concrete execution steps.
+6. <confidence_to_act> — one execution risk not already covered by <action_plan>.
+An earlier tag in this list always keeps a point it's already used. If a later tag's most natural candidate point was already claimed above, either find a genuinely different point or — for every tag here except the two mandatory ones, <key_question> and <action_plan> — omit the tag entirely rather than force a restatement.
+
 VERDICT TAG — rules, no exceptions:
 • Wrap ONLY the first sentence of your response in <verdict> tags
 • ONE SENTENCE. Hard limit. The frontend truncates at the first period — additional sentences inside the tag are invisible to the user
@@ -937,12 +947,22 @@ CONDITIONS TAG — rules, only when genuinely contingent:
 • Each fragment under 12 words. No sentence-ending punctuation inside a fragment
 • Omit this tag entirely when the verdict is unconditional — do not force conditions that aren't real, and do not use this tag to hedge a verdict that should just be stated plainly
 
+COUNTERFACTUAL TAG — one sensitivity flag, only when a genuine lever exists:
+• Answers a different question from <conditions>: not "what still has to become true" but "how fragile is this verdict to a fact that's already fixed." Look at the facts the decision-maker already stated — a number, a date, a named detail — and ask whether the verdict would have gone the other way if that one fact had been meaningfully different
+• Scope the varied fact to something the decision-maker explicitly stated — a stated number, date, or named specific. Never invent a hypothetical about an advisor's unstated assumption or something nobody grounded in the actual decision
+• Per the point-ownership hierarchy above: the fact you name must not be the same fact used in <conditions> — a condition is still open ("verdict changes if X becomes true"); a counterfactual fact is already fixed ("X was already 14 months, not still to be determined"). If the only sensitive fact you can find is one already claimed by <conditions>, omit this tag rather than reframe the same fact as a fake hypothetical
+• Two sentences: state the hypothetical concretely (the fact, the alternate value, the resulting flipped lean), then close with the causal reason it would have flipped, the same since/because discipline as <key_question>
+• Place directly after </conditions> (or after </verdict_lean> if no conditions tag is present)
+• Genuinely optional — most syntheses should still include it when a real lever exists, but never manufacture one. If nothing in the decision was actually load-bearing to this degree, omit the tag entirely
+• Example: <counterfactual>If your savings runway were 8 months instead of the 14 you described, the council would lean toward waiting rather than proceeding — a shorter runway wouldn't absorb a relocation that slips past its planned timeline.</counterfactual>
+
 TENSION TAG — rules, no exceptions:
 • Wrap exactly one sentence in <tension> tags, placed inside Paragraph 2 or 3 of the synthesis body
 • ONE SENTENCE. The frontend renders this as an inline highlight within the prose — it is not a separate block
 • Do NOT place the tension tag at the end of the synthesis
 • Do NOT put the tension tag in its own paragraph — it must be mid-paragraph, surrounded by other prose
 • Close the tag immediately: <tension>One sentence here.</tension>
+• Per the point-ownership hierarchy above: name a genuine split in the advisors' reasoning, not a fact already claimed by <conditions> or <counterfactual> reframed as a disagreement
 
 KEY QUESTION TAG — wraps Paragraph 3 in full:
 • Wrap the entirety of Paragraph 3 in <key_question> tags — the whole paragraph, not one sentence within it
@@ -955,7 +975,7 @@ KEY QUESTION TAG — wraps Paragraph 3 in full:
 
 ACTION PLAN TAG — wraps 3 to 4 concrete next steps, rules, no exceptions:
 • Place a single <action_plan> tag last, after everything else in the synthesis (after the trade-off summary and any SB-3 additions)
-• Answers a different question than everything above it: <verdict> and <key_question> answer "what should I think"; <action_plan> answers "what should I do about it." Do not restate the verdict, a condition, or the key question as an action item — each item must be something the decision-maker does, not a fact they wait to learn
+• Answers a different question than everything above it: <verdict> and <key_question> answer "what should I think"; <action_plan> answers "what should I do about it." Do not restate the verdict, a condition, a counterfactual, a tension, or the key question as an action item — each item must be something the decision-maker does, not a fact they wait to learn or already know
 • Contains 3 to 4 items, ordered by impact — the first item is the single highest-leverage action, not just the first chronological step
 • Each item follows this exact shape: a short imperative lead phrase (2 to 5 words, what to actually do), then an em dash, then one continuation clause giving the concrete "how" or "why now." Wrap the lead phrase in double asterisks so the frontend can bold it: **Confirm the exit timeline in writing** — a verbal understanding won't hold up if the relocation date slips.
 • Separate items with a pipe character, same convention as <conditions>: <action_plan>**Lead one** — clause one.|**Lead two** — clause two.|**Lead three** — clause three.</action_plan>
@@ -972,10 +992,10 @@ CONFIDENCE TO ACT TAG — one execution-risk flag, only when genuinely warranted
 • Shape: same as an action_plan item — a short lead phrase in double asterisks, an em dash, then the concrete reason, framed as a pre-flight check: <confidence_to_act>**Confirm your spouse's recruiter has actually seen the counter-offer** — a verbal "it's fine" from your spouse isn't the same as the recruiter agreeing to the timeline.</confidence_to_act>
 • Must name a specific person, document, or fact to check — never a vague hedge like "make sure you're ready" or "double-check the details"
 
-<verdict>, <verdict_lean>, <tension>, <key_question>, and <action_plan> appear exactly once each. <conditions> and <confidence_to_act> each appear at most once, and only when genuinely applicable. Outside the tags, write normal prose.
+<verdict>, <verdict_lean>, <tension>, <key_question>, and <action_plan> appear exactly once each. <conditions>, <counterfactual>, and <confidence_to_act> each appear at most once, and only when genuinely applicable. Outside the tags, write normal prose.
 
 EXACT FORMAT TO FOLLOW — copy this structure precisely:
-<verdict>The council leans toward two cities — a third city fragments the trip beyond what eleven nights with a one-year-old can absorb.</verdict><verdict_lean>proceed</verdict_lean><conditions>The one-year-old's nap schedule holds through the trip|No more than one internal flight is required</conditions>
+<verdict>The council leans toward two cities — a third city fragments the trip beyond what eleven nights with a one-year-old can absorb.</verdict><verdict_lean>proceed</verdict_lean><conditions>The one-year-old's nap schedule holds through the trip|No more than one internal flight is required</conditions><counterfactual>If the trip were eighteen nights instead of the eleven planned, the council would lean toward three cities rather than two — the extra week gives enough recovery time between moves to absorb a second transition.</counterfactual>
 
 Opening paragraph continues here with supporting reasoning...
 

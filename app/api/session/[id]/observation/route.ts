@@ -56,11 +56,21 @@ function stripSynthesisTags(raw: string): string {
     // shown to Mirror subscribers.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Counterfactual Analysis (new tag) — same full-removal treatment as
+    // conditions above; this only feeds an LLM prompt, not direct display.
+    .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
     // Tag-wiring guardrail fix: same drift as verdict_lean/conditions above —
     // this file's independent copy never learned about the two newest
     // synthesis tags either. Full removal, matching SynthesisCard.tsx.
     .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
     .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
+    // Guardrail follow-up: none of the 6 tags above had a fallback for a
+    // truncated/malformed run (only <verdict> did, at line 51). A truncated
+    // synthesis call — see lib/ai-client.ts createStream doc comment — most
+    // often cuts off during action_plan/confidence_to_act since they're
+    // written last, leaving an open tag with no close that every regex above
+    // silently fails to match, leaking raw markup into the LLM prompt below.
+    .replace(/<(?:verdict_lean|conditions|counterfactual|action_plan|confidence_to_act|key_question|tension)>[\s\S]*$/, '') // guard: open tag without close
     // Sprint 1 follow-on: same reasoning as verdict_lean/conditions above.
     .replace(/<\/?key_question>/g, '')
     .replace(/<\/?tension>/g, '')

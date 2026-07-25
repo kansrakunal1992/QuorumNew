@@ -367,11 +367,15 @@ async function buildPdf(
 
   // Strips verdict + conditions (returned separately) and leaves tension tags
   // intact in `rest` for renderSynthesisBody to locate per-paragraph.
-  const parseVerdictTension = (raw: string): { verdict: string | null; conditions: string[]; keyQuestion: string | null; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } => {
+  const parseVerdictTension = (raw: string): { verdict: string | null; conditions: string[]; counterfactual: string | null; keyQuestion: string | null; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } => {
     const vMatch = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
     const verdict = vMatch?.[1]?.trim() ? firstSentencePdf(vMatch[1].trim()) : null
     const cMatch = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
     const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
+    // Counterfactual Analysis (new tag) — same extraction shape as
+    // keyQuestion below: optional, at most one, no pipe-split.
+    const cfMatch = raw.match(/<counterfactual>([\s\S]*?)<\/counterfactual>/)
+    const counterfactual = cfMatch?.[1]?.trim() ?? null
     // Bug fix: this file never extracted <key_question> at all — not even a
     // strip-and-discard line, unlike verdict/conditions above — so it printed
     // as raw, visible <key_question>...</key_question> markup in the PDF
@@ -400,6 +404,14 @@ async function buildPdf(
       // raw-tag leak, since `rest` is what gets rendered as the PDF's body text.
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/, '')
+      // Same fix as above: extracted into its own line, must not also remain
+      // in the flowing body text.
+      .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/, '')
+      // Guardrail follow-up: this file had no fallback at all for
+      // verdict_lean/conditions (only key_question/action_plan/
+      // confidence_to_act did, from the earlier fix) — a cut-off mid-tag
+      // generation would leak raw markup for these two specifically.
+      .replace(/<(?:verdict_lean|conditions|counterfactual)>[\s\S]*$/, '') // guard: open tag without close
       // Same fix as above: extracted into its own callout, must not also
       // remain in the flowing body text. Includes a guard for the
       // unclosed-tag case, same rationale as action_plan/confidence_to_act below.
@@ -416,10 +428,10 @@ async function buildPdf(
       .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/, '')
       .replace(/<confidence_to_act>[\s\S]*$/, '')       // guard: open tag without close
       .trimStart()
-    return { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest }
+    return { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest }
   }
 
-  const renderVerdictBoxPdf = (verdictText: string, conditions: string[] = []) => {
+  const renderVerdictBoxPdf = (verdictText: string, conditions: string[] = [], counterfactual: string | null = null) => {
     // Layout is computed top-down with explicit baseline math (label baseline,
     // then verdict baseline) instead of a fixed labelGap — the previous fixed
     // gap (13pt) was tuned for the label's old font size and didn't account for
@@ -450,7 +462,23 @@ async function buildPdf(
       condH = condLabelGap + labelSize * 1.1 + (condLines * condLh)
     }
 
-    const boxH = padTop + labelToVerdictGap + (wrapped.length * lh) + condH + padBottom
+    // Counterfactual Analysis: same box treatment as conditions above, one
+    // level down the point-ownership hierarchy (lib/personas.ts) — plain
+    // wrapped prose rather than a bulleted list, since it's always exactly
+    // one sentence pair, never a list of items.
+    const cfSize = 8.5
+    const cfLh   = cfSize * 1.5
+    const cfLabelGap = 12
+    let cfWrapped: string[] = []
+    let cfH = 0
+    if (counterfactual) {
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(cfSize)
+      cfWrapped = doc.splitTextToSize(counterfactual, TW - padX * 2) as string[]
+      cfH = cfLabelGap + labelSize * 1.1 + (cfWrapped.length * cfLh)
+    }
+
+    const boxH = padTop + labelToVerdictGap + (wrapped.length * lh) + condH + cfH + padBottom
     ensure(boxH + 14)
     const boxY = Y
     doc.setFillColor(...C.verdictBg)
@@ -491,6 +519,24 @@ async function buildPdf(
           doc.text(line, ML + padX, ty)
           ty += condLh
         }
+      }
+    }
+
+    if (counterfactual) {
+      ty += cfLabelGap
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(labelSize)
+      doc.setTextColor(...C.verdictAccent)
+      doc.setCharSpace(0.6)
+      doc.text('IF DIFFERENT', ML + padX, ty)
+      doc.setCharSpace(0)
+      ty += labelSize * 1.1
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(cfSize)
+      doc.setTextColor(...C.bodyText)
+      for (const line of cfWrapped) {
+        doc.text(line, ML + padX, ty)
+        ty += cfLh
       }
     }
 
@@ -1412,8 +1458,8 @@ async function buildPdf(
           Y += 10
           bodyBlock(cleanPushbackText(msg.content), 0, 9.5, C.pushbackText)
         } else if (isSynthesis) {
-          const { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest } = parseVerdictTension(msg.content)
-          if (verdict) renderVerdictBoxPdf(verdict, conditions)
+          const { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest } = parseVerdictTension(msg.content)
+          if (verdict) renderVerdictBoxPdf(verdict, conditions, counterfactual)
           renderSynthesisBody(rest)
           renderWorthConfirmingPdf(keyQuestion)
           renderActionPlanBoxPdf(actionPlan, confidenceToAct)

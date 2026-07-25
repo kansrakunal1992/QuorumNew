@@ -51,9 +51,13 @@ function stripHeaderTags(raw: string): string {
     // leaking through raw as visible text on this page.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Counterfactual Analysis (new tag) — same defensive handling as
+    // conditions/key_question above.
+    .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
     // Sprint 1 follow-on: same leak risk as verdict_lean/conditions above —
     // this file never learned about key_question either.
     .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+    .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close
     // Strip tension wrapper tags but keep the sentence text inline
     .replace(/<\/?tension>/g, '')
     .replace(/^\s+/, '')
@@ -86,11 +90,15 @@ function parseActionPlan(raw: string): { lead: string; rest: string }[] {
 // <tension> tags still in place, so renderSynthesisProse can locate and
 // highlight the tension sentence inline — mirrors SynthesisCard.tsx exactly,
 // so the static record page matches what was shown live on the session page.
-function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; keyQuestion: string | null; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } {
+function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; counterfactual: string | null; keyQuestion: string | null; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } {
   const vMatch  = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
   const verdict = vMatch?.[1]?.trim() ? firstSentence(vMatch[1].trim()) : null
   const cMatch  = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
   const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
+  // Counterfactual Analysis (new tag) — same extraction shape as keyQuestion
+  // below: optional, at most one, no pipe-split (never a list).
+  const cfMatch = raw.match(/<counterfactual>([\s\S]*?)<\/counterfactual>/)
+  const counterfactual = cfMatch?.[1]?.trim() ?? null
   // Sprint 1 follow-on: same primary source as the live session page
   // (components/SynthesisCard.tsx) — see that file for the full rationale.
   const kqMatch    = raw.match(/<key_question>([\s\S]*?)<\/key_question>/)
@@ -115,9 +123,17 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     // raw-tag leak the user saw, since "rest" is what gets rendered as body prose.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Same fix as conditions above: extracted into its own line, must not
+    // also remain in the flowing prose.
+    .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
     // Sprint 1 follow-on: extracted above into its own callout, same as
     // verdict/conditions — must not also remain in the flowing prose.
     .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+    // Guardrail follow-up: conditions/key_question never had a fallback for a
+    // truncated run (only verdict/action_plan/confidence_to_act did) — a cut-off
+    // mid-<conditions> or mid-<key_question> generation left raw markup in
+    // "rest" here, same failure mode already fixed for the other tags below.
+    .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close
     // Same fix as above: extracted into their own callouts, must not also
     // remain in the flowing prose. Includes a guard for the unclosed-tag case
     // (a synthesis run that got cut short before </action_plan>/</confidence_to_act>
@@ -141,7 +157,7 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
     .replace(/<\/?assumption>/g, '')
     .trimStart()
-  return { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest }
+  return { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest }
 }
 
 // ── Decision Brief renderer (record page presentation) ──────────────────────
@@ -241,7 +257,7 @@ function renderSynthesisProse(rest: string): React.ReactNode {
 // with the tension sentence highlighted inline. Used for both the initial
 // synthesis message and any reanalysis/pushback synthesis responses.
 function renderSynthesisMessage(raw: string): React.ReactNode {
-  const { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest } = parseVerdictTension(raw)
+  const { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest } = parseVerdictTension(raw)
   return (
     <>
       {verdict && (
@@ -304,6 +320,28 @@ function renderSynthesisMessage(raw: string): React.ReactNode {
                   </li>
                 ))}
               </ul>
+            </>
+          )}
+          {/* Counterfactual Analysis — same mono-label treatment as
+              Conditional On above, matching SynthesisCard.tsx's main card
+              (both in the "verdict sensitivity" family per the
+              point-ownership hierarchy in lib/personas.ts). */}
+          {counterfactual && (
+            <>
+              <p style={{
+                fontFamily:    'var(--font-mono)',
+                fontSize:      9,
+                fontWeight:    700,
+                letterSpacing: '0.10em',
+                textTransform: 'uppercase',
+                color:         'var(--text-4)',
+                margin:        '12px 0 6px',
+              }}>
+                If different
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, margin: 0 }}>
+                {counterfactual}
+              </p>
             </>
           )}
           {/* Sprint 1 follow-on parity fix: same Worth Confirming treatment

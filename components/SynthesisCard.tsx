@@ -88,7 +88,9 @@ export default function SynthesisCard({
       .replace(/<verdict>[\s\S]*/g, '')
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+      .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
       .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+      .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close (truncated run)
       .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
       .replace(/<action_plan>[\s\S]*$/, '')          // guard: open tag without close (truncated run)
       .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
@@ -209,6 +211,14 @@ export default function SynthesisCard({
     const m = initialContent.match(/<conditions>([\s\S]*?)<\/conditions>/)
     return m?.[1] ? m[1].split('|').map(s => s.trim()).filter(Boolean) : []
   })
+  // Counterfactual Analysis: optional, at most one, always a single sentence
+  // pair — unlike conditions/action_plan there's no pipe-separated list shape
+  // here, so this is a plain string rather than an array.
+  const [counterfactual, setCounterfactual] = useState<string>(() => {
+    if (!initialContent) return ''
+    const m = initialContent.match(/<counterfactual>([\s\S]*?)<\/counterfactual>/)
+    return m?.[1]?.trim() ?? ''
+  })
   const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
   const verdictAccRef  = useRef('')
   const tensionAccRef  = useRef('')
@@ -237,7 +247,9 @@ export default function SynthesisCard({
       .replace(/<verdict>[\s\S]*/g, '')
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+      .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
       .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+      .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close (truncated run)
       .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
       .replace(/<action_plan>[\s\S]*$/, '')          // guard: open tag without close (truncated run)
       .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
@@ -535,7 +547,9 @@ export default function SynthesisCard({
               .replace(/<verdict>[\s\S]*/g, '')
               .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
               .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+              .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
               .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+              .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close (truncated run)
               .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
               .replace(/<action_plan>[\s\S]*$/, '')          // guard: open tag without close (truncated run)
               .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
@@ -552,6 +566,9 @@ export default function SynthesisCard({
         // P2: same "final extraction pass" guarantee for the two new tags.
         const fvl = finalAcc.match(/<verdict_lean>([\s\S]*?)<\/verdict(?:_lean)?>/)
         const fc  = finalAcc.match(/<conditions>([\s\S]*?)<\/conditions>/)
+        // Same final-pass guarantee — optional tag, at most one, no pipe-split
+        // needed (unlike conditions/action_plan, it's never a list).
+        const fcf = finalAcc.match(/<counterfactual>([\s\S]*?)<\/counterfactual>/)
         // Sprint 1 follow-on: same guarantee for key_question — the primary
         // source for the worth-confirming line (see state declaration above).
         const fkq = finalAcc.match(/<key_question>([\s\S]*?)<\/key_question>/)
@@ -565,6 +582,7 @@ export default function SynthesisCard({
         const finalVerdictLean = fvl?.[1]?.trim().toLowerCase() ?? ''
         const finalConditions  = fc?.[1] ? fc[1].split('|').map(s => s.trim()).filter(Boolean) : []
         setConditions(finalConditions)
+        setCounterfactual(fcf?.[1]?.trim() ?? '')
         if (fkq?.[1]?.trim()) setKeyQuestion(fkq[1].trim())
         if (fap?.[1]?.trim()) setActionPlan(parseActionPlan(fap[1]))
         setConfidenceToAct(fca?.[1]?.trim() ? (parseActionPlan(fca[1])[0] ?? null) : null)
@@ -576,7 +594,9 @@ export default function SynthesisCard({
             .replace(/<verdict>[\s\S]*/g, '')
             .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
             .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+            .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
             .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
+            .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close (truncated run)
             .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
             .replace(/<action_plan>[\s\S]*$/, '')          // guard: open tag without close (truncated run)
             .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
@@ -1158,6 +1178,35 @@ export default function SynthesisCard({
                     </ul>
                   </>
                 )}
+                {/* Counterfactual Analysis: same mono-label visual language as
+                    Conditional On above (same "verdict sensitivity" family in
+                    the point-ownership hierarchy — see lib/personas.ts), just
+                    a single sentence pair instead of a bulleted list. Sits
+                    between Conditional On and the Worth Confirming highlight
+                    below, matching write/precedence/display order. */}
+                {state === 'done' && counterfactual && (
+                  <>
+                    <p style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      9,
+                      fontWeight:    700,
+                      letterSpacing: '0.10em',
+                      textTransform: 'uppercase',
+                      color:         'var(--text-4)',
+                      margin:        '12px 0 6px',
+                    }}>
+                      If different
+                    </p>
+                    <p style={{
+                      fontSize:   12,
+                      color:      'var(--text-3)',
+                      lineHeight: 1.5,
+                      margin:     0,
+                    }}>
+                      {counterfactual}
+                    </p>
+                  </>
+                )}
                 {/* Sprint 1 follow-on — merged Features #1 (Highest-Value Unknown)
                     + #6 (Decision Sensitivity Analysis, cheap proxy). Reads as a
                     continuation of the verdict rather than a separate panel — but
@@ -1646,7 +1695,7 @@ export default function SynthesisCard({
                 color:      'var(--gold)',
                 textAlign:  'center',
                 lineHeight: 1.5,
-                margin:     conditions.length > 0 ? '0 0 12px' : '0 0 28px',
+                margin:     (conditions.length > 0 || counterfactual) ? '0 0 12px' : '0 0 28px',
               }}>
                 {firstSentence(verdictText)}
               </p>
@@ -1668,7 +1717,7 @@ export default function SynthesisCard({
                   Conditional on
                 </p>
                 <ul style={{
-                  margin:       '0 0 28px',
+                  margin:       counterfactual ? '0 0 12px' : '0 0 28px',
                   padding:      0,
                   listStyle:    'none',
                   display:      'flex',
@@ -1686,6 +1735,34 @@ export default function SynthesisCard({
                     </li>
                   ))}
                 </ul>
+              </>
+            )}
+            {/* Counterfactual Analysis — same centered, mono-label focus-mode
+                language as Conditional On above, per the point-ownership
+                hierarchy's write/display order in lib/personas.ts. */}
+            {counterfactual && (
+              <>
+                <p style={{
+                  fontFamily:    'var(--font-mono)',
+                  fontSize:      10,
+                  fontWeight:    700,
+                  letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  color:         'var(--text-4)',
+                  textAlign:     'center',
+                  margin:        '0 0 8px',
+                }}>
+                  If different
+                </p>
+                <p style={{
+                  fontSize:   13,
+                  color:      'var(--text-3)',
+                  lineHeight: 1.5,
+                  textAlign:  'center',
+                  margin:     '0 0 28px',
+                }}>
+                  {counterfactual}
+                </p>
               </>
             )}
             <div style={{

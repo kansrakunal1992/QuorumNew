@@ -4,6 +4,15 @@ import { useState } from 'react'
 import type { DecisionRecord } from '@/lib/types'
 import { PERSONAS }    from '@/lib/personas'
 import { formatLongDate } from '@/lib/dates'
+// Decision Brief parsing (headers in any of 3 model conventions, inline bold
+// spans) now lives in one shared place. Before this, RecordExport.tsx carried
+// its OWN third independent copy of this detection (narrower than the other
+// two — it only recognized "**Header**", not "## Header" or ALL-CAPS), which
+// is exactly the kind of per-file drift that let "## Decision Brief" render
+// as literal punctuation in the PDF while the live session and record pages
+// (already on the shared parser) rendered it correctly. See
+// lib/brief-markdown.ts's own header comment for the full history.
+import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent } from '@/lib/brief-markdown'
 
 export interface ExaminerQA {
   question_text: string
@@ -16,23 +25,9 @@ interface Props {
   examinerResponses?: ExaminerQA[]
 }
 
-// ── Segment type for inline bold rendering ─────────────────────
-type Segment = { text: string; bold: boolean }
-
-// Parse a line into plain + bold segments  (**word** → bold)
-function parseInline(line: string): Segment[] {
-  const segments: Segment[] = []
-  const regex = /\*\*(.+?)\*\*/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = regex.exec(line)) !== null) {
-    if (m.index > last) segments.push({ text: line.slice(last, m.index), bold: false })
-    segments.push({ text: m[1], bold: true })
-    last = regex.lastIndex
-  }
-  if (last < line.length) segments.push({ text: line.slice(last), bold: false })
-  return segments.length ? segments : [{ text: line, bold: false }]
-}
+// ── Inline bold segments and header detection now come from
+// lib/brief-markdown.ts (BriefSegment / parseBriefInline / briefLineHeader) —
+// see the import comment above for why the local copies were removed.
 
 // Strip markdown for plain-text contexts
 // Strip verdict/tension/persona tags that should never appear in the PDF.
@@ -47,6 +42,10 @@ function stripSynthesisTags(raw: string): string {
     // so they were leaking through raw into whatever uses this export.
     .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
     .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
+    // Counterfactual Analysis (new tag, same reasoning as conditions above —
+    // full removal, no dedicated PDF treatment for this smaller persona-card
+    // export).
+    .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
     // Tag-wiring guardrail fix: this file's independent copy never learned
     // about the two newest synthesis tags either — same drift as the
     // verdict_lean/conditions fix above. Full removal, matching how
@@ -70,7 +69,7 @@ function stripSynthesisTags(raw: string): string {
     // response with a structural-echo citation (R6) leaked the raw tag
     // straight into this export.
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|action_plan|confidence_to_act)>[\s\S]*$/, '') // guard: open tag without close
+    .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|counterfactual|action_plan|confidence_to_act)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
     // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.
@@ -90,12 +89,6 @@ function stripMd(s: string): string {
     .replace(/^[-*]\s+/gm, '• ')
     .replace(/`(.+?)`/g, '$1')
     .trim()
-}
-
-// Is this line a standalone section header:  **Header**  or  **Header**:
-function extractHeader(line: string): string | null {
-  const m = line.match(/^\*\*(.+?)\*\*:?\s*$/)
-  return m ? m[1] : null
 }
 
 export default function RecordExport({ record, examinerResponses = [] }: Props) {
@@ -142,7 +135,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
           if (rawLine.includes('**')) {
             // We render the plain version (jsPDF doesn't support inline styles natively)
             // Bold segments: if the whole wrapped line came from a bold region, render bold
-            const segs = parseInline(rawLine)
+            const segs = parseBriefInline(rawLine)
             const isAllBold = segs.every(s => s.bold)
             doc.setFont('helvetica', isAllBold ? 'bold' : 'normal')
           } else {
@@ -174,8 +167,10 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
             continue
           }
 
-          // Standalone section header:  **Header**  or  **Header**:
-          const header = extractHeader(line.trim())
+          // Standalone section header — any of the 3 conventions the model
+          // actually uses (see lib/brief-markdown.ts): "## Header",
+          // "**Header**"/"**Header**:", or a plain ALL-CAPS line.
+          const header = briefLineHeader(line.trim())
           if (header) {
             checkBreak(baseSize * 0.7)
             y += baseSize * 0.18  // small gap before header
@@ -192,9 +187,12 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
             continue
           }
 
-          // Bullet list item: starts with - , * , or •
-          if (/^[-*•]\s+/.test(line.trim())) {
-            const bulletText = line.trim().replace(/^[-*•]\s+/, '')
+          // Bullet list item: starts with - or *  (shared detection —
+          // matches what SynthesisCard.tsx and the record page treat as a
+          // bullet, so a list doesn't render as a bullet in one place and a
+          // plain paragraph in another)
+          if (briefLineIsBullet(line.trim())) {
+            const bulletText = briefBulletContent(line.trim())
             const cleanText = stripMd(bulletText)
             checkBreak(baseSize * 0.45)
             doc.setFont('helvetica', 'normal')
@@ -219,7 +217,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
 
           if (hasInlineBold) {
             // Check if first segment is bold (paragraph starts with bold label like "**Execution risk**:")
-            const segs = parseInline(line)
+            const segs = parseBriefInline(line)
             const firstIsBold = segs[0]?.bold
 
             if (firstIsBold && segs.length > 1) {
