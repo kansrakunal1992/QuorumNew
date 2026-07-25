@@ -17,6 +17,7 @@ import { PERSONAS, DECISION_BRIEF } from '@/lib/personas'
 import { createCompletion }   from '@/lib/ai-client'
 import type { PersonaKey }     from '@/lib/types'
 import { encrypt, decrypt }    from '@/lib/encryption'
+import { briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 
 const APPENDIX_ORDER: PersonaKey[] = [
   'synthesis',
@@ -366,11 +367,21 @@ async function buildPdf(
 
   // Strips verdict + conditions (returned separately) and leaves tension tags
   // intact in `rest` for renderSynthesisBody to locate per-paragraph.
-  const parseVerdictTension = (raw: string): { verdict: string | null; conditions: string[]; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } => {
+  const parseVerdictTension = (raw: string): { verdict: string | null; conditions: string[]; keyQuestion: string | null; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } => {
     const vMatch = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
     const verdict = vMatch?.[1]?.trim() ? firstSentencePdf(vMatch[1].trim()) : null
     const cMatch = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
     const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
+    // Bug fix: this file never extracted <key_question> at all — not even a
+    // strip-and-discard line, unlike verdict/conditions above — so it printed
+    // as raw, visible <key_question>...</key_question> markup in the PDF
+    // (confirmed: session 8814F91F's PDF). Same tag, same "worth confirming"
+    // framing the record page and live SessionView already give it (see
+    // app/record/[id]/page.tsx's keyQuestion / SynthesisCard.tsx's
+    // worthConfirming) — extracted here so this PDF can give it the same
+    // callout treatment instead of leaking the tag or silently dropping it.
+    const kqMatch = raw.match(/<key_question>([\s\S]*?)<\/key_question>/)
+    const keyQuestion = kqMatch?.[1]?.trim() ?? null
     // Bug fix (tag-wiring guardrail gap): this file's independent copy of
     // tag-handling never learned about <action_plan>/<confidence_to_act> at
     // all — unlike every other synthesis tag here, there wasn't even a
@@ -389,6 +400,11 @@ async function buildPdf(
       // raw-tag leak, since `rest` is what gets rendered as the PDF's body text.
       .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/, '')
       .replace(/<conditions>[\s\S]*?<\/conditions>\n*/, '')
+      // Same fix as above: extracted into its own callout, must not also
+      // remain in the flowing body text. Includes a guard for the
+      // unclosed-tag case, same rationale as action_plan/confidence_to_act below.
+      .replace(/<key_question>[\s\S]*?<\/key_question>\n*/, '')
+      .replace(/<key_question>[\s\S]*$/, '')           // guard: open tag without close
       // Same fix as above: extracted into their own box, must not also
       // remain in the flowing body text. Includes a guard for the
       // unclosed-tag case (a synthesis run cut short before
@@ -400,7 +416,7 @@ async function buildPdf(
       .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/, '')
       .replace(/<confidence_to_act>[\s\S]*$/, '')       // guard: open tag without close
       .trimStart()
-    return { verdict, conditions, actionPlan, confidenceToAct, rest }
+    return { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest }
   }
 
   const renderVerdictBoxPdf = (verdictText: string, conditions: string[] = []) => {
@@ -498,6 +514,7 @@ async function buildPdf(
   // it's derived from the same wrapped lines being drawn.
   const drawLeadRestWrapped = (
     wrappedLines: string[], boldLen: number, x: number, startY: number, lh: number, size: number,
+    boldColor: [number, number, number] = C.actionAccent,
   ): number => {
     let consumed = 0
     let ty = startY
@@ -509,13 +526,13 @@ async function buildPdf(
         doc.setFont('Helvetica', 'normal'); doc.setTextColor(...C.bodyText)
         doc.text(line, x, ty)
       } else if (consumed + lineLen <= boldLen) {
-        doc.setFont('Helvetica', 'bold'); doc.setTextColor(...C.actionAccent)
+        doc.setFont('Helvetica', 'bold'); doc.setTextColor(...boldColor)
         doc.text(line, x, ty)
       } else {
         const splitAt   = boldLen - consumed
         const boldPart  = line.slice(0, splitAt)
         const restPart  = line.slice(splitAt)
-        doc.setFont('Helvetica', 'bold'); doc.setTextColor(...C.actionAccent)
+        doc.setFont('Helvetica', 'bold'); doc.setTextColor(...boldColor)
         doc.text(boldPart, x, ty)
         const w = doc.getTextWidth(boldPart)
         doc.setFont('Helvetica', 'normal'); doc.setTextColor(...C.bodyText)
@@ -525,6 +542,26 @@ async function buildPdf(
       ty += lh
     }
     return ty
+  }
+
+  // Bug fix: <key_question> had no rendering path in this file at all — see
+  // parseVerdictTension's keyQuestion extraction above. Record page and live
+  // SessionView both show this as a "Worth confirming" note directly in the
+  // flowing prose (bold lead in plain text color, not the teal action
+  // accent) rather than a bordered box like the action plan gets — matched
+  // here by reusing drawLeadRestWrapped with bodyText as the lead color.
+  const renderWorthConfirmingPdf = (keyQuestion: string | null) => {
+    if (!keyQuestion) return
+    const size = 10, lh = size * 1.6
+    doc.setFont('Helvetica', 'normal')
+    doc.setFontSize(size)
+    const lead = 'Worth confirming'
+    const combined = `${lead} — ${keyQuestion}`
+    const wrapped = doc.splitTextToSize(combined, TW) as string[]
+    ensure(wrapped.length * lh + 16)
+    Y += 10
+    Y = drawLeadRestWrapped(wrapped, lead.length, ML, Y, lh, size, C.bodyText)
+    Y += 4
   }
 
   const renderActionPlanBoxPdf = (
@@ -749,6 +786,15 @@ async function buildPdf(
 
     const text = sanitise(raw).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
     const lines = text.split('\n')
+    // See briefLineIsRedundantTitle in lib/brief-markdown.ts: the
+    // decision_brief persona sometimes opens with a redundant title line
+    // restating "Decision Brief" — already shown by this PDF's own gold
+    // section band just above — and its dash/box-drawing decoration isn't
+    // supported by the base Helvetica encoding `sanitise` targets, so
+    // instead of being recognized as a heading it fell through to plain
+    // text and rendered as a run of literal "?" characters (confirmed:
+    // session 8814F91F's PDF). Skipped below rather than drawn.
+    const firstContentIdx = lines.findIndex(l => l.trim().length > 0)
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
@@ -759,6 +805,8 @@ async function buildPdf(
         Y += LH_BODY * 0.35
         continue
       }
+
+      if (i === firstContentIdx && briefLineIsRedundantTitle(trimmed)) continue
 
       // Horizontal rule ---
       if (/^---+$/.test(trimmed)) {
@@ -1364,9 +1412,10 @@ async function buildPdf(
           Y += 10
           bodyBlock(cleanPushbackText(msg.content), 0, 9.5, C.pushbackText)
         } else if (isSynthesis) {
-          const { verdict, conditions, actionPlan, confidenceToAct, rest } = parseVerdictTension(msg.content)
+          const { verdict, conditions, keyQuestion, actionPlan, confidenceToAct, rest } = parseVerdictTension(msg.content)
           if (verdict) renderVerdictBoxPdf(verdict, conditions)
           renderSynthesisBody(rest)
+          renderWorthConfirmingPdf(keyQuestion)
           renderActionPlanBoxPdf(actionPlan, confidenceToAct)
         } else {
           bodyBlock(stripAdvisorTags(msg.content))

@@ -18,7 +18,7 @@ import type { TimelineEntry } from '@/components/DecisionTimeline'
 import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
 import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
 import RecordDecisionHero from '@/components/RecordDecisionHero'
-import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent } from '@/lib/brief-markdown'
+import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent, briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 
 // Strip <lens>, <position>, <realcost>, <lean> tags stored in DB — rendered separately
 // in PersonaPanel (lean is never rendered, only used for the S3-01 tension interstitial)
@@ -166,11 +166,16 @@ function renderBriefInline(line: string): React.ReactNode {
 
 function renderBriefBody(raw: string): React.ReactNode {
   const lines = stripHeaderTags(raw).split('\n')
+  // First non-blank line only — see briefLineIsRedundantTitle's definition
+  // in lib/brief-markdown.ts for why this specific line sometimes needs
+  // skipping rather than rendering as a(nother) heading.
+  const firstContentIdx = lines.findIndex(l => l.trim().length > 0)
   return (
     <>
       {lines.map((line, i) => {
         const trimmed = line.trim()
         if (!trimmed) return null
+        if (i === firstContentIdx && briefLineIsRedundantTitle(trimmed)) return null
         const header = briefLineHeader(trimmed)
         if (header) {
           return (

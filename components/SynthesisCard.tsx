@@ -9,7 +9,7 @@ import ResearchVideoCard from './ResearchVideoCard'           // Video 2 — res
 import type { PersonaRelevanceMap } from '@/lib/persona-relevance'  // S2-02
 import type { SynthesisVersionSnapshot } from '@/lib/synthesis-diff'  // P1
 import { getOrCreateDeviceId } from '@/lib/storage'                  // S2-01
-import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent } from '@/lib/brief-markdown'
+import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent, briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 
 interface Props {
   sessionId:         string
@@ -1502,9 +1502,18 @@ export default function SynthesisCard({
                     page's brief renderer (lib/brief-markdown.ts) so both
                     recognize the same three header conventions and the same
                     inline bold spans, instead of drifting independently. */}
-                {briefText.split('\n').map((line, i) => {
+                {(() => {
+                  const briefLines = briefText.split('\n')
+                  const firstContentIdx = briefLines.findIndex(l => l.trim().length > 0)
+                  return briefLines.map((line, i) => {
                   const trimmed = line.trim()
                   if (!trimmed) return <p key={i} style={{ margin: '0 0 2px' }}>{'\u00A0'}</p>
+                  // Bug fix: the decision_brief persona sometimes opens with a
+                  // redundant title line restating "Decision Brief" — already
+                  // shown by this card's own header above — so skip it rather
+                  // than rendering a duplicate heading. See
+                  // briefLineIsRedundantTitle in lib/brief-markdown.ts.
+                  if (i === firstContentIdx && briefLineIsRedundantTitle(trimmed)) return null
                   const header = briefLineHeader(trimmed)
                   if (header) {
                     return (
@@ -1540,7 +1549,8 @@ export default function SynthesisCard({
                         : <span key={si}>{s.text}</span>)}
                     </p>
                   )
-                })}
+                })
+                })()}
               </div>
             )}
             {!briefText && briefState === 'streaming' && (

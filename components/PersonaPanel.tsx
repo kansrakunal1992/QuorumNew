@@ -196,6 +196,26 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const rawInitialRef = useRef(
     initialContent ? initialContent.split(/\n\n\[(?:Pushback|Updated after Examiner)/)[0] : '',
   )
+  // Bug fix ("Contrarian missing its lens/position/lean header block, card
+  // looks broken, only on some runs, gone on re-run"): lib/personas.ts
+  // mandates <lens>/<position>/<realcost>/<lean> as the first thing every
+  // persona response emits, but this has been observed to occasionally come
+  // back malformed or entirely absent for one persona's initial response —
+  // see extractHeaderTags' "Second bug fix" comment below for a previously
+  // documented instance of this (the model emitting a bare <wait> instead of
+  // <lean>wait</lean>). When that happens, lensText/positionText/realCostText
+  // all stay empty, the card silently falls back to the persona's generic
+  // static tagline instead of its lens for this decision, and the Position/
+  // Trade-off sections don't render at all (they're gated on `{positionText &&
+  // ...}` etc.) — which is what "looks very bad" here: a card with none of the
+  // structured framing every other persona has. Rather than requiring a full
+  // manual Reanalyze (which re-runs all 6 personas + resynthesizes) just to
+  // reroll the one persona that had a bad draw, this retries ONLY that
+  // persona's initial call, once, silently, if its response comes back
+  // without a parseable <lens> tag — self-healing the exact symptom reported
+  // whether the cause is a transient stream hiccup (e.g. right after a cold
+  // start) or the model occasionally not following the mandatory format.
+  const headerRetryRef = useRef(0)
   const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
   const onLeanUpdateRef = useRef(onLeanUpdate)
@@ -386,6 +406,22 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           const prose = extractHeaderTags(acc)
           setResponse(prose)
           responseRef.current = prose
+        }
+      }
+
+      if (isFirst) {
+        // See headerRetryRef's definition above. Checking for <lens> alone is
+        // sufficient — it's the first of the four mandatory tags, so if it's
+        // missing/malformed the rest are either also missing or, having lost
+        // their anchor, not worth trusting either. Checked before
+        // setPanelState('done') so a silent retry doesn't visibly flash
+        // "done" first — the card should just keep looking like it's still
+        // thinking.
+        const hasLens = /<lens>[\s\S]*?<\/lens>/.test(acc)
+        if (!hasLens && headerRetryRef.current < 1) {
+          headerRetryRef.current += 1
+          streamResponse(msgs, isFirst, examinerCtx)
+          return
         }
       }
 

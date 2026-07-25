@@ -58,3 +58,40 @@ export function briefLineIsBullet(trimmed: string): boolean {
 export function briefBulletContent(trimmed: string): string {
   return trimmed.replace(/^[-*]\s+/, '')
 }
+
+// Bug fix: the decision_brief persona sometimes opens its own output with a
+// redundant title line — e.g. "── Decision Brief ──", "## Decision Brief",
+// or similar — restating the section name every surface already provides as
+// a header (the record page's card title, SessionView's "Decision Brief"
+// label, and the PDF's own gold section band). Two visible symptoms trace
+// back to this single line:
+//  1. On the record page / live SessionView, it renders as an extra,
+//     redundant "DECISION BRIEF" heading right above "KEY INSIGHTS" — a
+//     stray duplicate of framing that's already on screen.
+//  2. In the PDF, this specific persona is more prone to using em-dash/
+//     box-drawing decoration around the title (rather than the "##"/"**"
+//     forms), and jsPDF's base Helvetica encoding doesn't support those
+//     characters — instead of failing to detect it as a heading, it fell
+//     through to being drawn as plain text, and the unsupported characters
+//     rendered as a run of literal "?" glyphs.
+// Rather than special-casing Unicode decoration support in three separate
+// renderers (record page JSX, live SessionView JSX, and this PDF's jsPDF
+// text layout), all three skip the line entirely when it's just a redundant
+// restatement of "Decision Brief" — checked structurally (strip any
+// decoration, compare the remaining words) so it survives whichever
+// decoration convention the model reaches for on a given run.
+export function briefLineIsRedundantTitle(trimmed: string): boolean {
+  const core = trimmed
+    .replace(/^#{1,6}\s*/, '')                 // leading markdown heading hashes
+    .replace(/^\*\*|\*\*$/g, '')                // surrounding **bold** markers
+    // leading/trailing decoration: hyphen, en/em dash, box-drawing lines,
+    // underscore, equals, tilde, hash, asterisk, punctuation, whitespace, and
+    // literal "?" — the PDF route sanitises unsupported Unicode dash/
+    // box-drawing characters to "?" before this ever runs, so by the time it
+    // gets here the decoration may already be a run of "?" rather than the
+    // original dash characters.
+    .replace(/^[\s\-–—_=~#*.:?\u2500-\u257F]+|[\s\-–—_=~#*.:?\u2500-\u257F]+$/g, '')
+    .trim()
+    .toLowerCase()
+  return core === 'decision brief' || core === 'the decision brief' || core === 'quorum decision brief'
+}
