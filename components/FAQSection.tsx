@@ -3,7 +3,7 @@
 // (not an exhaustive help-center) and targeted at the actual objections
 // raised in feedback: privacy, "is this a chatbot," and pricing/value.
 // Copy reuses figures already published on the marketing site (Council
-// free, Mirror ₹3,999/mo · ₹39,999/yr, Advisory unpublished/by application)
+// free, Mirror ₹2,999/mo · ₹29,999/yr [Quorum Elite], Advisory unpublished/by application)
 // rather than inventing new claims.
 //
 // Each question is its own accordion row, collapsed by default — this is
@@ -35,11 +35,19 @@ const FAQS: FAQItem[] = [
   },
   {
     q: 'What does it cost?',
-    a: "The Council — the core six-advisor session — is free. Mirror, which compounds insight across your decisions over time, is ₹3,999/mo or ₹39,999/yr. Advisory is a founder-led, capped, standing relationship priced once we understand the decision — not published here.",
+    a: "The Council — the core six-advisor session — is free. Elite adds Mirror, which compounds insight across your decisions over time, for ₹2,999/mo or ₹29,999/yr. Advisory is a founder-led, capped, standing relationship priced once we understand the decision — not published here.",
   },
   {
     q: "What's the difference between the Council and Mirror?",
     a: 'The Council is the six-advisor session you get on any single decision. Mirror is the layer underneath it that compounds across sessions — your bias fingerprint, calibration over time, recurring patterns — and unlocks once you have enough decision history for it to be meaningful.',
+  },
+  {
+    q: 'What AI models power Quorum?',
+    a: "Quorum uses different models for different plans, matched to what each plan is for. Free runs on Mistral Small end-to-end — strong reasoning at a cost that keeps the free tier sustainable for everyone. Elite pairs Mistral Small for fast reasoning with Claude Sonnet for Quorum's deepest analysis — Council Synthesis, Mirror, and long-term pattern-reading. Private runs entirely inside your own infrastructure, on either self-hosted Qwen or self-hosted Mistral, whichever you choose.",
+  },
+  {
+    q: "Why doesn't every plan use the same model?",
+    a: "Because each plan optimises for a different goal. Free is built to be accessible to everyone while staying sustainable. Elite is built for the highest-quality personal decision intelligence. Private is built for complete ownership and enterprise deployment. The model each plan runs on follows from that goal — it isn't the goal itself; Quorum's judgment quality is what you're actually buying.",
   },
   {
     q: 'Can I cancel Mirror anytime?',

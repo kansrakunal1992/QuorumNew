@@ -12,7 +12,24 @@
 //     accessType:  'advisory' | 'monthly' | 'annual'
 //     durationDays?: number            — optional; if omitted, expires_at = null
 //                                        (advisory default)
+//     productTier?: 'elite' | 'private' — Locked v1 pricing tier. Defaults to
+//                                        'elite' if omitted (matches the DB
+//                                        column default — every grant issued
+//                                        before this field existed was Elite
+//                                        under the new naming).
+//     privateModelFamily?: 'qwen' | 'mistral' — REQUIRED when productTier is
+//                                        'private' (TD-LD-7's Option A/B —
+//                                        the buyer's self-hosted choice,
+//                                        never silently defaulted at grant
+//                                        time). Ignored/rejected otherwise.
 //   }
+//
+// Private is the expected use of this endpoint going forward: custom
+// pricing + minimum seats makes it inherently sales-led (TD-LD-8), not
+// self-serve checkout — so it's provisioned here rather than automatically
+// via the Razorpay webhook, same as it always has been for advisory grants.
+// Elite is normally automatic via the webhook; this endpoint still accepts
+// it for support overrides/beta grants.
 //
 // All writes use ON CONFLICT (user_id) DO UPDATE (upsert) to handle the unique
 // index on mirror_access.user_id — replaces any existing row for this user.
@@ -20,7 +37,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import type { SubscriptionPlan } from '@/lib/types'
+import type { SubscriptionPlan, ProductTier, PrivateModelFamily } from '@/lib/types'
 
 export async function POST(req: Request) {
   // Service-role guard
@@ -29,14 +46,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { userId?: string; accessType?: string; durationDays?: number }
+  let body: {
+    userId?:             string
+    accessType?:         string
+    durationDays?:       number
+    productTier?:        string
+    privateModelFamily?: string
+  }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { userId, accessType, durationDays } = body
+  const { userId, accessType, durationDays, privateModelFamily } = body
+  const productTier = body.productTier ?? 'elite'
 
   if (!userId || !accessType) {
     return NextResponse.json({ error: 'userId and accessType required' }, { status: 400 })
@@ -46,6 +70,28 @@ export async function POST(req: Request) {
   if (!validTypes.includes(accessType as SubscriptionPlan)) {
     return NextResponse.json(
       { error: `accessType must be one of: ${validTypes.join(', ')}` },
+      { status: 400 },
+    )
+  }
+
+  const validTiers: ProductTier[] = ['elite', 'private']
+  if (!validTiers.includes(productTier as ProductTier)) {
+    return NextResponse.json(
+      { error: `productTier must be one of: ${validTiers.join(', ')}` },
+      { status: 400 },
+    )
+  }
+
+  const validFamilies: PrivateModelFamily[] = ['qwen', 'mistral']
+  if (productTier === 'private' && !validFamilies.includes(privateModelFamily as PrivateModelFamily)) {
+    return NextResponse.json(
+      { error: `privateModelFamily is required and must be one of: ${validFamilies.join(', ')} when productTier is 'private'` },
+      { status: 400 },
+    )
+  }
+  if (productTier !== 'private' && privateModelFamily) {
+    return NextResponse.json(
+      { error: `privateModelFamily is only valid when productTier is 'private'` },
       { status: 400 },
     )
   }
@@ -66,11 +112,13 @@ export async function POST(req: Request) {
     .from('mirror_access')
     .upsert(
       {
-        user_id:     userId,
-        access_type: accessType as SubscriptionPlan,
-        granted_at:  now.toISOString(),
-        started_at:  now.toISOString(),
-        expires_at:  expiresAt,
+        user_id:              userId,
+        access_type:          accessType as SubscriptionPlan,
+        granted_at:           now.toISOString(),
+        started_at:           now.toISOString(),
+        expires_at:           expiresAt,
+        product_tier:         productTier as ProductTier,
+        private_model_family: productTier === 'private' ? (privateModelFamily as PrivateModelFamily) : null,
       },
       { onConflict: 'user_id' },
     )
@@ -80,12 +128,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'DB write failed' }, { status: 500 })
   }
 
-  console.log(`[grant-mirror-access] Granted ${accessType} to ${userId} (expires: ${expiresAt ?? 'never'})`)
+  console.log(
+    `[grant-mirror-access] Granted ${accessType} (${productTier}${productTier === 'private' ? `/${privateModelFamily}` : ''}) ` +
+    `to ${userId} (expires: ${expiresAt ?? 'never'})`,
+  )
 
   return NextResponse.json({
-    ok:         true,
+    ok:                 true,
     userId,
     accessType,
+    productTier,
+    privateModelFamily: productTier === 'private' ? privateModelFamily : null,
     expiresAt,
     grantedAt:  now.toISOString(),
   })

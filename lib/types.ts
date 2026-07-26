@@ -139,6 +139,22 @@ export type StyleCue = 'direct' | 'challenge' | 'pattern' | 'risk' | 'stakeholde
 // getMirrorAccessState() retains a defensive check for any legacy 'lifetime' rows.
 export type SubscriptionPlan = 'monthly' | 'annual' | 'advisory'
 
+// ── Product tier (Locked v1 pricing doc) ────────────────────────────────────
+// Orthogonal to SubscriptionPlan/MirrorTier above — those describe the Mirror
+// *feature* subscription (billing cycle, advisory cohort). ProductTier
+// describes which of the three named plans (Free/Elite/Private) the account
+// is on, and is what lib/ai-client.ts's tiered routing reads to pick a model.
+// 'free' has no mirror_access row at all (same absence-means-free convention
+// getMirrorAccessState() already uses) — only 'elite'/'private' are ever
+// stored in mirror_access.product_tier.
+export type ProductTier = 'free' | 'elite' | 'private'
+
+// Only meaningful when ProductTier === 'private' — the buyer's self-hosted
+// Option A (qwen) vs Option B (mistral) choice, TD-LD-7. Option B is
+// disclosed as lower reasoning quality; that trade is made at sale time, not
+// silently defaulted.
+export type PrivateModelFamily = 'qwen' | 'mistral'
+
 // ── Mirror tier (Phase 4) ─────────────────────────────────────────────────────
 // 'mirror'   → self-serve Mirror subscription (₹3,999/mo · ₹39,999/yr)
 // 'advisory' → founder-led Mirror Advisory (access_type === 'advisory', capped cohort)

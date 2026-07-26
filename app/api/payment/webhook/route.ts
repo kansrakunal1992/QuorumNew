@@ -122,6 +122,10 @@ export async function POST(req: NextRequest) {
           expires_at:  expiresAt,
           payment_id:  sub.id,                      // Razorpay subscription_id stored here
           payment_ref: `razorpay:sub:${sub.id}`,
+          // Locked v1 pricing doc: the self-serve monthly/annual checkout is
+          // Elite (₹2,999/mo · ₹29,999/yr) — Private is custom/sales-led,
+          // never reaches this webhook (see /api/admin/grant-mirror-access).
+          product_tier: 'elite',
         },
         { onConflict: 'user_id' },
       )

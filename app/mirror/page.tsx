@@ -896,8 +896,11 @@ function TeaserView({
         padding:      '24px 24px',
         marginTop:    36,
       }}>
-        <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 12px' }}>
-          Activate Mirror
+        <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>
+          Quorum Elite
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px', fontStyle: 'italic' }}>
+          Quorum that knows you.
         </p>
         <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
           Unlocks these sections:
@@ -921,20 +924,20 @@ function TeaserView({
           ))}
         </div>
         <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
-          ₹3,999/month · ₹39,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
+          ₹2,999/month · ₹29,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
         </p>
         <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
           <PaymentButton
             plan="monthly"
-            label="₹3,999 / month →"
+            label="₹2,999 / month →"
             authToken={authToken}
             userEmail={userEmail}
             onSuccess={onUnlocked}
           />
           <PaymentButton
             plan="annual"
-            label="₹39,999 / year  — best value →"
+            label="₹29,999 / year  — best value →"
             authToken={authToken}
             userEmail={userEmail}
             onSuccess={onUnlocked}

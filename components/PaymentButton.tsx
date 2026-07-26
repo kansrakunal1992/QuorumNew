@@ -12,7 +12,7 @@
 //
 // Props:
 //   plan      — 'monthly' | 'annual'
-//   label     — button text e.g. "₹3,999 / month"
+//   label     — button text e.g. "₹2,999 / month"
 //   authToken — Supabase JWT from session (for Authorization header)
 //   userEmail — prefilled in Razorpay checkout
 //   onSuccess — called on successful payment; caller triggers Mirror unlock
@@ -105,8 +105,8 @@ export function PaymentButton({
         name:            'Quorum',
         image:           'https://app.quorumvault.org/icon-512.png',
         description:     plan === 'annual'
-          ? 'Mirror — Annual (₹39,999/year)'
-          : 'Mirror — Monthly (₹3,999/month)',
+          ? 'Quorum Elite — Annual (₹29,999/year)'
+          : 'Quorum Elite — Monthly (₹2,999/month)',
         prefill: {
           email: userEmail,
         },
