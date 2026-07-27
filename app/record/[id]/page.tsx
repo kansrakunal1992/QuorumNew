@@ -8,6 +8,7 @@ import EarlyEchoCard from '@/components/EarlyEchoCard'
 import ValidationCard from '@/components/ValidationCard'
 import Link from 'next/link'
 import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
+import ShareRecordButton from '@/components/ShareRecordButton'
 import BackButton from '@/components/BackButton'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
@@ -1226,6 +1227,10 @@ export default async function RecordPage({ params }: Props) {
                   contextText={session.context_text}
                   userId={session.user_id ?? null}
                   encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY}
+                />
+                <ShareRecordButton
+                  sessionId={session.id}
+                  decisionText={session.decision_text}
                 />
               </div>
               <Link href="/">

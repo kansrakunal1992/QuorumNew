@@ -17,6 +17,8 @@
 //   - Purely presentational; all data is computed server-side in
 //     app/record/[id]/page.tsx and passed in as a prop
 
+import { useState } from 'react'
+
 interface Props {
   note: {
     label:     string
@@ -25,6 +27,8 @@ interface Props {
 }
 
 export default function BiasNoteCard({ note }: Props) {
+  const [expanded, setExpanded] = useState(false)
+
   if (!note) return null
 
   return (
@@ -82,14 +86,43 @@ export default function BiasNoteCard({ note }: Props) {
         }}>
           {note.label} was flagged in this analysis.
         </p>
-        <p style={{
+        <p style={expanded ? {
           fontSize:   12,
           color:      'var(--text-4)',
           margin:     0,
           lineHeight: 1.55,
+        } : {
+          fontSize:       12,
+          color:          'var(--text-4)',
+          margin:         0,
+          lineHeight:     1.55,
+          display:        '-webkit-box',
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical' as const,
+          overflow:       'hidden',
         }}>
           {note.reasoning}
         </p>
+        {note.reasoning.length > 220 && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            style={{
+              marginTop:     4,
+              display:       'block',
+              minHeight:     28,
+              fontSize:      11,
+              color:         'var(--text-4)',
+              background:    'none',
+              border:        'none',
+              cursor:        'pointer',
+              padding:       '4px 0',
+              fontFamily:    'var(--font-mono)',
+              letterSpacing: '0.05em',
+            }}
+          >
+            {expanded ? '↑ Show less' : '↓ Show more'}
+          </button>
+        )}
       </div>
     </div>
     </>

@@ -873,7 +873,7 @@ function TeaserView({
           title="Session Reliability Index"
           value={teaser?.sriAverage != null ? Math.round(teaser.sriAverage) : '—'}
           blurred={teaser?.sriAverage != null}
-          copy="Composite score across structural fit, bias clarity, council confidence, and calibration \u2014 the single number behind how reliable each of your decisions was. Visible after activating Mirror."
+          copy="Composite score across structural fit, bias clarity, council confidence, and calibration — the single number behind how reliable each of your decisions was. Visible after activating Mirror."
         />
 
         {/* Open Loop (locked) — Sprint RET-4 */}

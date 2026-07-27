@@ -78,10 +78,11 @@ export async function GET(
 
     const anonParam     = BIAS_PARAMETERS.find(b => b.key === anonTop.biasKey)
     const anonLabel     = anonParam?.label ?? anonTop.biasKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-    const anonRaw       = anonTop.ctx.reasoning!.trim()
-    const anonReasoning = anonRaw.length > 220
-      ? anonRaw.slice(0, 220).replace(/\s+\S*$/, '') + '…'
-      : anonRaw
+    // Full text — no server-side truncation. BiasNoteCard clamps and offers
+    // "Show more", same pattern as the Decision/Context sections on this
+    // page, instead of hard-cutting the sentence server-side with no way
+    // to read the rest.
+    const anonReasoning = anonTop.ctx.reasoning!.trim()
 
     return NextResponse.json({ biasNote: { label: anonLabel, reasoning: anonReasoning } })
   }
@@ -107,10 +108,7 @@ export async function GET(
 
   const param     = BIAS_PARAMETERS.find(b => b.key === top.biasKey)
   const label     = param?.label ?? top.biasKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  const rawReason = top.ctx.reasoning!.trim()
-  const reasoning = rawReason.length > 220
-    ? rawReason.slice(0, 220).replace(/\s+\S*$/, '') + '…'
-    : rawReason
+  const reasoning = top.ctx.reasoning!.trim()
 
   return NextResponse.json({ biasNote: { label, reasoning } })
 }
