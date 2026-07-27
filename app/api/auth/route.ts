@@ -1,202 +1,89 @@
-// app/api/auth/link-sessions/route.ts
-// ── Sprint 6 + 6b: Link pre-auth sessions to authenticated user ───────────────
+// app/api/auth/route.ts
+// ── Sprint 6 + 6b + 12: Magic Link SEND endpoint ──────────────────────────────
 //
-// Sprint 6b additions:
-// - Accepts `deviceIds: string[]` (array) instead of single `deviceId`
-// - Updates sessions table by device_id (not just bias_library)
-// - Handles both same-browser (localStorage IDs) and cross-browser (URL-param IDs)
+// Accepts an email (+ optional device/session identity) and sends a Supabase
+// magic link. Embeds the caller's device ID and session IDs as ?xd=&xs= query
+// params on the redirect URL so /auth/callback can recover them even when the
+// link is opened in a different browser (email client, mobile WebView, etc.)
+// where localStorage is empty — see /auth/callback/page.tsx for the read side
+// of this contract.
 //
-// Linking strategy (runs all in parallel):
-//   1. RPC link_sessions_to_user — links sessions by explicit UUID list
-//   2. Device-ID session sweep   — UPDATE sessions WHERE device_id IN (...) AND user_id IS NULL
-//   3. Email session sweep       — UPDATE sessions WHERE user_email = ? AND user_id IS NULL
-//   4. Bias library retro-link   — upgrades anonymous bias rows to user_id lane
-//   5. user_preferences upsert   — ensures Mirror can access the user's preferences
+// Sprint 12 addition: provider-lock pre-check. If this email already signed
+// up via Google, we don't send a link at all — we return 409 { error:
+// 'wrong_provider' } so the client (AuthPanel) can prompt "use Google instead"
+// rather than sending a link that would just fork a duplicate account.
+// (The real backstop — the one that actually deletes any forked user — lives
+// in /api/auth/link-sessions, which runs after every successful auth of
+// either kind. This pre-check just avoids sending a doomed link in the
+// magic-link direction; it can't catch the Google direction since
+// signInWithOAuth redirects straight to Google before we ever see the email.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase'
+import { createClient, createServiceClient } from '@/lib/supabase'
 
 export async function POST(req: Request) {
   try {
-    const { sessionIds, userId, userEmail, deviceIds, deviceId, authMethod } = await req.json() as {
+    const { email, deviceId, sessionIds } = await req.json() as {
+      email?:      string
+      deviceId?:   string
       sessionIds?: string[]
-      userId?:     string
-      userEmail?:  string
-      deviceIds?:  string[]                        // Sprint 6b: array of device IDs to sweep
-      deviceId?:   string                           // legacy single deviceId (kept for backward compat)
-      authMethod?: 'magic_link' | 'google'          // Sprint 12: which flow just authenticated
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId required' }, { status: 400 })
+    if (!email || !email.trim() || !email.includes('@')) {
+      return NextResponse.json({ error: 'valid email required' }, { status: 400 })
     }
 
+    const normalizedEmail = email.trim().toLowerCase()
     const supabase = createServiceClient()
 
-    // ── 0. Provider-lock backstop ───────────────────────────────────────────
-    // /api/auth pre-checks this for the magic-link direction, but there's no
-    // equivalent pre-check for Google — signInWithOAuth redirects straight to
-    // Google's picker before we ever see the email. So this is where the
-    // Google direction actually gets caught, and it's the safety net for the
-    // magic-link direction too (in case that pre-check was skipped or a
-    // client is out of date).
-    //
-    // If this email already has a DIFFERENT user_id locked to a DIFFERENT
-    // signup_method, Supabase just created a forked account for it. Clean up
-    // the just-created duplicate auth user so retries don't pile up orphans,
-    // and tell the client which method the original account actually uses.
-    if (userEmail && authMethod) {
-      const { data: existing } = await supabase
-        .from('user_preferences')
-        .select('user_id, signup_method')
-        .eq('user_email', userEmail)
-        .neq('user_id', userId)
-        .maybeSingle()
-
-      if (existing?.signup_method && existing.signup_method !== authMethod) {
-        const { error: deleteErr } = await supabase.auth.admin.deleteUser(userId)
-        if (deleteErr) {
-          console.warn('[LinkSessions] Failed to clean up forked user (non-fatal):', deleteErr.message)
-        }
-        console.warn(`[LinkSessions] Provider mismatch for ${userEmail}: tried ${authMethod}, locked to ${existing.signup_method}. Forked user ${userId} removed.`)
-
-        return NextResponse.json({
-          status:            'provider_mismatch',
-          correct_provider:  existing.signup_method,
-        }, { status: 409 })
-      }
-    }
-
-    // Normalise device IDs — accept both legacy single field and new array
-    const allDeviceIds = [
-      ...(deviceIds ?? []),
-      ...(deviceId ? [deviceId] : []),
-    ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) // deduplicate
-
-    // ── 1. Link explicit session IDs via RPC ──────────────────────────────────
-    let linkedByIds = 0
-    if (sessionIds?.length) {
-      const { data, error } = await supabase.rpc('link_sessions_to_user', {
-        p_session_ids: sessionIds,
-        p_user_id:     userId,
-        p_user_email:  userEmail ?? null,
-      })
-
-      if (error) {
-        // Non-fatal — log and continue. Device sweep may still recover sessions.
-        console.warn('[LinkSessions] RPC error (non-fatal):', error.message)
-      } else {
-        linkedByIds = data ?? 0
-      }
-    }
-
-    // ── 2. Device-ID session sweep (THE cross-browser fix) ───────────────────
-    // Updates sessions table directly for all device IDs.
-    // This catches: sessions created before the magic link was sent, AND sessions
-    // created by reanalyze AFTER the link was sent (those wouldn't be in ?xs=...).
-    let linkedByDevice = 0
-    for (const did of allDeviceIds) {
-      const { error } = await supabase
-        .from('sessions')
-        .update({
-          user_id:    userId,
-          user_email: userEmail ?? null,
-        })
-        .eq('device_id', did)
-        .is('user_id', null)
-
-      if (error) {
-        console.warn(`[LinkSessions] Device sweep failed for ${did} (non-fatal):`, error.message)
-      } else {
-        linkedByDevice++
-        console.log(`[LinkSessions] device_id=${did}: sweep complete`)
-      }
-    }
-
-    // ── 3. Email session sweep ────────────────────────────────────────────────
-    // Catches sessions where the user had entered their email before auth.
-    // (Sessions where user_email was set but user_id was still null.)
-    let linkedByEmail = 0
-    if (userEmail) {
-      const { error } = await supabase
-        .from('sessions')
-        .update({ user_id: userId })
-        .eq('user_email', userEmail)
-        .is('user_id', null)
-
-      if (error) {
-        console.warn('[LinkSessions] Email sweep failed (non-fatal):', error.message)
-      } else {
-        linkedByEmail = 1
-        console.log('[LinkSessions] email sweep complete')
-      }
-    }
-
-    // ── 4. Bias library retro-link ────────────────────────────────────────────
-    // Upgrades anonymous bias rows to user_id lane for longitudinal accumulation.
-    if (userEmail) {
-      const { error: emailBiasErr } = await supabase
-        .from('bias_library')
-        .update({ user_id: userId, user_email: userEmail })
-        .eq('user_email', userEmail)
-        .is('user_id', null)
-
-      if (emailBiasErr) {
-        console.warn('[LinkSessions] Email bias retro-link failed (non-critical):', emailBiasErr.message)
-      }
-    }
-
-    for (const did of allDeviceIds) {
-      const { error: deviceBiasErr } = await supabase
-        .from('bias_library')
-        .update({ user_id: userId, user_email: userEmail ?? null })
-        .eq('device_id', did)
-        .is('user_email', null)
-        .is('user_id', null)
-
-      if (deviceBiasErr) {
-        console.warn(`[LinkSessions] Device bias retro-link failed for ${did} (non-critical):`, deviceBiasErr.message)
-      }
-    }
-
-    // ── 5. Ensure user_preferences row exists ─────────────────────────────────
-    // signup_method is stamped once, on this user_id's first-ever row. Later
-    // logins omit it from the upsert payload so it's never overwritten — by
-    // this point step 0 has already guaranteed authMethod matches whatever
-    // was originally stamped, so there's nothing to update anyway.
-    const { data: existingPref } = await supabase
+    // ── 0. Provider-lock pre-check ────────────────────────────────────────
+    // If this email already has a row locked to 'google', don't send a link —
+    // tell the client so it can prompt "Continue with Google" instead.
+    const { data: existing } = await supabase
       .from('user_preferences')
       .select('signup_method')
-      .eq('user_id', userId)
+      .eq('user_email', normalizedEmail)
       .maybeSingle()
 
-    const { error: prefError } = await supabase
-      .from('user_preferences')
-      .upsert({
-        user_id:    userId,
-        user_email: userEmail ?? null,
-        ...(existingPref?.signup_method ? {} : { signup_method: authMethod ?? null }),
-      }, { onConflict: 'user_id' })
-
-    if (prefError) {
-      console.warn('[LinkSessions] user_preferences upsert failed (non-critical):', prefError.message)
+    if (existing?.signup_method && existing.signup_method !== 'magic_link') {
+      console.warn(`[Auth] Pre-check blocked magic-link send for ${normalizedEmail}: locked to ${existing.signup_method}`)
+      return NextResponse.json({ error: 'wrong_provider' }, { status: 409 })
     }
 
-    const totalLinked = linkedByIds + linkedByDevice + linkedByEmail
-    console.log(`[LinkSessions] user=${userId}: ${totalLinked} total sessions linked (ids=${linkedByIds}, device=${linkedByDevice}, email=${linkedByEmail})`)
+    // ── 1. Build the redirect URL, embedding device/session identity ──────
+    // so /auth/callback can recover it via ?xd=&xs= even in a different
+    // browser context than the one that requested the link.
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.quorumvault.org').replace(/\/$/, '')
+    const params = new URLSearchParams()
+    if (deviceId) params.set('xd', deviceId)
+    if (sessionIds?.length) params.set('xs', sessionIds.join(','))
+    const query = params.toString()
+    const emailRedirectTo = `${appUrl}/auth/callback${query ? `?${query}` : ''}`
 
-    return NextResponse.json({
-      status:            'ok',
-      linked_sessions:   totalLinked,
-      linked_by_ids:     linkedByIds,
-      linked_by_device:  linkedByDevice,
-      linked_by_email:   linkedByEmail,
-      user_id:           userId,
+    // ── 2. Send the magic link ─────────────────────────────────────────────
+    // Anon client — signInWithOtp is a public-facing auth operation, not one
+    // that needs the service role. persistSession is already disabled for the
+    // non-browser branch of createClient(), so no session state leaks server-side.
+    const anonClient = createClient()
+    const { error: otpError } = await anonClient.auth.signInWithOtp({
+      email:   normalizedEmail,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo,
+      },
     })
 
+    if (otpError) {
+      console.error('[Auth] signInWithOtp failed:', otpError.message)
+      return NextResponse.json({ error: 'Failed to send magic link' }, { status: 500 })
+    }
+
+    console.log(`[Auth] Magic link sent to ${normalizedEmail} (deviceId=${deviceId ?? 'none'}, sessions=${sessionIds?.length ?? 0})`)
+    return NextResponse.json({ status: 'ok' })
+
   } catch (err) {
-    console.error('[LinkSessions] Route error:', err)
+    console.error('[Auth] Route error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
