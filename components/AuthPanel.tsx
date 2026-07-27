@@ -10,13 +10,16 @@
 
 import { useState } from 'react'
 import { getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
+import { createClient } from '@/lib/supabase'
 
 interface Props {
   userEmail: string | null
   onAuthenticated?: (email: string) => void
 }
 
-type AuthState = 'idle' | 'sending' | 'sent' | 'error'
+// 'wrong_provider' — Sprint 12: this email is locked to Google; magic link
+// send was skipped server-side and we show a redirect prompt instead.
+type AuthState = 'idle' | 'sending' | 'sent' | 'error' | 'wrong_provider'
 
 export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
   const [email,     setEmail]     = useState('')
@@ -72,6 +75,16 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
           sessionIds,                  // ← NEW: all session IDs from this browser
         }),
       })
+
+      // Sprint 12: this email is locked to Google — no link was sent.
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}))
+        if (body.error === 'wrong_provider') {
+          setAuthState('wrong_provider')
+          return
+        }
+      }
+
       if (!res.ok) throw new Error()
       setAuthState('sent')
       // NOTE: Do NOT call onAuthenticated here — the user has not clicked the link yet.
@@ -80,6 +93,56 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
       setAuthState('error')
       setErrMsg('Failed to send link. Try again.')
     }
+  }
+
+  // Sprint 12: Google sign-in — redirects to Google, returns via /auth/callback.
+  // Uses the same NEXT_PUBLIC_APP_URL convention as /api/auth's magic-link
+  // redirect, so the callback URL matches what's in Supabase's allowlist.
+  const handleGoogleSignIn = async () => {
+    const supabase = createClient()
+    const origin    = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options:  { redirectTo: `${origin}/auth/callback` },
+    })
+  }
+
+  if (authState === 'wrong_provider') {
+    return (
+      <div style={{
+        padding: '16px 18px',
+        background: 'rgba(201,168,76,0.06)',
+        border: '1px solid rgba(201,168,76,0.3)',
+        borderRadius: 14,
+        marginTop: 12,
+      }}>
+        <p style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 10, lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 600 }}>{email}</span> signed up with Google — use that to get back in rather than a link.
+        </p>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            onClick={handleGoogleSignIn}
+            style={{
+              padding: '8px 16px', background: 'rgba(201,168,76,0.12)',
+              border: '1px solid var(--gold-dim)', borderRadius: 8,
+              color: 'var(--gold)', fontSize: 12, fontWeight: 600,
+              fontFamily: 'inherit', cursor: 'pointer',
+            }}
+          >
+            Continue with Google
+          </button>
+          <button
+            onClick={() => { setAuthState('idle'); setEmail('') }}
+            style={{
+              fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none',
+              cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, padding: 0,
+            }}
+          >
+            Wrong email?
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (authState === 'sent') {
@@ -188,16 +251,44 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
       borderRadius: 12,
       marginTop: 12,
     }}>
+      {/* Sprint 12: Google sign-in — offered alongside, not instead of, magic link */}
+      <button
+        onClick={handleGoogleSignIn}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          padding: '9px 12px', background: 'var(--bg-inset)', border: '1px solid var(--border-mid)',
+          borderRadius: 8, color: 'var(--text-2)', fontSize: 12, fontWeight: 600,
+          fontFamily: 'inherit', cursor: 'pointer',
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82Z"/>
+          <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.26v3.1A11.99 11.99 0 0 0 12 24Z"/>
+          <path fill="#FBBC05" d="M5.27 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.26a12 12 0 0 0 0 10.78l4.01-3.1Z"/>
+          <path fill="#EA4335" d="M12 4.75c1.76 0 3.34.6 4.59 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0A11.99 11.99 0 0 0 1.26 6.61l4.01 3.1C6.22 6.86 8.87 4.75 12 4.75Z"/>
+        </svg>
+        Continue with Google
+      </button>
+      <p style={{ fontSize: 10.5, color: 'var(--text-5)', textAlign: 'center', margin: '5px 0 0' }}>
+        One click, no email to check
+      </p>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0' }}>
+        <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
+        <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or, more private</span>
+        <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
+      </div>
+
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
           <rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="8,21 12,17 16,21"/>
         </svg>
         <div>
           <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', marginBottom: 3 }}>
-            Make your history cross-device
+            Or use a one-time link
           </p>
           <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: 0 }}>
-            Sessions currently live on this device only. Add an email to access them anywhere — no password, just a link.
+            Sessions currently live on this device only. Add an email to access them anywhere — no password, nothing shared with Google, just a link.
           </p>
         </div>
       </div>

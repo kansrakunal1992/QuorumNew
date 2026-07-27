@@ -28,7 +28,10 @@ import { getStoredSessionIds, storeUserEmail, getStoredDeviceId } from '@/lib/st
 function CallbackHandler() {
   const router       = useRouter()
   const searchParams = useSearchParams()
-  const [status, setStatus] = useState<'processing' | 'linking' | 'done' | 'error'>('processing')
+  const [status, setStatus] = useState<'processing' | 'linking' | 'done' | 'error' | 'mismatch'>('processing')
+  const [correctProvider, setCorrectProvider] = useState<'magic_link' | 'google' | null>(null)
+  const [mismatchEmail,   setMismatchEmail]   = useState('')
+  const [resendState,     setResendState]     = useState<'idle' | 'sending' | 'sent'>('idle')
 
   useEffect(() => {
     const run = async () => {
@@ -97,8 +100,15 @@ function CallbackHandler() {
         console.log(`[AuthCallback]   local: ${localSessionIds.length} sessions, device=${localDeviceId}`)
         console.log(`[AuthCallback]   url:   ${urlSessionIds.length} sessions, device=${urlDeviceId}`)
 
+        // Sprint 12: which method this session actually authenticated with.
+        // Supabase sets app_metadata.provider to 'email' for magic link /
+        // OTP, and 'google' for Google OAuth — read from the session itself
+        // rather than trusting anything the client claimed beforehand.
+        const authMethod: 'magic_link' | 'google' =
+          user.app_metadata?.provider === 'google' ? 'google' : 'magic_link'
+
         // ── Step 4: Link all recovered sessions to the authenticated user ─────
-        await fetch('/api/auth/link-sessions', {
+        const linkRes = await fetch('/api/auth/link-sessions', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -106,8 +116,24 @@ function CallbackHandler() {
             userId:     user.id,
             userEmail:  user.email,
             deviceIds,                   // device IDs for DB-level session lookup
+            authMethod,
           }),
         })
+
+        // Sprint 12: provider-lock backstop tripped — this email is locked to
+        // the other method. link-sessions already deleted the just-created
+        // duplicate auth user server-side; sign out here too so no stray
+        // client-side session for that deleted user lingers.
+        if (linkRes.status === 409) {
+          const body = await linkRes.json().catch(() => ({}))
+          if (body.status === 'provider_mismatch') {
+            await supabase.auth.signOut()
+            setMismatchEmail(user.email ?? '')
+            setCorrectProvider(body.correct_provider ?? null)
+            setStatus('mismatch')
+            return
+          }
+        }
 
         setStatus('done')
         // Encode email into the redirect URL so any browser (Chrome main, Custom Tab,
@@ -127,6 +153,88 @@ function CallbackHandler() {
 
     run()
   }, [router, searchParams])
+
+  const handleResendMagicLink = async () => {
+    setResendState('sending')
+    try {
+      await fetch('/api/auth', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: mismatchEmail }),
+      })
+      setResendState('sent')
+    } catch {
+      setResendState('idle')
+    }
+  }
+
+  const handleRetryGoogle = async () => {
+    const supabase = createClient()
+    const origin    = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options:  { redirectTo: `${origin}/auth/callback` },
+    })
+  }
+
+  if (status === 'mismatch') {
+    return (
+      <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-void)', padding: 20 }}>
+        <div style={{ textAlign: 'center', maxWidth: 360 }}>
+          <div style={{ fontSize: 28, marginBottom: 16 }}>◆</div>
+          <p style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 8, fontWeight: 600 }}>
+            You already have an account
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 20, lineHeight: 1.5 }}>
+            <span style={{ color: 'var(--text-2)' }}>{mismatchEmail}</span> signed up with{' '}
+            {correctProvider === 'google' ? 'Google' : 'a one-time email link'} — use that to get back in.
+          </p>
+
+          {correctProvider === 'google' ? (
+            <button
+              onClick={handleRetryGoogle}
+              style={{
+                padding: '10px 20px', background: 'rgba(201,168,76,0.12)',
+                border: '1px solid var(--gold-dim)', borderRadius: 8,
+                color: 'var(--gold)', fontSize: 12, fontWeight: 600,
+                fontFamily: 'inherit', cursor: 'pointer',
+              }}
+            >
+              Continue with Google
+            </button>
+          ) : resendState === 'sent' ? (
+            <p style={{ fontSize: 12, color: 'var(--gold)' }}>Link sent — check your inbox.</p>
+          ) : (
+            <button
+              onClick={handleResendMagicLink}
+              disabled={resendState === 'sending'}
+              style={{
+                padding: '10px 20px', background: 'rgba(201,168,76,0.12)',
+                border: '1px solid var(--gold-dim)', borderRadius: 8,
+                color: 'var(--gold)', fontSize: 12, fontWeight: 600,
+                fontFamily: 'inherit', cursor: resendState === 'sending' ? 'not-allowed' : 'pointer',
+                opacity: resendState === 'sending' ? 0.6 : 1,
+              }}
+            >
+              {resendState === 'sending' ? 'Sending…' : 'Send me a link instead'}
+            </button>
+          )}
+
+          <p style={{ marginTop: 16 }}>
+            <button
+              onClick={() => router.replace('/')}
+              style={{
+                fontSize: 11, color: 'var(--text-5)', background: 'none', border: 'none',
+                cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, padding: 0,
+              }}
+            >
+              Back to home
+            </button>
+          </p>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-void)', padding: 20 }}>

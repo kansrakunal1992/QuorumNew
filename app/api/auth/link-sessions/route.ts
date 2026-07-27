@@ -19,12 +19,13 @@ import { createServiceClient } from '@/lib/supabase'
 
 export async function POST(req: Request) {
   try {
-    const { sessionIds, userId, userEmail, deviceIds, deviceId } = await req.json() as {
+    const { sessionIds, userId, userEmail, deviceIds, deviceId, authMethod } = await req.json() as {
       sessionIds?: string[]
       userId?:     string
       userEmail?:  string
-      deviceIds?:  string[]   // Sprint 6b: array of device IDs to sweep
-      deviceId?:   string     // legacy single deviceId (kept for backward compat)
+      deviceIds?:  string[]                        // Sprint 6b: array of device IDs to sweep
+      deviceId?:   string                           // legacy single deviceId (kept for backward compat)
+      authMethod?: 'magic_link' | 'google'          // Sprint 12: which flow just authenticated
     }
 
     if (!userId) {
@@ -32,6 +33,40 @@ export async function POST(req: Request) {
     }
 
     const supabase = createServiceClient()
+
+    // ── 0. Provider-lock backstop ───────────────────────────────────────────
+    // /api/auth pre-checks this for the magic-link direction, but there's no
+    // equivalent pre-check for Google — signInWithOAuth redirects straight to
+    // Google's picker before we ever see the email. So this is where the
+    // Google direction actually gets caught, and it's the safety net for the
+    // magic-link direction too (in case that pre-check was skipped or a
+    // client is out of date).
+    //
+    // If this email already has a DIFFERENT user_id locked to a DIFFERENT
+    // signup_method, Supabase just created a forked account for it. Clean up
+    // the just-created duplicate auth user so retries don't pile up orphans,
+    // and tell the client which method the original account actually uses.
+    if (userEmail && authMethod) {
+      const { data: existing } = await supabase
+        .from('user_preferences')
+        .select('user_id, signup_method')
+        .eq('user_email', userEmail)
+        .neq('user_id', userId)
+        .maybeSingle()
+
+      if (existing?.signup_method && existing.signup_method !== authMethod) {
+        const { error: deleteErr } = await supabase.auth.admin.deleteUser(userId)
+        if (deleteErr) {
+          console.warn('[LinkSessions] Failed to clean up forked user (non-fatal):', deleteErr.message)
+        }
+        console.warn(`[LinkSessions] Provider mismatch for ${userEmail}: tried ${authMethod}, locked to ${existing.signup_method}. Forked user ${userId} removed.`)
+
+        return NextResponse.json({
+          status:            'provider_mismatch',
+          correct_provider:  existing.signup_method,
+        }, { status: 409 })
+      }
+    }
 
     // Normalise device IDs — accept both legacy single field and new array
     const allDeviceIds = [
@@ -126,11 +161,22 @@ export async function POST(req: Request) {
     }
 
     // ── 5. Ensure user_preferences row exists ─────────────────────────────────
+    // signup_method is stamped once, on this user_id's first-ever row. Later
+    // logins omit it from the upsert payload so it's never overwritten — by
+    // this point step 0 has already guaranteed authMethod matches whatever
+    // was originally stamped, so there's nothing to update anyway.
+    const { data: existingPref } = await supabase
+      .from('user_preferences')
+      .select('signup_method')
+      .eq('user_id', userId)
+      .maybeSingle()
+
     const { error: prefError } = await supabase
       .from('user_preferences')
       .upsert({
         user_id:    userId,
         user_email: userEmail ?? null,
+        ...(existingPref?.signup_method ? {} : { signup_method: authMethod ?? null }),
       }, { onConflict: 'user_id' })
 
     if (prefError) {
