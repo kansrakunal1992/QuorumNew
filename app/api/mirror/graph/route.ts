@@ -63,7 +63,8 @@ import { NextResponse }            from 'next/server'
 import { createServiceClient }     from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState, getMirrorTier } from '@/lib/mirror-access'
-import { ADVISORY_BYPASSES_THRESHOLDS }        from '@/lib/mirror-tier-config'
+// ADVISORY_BYPASSES_THRESHOLDS import removed — Advisory tier retired,
+// threshold bypass now keyed off accessState directly (see below).
 import { decryptGraphEdge, type GraphEdge, type EdgeType } from '@/lib/graph-engine'
 import { decrypt }                 from '@/lib/encryption'
 
@@ -141,7 +142,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', userId),
   ])
   const sessionCount = sessionCountRaw ?? 0
-  const isAdvisory   = tier === 'advisory' && ADVISORY_BYPASSES_THRESHOLDS
+  // Advisory tier retired, folded into Elite (Phase 6) — any paid access
+  // (accessState === 'unlocked') now bypasses the graph threshold, same as
+  // 'advisory' alone did before.
+  const bypassesThresholds = accessState === 'unlocked'
   const isPaid       = accessState === 'unlocked'
 
   // ── 3. Locked tier — not enough sessions for any connection to exist ──────
@@ -217,7 +221,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   // ── 6. Determine tier now that we know the real edge count ────────────────
   const realEdgeCount = allEdges.length
-  const fullCorpusMet = isAdvisory || (sessionCount >= MIN_GRAPH_SESSIONS && realEdgeCount >= MIN_GRAPH_EDGES)
+  const fullCorpusMet = bypassesThresholds || (sessionCount >= MIN_GRAPH_SESSIONS && realEdgeCount >= MIN_GRAPH_EDGES)
   const graphTier: GraphTier = (isPaid && fullCorpusMet) ? 'full' : 'preview'
 
   // ── 7. Select which edges are shown, and redact if preview ────────────────

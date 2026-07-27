@@ -3,10 +3,12 @@
 //
 // Runs before every matched request (see config.matcher below). Reads the
 // user's Bearer token — the same auth scheme every route already uses — and
-// resolves their product tier (free/elite/private) via the same
-// mirror_access table lib/product-tier.ts's getProductTier() reads. Stamps
-// the result onto request headers (x-product-tier, x-private-model-family)
-// and forwards the request unmodified otherwise.
+// resolves their product tier (free/elite/private), any TD-LD-11 per-user
+// routing override, and their user id, via the same mirror_access table
+// lib/product-tier.ts's getProductTier() reads. Stamps the result onto
+// request headers (x-user-id, x-product-tier, x-private-model-family,
+// x-model-route-fast, x-model-route-premium) and forwards the request
+// unmodified otherwise.
 //
 // This is what lets lib/ai-client.ts's tiered routing (TIERED_ROUTING_ENABLED)
 // work with ZERO changes to any of the 15 AI call sites or their route
@@ -74,9 +76,19 @@ export async function middleware(req: NextRequest) {
 
     if (user) {
       const tierInfo = await getProductTier(user.id)
+      requestHeaders.set('x-user-id', user.id)
       requestHeaders.set('x-product-tier', tierInfo.tier)
       if (tierInfo.privateModelFamily) {
         requestHeaders.set('x-private-model-family', tierInfo.privateModelFamily)
+      }
+      // TD-LD-10/TD-LD-11 per-user routing override — see lib/product-tier.ts
+      // and lib/ai-client.ts's resolveProvider() for how these are checked
+      // before the tier's default model mapping.
+      if (tierInfo.modelRouteFast) {
+        requestHeaders.set('x-model-route-fast', tierInfo.modelRouteFast)
+      }
+      if (tierInfo.modelRoutePremium) {
+        requestHeaders.set('x-model-route-premium', tierInfo.modelRoutePremium)
       }
     }
   } catch (err) {

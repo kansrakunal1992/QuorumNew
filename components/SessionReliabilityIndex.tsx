@@ -23,8 +23,8 @@
 import { useState, useEffect } from 'react'
 import type { SessionScoreData, MirrorTier } from '@/lib/types'
 import { formatDate } from '@/lib/dates'
-import AdvisoryUpsellCard from '@/components/AdvisoryUpsellCard'
-import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'
+// AdvisoryUpsellCard/ADVISORY_UPSELL_COPY imports removed — Advisory tier
+// retired, "Your next move" now shows for any paid tier (see below).
 
 // ── Sub-score dot ─────────────────────────────────────────────────────────────
 
@@ -263,28 +263,22 @@ export default function SessionReliabilityIndex({ authToken, tier }: { authToken
         ))}
       </div>
 
-      {/* Action plan callout — Mirror Advisory only (Phase 5) */}
-      {tier === 'advisory' ? (
-        actionPlan && (
-          <div style={{
-            marginTop: 20,
-            padding: '14px 16px',
-            background: 'var(--bg-card-alt)',
-            border: '1px solid var(--border-dim)',
-            borderLeft: '3px solid var(--gold-dim)',
-            borderRadius: 8,
-          }}>
-            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
-              Your next move
-            </p>
-            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
-              {actionPlan}
-            </p>
-          </div>
-        )
-      ) : (
-        <div style={{ marginTop: 20 }}>
-          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.sriNextMove} authToken={authToken} source="sriNextMove" />
+      {/* Action plan callout — any paid tier (Advisory retired, folded into Elite, Phase 6) */}
+      {actionPlan && (
+        <div style={{
+          marginTop: 20,
+          padding: '14px 16px',
+          background: 'var(--bg-card-alt)',
+          border: '1px solid var(--border-dim)',
+          borderLeft: '3px solid var(--gold-dim)',
+          borderRadius: 8,
+        }}>
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Your next move
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
+            {actionPlan}
+          </p>
         </div>
       )}
 

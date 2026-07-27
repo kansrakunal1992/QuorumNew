@@ -3,8 +3,10 @@
 // (not an exhaustive help-center) and targeted at the actual objections
 // raised in feedback: privacy, "is this a chatbot," and pricing/value.
 // Copy reuses figures already published on the marketing site (Council
-// free, Mirror ₹2,999/mo · ₹29,999/yr [Quorum Elite], Advisory unpublished/by application)
-// rather than inventing new claims.
+// free, Elite [Mirror] ₹2,999/mo · ₹29,999/yr, Private custom starting at
+// ₹9,999/user/month) rather than inventing new claims. Advisory tier
+// retired (Phase 6) — its five feature advantages folded into Elite; no
+// longer a distinct customer-facing tier, so no FAQ entry for it below.
 //
 // Each question is its own accordion row, collapsed by default — this is
 // deliberately a *different* interaction pattern from MeetTheCouncil's
@@ -35,7 +37,7 @@ const FAQS: FAQItem[] = [
   },
   {
     q: 'What does it cost?',
-    a: "The Council — the core six-advisor session — is free. Elite adds Mirror, which compounds insight across your decisions over time, for ₹2,999/mo or ₹29,999/yr. Advisory is a founder-led, capped, standing relationship priced once we understand the decision — not published here.",
+    a: "The Council — the core six-advisor session — is free. Elite adds Mirror, which compounds insight across your decisions over time, for ₹2,999/mo or ₹29,999/yr. Private is a custom enterprise deployment, starting at ₹9,999/user/month — priced once we understand your organisation's needs.",
   },
   {
     q: "What's the difference between the Council and Mirror?",
@@ -50,8 +52,8 @@ const FAQS: FAQItem[] = [
     a: "Because each plan optimises for a different goal. Free is built to be accessible to everyone while staying sustainable. Elite is built for the highest-quality personal decision intelligence. Private is built for complete ownership and enterprise deployment. The model each plan runs on follows from that goal — it isn't the goal itself; Quorum's judgment quality is what you're actually buying.",
   },
   {
-    q: 'Can I cancel Mirror anytime?',
-    a: "Yes. It's a straightforward monthly or annual subscription — cancel whenever you like, no lock-in.",
+    q: 'Can I cancel Elite or Private anytime?',
+    a: "Elite is a straightforward self-serve monthly or annual subscription — cancel whenever you like, no lock-in. Private is a custom enterprise arrangement, so changes or cancellation go through your account contact rather than a self-service button.",
   },
   {
     q: 'Does Quorum give financial or legal advice?',
@@ -68,10 +70,6 @@ const FAQS: FAQItem[] = [
   {
     q: 'If I push back on one advisor, do the others find out?',
     a: "Yes, automatically. A challenge is treated as new information for the whole council, not a private exchange with one advisor — so it reaches all six. Each advisor still reassesses it independently through its own lens and may keep, strengthen, weaken, or reverse its position; sharing the information never means they share a conclusion. The Council synthesizes once, after every advisor has had a chance to weigh in.",
-  },
-  {
-    q: "What's the Advisory tier?",
-    a: "A founder-led, capped relationship for decisions where the cost of being wrong is measured in crores, not lakhs. Pricing is shared once we've understood the decision, not published upfront.",
   },
   {
     q: 'Can I use Quorum on my phone?',

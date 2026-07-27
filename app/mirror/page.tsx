@@ -46,8 +46,9 @@ import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprin
 import MindChangeTile         from '@/components/MindChangeTile'        // Phase 4
 import type { SummaryData }   from '@/components/MirrorSummaryCard'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier } from '@/lib/types'
-import AdvisoryUpsellCard      from '@/components/AdvisoryUpsellCard'      // Phase 4/5
-import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'             // Phase 4/5
+// AdvisoryUpsellCard/ADVISORY_UPSELL_COPY imports removed — Advisory tier
+// retired, Peer Benchmark now unconditional for any paid tier (see
+// BenchmarkModule below).
 import { PaymentButton }         from '@/components/PaymentButton'           // Sprint CX-PAY
 import { CancelSubscription }    from '@/components/CancelSubscription'       // Sprint CX-PAY
 import DecisionGraph             from '@/components/DecisionGraph'             // Sprint G3
@@ -977,8 +978,9 @@ function BenchmarkModule({ authToken, tier }: { authToken: string; tier: MirrorT
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Phase 5: Benchmark is Advisory-only — don't fetch for 'mirror' tier.
-    if (tier !== 'advisory' || !authToken) { setLoading(false); return }
+    // Advisory tier retired (deprecated) — Peer Benchmark now available to
+    // any paid tier ('mirror'/Elite), same as it was for 'advisory' before.
+    if (!authToken) { setLoading(false); return }
     fetch('/api/mirror/benchmark', {
       headers: { Authorization: `Bearer ${authToken}` },
     })
@@ -987,21 +989,6 @@ function BenchmarkModule({ authToken, tier }: { authToken: string; tier: MirrorT
       .catch(() => setData({ insufficient: true, cluster_size: 0, top_dimensions: [], top_biases: [] }))
       .finally(() => setLoading(false))
   }, [authToken, tier])
-
-  // Phase 5: 'mirror' tier sees an upsell card instead of cohort data.
-  if (tier !== 'advisory') {
-    return (
-      <>
-        <hr className="gold-rule" style={{ margin: '0 0 32px' }} />
-        <div style={{ marginBottom: 28 }}>
-          <h3 className="mirror-section-h3" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px' }}>
-            Others in Similar Decisions
-          </h3>
-          <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.benchmark} authToken={authToken} source="benchmark" />
-        </div>
-      </>
-    )
-  }
 
   // Silently hide while loading or when cluster is insufficient
   if (loading || !data || data.insufficient) return null

@@ -22,8 +22,10 @@
 import { useState, useEffect } from 'react'
 import { formatShortDate } from '@/lib/dates'
 import type { MirrorTier } from '@/lib/types'
-import AdvisoryUpsellCard from '@/components/AdvisoryUpsellCard'
-import { ADVISORY_UPSELL_COPY } from '@/lib/mirror-tier-config'
+// AdvisoryUpsellCard/ADVISORY_UPSELL_COPY imports removed — Advisory tier
+// retired (Phase 6). ContradictionSummaryView (the component that used them)
+// removed below too — it was only reachable from the branch that showed
+// summary-only data to non-Advisory users, which no longer exists.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -461,84 +463,8 @@ function categoryLabel(key: string): string {
   return CATEGORY_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function ContradictionSummaryView({ 
-  active,
-  dismissedCount,
-  lastRanAt,
-  authToken,
-}: {
-  active:         Contradiction[]
-  dismissedCount: number
-  lastRanAt:      string | null
-  authToken:      string
-}) {
-  // Group by category, keep the sharpest severity per category for ordering
-  const severityRank: Record<string, number> = { sharp: 0, notable: 1, forming: 2 }
-  const byCategory = new Map<string, { count: number; severity: Contradiction['severity'] }>()
-  for (const c of active) {
-    const existing = byCategory.get(c.category)
-    if (!existing || severityRank[c.severity] < severityRank[existing.severity]) {
-      byCategory.set(c.category, { count: (existing?.count ?? 0) + 1, severity: c.severity })
-    } else {
-      existing.count += 1
-    }
-  }
-
-  return (
-    <div>
-      {dismissedCount > 0 && (
-        <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 10px', letterSpacing: '0.03em' }}>
-          {dismissedCount} dismissed all-time &nbsp;·&nbsp; {active.length} active
-        </p>
-      )}
-
-      <div style={{
-        background:   'linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 50%), var(--bg-card)',
-        border:       '1px solid var(--border-mid)',
-        borderRadius: 12,
-        padding:      '18px 20px',
-        marginBottom: 14,
-        position:     'relative',
-        overflow:     'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: 0, left: 0,
-          width: '100%', height: 2,
-          background: 'linear-gradient(90deg, var(--gold-dim) 0%, transparent 60%)',
-        }} />
-
-        <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.6 }}>
-          {active.length} contradiction{active.length !== 1 ? 's' : ''} detected — where what you said you believe
-          and what you actually did come apart across your decisions:
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {Array.from(byCategory.entries()).map(([category, { count, severity }]) => (
-            <div key={category} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                background: SEVERITY_COLOR[severity],
-              }} />
-              <span style={{ fontSize: 12.5, color: 'var(--text-2)', flex: 1 }}>
-                {categoryLabel(category)}
-              </span>
-              <span style={{ fontSize: 10.5, color: 'var(--text-4)', fontVariantNumeric: 'tabular-nums' }}>
-                {count}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <AdvisoryUpsellCard {...ADVISORY_UPSELL_COPY.contradictionDetail} authToken={authToken} source="contradictionDetail" />
-
-      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '10px 0 0', lineHeight: 1.5 }}>
-        Extracted from your follow-up answers and pushbacks — your own words, not an assessment.
-        {lastRanAt && ` Last updated ${formatShortDate(lastRanAt)}.`}
-      </p>
-    </div>
-  )
-}
+// ContradictionSummaryView removed (Phase 6) — was dead code after Advisory
+// tier retirement; only reachable from the summary-only branch removed above.
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -548,9 +474,11 @@ export default function ContradictionDetector({ authToken, sessionCount, tier }:
   const [error,     setError]     = useState(false)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
 
-  // Phase 5: Advisory bypasses the 40-session threshold entirely — full
-  // access from session 1, same data the route already returns.
-  const belowThreshold = tier !== 'advisory' && sessionCount < UNLOCK_THRESHOLD
+  // Advisory tier retired, folded into Elite (Phase 6) — this component only
+  // ever renders for paid access (MirrorTier = 'mirror' | 'advisory'), and
+  // both now bypass the 40-session threshold, same as 'advisory' did alone
+  // before.
+  const belowThreshold = false
 
   useEffect(() => {
     if (belowThreshold) { setLoading(false); return }
@@ -618,18 +546,8 @@ export default function ContradictionDetector({ authToken, sessionCount, tier }:
 
   // ── Live contradictions ───────────────────────────────────────────────────
 
-  // Phase 5: Mirror tier sees count + category only (summary view).
-  // Advisory tier sees full cards with exact statements (existing behavior).
-  if (tier !== 'advisory') {
-    return (
-      <ContradictionSummaryView
-        active={active}
-        dismissedCount={data?.dismissedCount ?? 0}
-        lastRanAt={data?.lastRanAt ?? null}
-        authToken={authToken}
-      />
-    )
-  }
+  // Advisory tier retired, folded into Elite (Phase 6) — full detail (exact
+  // statements) now shows for any paid tier, same as 'advisory' alone before.
 
   return (
     <div>

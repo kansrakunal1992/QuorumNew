@@ -226,9 +226,11 @@ export default function DecisionRules({ authToken, sessionCount, topBiasLabel, t
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
 
-  // Phase 5: Advisory bypasses the 8-session threshold — /api/mirror/rules
-  // does the same server-side, so this only needs to skip the local gate.
-  const belowThreshold = tier !== 'advisory' && sessionCount < RULES_SESSION_THRESHOLD
+  // Advisory tier retired, folded into Elite (Phase 6) — this component only
+  // ever renders for paid access (MirrorTier = 'mirror' | 'advisory'), and
+  // both now bypass the 8-session threshold, same as 'advisory' did alone
+  // before. /api/mirror/rules does the same server-side.
+  const belowThreshold = false
 
   useEffect(() => {
     if (belowThreshold) { setLoading(false); return }

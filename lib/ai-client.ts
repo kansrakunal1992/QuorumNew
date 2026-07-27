@@ -109,25 +109,44 @@ import 'server-only'
  * error if its endpoint env vars are unset, rather than silently falling
  * back to a different tier's model. Do not treat a caught error from this
  * branch as "Private tier is broken" — it means the infra isn't live yet.
+ *
+ * Per-user routing override (TD-LD-10 / TD-LD-11): a single account can be
+ * granted a model_route_fast / model_route_premium override via
+ * /api/admin/grant-mirror-access — e.g. the founder's own account forced to
+ * DeepSeek for testing while every other account routes normally by tier, at
+ * the same time. Checked before the tier default in resolveProvider() below.
+ * NULL (every row's default) means no override.
+ *
+ * Persisted audit log (TD-LD-10): every tiered-mode call writes a row to
+ * ai_request_log — user, tier, role, resolved target/model, whether an
+ * override was the reason — fire-and-forget, never blocking or failing the
+ * actual call. Ties into the eventual privacy audit's ability to verify
+ * what's claimed, rather than relying on ephemeral console logs. Writes
+ * nothing when TIERED_ROUTING_ENABLED is false — matches the master
+ * switch's "zero behavior change when off" guarantee.
  */
 
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI    from 'openai'
 import { headers } from 'next/headers'
 import { getCurrentTier } from './tier-context'
+import { createServiceClient } from './supabase'
+import { FREE_TIER } from './product-tier'
 import type { ProductTierInfo } from './product-tier'
-import type { ProductTier, PrivateModelFamily } from './types'
+import type { ProductTier, PrivateModelFamily, RouteOverride } from './types'
 
 // ── Tier resolution precedence ────────────────────────────────────────────────
 // 1. AsyncLocalStorage context (lib/tier-context.ts) — set explicitly, e.g. by
 //    a cron/batch route wrapping one user's iteration. Checked first because
 //    an explicit per-iteration override should always win over whatever
 //    headers happen to be on the batch job's own trigger request.
-// 2. Request headers (x-product-tier / x-private-model-family) — set
-//    automatically by middleware.ts for every normal per-user request. This
-//    is what makes tiered routing work with ZERO changes to any of the 15
-//    call sites or their route handlers: middleware resolves tier once per
-//    request before any route code runs, and ai-client.ts reads it back here.
+// 2. Request headers (x-product-tier / x-private-model-family / x-user-id /
+//    x-model-route-fast / x-model-route-premium) — set automatically by
+//    middleware.ts for every normal per-user request. This is what makes
+//    tiered routing work with ZERO changes to any of the 15 call sites or
+//    their route handlers: middleware resolves tier (and any TD-LD-11
+//    override) once per request before any route code runs, and
+//    ai-client.ts reads it back here.
 // 3. 'free' — no context set and no headers present (e.g. headers() thrown
 //    outside a request scope, or middleware's matcher didn't cover this
 //    route). Conservative default, same reasoning as tier-context.ts's doc
@@ -138,7 +157,13 @@ async function getTierFromHeaders(): Promise<ProductTierInfo | undefined> {
     const tier = h.get('x-product-tier') as ProductTier | null
     if (!tier) return undefined
     const family = h.get('x-private-model-family') as PrivateModelFamily | null
-    return { tier, privateModelFamily: tier === 'private' ? family : null }
+    return {
+      tier,
+      privateModelFamily: tier === 'private' ? family : null,
+      userId:             h.get('x-user-id'),
+      modelRouteFast:     h.get('x-model-route-fast')    as RouteOverride | null,
+      modelRoutePremium:  h.get('x-model-route-premium') as RouteOverride | null,
+    }
   } catch {
     // headers() throws when called outside a request-scoped execution
     // context (e.g. a plain script, or certain non-request invocations).
@@ -293,6 +318,31 @@ function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTar
   }
 }
 
+// ── Per-user routing override (TD-LD-10 / TD-LD-11) ─────────────────────────
+// Checked BEFORE resolveTieredTarget's tier default — see
+// supabase/add_model_route_overrides_and_request_log.sql and
+// lib/product-tier.ts. Same vocabulary as ResolvedTarget.kind, just
+// underscore_case in the DB/headers (SQL/HTTP-header convention) vs
+// kebab-case here (this file's existing convention) — translated 1:1, no
+// semantic difference.
+function resolveOverrideTarget(override: RouteOverride | null | undefined, role: Role): ResolvedTarget | undefined {
+  switch (override) {
+    case 'deepseek':           return { kind: 'deepseek-legacy' }
+    case 'mistral_cloud':      return { kind: 'mistral-cloud' }
+    case 'anthropic_elite':    return { kind: 'anthropic-elite' }
+    case 'qwen_selfhosted':    return { kind: 'qwen-selfhosted', role }
+    case 'mistral_selfhosted': return { kind: 'mistral-selfhosted', role }
+    default:                   return undefined
+  }
+}
+
+interface ResolveResult {
+  target:      ResolvedTarget
+  tierInfo?:   ProductTierInfo   // undefined in legacy mode — no tier concept there
+  role?:       Role              // undefined in legacy mode
+  wasOverride: boolean
+}
+
 /**
  * resolveProvider — single choke point for both legacy and tiered routing.
  *
@@ -302,23 +352,30 @@ function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTar
  * AI_PROVIDER/GLOBAL_PROVIDER when omitted.
  *
  * Tiered path (TIERED_ROUTING_ENABLED=true): reads tier-context, reinterprets
- * `requested` as a role, resolves (tier, role) → a concrete target. Falls
- * back to 'free' if no tier-context was set (see lib/tier-context.ts doc
- * comment on why that's the safe default for an un-wired call site).
+ * `requested` as a role, checks that account's per-user routing override
+ * first (TD-LD-11), and falls back to (tier, role) → a concrete target when
+ * there's no override. Falls back to 'free' if no tier-context was set (see
+ * lib/tier-context.ts doc comment on why that's the safe default for an
+ * un-wired call site).
  */
-async function resolveProvider(requested?: 'anthropic' | 'deepseek'): Promise<ResolvedTarget> {
+async function resolveProvider(requested?: 'anthropic' | 'deepseek'): Promise<ResolveResult> {
   if (!TIERED_ROUTING_ENABLED) {
-    if (ROUTING_MODE === 'deepseek_only') return { kind: 'deepseek-legacy' }
+    if (ROUTING_MODE === 'deepseek_only') return { target: { kind: 'deepseek-legacy' }, wasOverride: false }
     const p = requested ?? GLOBAL_PROVIDER
-    return p === 'deepseek' ? { kind: 'deepseek-legacy' } : { kind: 'anthropic-legacy' }
+    return { target: p === 'deepseek' ? { kind: 'deepseek-legacy' } : { kind: 'anthropic-legacy' }, wasOverride: false }
   }
 
   // Precedence: explicit AsyncLocalStorage override (cron/batch routes) →
   // middleware-populated headers (every normal route, zero wiring needed) →
   // 'free' (see the doc comment above getTierFromHeaders for why).
-  const tierInfo = getCurrentTier() ?? (await getTierFromHeaders()) ?? { tier: 'free' as const, privateModelFamily: null }
+  const tierInfo = getCurrentTier() ?? (await getTierFromHeaders()) ?? FREE_TIER
   const role     = roleFromRequested(requested)
-  return resolveTieredTarget(tierInfo, role)
+
+  const overrideValue  = role === 'premium' ? tierInfo.modelRoutePremium : tierInfo.modelRouteFast
+  const overrideTarget = resolveOverrideTarget(overrideValue, role)
+  if (overrideTarget) return { target: overrideTarget, tierInfo, role, wasOverride: true }
+
+  return { target: resolveTieredTarget(tierInfo, role), tierInfo, role, wasOverride: false }
 }
 
 function describeTarget(t: ResolvedTarget): string {
@@ -329,6 +386,51 @@ function describeTarget(t: ResolvedTarget): string {
     case 'anthropic-elite':    return `anthropic-elite (${ELITE_PREMIUM_MODEL})`
     case 'qwen-selfhosted':    return `qwen-selfhosted/${t.role} (${t.role === 'premium' ? QWEN_PREMIUM_MODEL : QWEN_FAST_MODEL})`
     case 'mistral-selfhosted': return `mistral-selfhosted/${t.role} (${t.role === 'premium' ? MISTRAL_SELFHOSTED_PREMIUM_MODEL : MISTRAL_SELFHOSTED_FAST_MODEL})`
+  }
+}
+
+// literal model string for a target, for the persisted audit log — same
+// data describeTarget() shows, just without the "kind (" wrapper text.
+function modelForTarget(t: ResolvedTarget): string {
+  switch (t.kind) {
+    case 'anthropic-legacy':   return ANTHROPIC_MODEL
+    case 'deepseek-legacy':    return DEEPSEEK_MODEL
+    case 'mistral-cloud':      return MISTRAL_MODEL
+    case 'anthropic-elite':    return ELITE_PREMIUM_MODEL
+    case 'qwen-selfhosted':    return t.role === 'premium' ? QWEN_PREMIUM_MODEL : QWEN_FAST_MODEL
+    case 'mistral-selfhosted': return t.role === 'premium' ? MISTRAL_SELFHOSTED_PREMIUM_MODEL : MISTRAL_SELFHOSTED_FAST_MODEL
+  }
+}
+
+/**
+ * logResolvedRequest — persisted audit trail (TD-LD-10), fire-and-forget.
+ *
+ * Writes to ai_request_log so a future privacy audit can verify which model
+ * actually handled a given request, rather than trusting console output.
+ * Deliberately NOT awaited by callers — a DB write here should never add
+ * latency to a user-facing AI call, and a failed write should never fail the
+ * call itself. Only called when TIERED_ROUTING_ENABLED is true; the legacy
+ * path writes nothing, matching the master switch's "zero behavior change
+ * when off" guarantee (no new side effects, not just no new routing).
+ */
+function logResolvedRequest(result: ResolveResult, callLabel: string): void {
+  if (!TIERED_ROUTING_ENABLED) return
+  try {
+    const supabase = createServiceClient()
+    supabase.from('ai_request_log').insert({
+      user_id:         result.tierInfo?.userId ?? null,
+      tier:            result.tierInfo?.tier ?? 'free',
+      role:            result.role ?? 'fast',
+      resolved_target: result.target.kind,
+      resolved_model:  modelForTarget(result.target),
+      was_override:    result.wasOverride,
+      call_label:      callLabel,
+    }).then(({ error }: { error: unknown }) => {
+      if (error) console.error('[AIClient] ai_request_log insert failed (non-fatal):', error)
+    })
+  } catch (err) {
+    // Never let audit logging affect the actual AI call.
+    console.error('[AIClient] ai_request_log logging threw (non-fatal):', err)
   }
 }
 
@@ -459,8 +561,10 @@ export async function createStream(
   provider?:    'anthropic' | 'deepseek',
   maxTokens:    number = 1200,
 ): Promise<StreamResult> {
-  const target = await resolveProvider(provider)
-  console.log(`[AIClient] createStream → ${describeTarget(target)} (${maxTokens} max tokens)${TIERED_ROUTING_ENABLED ? ' [tiered]' : ROUTING_MODE === 'deepseek_only' ? ' (deepseek_only override)' : ''}`)
+  const result = await resolveProvider(provider)
+  const target = result.target
+  console.log(`[AIClient] createStream → ${describeTarget(target)} (${maxTokens} max tokens)${TIERED_ROUTING_ENABLED ? (result.wasOverride ? ' [tiered, override]' : ' [tiered]') : ROUTING_MODE === 'deepseek_only' ? ' (deepseek_only override)' : ''}`)
+  logResolvedRequest(result, 'createStream')
 
   switch (target.kind) {
     case 'anthropic-legacy':
@@ -546,8 +650,10 @@ export async function createCompletion(
   options:   CompletionOptions = {},
 ): Promise<string> {
   const { provider, systemPrompt, temperature } = options
-  const target = await resolveProvider(provider)
-  console.log(`[AIClient] createCompletion → ${describeTarget(target)} (${maxTokens} max tokens)${TIERED_ROUTING_ENABLED ? ' [tiered]' : ROUTING_MODE === 'deepseek_only' ? ' (deepseek_only override)' : ''}`)
+  const result = await resolveProvider(provider)
+  const target = result.target
+  console.log(`[AIClient] createCompletion → ${describeTarget(target)} (${maxTokens} max tokens)${TIERED_ROUTING_ENABLED ? (result.wasOverride ? ' [tiered, override]' : ' [tiered]') : ROUTING_MODE === 'deepseek_only' ? ' (deepseek_only override)' : ''}`)
+  logResolvedRequest(result, 'createCompletion')
 
   switch (target.kind) {
     case 'deepseek-legacy':

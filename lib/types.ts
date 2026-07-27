@@ -155,9 +155,23 @@ export type ProductTier = 'free' | 'elite' | 'private'
 // silently defaulted.
 export type PrivateModelFamily = 'qwen' | 'mistral'
 
+// ── Per-user model routing override (TD-LD-10/TD-LD-11) ────────────────────
+// Checked BEFORE the tier's default model mapping in lib/ai-client.ts's
+// resolveProvider() — lets one account (typically the founder's own, for
+// testing) force a specific model regardless of its product_tier, while
+// every other account routes normally. Same vocabulary as ai-client.ts's
+// internal ResolvedTarget.kind, so there's one taxonomy of "what can handle
+// a request" across the whole system. NULL (mirror_access default) means no
+// override — use the tier default.
+export type RouteOverride = 'deepseek' | 'mistral_cloud' | 'anthropic_elite' | 'qwen_selfhosted' | 'mistral_selfhosted'
+
 // ── Mirror tier (Phase 4) ─────────────────────────────────────────────────────
-// 'mirror'   → self-serve Mirror subscription (₹3,999/mo · ₹39,999/yr)
-// 'advisory' → founder-led Mirror Advisory (access_type === 'advisory', capped cohort)
+// 'mirror'   → self-serve Mirror subscription (Elite, ₹2,999/mo · ₹29,999/yr)
+// 'advisory' → manually-granted access (access_type === 'advisory') — since
+//              Phase 6, a provenance marker only (how this access was
+//              provisioned), not a distinct feature tier; 'mirror' and
+//              'advisory' get identical features. See
+//              supabase/retire_advisory_tier.sql.
 // Only meaningful when gateState === 'unlocked'; locked/teaser users are 'mirror'.
 export type MirrorTier = 'mirror' | 'advisory'
 

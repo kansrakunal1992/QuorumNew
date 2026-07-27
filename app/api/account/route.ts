@@ -90,7 +90,8 @@ export async function DELETE(req: Request) {
     'avoidance_alerts',
     'contradiction_runs',
     // QC fix (audit pass, July 2026) — added below, all confirmed user_id-keyed:
-    'advisory_access_requests',
+    // 'advisory_access_requests' removed (Phase 6) — table dropped entirely,
+    // Advisory tier retired. See supabase/retire_advisory_tier.sql.
     'bias_alert_log',
     'contradictions',
     'email_send_log',
