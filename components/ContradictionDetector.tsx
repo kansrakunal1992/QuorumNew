@@ -59,7 +59,10 @@ interface Props {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const UNLOCK_THRESHOLD = 40
+// Lowered from 40 (was Advisory's old bypass point vs. Mirror's 40-session
+// wait) to 15 — env-configurable like the other thresholds in this codebase,
+// so it can be tuned without a code change.
+const UNLOCK_THRESHOLD = Number(process.env.CONTRADICTION_UNLOCK_THRESHOLD ?? 15)
 
 // Milestone definitions — what copy and how many blurred tiles to show
 const MILESTONES = [
@@ -474,11 +477,11 @@ export default function ContradictionDetector({ authToken, sessionCount, tier }:
   const [error,     setError]     = useState(false)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
 
-  // Advisory tier retired, folded into Elite (Phase 6) — this component only
-  // ever renders for paid access (MirrorTier = 'mirror' | 'advisory'), and
-  // both now bypass the 40-session threshold, same as 'advisory' did alone
-  // before.
-  const belowThreshold = false
+  // Guard restored (session count, not tier), threshold lowered from the
+  // original 40 to a friendlier UNLOCK_THRESHOLD. Advisory's old bypass made
+  // sense with a founder personally watching new members; Elite has no such
+  // safety net, so a real data-sufficiency gate applies to everyone now.
+  const belowThreshold = sessionCount < UNLOCK_THRESHOLD
 
   useEffect(() => {
     if (belowThreshold) { setLoading(false); return }

@@ -82,16 +82,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
   }
 
-  // ── 3. Session count ─────────────────────────────────────────────────────
-  // Advisory tier retired, folded into Elite (Phase 6) — the 8-session gate
-  // that used to apply only to 'mirror' (not 'advisory') is removed; any
-  // paid user (already confirmed above) gets immediate access now, same as
-  // 'advisory' alone did before. sessionCount is still fetched/returned for
-  // the response shape client code expects.
+  // ── 3. Session count gate ─────────────────────────────────────────────────
+  // Guard restored (session count, not tier) — applies uniformly to any paid
+  // account now that Advisory's tier-based bypass is retired. A founder
+  // personally watching new Advisory members used to make an early bypass
+  // safe; Elite has no such safety net, so this is a real data-sufficiency
+  // gate for everyone.
   const { count: sessionCount } = await supabase
     .from('sessions')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
+
+  if (!sessionCount || sessionCount < RULES_SESSION_THRESHOLD) {
+    return NextResponse.json({
+      rules:        null,
+      sessionCount: sessionCount ?? 0,
+      threshold:    RULES_SESSION_THRESHOLD,
+    })
+  }
 
   // ── 4. Fetch user session IDs ─────────────────────────────────────────────
   const { data: sessionRows } = await supabase

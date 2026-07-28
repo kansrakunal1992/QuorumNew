@@ -142,10 +142,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', userId),
   ])
   const sessionCount = sessionCountRaw ?? 0
-  // Advisory tier retired, folded into Elite (Phase 6) — any paid access
-  // (accessState === 'unlocked') now bypasses the graph threshold, same as
-  // 'advisory' alone did before.
-  const bypassesThresholds = accessState === 'unlocked'
+  // Guard restored (Advisory's old tier-based bypass retired) — the graph
+  // threshold is a real data-sufficiency gate (not enough sessions/edges yet
+  // means a graph would be sparse/misleading), so it applies uniformly now.
   const isPaid       = accessState === 'unlocked'
 
   // ── 3. Locked tier — not enough sessions for any connection to exist ──────
@@ -221,7 +220,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   // ── 6. Determine tier now that we know the real edge count ────────────────
   const realEdgeCount = allEdges.length
-  const fullCorpusMet = bypassesThresholds || (sessionCount >= MIN_GRAPH_SESSIONS && realEdgeCount >= MIN_GRAPH_EDGES)
+  const fullCorpusMet = sessionCount >= MIN_GRAPH_SESSIONS && realEdgeCount >= MIN_GRAPH_EDGES
   const graphTier: GraphTier = (isPaid && fullCorpusMet) ? 'full' : 'preview'
 
   // ── 7. Select which edges are shown, and redact if preview ────────────────

@@ -226,11 +226,11 @@ export default function DecisionRules({ authToken, sessionCount, topBiasLabel, t
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
 
-  // Advisory tier retired, folded into Elite (Phase 6) — this component only
-  // ever renders for paid access (MirrorTier = 'mirror' | 'advisory'), and
-  // both now bypass the 8-session threshold, same as 'advisory' did alone
-  // before. /api/mirror/rules does the same server-side.
-  const belowThreshold = false
+  // Guard restored (session count, not tier) — Advisory's old bypass made
+  // sense with a founder personally watching new members; Elite has no such
+  // safety net, so a real data-sufficiency gate applies to everyone now.
+  // /api/mirror/rules does the same server-side.
+  const belowThreshold = sessionCount < RULES_SESSION_THRESHOLD
 
   useEffect(() => {
     if (belowThreshold) { setLoading(false); return }
