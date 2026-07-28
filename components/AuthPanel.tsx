@@ -247,7 +247,7 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
             Or use a one-time link
           </p>
           <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: 0 }}>
-            Sessions currently live on this device only. Add an email to access them anywhere — no password, nothing shared with Google, just a link.
+            Sessions currently live on this device only. Add an email to access them anywhere — no password, just a link.
           </p>
         </div>
       </div>
