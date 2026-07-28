@@ -3,14 +3,18 @@
 // components/ContradictionDetector.tsx
 // ── Sprint 9: Contradiction Detector ────────────────────────────────────────
 //
-// Gate: requires mirror_access (paid) AND >= 40 sessions.
+// Gate: requires mirror_access (paid) AND >= UNLOCK_THRESHOLD sessions
+// (currently 15, env-configurable via CONTRADICTION_UNLOCK_THRESHOLD).
 //
-// Progressive teaser system — 4 milestones, each reveals a bit more:
-//   0–9   decisions → "Detection initialising" — locked, no preview
-//  10–19  decisions → Milestone 1 — one blurred principle tile visible
-//  20–29  decisions → Milestone 2 — two tiles + "pattern forming" label
-//  30–39  decisions → Milestone 3 — three tiles + excerpt of what's coming
-//  40+    decisions → Fully unlocked — live contradiction cards
+// Progressive teaser system — 3 milestones, evenly spaced across
+// UNLOCK_THRESHOLD (see buildSteps()), each reveals a bit more:
+//   stage 0 → "Building the map" — locked, no preview
+//   stage 1 → "First patterns detected" — one blurred principle tile visible
+//   stage 2 → "Contradiction forming" — two tiles + excerpt of what's coming
+//   threshold reached → Fully unlocked — live contradiction cards
+//
+// Milestone ranges and copy are derived from UNLOCK_THRESHOLD, not hardcoded,
+// so the teaser always matches the real gate whatever it's tuned to.
 //
 // Each milestone has distinct copy to build anticipation without being
 // fake or misleading. Tiles stay blurred. No fabricated contradictions shown.
@@ -64,41 +68,51 @@ interface Props {
 // so it can be tuned without a code change.
 const UNLOCK_THRESHOLD = Number(process.env.CONTRADICTION_UNLOCK_THRESHOLD ?? 15)
 
-// Milestone definitions — what copy and how many blurred tiles to show
+// Milestone/progress-bar steps are derived from UNLOCK_THRESHOLD (not hardcoded)
+// so the teaser always matches the real gate, whatever it's tuned to via env.
+// 4 evenly-spaced checkpoints across the threshold, e.g. threshold=15 → [4,8,11,15].
+const MILESTONE_STEP_COUNT = 3
+function buildSteps(threshold: number): number[] {
+  const raw = Array.from({ length: MILESTONE_STEP_COUNT }, (_, i) =>
+    Math.round((threshold * (i + 1)) / MILESTONE_STEP_COUNT)
+  )
+  // De-dupe in case a low threshold collapses steps onto the same integer
+  // (e.g. threshold=3 → [1,2,2,3]); keep the array monotonic and unique.
+  const out: number[] = []
+  for (const v of raw) out.push(Math.max(v, (out[out.length - 1] ?? 0) + 1))
+  out[out.length - 1] = threshold // last step is always exactly the real gate
+  return out
+}
+const STEPS = buildSteps(UNLOCK_THRESHOLD)
+
+// Milestone definitions — what copy and how many blurred tiles to show.
+// Ranges come from STEPS so they always add up to exactly [0, UNLOCK_THRESHOLD).
 const MILESTONES = [
   {
     // Sprint M3: reframed from "Detection initialising" (gate) to "Building the map"
     // (forward commitment). Old copy said "needs more signal" which read as
     // nothing happening. New copy explains what IS being built and why it matters.
     min:     0,
-    max:     9,
+    max:     STEPS[0] - 1,
     label:   'Building the map',
-    body:    'Quorum is constructing a record of the reasoning principles you\'ve stated across your decisions — what you said you\'d prioritise, how you framed commitments, what conditions you said would change your mind. At 10 decisions, it begins testing that map against what you actually chose.',
+    body:    `Quorum is constructing a record of the reasoning principles you've stated across your decisions — what you said you'd prioritise, how you framed commitments, what conditions you said would change your mind. At ${STEPS[0]} decisions, it begins testing that map against what you actually chose.`,
     tiles:   0,
     excerpt: 'This isn\'t an assessment — it\'s your own logic, about to be checked against itself.',
   },
   {
-    min:      10,
-    max:      19,
+    min:      STEPS[0],
+    max:      STEPS[1] - 1,
     label:    'First patterns detected',
     body:     'Quorum has begun mapping the principles you\'ve stated across decisions. A pattern is forming — but it needs more data points before it can surface a reliable contradiction.',
     tiles:    1,
     excerpt:  'Something about how you handle urgency is starting to emerge.',
   },
   {
-    min:      20,
-    max:      29,
-    label:    'Signal strengthening',
-    body:     'Two distinct reasoning patterns are now visible across your decisions. The system is tracking whether your stated principles hold when conditions change.',
-    tiles:    2,
-    excerpt:  'A tension between how you said you\'d evaluate commitments and how you\'ve actually framed them is taking shape.',
-  },
-  {
-    min:      30,
-    max:      39,
+    min:      STEPS[1],
+    max:      STEPS[2] - 1,
     label:    'Contradiction forming',
-    body:     'Three patterns are now structurally defined. The system has identified at least one area where your reasoning in one decision appears to conflict with a principle you stated in another.',
-    tiles:    3,
+    body:     'Two distinct reasoning patterns are now structurally defined. The system has identified at least one area where your reasoning in one decision appears to conflict with a principle you stated in another.',
+    tiles:    2,
     excerpt:  'The gap between a stated standard and an actual framing is now clear enough to name. You\'re close.',
   },
 ]
@@ -191,7 +205,7 @@ function BlurredTile({ index }: { index: number }) {
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
 function ProgressBar({ count }: { count: number }) {
-  const steps = [10, 20, 30, 40]
+  const steps = STEPS // derived from UNLOCK_THRESHOLD — see buildSteps() above
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
