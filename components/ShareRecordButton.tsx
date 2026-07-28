@@ -60,6 +60,7 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
   const [error,         setError]         = useState('')
   const [copied,        setCopied]        = useState(false)
   const [messageCopied, setMessageCopied] = useState(false)
+  const [linkedinCopied, setLinkedinCopied] = useState(false)
 
   const identityQuery = () => {
     const deviceId = getStoredDeviceId()
@@ -132,6 +133,19 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
   // Reddit's title field is a single-line headline, not a place for the
   // full multi-paragraph message — use just the decision quote there.
   const redditTitle = fallbackText
+
+  const handleLinkedInClick = async () => {
+    // LinkedIn's share-offsite endpoint only ever accepts `url` — there's no
+    // supported param for pre-filled post text (removed platform-wide a few
+    // years back). Copying the message here is the only way to get it into
+    // the post; generateMetadata on the share page covers the preview card,
+    // this covers the actual post body.
+    try {
+      await navigator.clipboard.writeText(whatsappText)
+      setLinkedinCopied(true)
+      setTimeout(() => setLinkedinCopied(false), 4000)
+    } catch { /* clipboard unavailable — LinkedIn still opens fine either way */ }
+  }
 
   const links = shareUrl ? {
     whatsapp: `https://wa.me/?text=${encodeURIComponent(whatsappText)}`,
@@ -252,6 +266,7 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
                       <IconWhatsApp /> WhatsApp
                     </a>
                     <a href={links.linkedin} target="_blank" rel="noopener noreferrer" className="btn-ghost"
+                       onClick={handleLinkedInClick}
                        style={{ padding: '8px 14px', fontSize: 12, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <IconLinkedIn /> LinkedIn
                     </a>
@@ -260,6 +275,12 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
                       <IconReddit /> Reddit
                     </a>
                   </div>
+                )}
+
+                {linkedinCopied && (
+                  <p style={{ fontSize: 11, color: 'var(--gold)', marginTop: 8, marginBottom: 0, lineHeight: 1.5 }}>
+                    Message copied — LinkedIn only takes the link automatically, so paste it into the post.
+                  </p>
                 )}
               </>
             )}

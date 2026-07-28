@@ -10,14 +10,56 @@
 // via a previously-sent link.
 
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import { createServiceClient } from '@/lib/supabase'
 import { decrypt } from '@/lib/encryption'
 import { formatLongDate } from '@/lib/dates'
-import { parseSynthesisHighlights } from '@/lib/synthesis-highlights'
+import { parseSynthesisHighlights, truncateWords } from '@/lib/synthesis-highlights'
 import Link from 'next/link'
 
 interface Props {
   params: Promise<{ token: string }>
+}
+
+// LinkedIn (and Slack, iMessage, X, Facebook…) don't read anything from the
+// wa.me/reddit-style text params — they scrape Open Graph tags off the URL
+// itself to build their preview card. This is the only lever we have for a
+// rich LinkedIn preview, since share-offsite only ever accepts `url`.
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { token } = await params
+  const supabase = createServiceClient()
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, decision_text')
+    .eq('share_token', token)
+    .eq('is_shared', true)
+    .single()
+
+  if (!session) return { title: 'Quorum — Shared Decision' }
+
+  const { data: synthesis } = await supabase
+    .from('synthesis_versions')
+    .select('verdict_text')
+    .eq('session_id', session.id)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const decisionText = decrypt(session.decision_text) ?? ''
+  const verdictText  = synthesis?.verdict_text ? decrypt(synthesis.verdict_text) : null
+
+  const title       = truncateWords(decisionText, 90)
+  const description = verdictText
+    ? `Council verdict: ${truncateWords(verdictText, 180)}`
+    : 'See the full decision, context, and Council verdict on Quorum.'
+
+  return {
+    title: `${title} — Quorum`,
+    description,
+    openGraph: { title, description, type: 'article' },
+    twitter:   { card: 'summary', title, description },
+  }
 }
 
 export default async function SharedRecordPage({ params }: Props) {
