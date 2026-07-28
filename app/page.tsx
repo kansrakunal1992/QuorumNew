@@ -24,6 +24,7 @@ import MeetTheCouncil from '@/components/MeetTheCouncil' // Item #4
 import FAQSection from '@/components/FAQSection' // Item #10
 import TrustBadgeStrip from '@/components/TrustBadgeStrip' // Trust Audit P0-3: pre-input trust strip
 import ReferralLink from '@/components/ReferralLink' // Item #17
+import ShareRecordButton from '@/components/ShareRecordButton'
 
 // ── Icons ────────────────────────────────────────────────
 const IconScale = ({ size = 18 }: { size?: number }) => (
@@ -1655,8 +1656,13 @@ export default function Home() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 2 }}>
+                        <ShareRecordButton
+                          sessionId={s.id}
+                          decisionText={s.decision_text}
+                          compact
+                        />
                         <button
-                          onClick={e => handleDeleteSession(e, s.id)}
+                          onClick={e => { e.stopPropagation(); handleDeleteSession(e, s.id) }}
                           title="Delete this decision"
                           style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
