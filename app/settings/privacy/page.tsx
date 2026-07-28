@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import InstitutionConsentSettings from '@/components/InstitutionConsentSettings' // Institutional Sprint 2
+import AuthPanel from '@/components/AuthPanel'
 
 const CONSENT_KEY = 'quorum_cookie_consent'
 
@@ -51,6 +52,20 @@ export default function PrivacyCenterPage() {
   const [deleteSubmitted, setDeleteSubmitted] = useState(false)
   const [deleteLoading,   setDeleteLoading]   = useState(false)
   const [deleteError,     setDeleteError]     = useState<string | null>(null)
+
+  // Sign-in state for gating Export/Delete — was previously error-message-only
+  // ("Please sign in first"); now renders AuthPanel inline instead so users
+  // signed out don't hit a dead end.
+  const [sessionEmail,   setSessionEmail]   = useState<string | null>(null)
+  const [sessionChecked, setSessionChecked] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSessionEmail(session?.user?.email ?? null)
+      setSessionChecked(true)
+    })
+  }, [])
 
   useEffect(() => {
     const consent = readConsent()
@@ -264,6 +279,17 @@ export default function PrivacyCenterPage() {
               Under GDPR and DPDP, you have the right to access, export, correct, and erase your data.
             </p>
 
+            {!sessionChecked ? null : !sessionEmail ? (
+              <div>
+                <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.6, margin: '0 0 4px' }}>
+                  Sign in to export or delete your data.
+                </p>
+                <AuthPanel
+                  userEmail={null}
+                  onAuthenticated={email => setSessionEmail(email)}
+                />
+              </div>
+            ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
               {/* Export */}
@@ -349,6 +375,7 @@ export default function PrivacyCenterPage() {
               </div>
 
             </div>
+            )}
           </SettingsCard>
 
           {/* ── Legal links ──────────────────────────────────────────────────── */}

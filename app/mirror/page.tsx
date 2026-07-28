@@ -26,6 +26,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
+import { getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
+import GoogleSignInButton from '@/components/GoogleSignInButton'
 import MirrorTimeline         from '@/components/MirrorTimeline'
 import BiasFingerprint        from '@/components/BiasFingerprint'
 import IndependenceScore      from '@/components/IndependenceScore'
@@ -131,6 +133,7 @@ function AuthGate() {
   const [sending,  setSending]  = useState(false)
   const [sent,     setSent]     = useState(false)
   const [errMsg,   setErrMsg]   = useState('')
+  const [wrongProvider, setWrongProvider] = useState(false)
 
   const handleSend = async () => {
     if (!email.trim() || !email.includes('@')) {
@@ -140,11 +143,26 @@ function AuthGate() {
     setErrMsg('')
     setSending(true)
     try {
+      // Parity with AuthPanel/EmailCaptureCard: embed device + session identity
+      // so link-sessions can recover cross-device history after this magic
+      // link is clicked, same as every other entry point.
       const res = await fetch('/api/auth', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email: email.trim().toLowerCase() }),
+        body:    JSON.stringify({
+          email:      email.trim().toLowerCase(),
+          deviceId:   getOrCreateDeviceId(),
+          sessionIds: getStoredSessionIds(),
+        }),
       })
+      // Sprint 12 parity: this email is locked to Google — no link was sent.
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}))
+        if (body.error === 'wrong_provider') {
+          setWrongProvider(true)
+          return
+        }
+      }
       if (!res.ok) throw new Error()
       setSent(true)
     } catch {
@@ -191,7 +209,31 @@ function AuthGate() {
         </p>
       </div>
 
-      {sent ? (
+      {wrongProvider ? (
+        <div style={{
+          width:        '100%',
+          padding:      '16px 20px',
+          background:   'rgba(201,168,76,0.06)',
+          border:       '1px solid var(--gold-dim)',
+          borderRadius: 12,
+        }}>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 0 10px', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{email}</span> signed up with Google — use that to get back in rather than a link.
+          </p>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+            <GoogleSignInButton variant="compact" />
+            <button
+              onClick={() => { setWrongProvider(false); setEmail('') }}
+              style={{
+                fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none',
+                cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, padding: 0,
+              }}
+            >
+              Wrong email?
+            </button>
+          </div>
+        </div>
+      ) : sent ? (
         <div style={{
           width:        '100%',
           padding:      '16px 20px',
@@ -209,6 +251,14 @@ function AuthGate() {
         </div>
       ) : (
         <div style={{ width: '100%' }}>
+          <GoogleSignInButton variant="primary" subtext="One click, no email to check" />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
+            <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or, more private</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
+          </div>
+
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <input
               type="email"

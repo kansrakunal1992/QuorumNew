@@ -67,15 +67,15 @@ const EMAIL_LINK_STEPS: TourStep[] = [
   {
     id:               'record-email-link',
     targetSelector:   '[data-tour-id="record-email-link"]',
-    heading:          'Lock in your decisions with an email',
-    body:             'Right now your decisions are tied to this device only. Enter your email right here — we\'ll send you a single link. No password. Click it and your entire record travels with you across devices.',
+    heading:          'Lock in your decisions',
+    body:             'Right now your decisions are tied to this device only. Sign in with Google for instant, one-click access — or enter your email for a one-time link instead. Either way, your entire record travels with you across devices.',
     preferredSide:    'bottom',
   },
   {
     id:               'record-email-after',
     targetSelector:   null,
-    heading:          'After the link lands in your inbox',
-    body:             'Click it — that\'s the whole flow. You\'ll come straight back here with all your decisions linked to your account. Pattern memory activates, and you can pick up from any device, any time.',
+    heading:          'You\'re set either way',
+    body:             'Chose Google? You\'re already linked — nothing else to do. Used email instead? Just click the link when it lands in your inbox and you\'ll come straight back here, fully synced.',
     preferredSide:    'bottom',
   },
 ]

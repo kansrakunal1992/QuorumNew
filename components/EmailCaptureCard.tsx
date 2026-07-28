@@ -27,12 +27,13 @@
 
 import { useState, useEffect } from 'react'
 import { getStoredSessionIds, getStoredDeviceId } from '@/lib/storage'
+import GoogleSignInButton from '@/components/GoogleSignInButton'
 
 interface Props {
   sessionId: string
 }
 
-type State = 'idle' | 'sending' | 'sent'
+type State = 'idle' | 'sending' | 'sent' | 'wrong_provider'
 
 export default function EmailCaptureCard({ sessionId }: Props) {
   const [visible, setVisible] = useState(false)
@@ -86,6 +87,12 @@ export default function EmailCaptureCard({ sessionId }: Props) {
         }),
       })
       const data = await res.json() as { error?: string }
+
+      // Sprint 12 parity: this email is locked to Google — no link was sent.
+      if (res.status === 409 && data.error === 'wrong_provider') {
+        setState('wrong_provider')
+        return
+      }
       if (!res.ok || data.error) {
         setState('idle')
         setError(data.error ?? 'Something went wrong. Try again.')
@@ -138,6 +145,24 @@ export default function EmailCaptureCard({ sessionId }: Props) {
             Click it to link your decisions and activate pattern memory.
           </p>
         </div>
+      ) : state === 'wrong_provider' ? (
+        <div>
+          <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 10px', lineHeight: 1.55 }}>
+            <span style={{ fontWeight: 600 }}>{email.trim()}</span> signed up with Google — use that to get back in rather than a link.
+          </p>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <GoogleSignInButton variant="compact" />
+            <button
+              onClick={() => { setState('idle'); setEmail('') }}
+              style={{
+                fontSize: 11, color: 'var(--text-4)', background: 'none', border: 'none',
+                cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, padding: 0,
+              }}
+            >
+              Wrong email?
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -160,6 +185,14 @@ export default function EmailCaptureCard({ sessionId }: Props) {
             >
               ×
             </button>
+          </div>
+
+          <GoogleSignInButton variant="primary" />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
+            <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or, more private</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
