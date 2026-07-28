@@ -10,12 +10,44 @@
 import { NextResponse }        from 'next/server'
 import { randomUUID }          from 'crypto'
 import { createServiceClient } from '@/lib/supabase'
+import { decrypt }             from '@/lib/encryption'
+import { parseSynthesisHighlights, buildShareMessage } from '@/lib/synthesis-highlights'
 
 interface Params { params: Promise<{ id: string }> }
 
 function publicUrl(token: string) {
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.quorumvault.org'
   return `${origin.replace(/\/$/, '')}/share/${token}`
+}
+
+// Fetches the session's decision text and its latest synthesis message,
+// decrypts both, and composes the compact WhatsApp/LinkedIn/Reddit message.
+// "Latest" matters because a challenged/pushback exchange within the same
+// session can produce more than one persona='synthesis' message — the most
+// recent one is the current verdict, same reasoning as the record page's
+// own synthesis rendering.
+async function buildMessageForSession(
+  supabase:            ReturnType<typeof createServiceClient>,
+  sessionId:           string,
+  encryptedDecision:   string | null,
+  url:                 string,
+): Promise<string> {
+  const decisionText = decrypt(encryptedDecision) ?? ''
+
+  const { data: synthesisMsg } = await supabase
+    .from('messages')
+    .select('content')
+    .eq('session_id', sessionId)
+    .eq('persona', 'synthesis')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const highlights = synthesisMsg?.content
+    ? parseSynthesisHighlights(decrypt(synthesisMsg.content) ?? '')
+    : null
+
+  return buildShareMessage({ decisionText, url, highlights })
 }
 
 async function resolveOwnership(
@@ -61,7 +93,7 @@ export async function GET(req: Request, { params }: Params) {
 
   const { data: row } = await supabase
     .from('sessions')
-    .select('user_id, user_email, device_id, share_token, is_shared')
+    .select('user_id, user_email, device_id, decision_text, share_token, is_shared')
     .eq('id', sessionId)
     .single()
 
@@ -70,10 +102,13 @@ export async function GET(req: Request, { params }: Params) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   }
 
-  return NextResponse.json({
-    isShared: row.is_shared,
-    url: row.is_shared && row.share_token ? publicUrl(row.share_token) : null,
-  })
+  if (!row.is_shared || !row.share_token) {
+    return NextResponse.json({ isShared: false, url: null, message: null })
+  }
+
+  const url = publicUrl(row.share_token)
+  const message = await buildMessageForSession(supabase, sessionId, row.decision_text, url)
+  return NextResponse.json({ isShared: true, url, message })
 }
 
 export async function POST(req: Request, { params }: Params) {
@@ -82,7 +117,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const { data: row } = await supabase
     .from('sessions')
-    .select('user_id, user_email, device_id, share_token, is_shared')
+    .select('user_id, user_email, device_id, decision_text, share_token, is_shared')
     .eq('id', sessionId)
     .single()
 
@@ -100,7 +135,9 @@ export async function POST(req: Request, { params }: Params) {
 
   if (updateErr) return NextResponse.json({ error: 'Failed to enable sharing' }, { status: 500 })
 
-  return NextResponse.json({ isShared: true, url: publicUrl(token) })
+  const url = publicUrl(token)
+  const message = await buildMessageForSession(supabase, sessionId, row.decision_text, url)
+  return NextResponse.json({ isShared: true, url, message })
 }
 
 export async function DELETE(req: Request, { params }: Params) {

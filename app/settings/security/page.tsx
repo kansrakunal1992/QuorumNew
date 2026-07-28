@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { clearUserEmail } from '@/lib/storage'
 
 interface SessionInfo {
   email: string | null
@@ -60,6 +61,14 @@ export default function SecurityCenterPage() {
       const supabase = createClient()
       const { error } = await supabase.auth.signOut()
       if (error) throw error
+      // supabase.auth.signOut() only clears the Supabase session — it has no
+      // idea quorum_user_email exists. Without this, the homepage still reads
+      // "Sessions linked to X" straight out of localStorage (app/page.tsx
+      // seeds that state directly from this key on mount, not from a live
+      // session check), EmailCaptureCard stays hidden thinking it's already
+      // linked, and the onboarding tours skip their email-link steps — the
+      // app looks signed in everywhere even though the session is gone.
+      clearUserEmail()
       setSignOutDone('device')
       setTimeout(() => router.push('/'), 1800)
     } catch (e: unknown) {
@@ -78,6 +87,7 @@ export default function SecurityCenterPage() {
       // scope: 'global' invalidates all refresh tokens for this user
       const { error } = await supabase.auth.signOut({ scope: 'global' })
       if (error) throw error
+      clearUserEmail()
       setSignOutDone('all')
       setTimeout(() => router.push('/'), 1800)
     } catch (e: unknown) {

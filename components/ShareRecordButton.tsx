@@ -15,11 +15,13 @@ interface Props {
 }
 
 export default function ShareRecordButton({ sessionId, decisionText }: Props) {
-  const [open,      setOpen]      = useState(false)
-  const [loading,   setLoading]   = useState(false)
-  const [shareUrl,  setShareUrl]  = useState<string | null>(null)
-  const [error,     setError]     = useState('')
-  const [copied,    setCopied]    = useState(false)
+  const [open,          setOpen]          = useState(false)
+  const [loading,       setLoading]       = useState(false)
+  const [shareUrl,      setShareUrl]      = useState<string | null>(null)
+  const [shareMessage,  setShareMessage]  = useState<string | null>(null)
+  const [error,         setError]         = useState('')
+  const [copied,        setCopied]        = useState(false)
+  const [messageCopied, setMessageCopied] = useState(false)
 
   const identityQuery = () => {
     const deviceId = getStoredDeviceId()
@@ -58,6 +60,7 @@ export default function ShareRecordButton({ sessionId, decisionText }: Props) {
       const data = await res.json()
       if (!res.ok || !data.url) throw new Error(data.error ?? 'Could not create share link')
       setShareUrl(data.url)
+      setShareMessage(typeof data.message === 'string' ? data.message : null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not create share link')
     } finally {
@@ -74,12 +77,27 @@ export default function ShareRecordButton({ sessionId, decisionText }: Props) {
     } catch { /* clipboard unavailable — link is still visible to select manually */ }
   }
 
-  const shareText = `A decision I ran through Quorum: "${decisionText.slice(0, 140)}${decisionText.length > 140 ? '…' : ''}"`
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(whatsappText)
+      setMessageCopied(true)
+      setTimeout(() => setMessageCopied(false), 2000)
+    } catch { /* clipboard unavailable */ }
+  }
+
+  // Falls back to a decision-only line if the message wasn't returned for
+  // some reason (e.g. an older cached response) — still shareable, just
+  // without the verdict/worth-confirming line.
+  const fallbackText = `A decision I ran through Quorum: "${decisionText.slice(0, 140)}${decisionText.length > 140 ? '…' : ''}"`
+  const whatsappText = shareMessage ?? `${fallbackText}\n${shareUrl ?? ''}`
+  // Reddit's title field is a single-line headline, not a place for the
+  // full multi-paragraph message — use just the decision quote there.
+  const redditTitle = fallbackText
 
   const links = shareUrl ? {
-    whatsapp: `https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`,
+    whatsapp: `https://wa.me/?text=${encodeURIComponent(whatsappText)}`,
     linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
-    reddit:   `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(shareText)}`,
+    reddit:   `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(redditTitle)}`,
   } : null
 
   return (
@@ -139,6 +157,27 @@ export default function ShareRecordButton({ sessionId, decisionText }: Props) {
                     {copied ? 'Copied' : 'Copy'}
                   </button>
                 </div>
+
+                {shareMessage && (
+                  <div style={{
+                    marginBottom: 16, border: '1px solid var(--border-dim)', borderRadius: 8,
+                    padding: '10px 12px', background: 'var(--bg-inset)',
+                  }}>
+                    <p style={{
+                      fontSize: 11.5, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.55,
+                      whiteSpace: 'pre-wrap',
+                    }}>
+                      {shareMessage}
+                    </p>
+                    <button
+                      onClick={handleCopyMessage}
+                      className="btn-ghost"
+                      style={{ padding: '4px 10px', fontSize: 11 }}
+                    >
+                      {messageCopied ? 'Copied' : 'Copy message'}
+                    </button>
+                  </div>
+                )}
 
                 {links && (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
