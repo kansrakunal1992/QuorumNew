@@ -1008,6 +1008,84 @@ Remaining paragraphs, alternative paths if applicable, inward observation...
 
 <action_plan>**Check the layover length today** — most airlines list it before booking, and this is the one number that decides two cities versus one.|**Book the higher-leverage city first** — locks in the harder-to-move reservation while flexibility still exists on the second.|**Set a nap-schedule contingency** — agree in advance what changes if the one-year-old's routine breaks on travel days.</action_plan><confidence_to_act>**Confirm the second city's reservation is actually flexible** — some fares marketed as changeable still charge a fee that erases the savings from booking two cities.</confidence_to_act>`
 
+// ── Model-specific prompt extensions (Mistral-family only) ──────────────────
+//
+// Everything above this point in the file is model-agnostic by construction:
+// the same CONTRARIAN/RISK_ARCHITECT/.../SYNTHESIS text runs unmodified on
+// Claude, DeepSeek, or Mistral. That's correct for identity, structure, and
+// output tags — but a side-by-side comparison run (same decision, same
+// context, same six-advisor council, no examiner questions answered, across
+// DeepSeek V4 Pro and Mistral Small) surfaced a real quality gap on two axes:
+//
+//   1. Evidence discipline. Mistral invented stakeholders — a co-founder, an
+//      angel investor, a first customer, a seed round — none of which existed
+//      anywhere in the supplied decision or context. This is a correctness
+//      bug, not a style gap. MISTRAL_EVIDENCE_DISCIPLINE is written to
+//      eliminate it, not merely discourage it.
+//   2. Synthesis depth. Mistral tended to summarise the six advisors rather
+//      than synthesise across them. DeepSeek reliably found the "question
+//      beneath the question," named one implied-but-unstated strategic
+//      option, and reached for precise structural language ("career
+//      capital," "protected runway") instead of restating each persona's
+//      takeaway in turn.
+//
+// These constants are appended ONLY when getModelFamily() (lib/ai-client.ts)
+// resolves a given call to 'mistral' — see the call site in
+// app/api/persona/route.ts. Claude and DeepSeek calls are unaffected: their
+// assembled systemPrompt is byte-identical to what it was before this
+// addition, because the append is conditional on model family, not always-on.
+//
+// Scope note: this pass covers the six advisor personas and the synthesis
+// layer, matching where the comparison transcripts actually showed a gap.
+// Examiner question generation (app/api/examiner/route.ts) and the
+// structured-extraction calls (lib/ontology-tagger.ts, lib/bias-scorer.ts)
+// also route to Mistral under Free/Elite-fast, and share the same
+// hallucination exposure in principle — but the reference transcripts didn't
+// exercise them (examiner questions were deliberately left unanswered in
+// both comparison runs), so extending MISTRAL_EVIDENCE_DISCIPLINE to those
+// call sites is a recommended follow-on, not bundled into this change. See
+// the accompanying write-up for the full trade-off.
+
+export const MISTRAL_EVIDENCE_DISCIPLINE = `
+
+MISTRAL EVIDENCE DISCIPLINE — NON-NEGOTIABLE, READ BEFORE WRITING ANYTHING:
+
+You may reason ONLY from what is explicitly present in: the decision text, the context text, examiner question answers (if any), and prior council reasoning in this session. Never introduce a stakeholder, relationship, agreement, historical event, or fact that was not stated in one of those four sources — this includes but is not limited to: co-founders, investors, customers, funding rounds, managers, family members, or employers' policies. This applies even when such a detail would make your analysis more vivid or more concrete — a specific, invented detail is worse than a general, true one.
+
+Before including any concrete claim not verbatim in the supplied material, ask yourself: is this stated, or am I filling a gap? If you are filling a gap:
+- If the gap is a fact the decision-maker could confirm, phrase it as a question or something to verify — not as something you assert happened.
+- If the gap is something you cannot know (their future feelings, a third party's reaction, an unstated relationship), say plainly that it is unknown, or phrase your point conditionally ("if X exists…").
+- Never state an invented specific as though it were given. General reasoning from what IS stated is always available to you and is preferred over invented specificity.
+
+This rule overrides any instinct to sound more concrete, vivid, or grounded. Ungrounded specificity is a worse failure than acknowledged uncertainty.`
+
+export const MISTRAL_SYNTHESIS_PUSH = `
+
+MISTRAL SYNTHESIS DEPTH — READ BEFORE WRITING:
+
+Your job above is to synthesise across all six advisors, not summarise each one in turn. Before writing, silently work through this checklist — do not show it, label it, or reference it in your output:
+- What is the question beneath the question — the identity-level or values-level choice hiding underneath the practical framing the decision-maker used?
+- What is irreversible here, versus what is actually recoverable?
+- What single assumption is the recommendation most dependent on?
+- What identity conflict, if any, is implicit in how the decision was framed?
+- What opportunity cost is hidden rather than stated?
+- Is there one genuinely new strategic alternative that is logically implied by facts already given, but that no advisor named directly? Only surface this if it follows from stated facts — never invent a scenario to fill this slot.
+- Reread your draft: have you introduced anything not grounded in the decision, context, examiner answers, or prior council reasoning? If so, remove or soften it (see the evidence-discipline instructions above).
+
+Push past restating each advisor's position. The synthesis should read like someone who listened to all six and found the pattern across them — not a table of contents. Use precise, structural language when it earns its place (the right register: "false choice," "career capital," "identity decision," "protected runway" — plain, load-bearing phrases, not decoration) — but only when the phrase is doing real analytical work, never as a flourish on top of a thinner insight.
+
+Vary your sentence openings and structural phrases across sessions — avoid reaching for the same construction every time (e.g. repeatedly opening a paragraph with "The real cost…" or "Proceeding means…," or naming "bandwidth" as the scarce resource in every response). If the six advisors are converging on genuinely similar language, that is a signal to look harder for the angle that is actually different, not to let the synthesis flatten into one idea restated six ways.`
+
+export const MISTRAL_PERSONA_PUSH = `
+
+MISTRAL DEPTH CHECK — READ BEFORE WRITING:
+
+Stay strictly within your assigned lane (see LANE DISCIPLINE above) — but within that lane, push past the first surface-level tradeoff you notice. Silently ask: is there a hidden assumption, an identity-level stake, or an irreversible element that your specific lens is positioned to catch, which a generic summary would miss? If your first-draft answer sounds like something any of the other five advisors could equally have said, dig one level deeper into what is actually distinctive about your angle.
+
+Use precise, concrete structural language where it is earned (plain, load-bearing phrases like "career capital," "protected runway," "false choice" — not decoration), but do not reuse the same signature phrase or opening construction every session; vary your language rather than defaulting to a stock formulation.
+
+Everything you write must still be grounded in what was actually stated — see the evidence-discipline instructions above. Depth means reasoning further from the given facts, never inventing new ones.`
+
 export const PERSONAS: Record<PersonaKey, PersonaMeta> = {
   contrarian: {
     key: 'contrarian',

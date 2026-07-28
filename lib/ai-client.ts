@@ -378,6 +378,45 @@ async function resolveProvider(requested?: 'anthropic' | 'deepseek'): Promise<Re
   return { target: resolveTieredTarget(tierInfo, role), tierInfo, role, wasOverride: false }
 }
 
+// ── Model-family peek (for model-aware prompt extensions) ───────────────────
+//
+// Added alongside lib/personas.ts's MISTRAL_* prompt extensions. A caller
+// that wants to append a model-specific instruction block (e.g. the
+// Mistral-only evidence-discipline / synthesis-depth text in personas.ts)
+// needs to know which model family a call will resolve to BEFORE it finishes
+// assembling that call's systemPrompt — but resolveProvider() is only
+// otherwise invoked from inside createStream/createCompletion, after the
+// systemPrompt is already built.
+//
+// getModelFamily() re-runs the exact same resolution (same TIERED_ROUTING_ENABLED
+// check, same header/override read, same `requested` flag) and returns only
+// the resulting family. Call it with the SAME `requested` value you'll pass
+// to createStream/createCompletion moments later — resolveProvider() is a
+// pure function of (TIERED_ROUTING_ENABLED, request headers, tier-context
+// override, requested) with no I/O and no randomness, so the peek and the
+// real call can never disagree within one request.
+//
+// Cost: identical to one resolveProvider() call — header reads + a switch
+// statement, no DB query, no network call. Safe to call once per AI call
+// site, immediately before building that call's systemPrompt.
+export type ModelFamily = 'anthropic' | 'deepseek' | 'mistral' | 'qwen'
+
+export async function getModelFamily(requested?: 'anthropic' | 'deepseek'): Promise<ModelFamily> {
+  const { target } = await resolveProvider(requested)
+  switch (target.kind) {
+    case 'anthropic-legacy':
+    case 'anthropic-elite':
+      return 'anthropic'
+    case 'deepseek-legacy':
+      return 'deepseek'
+    case 'mistral-cloud':
+    case 'mistral-selfhosted':
+      return 'mistral'
+    case 'qwen-selfhosted':
+      return 'qwen'
+  }
+}
+
 function describeTarget(t: ResolvedTarget): string {
   switch (t.kind) {
     case 'anthropic-legacy':   return `anthropic (${ANTHROPIC_MODEL})`

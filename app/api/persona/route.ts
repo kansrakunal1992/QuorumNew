@@ -142,9 +142,9 @@
  *       5. synthesisDirective     — MANDATORY continuity / prior-sitting reference ← NEW
  */
 
-import { PERSONAS }                            from '@/lib/personas'
+import { PERSONAS, MISTRAL_EVIDENCE_DISCIPLINE, MISTRAL_SYNTHESIS_PUSH, MISTRAL_PERSONA_PUSH } from '@/lib/personas'
 import { createServiceClient }                 from '@/lib/supabase'
-import { createStream }                        from '@/lib/ai-client'
+import { createStream, getModelFamily }        from '@/lib/ai-client'
 import {
   PERSONAS_WITH_STRUCTURAL_CONTEXT,
   getPersonaStructuralDirective,             // Sprint R1
@@ -843,7 +843,27 @@ Apply the VERDICT STABILITY instruction above using this data.`
       ? `\n\n${biasContext.personaAlert}`
       : ''
 
-    const systemPrompt = `${basePrompt}${pushbackProtocol}${personaAlertBlock}`
+    // Layer 6: Mistral-family-only prompt extension (evidence discipline + depth push).
+    // getModelFamily() peeks the SAME `provider` flag the createStream call below will
+    // use, so this can never resolve differently from the actual call a few lines down
+    // — see the doc comment on getModelFamily in lib/ai-client.ts. No-ops (empty string)
+    // for every other family: Claude and DeepSeek's systemPrompt is byte-identical to
+    // before this layer existed. See lib/personas.ts's MISTRAL_* doc comment for why
+    // these three personas/synthesis get the extension and examiner/tagger calls don't yet.
+    const modelFamily = await getModelFamily(personaKey === 'synthesis' ? 'anthropic' : 'deepseek')
+    const mistralExtension = modelFamily !== 'mistral'
+      ? ''
+      : personaKey === 'synthesis'
+        ? MISTRAL_EVIDENCE_DISCIPLINE + MISTRAL_SYNTHESIS_PUSH
+        : personaKey === 'decision_brief'
+          ? MISTRAL_EVIDENCE_DISCIPLINE
+          : MISTRAL_EVIDENCE_DISCIPLINE + MISTRAL_PERSONA_PUSH
+
+    if (mistralExtension) {
+      console.log(`[Persona] Mistral-family prompt extension applied for ${personaKey} | session ${sessionId}`)
+    }
+
+    const systemPrompt = `${basePrompt}${pushbackProtocol}${personaAlertBlock}${mistralExtension}`
 
     if (councilContext) {
       console.log(`[Persona] Council context injected for ${personaKey} (${isInitialPersona ? 'initial' : 'synthesis'}) | session ${sessionId}`)
