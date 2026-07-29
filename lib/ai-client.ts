@@ -133,7 +133,7 @@ import { getCurrentTier } from './tier-context'
 import { createServiceClient } from './supabase'
 import { FREE_TIER } from './product-tier'
 import type { ProductTierInfo } from './product-tier'
-import type { ProductTier, PrivateModelFamily, RouteOverride } from './types'
+import type { ProductTier, PrivateModelFamily, RouteOverride, PrivateEndpoint } from './types'
 
 // ── Tier resolution precedence ────────────────────────────────────────────────
 // 1. AsyncLocalStorage context (lib/tier-context.ts) — set explicitly, e.g. by
@@ -157,12 +157,23 @@ async function getTierFromHeaders(): Promise<ProductTierInfo | undefined> {
     const tier = h.get('x-product-tier') as ProductTier | null
     if (!tier) return undefined
     const family = h.get('x-private-model-family') as PrivateModelFamily | null
+
+    // JSON.parse can throw on malformed input — treat that as "no endpoint
+    // available" (falls through to resolveTieredTarget's clear error) rather
+    // than letting a header-parsing bug crash the whole request.
+    let privateEndpoint: PrivateEndpoint | null = null
+    const rawEndpoint = h.get('x-private-endpoint')
+    if (rawEndpoint) {
+      try { privateEndpoint = JSON.parse(rawEndpoint) as PrivateEndpoint } catch { privateEndpoint = null }
+    }
+
     return {
       tier,
       privateModelFamily: tier === 'private' ? family : null,
       userId:             h.get('x-user-id'),
       modelRouteFast:     h.get('x-model-route-fast')    as RouteOverride | null,
       modelRoutePremium:  h.get('x-model-route-premium') as RouteOverride | null,
+      privateEndpoint,
     }
   } catch {
     // headers() throws when called outside a request-scoped execution
@@ -193,16 +204,6 @@ const ELITE_PREMIUM_MODEL = process.env.ELITE_PREMIUM_MODEL ?? 'claude-sonnet-4-
 // Infra not live yet (see doc comment above); these are read lazily, only
 // when a Private-tier call is actually made, so an unconfigured deployment
 // doesn't block Free/Elite from working.
-const QWEN_SELFHOSTED_BASE_URL    = process.env.QWEN_SELFHOSTED_BASE_URL    ?? ''
-const QWEN_SELFHOSTED_API_KEY     = process.env.QWEN_SELFHOSTED_API_KEY     ?? ''
-const QWEN_FAST_MODEL             = process.env.QWEN_FAST_MODEL             ?? ''
-const QWEN_PREMIUM_MODEL          = process.env.QWEN_PREMIUM_MODEL          ?? ''
-
-const MISTRAL_SELFHOSTED_BASE_URL     = process.env.MISTRAL_SELFHOSTED_BASE_URL     ?? ''
-const MISTRAL_SELFHOSTED_API_KEY      = process.env.MISTRAL_SELFHOSTED_API_KEY      ?? ''
-const MISTRAL_SELFHOSTED_FAST_MODEL   = process.env.MISTRAL_SELFHOSTED_FAST_MODEL   ?? ''
-const MISTRAL_SELFHOSTED_PREMIUM_MODEL = process.env.MISTRAL_SELFHOSTED_PREMIUM_MODEL ?? ''
-
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 const deepseek  = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY ?? '', baseURL: 'https://api.deepseek.com' })
 
@@ -212,39 +213,18 @@ const deepseek  = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY ?? '', baseU
 // request/response shape as OpenAI's SDK expects.
 const mistral = new OpenAI({ apiKey: MISTRAL_API_KEY, baseURL: 'https://api.mistral.ai/v1' })
 
-// Self-hosted Qwen/Mistral clients are constructed lazily (only if/when a
-// Private-tier call actually happens) since their base URLs won't be set
-// until that infra exists — constructing an OpenAI client with an empty
-// baseURL at module load would be a confusing failure mode.
-let qwenSelfHosted:     OpenAI | null = null
-let mistralSelfHosted:  OpenAI | null = null
-
-function getQwenSelfHostedClient(): OpenAI {
-  if (!QWEN_SELFHOSTED_BASE_URL) {
-    throw new Error(
-      '[AIClient] Private tier (Option A / Qwen) requested but QWEN_SELFHOSTED_BASE_URL is not set. ' +
-      'The self-hosted Qwen endpoint does not exist yet — this is expected until that infra ships, ' +
-      'not a routing bug. See lib/ai-client.ts doc comment.',
-    )
-  }
-  if (!qwenSelfHosted) {
-    qwenSelfHosted = new OpenAI({ apiKey: QWEN_SELFHOSTED_API_KEY, baseURL: QWEN_SELFHOSTED_BASE_URL })
-  }
-  return qwenSelfHosted
-}
-
-function getMistralSelfHostedClient(): OpenAI {
-  if (!MISTRAL_SELFHOSTED_BASE_URL) {
-    throw new Error(
-      '[AIClient] Private tier (Option B / Mistral) requested but MISTRAL_SELFHOSTED_BASE_URL is not set. ' +
-      'The self-hosted Mistral endpoint does not exist yet — this is expected until that infra ships, ' +
-      'not a routing bug. See lib/ai-client.ts doc comment.',
-    )
-  }
-  if (!mistralSelfHosted) {
-    mistralSelfHosted = new OpenAI({ apiKey: MISTRAL_SELFHOSTED_API_KEY, baseURL: MISTRAL_SELFHOSTED_BASE_URL })
-  }
-  return mistralSelfHosted
+// Self-hosted Qwen/Mistral (Private tier) — NO global client here anymore.
+// Each Private customer has their own cloud account, own URL, own key (see
+// supabase/add_private_deployments.sql) — a module-level singleton would
+// silently reuse the FIRST customer's connection for every other customer,
+// which was a real bug in the original single-global-endpoint design.
+// Instead, a fresh OpenAI-compatible client is constructed per call from
+// ResolvedTarget.endpoint (set in resolveTieredTarget below, sourced from
+// that customer's ProductTierInfo.privateEndpoint). This is cheap — it's
+// just an object construction, not a network connection — so not caching it
+// costs nothing measurable.
+function getPrivateClient(endpoint: PrivateEndpoint): OpenAI {
+  return new OpenAI({ apiKey: endpoint.apiKey, baseURL: endpoint.baseUrl })
 }
 
 // ── 503 retry helper ───────────────────────────────────────────────────────────
@@ -288,8 +268,8 @@ type ResolvedTarget =
   | { kind: 'deepseek-legacy' }
   | { kind: 'mistral-cloud' }
   | { kind: 'anthropic-elite' }
-  | { kind: 'qwen-selfhosted';    role: Role }
-  | { kind: 'mistral-selfhosted'; role: Role }
+  | { kind: 'qwen-selfhosted';    role: Role; endpoint: PrivateEndpoint }
+  | { kind: 'mistral-selfhosted'; role: Role; endpoint: PrivateEndpoint }
 
 // requestedRole is the literal value each call site passes today — kept as
 // the same 'anthropic' | 'deepseek' union so no call site needs to change.
@@ -308,9 +288,22 @@ function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTar
       // path (TD-KL-1 / TD-LD-7 both treat that as a decision the buyer
       // makes explicitly, never a silent default).
       const family = tierInfo.privateModelFamily ?? 'mistral'
+
+      if (!tierInfo.privateEndpoint) {
+        // Granted Private but private_deployments has no row for them yet —
+        // a real, expected state between granting access and finishing the
+        // deploy (see infra/README.md), not a routing bug. Fails loudly
+        // here rather than silently falling back to a different tier.
+        throw new Error(
+          `[AIClient] Private tier resolved for user ${tierInfo.userId ?? '(unknown)'} but no ` +
+          `private_deployments row exists yet — their dedicated infra hasn't finished deploying. ` +
+          `See supabase/add_private_deployments.sql and infra/README.md.`,
+        )
+      }
+
       return family === 'qwen'
-        ? { kind: 'qwen-selfhosted', role }
-        : { kind: 'mistral-selfhosted', role }
+        ? { kind: 'qwen-selfhosted', role, endpoint: tierInfo.privateEndpoint }
+        : { kind: 'mistral-selfhosted', role, endpoint: tierInfo.privateEndpoint }
     }
     case 'free':
     default:
@@ -325,14 +318,36 @@ function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTar
 // underscore_case in the DB/headers (SQL/HTTP-header convention) vs
 // kebab-case here (this file's existing convention) — translated 1:1, no
 // semantic difference.
-function resolveOverrideTarget(override: RouteOverride | null | undefined, role: Role): ResolvedTarget | undefined {
+//
+// qwen_selfhosted/mistral_selfhosted overrides need an endpoint the same way
+// the tier default does — there's no "the" self-hosted endpoint anymore
+// (per-customer, see PrivateEndpoint), so an override to self-hosted only
+// makes sense on an account that itself has a private_deployments row (e.g.
+// the founder's own personal test deployment). If it doesn't, this throws
+// the same way resolveTieredTarget's Private branch does — an override
+// that can't be satisfied should fail loudly, not silently fall through to
+// the tier default as if no override had been set.
+function resolveOverrideTarget(
+  override:   RouteOverride | null | undefined,
+  role:       Role,
+  tierInfo:   ProductTierInfo,
+): ResolvedTarget | undefined {
   switch (override) {
-    case 'deepseek':           return { kind: 'deepseek-legacy' }
-    case 'mistral_cloud':      return { kind: 'mistral-cloud' }
-    case 'anthropic_elite':    return { kind: 'anthropic-elite' }
-    case 'qwen_selfhosted':    return { kind: 'qwen-selfhosted', role }
-    case 'mistral_selfhosted': return { kind: 'mistral-selfhosted', role }
-    default:                   return undefined
+    case 'deepseek':        return { kind: 'deepseek-legacy' }
+    case 'mistral_cloud':   return { kind: 'mistral-cloud' }
+    case 'anthropic_elite': return { kind: 'anthropic-elite' }
+    case 'qwen_selfhosted':
+    case 'mistral_selfhosted': {
+      if (!tierInfo.privateEndpoint) {
+        throw new Error(
+          `[AIClient] ${override} override set for user ${tierInfo.userId ?? '(unknown)'} but they have ` +
+          `no private_deployments row — a self-hosted override needs that account's own deployment. ` +
+          `See supabase/add_private_deployments.sql.`,
+        )
+      }
+      return { kind: override === 'qwen_selfhosted' ? 'qwen-selfhosted' : 'mistral-selfhosted', role, endpoint: tierInfo.privateEndpoint }
+    }
+    default: return undefined
   }
 }
 
@@ -372,7 +387,7 @@ async function resolveProvider(requested?: 'anthropic' | 'deepseek'): Promise<Re
   const role     = roleFromRequested(requested)
 
   const overrideValue  = role === 'premium' ? tierInfo.modelRoutePremium : tierInfo.modelRouteFast
-  const overrideTarget = resolveOverrideTarget(overrideValue, role)
+  const overrideTarget = resolveOverrideTarget(overrideValue, role, tierInfo)
   if (overrideTarget) return { target: overrideTarget, tierInfo, role, wasOverride: true }
 
   return { target: resolveTieredTarget(tierInfo, role), tierInfo, role, wasOverride: false }
@@ -423,8 +438,8 @@ function describeTarget(t: ResolvedTarget): string {
     case 'deepseek-legacy':    return `deepseek (${DEEPSEEK_MODEL})`
     case 'mistral-cloud':      return `mistral-cloud (${MISTRAL_MODEL})`
     case 'anthropic-elite':    return `anthropic-elite (${ELITE_PREMIUM_MODEL})`
-    case 'qwen-selfhosted':    return `qwen-selfhosted/${t.role} (${t.role === 'premium' ? QWEN_PREMIUM_MODEL : QWEN_FAST_MODEL})`
-    case 'mistral-selfhosted': return `mistral-selfhosted/${t.role} (${t.role === 'premium' ? MISTRAL_SELFHOSTED_PREMIUM_MODEL : MISTRAL_SELFHOSTED_FAST_MODEL})`
+    case 'qwen-selfhosted':    return `qwen-selfhosted/${t.role} (${t.endpoint.baseUrl}, ${t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel})`
+    case 'mistral-selfhosted': return `mistral-selfhosted/${t.role} (${t.endpoint.baseUrl}, ${t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel})`
   }
 }
 
@@ -436,8 +451,8 @@ function modelForTarget(t: ResolvedTarget): string {
     case 'deepseek-legacy':    return DEEPSEEK_MODEL
     case 'mistral-cloud':      return MISTRAL_MODEL
     case 'anthropic-elite':    return ELITE_PREMIUM_MODEL
-    case 'qwen-selfhosted':    return t.role === 'premium' ? QWEN_PREMIUM_MODEL : QWEN_FAST_MODEL
-    case 'mistral-selfhosted': return t.role === 'premium' ? MISTRAL_SELFHOSTED_PREMIUM_MODEL : MISTRAL_SELFHOSTED_FAST_MODEL
+    case 'qwen-selfhosted':    return t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel
+    case 'mistral-selfhosted': return t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel
   }
 }
 
@@ -616,14 +631,14 @@ export async function createStream(
       return streamAnthropic(systemPrompt, messages, maxTokens, ELITE_PREMIUM_MODEL)
     case 'qwen-selfhosted':
       return streamOpenAICompatible(
-        getQwenSelfHostedClient(),
-        target.role === 'premium' ? QWEN_PREMIUM_MODEL : QWEN_FAST_MODEL,
+        getPrivateClient(target.endpoint),
+        target.role === 'premium' ? target.endpoint.premiumModel : target.endpoint.fastModel,
         systemPrompt, messages, maxTokens, 'streamQwenSelfHosted',
       )
     case 'mistral-selfhosted':
       return streamOpenAICompatible(
-        getMistralSelfHostedClient(),
-        target.role === 'premium' ? MISTRAL_SELFHOSTED_PREMIUM_MODEL : MISTRAL_SELFHOSTED_FAST_MODEL,
+        getPrivateClient(target.endpoint),
+        target.role === 'premium' ? target.endpoint.premiumModel : target.endpoint.fastModel,
         systemPrompt, messages, maxTokens, 'streamMistralSelfHosted',
       )
   }
@@ -701,14 +716,14 @@ export async function createCompletion(
       return completeOpenAICompatible(mistral, MISTRAL_MODEL, prompt, maxTokens, 'createCompletion/mistral', systemPrompt, temperature)
     case 'qwen-selfhosted':
       return completeOpenAICompatible(
-        getQwenSelfHostedClient(),
-        target.role === 'premium' ? QWEN_PREMIUM_MODEL : QWEN_FAST_MODEL,
+        getPrivateClient(target.endpoint),
+        target.role === 'premium' ? target.endpoint.premiumModel : target.endpoint.fastModel,
         prompt, maxTokens, 'createCompletion/qwen-selfhosted', systemPrompt, temperature,
       )
     case 'mistral-selfhosted':
       return completeOpenAICompatible(
-        getMistralSelfHostedClient(),
-        target.role === 'premium' ? MISTRAL_SELFHOSTED_PREMIUM_MODEL : MISTRAL_SELFHOSTED_FAST_MODEL,
+        getPrivateClient(target.endpoint),
+        target.role === 'premium' ? target.endpoint.premiumModel : target.endpoint.fastModel,
         prompt, maxTokens, 'createCompletion/mistral-selfhosted', systemPrompt, temperature,
       )
     case 'anthropic-legacy':

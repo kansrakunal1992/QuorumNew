@@ -165,6 +165,18 @@ export type PrivateModelFamily = 'qwen' | 'mistral'
 // override — use the tier default.
 export type RouteOverride = 'deepseek' | 'mistral_cloud' | 'anthropic_elite' | 'qwen_selfhosted' | 'mistral_selfhosted'
 
+// ── Per-customer Private tier deployment (replaces the old global
+// QWEN_SELFHOSTED_*/MISTRAL_SELFHOSTED_* env vars) ──────────────────────────
+// One customer's self-hosted endpoint — their own cloud account, their own
+// URL/key, serving both fast and premium roles. See
+// supabase/add_private_deployments.sql and lib/product-tier.ts.
+export interface PrivateEndpoint {
+  baseUrl:      string
+  apiKey:       string
+  fastModel:    string
+  premiumModel: string
+}
+
 // ── Mirror tier (Phase 4) ─────────────────────────────────────────────────────
 // 'mirror'   → self-serve Mirror subscription (Elite, ₹2,999/mo · ₹29,999/yr)
 // 'advisory' → manually-granted access (access_type === 'advisory') — since

@@ -1,0 +1,17 @@
+# infra/updater/quorum-updater.timer
+# ── Fires quorum-updater.service every 15 minutes ─────────────────────────────
+# RandomizedDelaySec spreads updates across customers rather than every
+# deployment worldwide hitting the image registry at the exact same instant
+# — a small courtesy to the registry, not load-bearing for correctness.
+
+[Unit]
+Description=Run the Quorum private inference auto-updater every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=180
+Persistent=true
+
+[Install]
+WantedBy=timers.target

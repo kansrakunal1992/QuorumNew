@@ -90,6 +90,14 @@ export async function middleware(req: NextRequest) {
       if (tierInfo.modelRoutePremium) {
         requestHeaders.set('x-model-route-premium', tierInfo.modelRoutePremium)
       }
+      // Per-customer Private tier deployment (baseUrl/apiKey/models) — one
+      // header, JSON-encoded, rather than four separate ones. This never
+      // leaves the server: Next.js only forwards request headers set here to
+      // the downstream route handler in the same process, never back to the
+      // browser. See lib/product-tier.ts's PrivateEndpoint doc comment.
+      if (tierInfo.privateEndpoint) {
+        requestHeaders.set('x-private-endpoint', JSON.stringify(tierInfo.privateEndpoint))
+      }
     }
   } catch (err) {
     // Never block a request over a tier-resolution hiccup — fall through to

@@ -1,0 +1,19 @@
+# infra/updater/quorum-updater.service
+# ── Runs check-and-update.sh once, then exits ─────────────────────────────────
+# Triggered by quorum-updater.timer, not run continuously — a oneshot unit,
+# not a long-running daemon. All the per-role env vars (QUORUM_CONTAINER_NAME,
+# QUORUM_LIVE_PORT, etc.) are written to /etc/quorum/updater.env by each
+# cloud's Terraform module at provision time — see infra/README.md.
+
+[Unit]
+Description=Quorum private inference auto-updater
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/quorum/updater.env
+ExecStart=/opt/quorum/check-and-update.sh
+# Serialize — if a previous run is somehow still going (shouldn't happen at
+# a 15-minute interval given the 3-minute health-check timeout, but cheap
+# insurance), don't stack a second one on top of it.
