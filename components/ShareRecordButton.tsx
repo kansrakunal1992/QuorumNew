@@ -57,6 +57,7 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
   const [loading,       setLoading]       = useState(false)
   const [shareUrl,      setShareUrl]      = useState<string | null>(null)
   const [shareMessage,  setShareMessage]  = useState<string | null>(null)
+  const [whatsappMessage, setWhatsappMessage] = useState<string | null>(null)
   const [error,         setError]         = useState('')
   const [copied,        setCopied]        = useState(false)
   const [messageCopied, setMessageCopied] = useState(false)
@@ -101,6 +102,7 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
       if (!res.ok || !data.url) throw new Error(data.error ?? 'Could not create share link')
       setShareUrl(data.url)
       setShareMessage(typeof data.message === 'string' ? data.message : null)
+      setWhatsappMessage(typeof data.whatsappMessage === 'string' ? data.whatsappMessage : null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not create share link')
     } finally {
@@ -118,18 +120,22 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
   }
 
   const handleCopyMessage = async () => {
+    if (!shareMessage) return
     try {
-      await navigator.clipboard.writeText(whatsappText)
+      await navigator.clipboard.writeText(shareMessage)
       setMessageCopied(true)
       setTimeout(() => setMessageCopied(false), 2000)
     } catch { /* clipboard unavailable */ }
   }
 
-  // Falls back to a decision-only line if the message wasn't returned for
+  // Falls back to a decision-only line if a message wasn't returned for
   // some reason (e.g. an older cached response) — still shareable, just
-  // without the verdict/worth-confirming line.
+  // without the verdict/worth-confirming line. Used as the base fallback
+  // for both variants below; the WhatsApp one additionally prefers its own
+  // bold-formatted message when available.
   const fallbackText = `A decision I ran through Quorum: "${decisionText.slice(0, 140)}${decisionText.length > 140 ? '…' : ''}"`
-  const whatsappText = shareMessage ?? `${fallbackText}\n${shareUrl ?? ''}`
+  const plainText     = shareMessage ?? `${fallbackText}\n${shareUrl ?? ''}`
+  const whatsappText  = whatsappMessage ?? plainText
   // Reddit's title field is a single-line headline, not a place for the
   // full multi-paragraph message — use just the decision quote there.
   const redditTitle = fallbackText
@@ -139,9 +145,11 @@ export default function ShareRecordButton({ sessionId, decisionText, compact = f
     // supported param for pre-filled post text (removed platform-wide a few
     // years back). Copying the message here is the only way to get it into
     // the post; generateMetadata on the share page covers the preview card,
-    // this covers the actual post body.
+    // this covers the actual post body. Plain text — LinkedIn doesn't render
+    // WhatsApp's asterisk-bold syntax, so the WhatsApp variant would just
+    // show literal asterisks in the post.
     try {
-      await navigator.clipboard.writeText(whatsappText)
+      await navigator.clipboard.writeText(plainText)
       setLinkedinCopied(true)
       setTimeout(() => setLinkedinCopied(false), 4000)
     } catch { /* clipboard unavailable — LinkedIn still opens fine either way */ }

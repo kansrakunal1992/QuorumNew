@@ -67,49 +67,82 @@ export function truncateWords(text: string, max: number): string {
   return text.slice(0, max).replace(/\s+\S*$/, '') + '…'
 }
 
-// Builds the exact compact message shared via WhatsApp/LinkedIn/Reddit.
-// Wording is unchanged from before ("Council verdict", "Worth confirming",
-// "Next step", "Full breakdown") — this only restructures how it reads.
-// Each label is bolded with WhatsApp's native single-asterisk syntax and
-// sits on its own line above its content, instead of one long wrapped
-// "Label: sentence" line — reads cleanly in a narrow chat bubble. No
-// emoji; this is native platform formatting, not decoration, and degrades
-// gracefully to plain asterisks anywhere that doesn't render it (LinkedIn,
-// the in-app copy preview):
-//   *A decision I ran through Quorum:*
-//   "<decision>"
+// Builds the compact message shared via WhatsApp/LinkedIn/Reddit/copy-link.
+// Two variants, same wording and same section order — "Council verdict",
+// "Worth confirming", "Next step", "Full breakdown" are unchanged in both:
 //
-//   *Council verdict:*
-//   <verdict>
+//   buildShareMessage()         — plain text. Used for LinkedIn (clipboard,
+//                                  since LinkedIn's share-offsite endpoint
+//                                  has no pre-filled-text param) and the
+//                                  in-app "Copy message" preview, which can
+//                                  be pasted anywhere — neither renders
+//                                  WhatsApp's asterisk-bold syntax, so this
+//                                  version stays plain rather than showing
+//                                  literal asterisks.
+//   buildWhatsAppShareMessage() — same content, labels bolded with
+//                                  WhatsApp's native single-asterisk syntax
+//                                  and on their own line above their
+//                                  content. Only ever used for the wa.me
+//                                  deep link. No emoji in either variant.
 //
-//   *Worth confirming:*                    ← or, if none:
-//   <keyQuestion>                            *Next step:*
-//                                             <topAction.lead> — <topAction.rest>
+//   Plain:                          WhatsApp:
+//   A decision I ran through        *A decision I ran through
+//   Quorum:                          Quorum:*
+//   "<decision>"                    "<decision>"
 //
-//   *Full breakdown:*
-//   <url>
+//   Council verdict:                *Council verdict:*
+//   <verdict>                       <verdict>
+//
+//   Worth confirming:               *Worth confirming:*
+//   <keyQuestion>                   <keyQuestion>
+//     ← or, if none, "Next step:" / "*Next step:*" with <topAction> →
+//
+//   Full breakdown:                 *Full breakdown:*
+//   <url>                           <url>
+function buildShareLines(
+  params: {
+    decisionText: string
+    url:          string
+    highlights:   SynthesisHighlights | null
+  },
+  label: (text: string) => string,
+): string[] {
+  const { decisionText, url, highlights } = params
+
+  const decision = truncateWords(decisionText.trim(), 140)
+  const lines = [label('A decision I ran through Quorum:'), `"${decision}"`]
+
+  if (highlights?.verdict) {
+    lines.push('', label('Council verdict:'), truncateWords(highlights.verdict, 180))
+  }
+
+  const topAction = highlights?.actionPlan?.[0] ?? null
+  if (highlights?.keyQuestion) {
+    lines.push('', label('Worth confirming:'), truncateWords(highlights.keyQuestion, 180))
+  } else if (topAction) {
+    const actionLine = topAction.lead ? `${topAction.lead} — ${topAction.rest}` : topAction.rest
+    lines.push('', label('Next step:'), truncateWords(actionLine, 180))
+  }
+
+  lines.push('', label('Full breakdown:'), url)
+  return lines
+}
+
+const plainLabel      = (text: string) => text
+const whatsappLabel    = (text: string) => `*${text}*`
+
 export function buildShareMessage(params: {
   decisionText: string
   url:          string
   highlights:   SynthesisHighlights | null
 }): string {
-  const { decisionText, url, highlights } = params
+  return buildShareLines(params, plainLabel).join('\n')
+}
 
-  const decision = truncateWords(decisionText.trim(), 140)
-  const lines = [`*A decision I ran through Quorum:*`, `"${decision}"`]
-
-  if (highlights?.verdict) {
-    lines.push('', `*Council verdict:*`, truncateWords(highlights.verdict, 180))
-  }
-
-  const topAction = highlights?.actionPlan?.[0] ?? null
-  if (highlights?.keyQuestion) {
-    lines.push('', `*Worth confirming:*`, truncateWords(highlights.keyQuestion, 180))
-  } else if (topAction) {
-    const actionLine = topAction.lead ? `${topAction.lead} — ${topAction.rest}` : topAction.rest
-    lines.push('', `*Next step:*`, truncateWords(actionLine, 180))
-  }
-
-  lines.push('', `*Full breakdown:*`, url)
-  return lines.join('\n')
+export function buildWhatsAppShareMessage(params: {
+  decisionText: string
+  url:          string
+  highlights:   SynthesisHighlights | null
+}): string {
+  return buildShareLines(params, whatsappLabel).join('\n')
 }

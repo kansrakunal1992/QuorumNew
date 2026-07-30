@@ -11,7 +11,7 @@ import { NextResponse }        from 'next/server'
 import { randomUUID }          from 'crypto'
 import { createServiceClient } from '@/lib/supabase'
 import { decrypt }             from '@/lib/encryption'
-import { parseSynthesisHighlights, buildShareMessage } from '@/lib/synthesis-highlights'
+import { parseSynthesisHighlights, buildShareMessage, buildWhatsAppShareMessage } from '@/lib/synthesis-highlights'
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -21,7 +21,8 @@ function publicUrl(token: string) {
 }
 
 // Fetches the session's decision text and its latest synthesis message,
-// decrypts both, and composes the compact WhatsApp/LinkedIn/Reddit message.
+// decrypts both, and composes the compact share message in both variants:
+// plain (LinkedIn/Reddit/copy-link) and WhatsApp-formatted (bold labels).
 // "Latest" matters because a challenged/pushback exchange within the same
 // session can produce more than one persona='synthesis' message — the most
 // recent one is the current verdict, same reasoning as the record page's
@@ -31,7 +32,7 @@ async function buildMessageForSession(
   sessionId:           string,
   encryptedDecision:   string | null,
   url:                 string,
-): Promise<string> {
+): Promise<{ message: string; whatsappMessage: string }> {
   const decisionText = decrypt(encryptedDecision) ?? ''
 
   const { data: synthesisMsg } = await supabase
@@ -47,7 +48,10 @@ async function buildMessageForSession(
     ? parseSynthesisHighlights(decrypt(synthesisMsg.content) ?? '')
     : null
 
-  return buildShareMessage({ decisionText, url, highlights })
+  return {
+    message:         buildShareMessage({ decisionText, url, highlights }),
+    whatsappMessage: buildWhatsAppShareMessage({ decisionText, url, highlights }),
+  }
 }
 
 async function resolveOwnership(
@@ -103,12 +107,12 @@ export async function GET(req: Request, { params }: Params) {
   }
 
   if (!row.is_shared || !row.share_token) {
-    return NextResponse.json({ isShared: false, url: null, message: null })
+    return NextResponse.json({ isShared: false, url: null, message: null, whatsappMessage: null })
   }
 
   const url = publicUrl(row.share_token)
-  const message = await buildMessageForSession(supabase, sessionId, row.decision_text, url)
-  return NextResponse.json({ isShared: true, url, message })
+  const { message, whatsappMessage } = await buildMessageForSession(supabase, sessionId, row.decision_text, url)
+  return NextResponse.json({ isShared: true, url, message, whatsappMessage })
 }
 
 export async function POST(req: Request, { params }: Params) {
@@ -136,8 +140,8 @@ export async function POST(req: Request, { params }: Params) {
   if (updateErr) return NextResponse.json({ error: 'Failed to enable sharing' }, { status: 500 })
 
   const url = publicUrl(token)
-  const message = await buildMessageForSession(supabase, sessionId, row.decision_text, url)
-  return NextResponse.json({ isShared: true, url, message })
+  const { message, whatsappMessage } = await buildMessageForSession(supabase, sessionId, row.decision_text, url)
+  return NextResponse.json({ isShared: true, url, message, whatsappMessage })
 }
 
 export async function DELETE(req: Request, { params }: Params) {
