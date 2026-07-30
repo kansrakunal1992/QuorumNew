@@ -67,16 +67,27 @@ export function truncateWords(text: string, max: number): string {
   return text.slice(0, max).replace(/\s+\S*$/, '') + '…'
 }
 
-// Builds the exact compact message shared via WhatsApp/LinkedIn/Reddit:
-//   A decision I ran through Quorum:
+// Builds the exact compact message shared via WhatsApp/LinkedIn/Reddit.
+// Wording is unchanged from before ("Council verdict", "Worth confirming",
+// "Next step", "Full breakdown") — this only restructures how it reads.
+// Each label is bolded with WhatsApp's native single-asterisk syntax and
+// sits on its own line above its content, instead of one long wrapped
+// "Label: sentence" line — reads cleanly in a narrow chat bubble. No
+// emoji; this is native platform formatting, not decoration, and degrades
+// gracefully to plain asterisks anywhere that doesn't render it (LinkedIn,
+// the in-app copy preview):
+//   *A decision I ran through Quorum:*
 //   "<decision>"
 //
-//   Council verdict: <verdict>
+//   *Council verdict:*
+//   <verdict>
 //
-//   Worth confirming: <keyQuestion>        ← or, if none:
-//   Next step: <topAction.lead> — <topAction.rest>
+//   *Worth confirming:*                    ← or, if none:
+//   <keyQuestion>                            *Next step:*
+//                                             <topAction.lead> — <topAction.rest>
 //
-//   Full breakdown: <url>
+//   *Full breakdown:*
+//   <url>
 export function buildShareMessage(params: {
   decisionText: string
   url:          string
@@ -85,20 +96,20 @@ export function buildShareMessage(params: {
   const { decisionText, url, highlights } = params
 
   const decision = truncateWords(decisionText.trim(), 140)
-  const lines = [`A decision I ran through Quorum:`, `"${decision}"`]
+  const lines = [`*A decision I ran through Quorum:*`, `"${decision}"`]
 
   if (highlights?.verdict) {
-    lines.push('', `Council verdict: ${truncateWords(highlights.verdict, 180)}`)
+    lines.push('', `*Council verdict:*`, truncateWords(highlights.verdict, 180))
   }
 
   const topAction = highlights?.actionPlan?.[0] ?? null
   if (highlights?.keyQuestion) {
-    lines.push('', `Worth confirming: ${truncateWords(highlights.keyQuestion, 180)}`)
+    lines.push('', `*Worth confirming:*`, truncateWords(highlights.keyQuestion, 180))
   } else if (topAction) {
     const actionLine = topAction.lead ? `${topAction.lead} — ${topAction.rest}` : topAction.rest
-    lines.push('', `Next step: ${truncateWords(actionLine, 180)}`)
+    lines.push('', `*Next step:*`, truncateWords(actionLine, 180))
   }
 
-  lines.push('', `Full breakdown: ${url}`)
+  lines.push('', `*Full breakdown:*`, url)
   return lines.join('\n')
 }

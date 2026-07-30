@@ -69,7 +69,7 @@ export default function BriefCTA({ sessionId }: Props) {
             Decision Brief
           </p>
           <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 10px', lineHeight: 1.55 }}>
-            A formatted PDF — all six advisors, synthesis, and pushbacks.
+            Your structural read, all six advisors, and the synthesis — a permanent record you can hand to a board or keep for yourself.
           </p>
 
           {/* Theme pills */}

@@ -1175,7 +1175,7 @@ async function buildPdf(
   doc.setFontSize(7.5)
   doc.setTextColor(...C.mutedText)
   doc.setCharSpace(2.5)
-  doc.text('PRIVATE DECISION INTELLIGENCE', ML, Y)
+  doc.text('STRUCTURAL DECISION RECORD', ML, Y)
   doc.setCharSpace(0)
   Y += 14
 

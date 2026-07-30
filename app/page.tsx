@@ -1239,7 +1239,7 @@ export default function Home() {
                 letterSpacing: '-0.01em',
                 textAlign:     'center',
               }}>
-                Not a chatbot. A structured second opinion before you commit.
+                Not a chatbot. Quorum reads the structure of a decision before it answers.
               </p>
               <p style={{
                 fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.75,

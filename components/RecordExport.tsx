@@ -274,7 +274,7 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(74, 85, 104)
-      doc.text('PRIVATE DECISION INTELLIGENCE', ML, y)
+      doc.text('STRUCTURAL DECISION RECORD', ML, y)
       y += 5
 
       doc.setDrawColor(28, 43, 74)

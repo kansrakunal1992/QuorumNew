@@ -951,7 +951,7 @@ function TeaserView({
           Quorum Elite
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px', fontStyle: 'italic' }}>
-          Quorum that knows you.
+          Where your judgment compounds.
         </p>
         <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
           Unlocks these sections:
