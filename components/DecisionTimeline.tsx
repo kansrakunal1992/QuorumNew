@@ -31,6 +31,7 @@ interface Props {
   entries:             TimelineEntry[]
   currentSessionId:    string
   hasMirrorAccess:     boolean
+  foundingAvailable?:  boolean   // see lib/founding.ts — only meaningful when !hasMirrorAccess
   avgCalibrationDelta: number | null   // mean of logged calibration_deltas across chain
 }
 
@@ -60,6 +61,7 @@ export default function DecisionTimeline({
   entries,
   currentSessionId,
   hasMirrorAccess,
+  foundingAvailable = false,
   avgCalibrationDelta,
 }: Props) {
   if (entries.length < 2) return null
@@ -270,11 +272,17 @@ export default function DecisionTimeline({
             }}>
               Calibration Arc · Mirror
             </p>
-            <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: 0, lineHeight: 1.6 }}>
+            <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 6px', lineHeight: 1.6 }}>
               Mirror members see how confidence and judgment accuracy shifted across
               this decision's sittings — across {sittingCount} sitting{sittingCount !== 1 ? 's' : ''} and
               every outcome logged in the arc.
             </p>
+            <a
+              href="/mirror#mirror-cta"
+              style={{ fontSize: 11.5, color: 'var(--gold)', fontWeight: 600, textDecoration: 'none' }}
+            >
+              {foundingAvailable ? 'Become a Founding Member — ₹999/mo →' : 'Unlock Mirror →'}
+            </a>
           </div>
         )}
       </div>

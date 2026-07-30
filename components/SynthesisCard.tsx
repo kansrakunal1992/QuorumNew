@@ -35,6 +35,11 @@ interface Props {
   interstitialGateOpen?: boolean
   /** O3: Mirror subscription state — gates the auto-surfaced Decision-Maker Observation line */
   mirrorActive?: boolean
+  /** Founding Elite cohort offer (see lib/founding.ts) — branches the Mirror
+   *  nudge row's copy when !mirrorActive. Not a product tier; this component
+   *  never needs to change again once Founding closes (foundingAvailable
+   *  just goes false and the nudge quietly becomes a plain Elite nudge). */
+  foundingAvailable?: boolean
   /** Bug fix: raw synthesis text already persisted in `messages` for this session
    *  (persona='synthesis'), loaded server-side in app/session/[id]/page.tsx the same
    *  way PersonaPanel's initialContent works. When present, the synthesis is rendered
@@ -75,6 +80,7 @@ export default function SynthesisCard({
   hasValidationCorrection, // S2-05
   interstitialGateOpen = true, // S3-01 — defaults true so it's never a silent regression if unset
   mirrorActive, // O3
+  foundingAvailable = false,
   initialContent, // bug fix: cached synthesis text — skips regeneration when present
   personaLeans = {},              // P1
   initialSynthesisVersions = [],  // P1
@@ -1458,7 +1464,9 @@ export default function SynthesisCard({
               </div>
             )}
 
-            {/* Mirror nudge row */}
+            {/* Mirror nudge row — copy branches by mirrorActive/foundingAvailable so
+                paying users, users who could still join Founding, and users past
+                the Founding cap each see an accurate, differently-worded line. */}
             <div style={{
               marginTop:    12,
               paddingTop:   12,
@@ -1468,10 +1476,14 @@ export default function SynthesisCard({
               justifyContent: 'space-between',
             }}>
               <span style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
-                This decision has been added to your Mirror profile.
+                {mirrorActive
+                  ? 'This decision has been added to your Mirror profile.'
+                  : foundingAvailable
+                  ? 'This decision has been added to your judgment record. Founding Elite unlocks Mirror — ₹999/mo, limited seats.'
+                  : "This decision has been added to your judgment record. Mirror unlocks the patterns underneath it."}
               </span>
               <a
-                href="/mirror"
+                href={mirrorActive ? '/mirror' : '/mirror#mirror-cta'}
                 style={{
                   fontSize:       12,
                   color:          'var(--gold)',
@@ -1482,7 +1494,7 @@ export default function SynthesisCard({
                   flexShrink:     0,
                 }}
               >
-                View Mirror →
+                {mirrorActive ? 'View Mirror →' : foundingAvailable ? 'Become a Founding Member →' : 'Unlock Mirror →'}
               </a>
             </div>
 

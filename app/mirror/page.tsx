@@ -46,6 +46,8 @@ import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint
 import AttentionZone          from '@/components/AttentionZone'         // Sprint M5
 import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprint M6
 import MindChangeTile         from '@/components/MindChangeTile'        // Phase 4
+import FAQSection             from '@/components/FAQSection'
+import SocialProofCard        from '@/components/SocialProofCard'
 import type { SummaryData }   from '@/components/MirrorSummaryCard'
 import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier } from '@/lib/types'
 // AdvisoryUpsellCard/ADVISORY_UPSELL_COPY imports removed — Advisory tier
@@ -421,6 +423,18 @@ function LockedView({ sessionCount, authToken }: { sessionCount: number; authTok
           <DecisionGraph authToken={authToken} />
         </div>
       )}
+
+      {/* Social proof — same case study as the marketing site, so a
+          locked-out visitor doesn't have to leave the app to see it. */}
+      <SocialProofCard />
+
+      {/* FAQ — reused as-is from the home page (components/FAQSection.tsx),
+          no new component needed. Answers the objections (privacy, "is
+          this a chatbot," pricing) most likely to be live for someone
+          looking at a paywall right now. */}
+      <div style={{ width: '100%', textAlign: 'left' }}>
+        <FAQSection />
+      </div>
 
       <button
         onClick={() => window.history.length > 1 ? router.back() : router.push('/')}
@@ -948,7 +962,7 @@ function TeaserView({
         marginTop:    36,
       }}>
         <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>
-          Quorum Elite
+          {status.foundingAvailable ? 'Founding Elite' : 'Quorum Elite'}
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px', fontStyle: 'italic' }}>
           Where your judgment compounds.
@@ -974,26 +988,63 @@ function TeaserView({
             </div>
           ))}
         </div>
-        <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
-          ₹2,999/month · ₹29,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
-        </p>
-        <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
-          <PaymentButton
-            plan="monthly"
-            label="₹2,999 / month →"
-            authToken={authToken}
-            userEmail={userEmail}
-            onSuccess={onUnlocked}
-          />
-          <PaymentButton
-            plan="annual"
-            label="₹29,999 / year  — best value →"
-            authToken={authToken}
-            userEmail={userEmail}
-            onSuccess={onUnlocked}
-          />
-        </div>
+        {status.foundingAvailable ? (
+          <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
+              ₹999/month · ₹9,999/year — regular price is ₹2,999/month · ₹29,999/year. Locked in for as long as you stay subscribed. Limited founding member seats.
+            </p>
+            <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+              <PaymentButton
+                plan="founding_monthly"
+                label="Become a Founding Member — ₹999/month →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+              <PaymentButton
+                plan="founding_annual"
+                label="₹9,999/year — best value →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
+              ₹2,999/month · ₹29,999/year. Advisors charge ₹5 lakh/year for less — this is derived from your actual decisions, not a questionnaire.
+            </p>
+            <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+              <PaymentButton
+                plan="monthly"
+                label="₹2,999 / month →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+              <PaymentButton
+                plan="annual"
+                label="₹29,999 / year  — best value →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Social proof + FAQ — same content as the marketing site's own
+          conversion page, surfaced right at the point of purchase decision
+          rather than requiring a trip back to the marketing site. */}
+      <div style={{ marginTop: 28 }}>
+        <SocialProofCard />
+      </div>
+      <div style={{ marginTop: 28, textAlign: 'left' }}>
+        <FAQSection />
       </div>
     </div>
   )

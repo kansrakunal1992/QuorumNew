@@ -11,7 +11,7 @@
 //   5. On modal dismiss: reset loading state
 //
 // Props:
-//   plan      — 'monthly' | 'annual'
+//   plan      — 'monthly' | 'annual' | 'founding_monthly' | 'founding_annual'
 //   label     — button text e.g. "₹2,999 / month"
 //   authToken — Supabase JWT from session (for Authorization header)
 //   userEmail — prefilled in Razorpay checkout
@@ -29,7 +29,7 @@ declare global {
 }
 
 interface PaymentButtonProps {
-  plan:      'monthly' | 'annual'
+  plan:      'monthly' | 'annual' | 'founding_monthly' | 'founding_annual'
   label:     string
   authToken: string
   userEmail: string
@@ -104,7 +104,11 @@ export function PaymentButton({
         subscription_id: subscriptionId,
         name:            'Quorum',
         image:           'https://app.quorumvault.org/icon-512.png',
-        description:     plan === 'annual'
+        description:     plan === 'founding_monthly'
+          ? 'Quorum Founding Elite — Monthly (₹999/month)'
+          : plan === 'founding_annual'
+          ? 'Quorum Founding Elite — Annual (₹9,999/year)'
+          : plan === 'annual'
           ? 'Quorum Elite — Annual (₹29,999/year)'
           : 'Quorum Elite — Monthly (₹2,999/month)',
         prefill: {

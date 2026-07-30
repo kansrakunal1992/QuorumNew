@@ -18,7 +18,14 @@
 //
 // notes contract (set on subscription at creation time):
 //   notes.user_id  — Supabase auth.users UUID
-//   notes.plan     — 'monthly' | 'annual'
+//   notes.plan     — 'monthly' | 'annual' (Founding Elite sends 'monthly' here —
+//                     it bills monthly like any other monthly subscription)
+//   notes.founding — 'true' only on Founding Elite subscriptions (optional,
+//                     absent otherwise). Sets mirror_access.founding_member.
+//                     Founding is NOT a product_tier — see lib/founding.ts.
+//                     founding_member is written explicitly (never inferred
+//                     from a default) in both initial-write paths below, so
+//                     it's correct regardless of which event lands first.
 //
 // Env vars required (Railway):
 //   RAZORPAY_WEBHOOK_SECRET  — copy from Razorpay Dashboard → Webhooks
@@ -99,8 +106,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    const userId = sub.notes?.user_id as string | undefined
-    const plan   = sub.notes?.plan   as string | undefined
+    const userId   = sub.notes?.user_id as string | undefined
+    const plan     = sub.notes?.plan   as string | undefined
+    const founding = sub.notes?.founding === 'true'
 
     if (!userId || (plan !== 'monthly' && plan !== 'annual')) {
       console.error('[webhook] subscription.activated: missing user_id or invalid plan', sub.notes)
@@ -126,6 +134,11 @@ export async function POST(req: NextRequest) {
           // Elite (₹2,999/mo · ₹29,999/yr) — Private is custom/sales-led,
           // never reaches this webhook (see /api/admin/grant-mirror-access).
           product_tier: 'elite',
+          // Founding Elite cohort marker (₹999/mo, cap 20) — orthogonal to
+          // product_tier, see lib/founding.ts. Written explicitly (not left
+          // to the column default) so this is correct even if this upsert
+          // is the very first write for the row.
+          founding_member: founding,
         },
         { onConflict: 'user_id' },
       )
@@ -136,7 +149,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'DB write failed' }, { status: 500 })
     }
 
-    console.log(`[webhook] Mirror activated | user: ${userId} | plan: ${plan} | expires: ${expiresAt}`)
+    console.log(`[webhook] Mirror activated | user: ${userId} | plan: ${plan}${founding ? ' (founding)' : ''} | expires: ${expiresAt}`)
     return NextResponse.json({ ok: true })
   }
 
@@ -162,11 +175,18 @@ export async function POST(req: NextRequest) {
     const subscriptionId = payment.subscription_id as string
 
     // Try notes first (propagated from subscription to payment by Razorpay)
-    const userId = payment.notes?.user_id as string | undefined
-    const plan   = payment.notes?.plan   as string | undefined
+    const userId   = payment.notes?.user_id as string | undefined
+    const plan     = payment.notes?.plan   as string | undefined
+    const founding = payment.notes?.founding === 'true'
 
     if (userId && (plan === 'monthly' || plan === 'annual')) {
-      // Have full context — upsert directly (handles both initial + renewal)
+      // Have full context — upsert directly (handles both initial + renewal).
+      // founding_member is included here too (not just in subscription.
+      // activated's handler) because this path can be the FIRST write if
+      // payment.captured races ahead of subscription.activated — omitting
+      // it would let a founding subscriber's row insert with the column's
+      // false default. On a true renewal this just re-asserts the same
+      // value, which is safe (founding status doesn't change on renewal).
       const expiresAt = getExpiresAt(plan)
       const now       = new Date().toISOString()
 
@@ -174,13 +194,14 @@ export async function POST(req: NextRequest) {
         .from('mirror_access')
         .upsert(
           {
-            user_id:     userId,
-            access_type: plan as SubscriptionPlan,
-            granted_at:  now,
-            started_at:  now,
-            expires_at:  expiresAt,
-            payment_id:  subscriptionId,
-            payment_ref: `razorpay:sub:${subscriptionId}`,
+            user_id:         userId,
+            access_type:     plan as SubscriptionPlan,
+            granted_at:      now,
+            started_at:      now,
+            expires_at:      expiresAt,
+            payment_id:      subscriptionId,
+            payment_ref:     `razorpay:sub:${subscriptionId}`,
+            founding_member: founding,
           },
           { onConflict: 'user_id' },
         )
@@ -190,7 +211,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'DB write failed' }, { status: 500 })
       }
 
-      console.log(`[webhook] Mirror extended (via notes) | user: ${userId} | plan: ${plan} | expires: ${expiresAt}`)
+      console.log(`[webhook] Mirror extended (via notes) | user: ${userId} | plan: ${plan}${founding ? ' (founding)' : ''} | expires: ${expiresAt}`)
       return NextResponse.json({ ok: true })
     }
 

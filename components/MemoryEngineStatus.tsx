@@ -19,6 +19,7 @@ interface Props {
   decidedCount: number
   hasIdentity: boolean
   mirrorUnlocked?: boolean      // true if user has active Mirror subscription
+  foundingAvailable?: boolean   // see lib/founding.ts — branches the Mirror preview nudge copy
   onScrollToHistory: () => void
 }
 
@@ -60,6 +61,7 @@ export default function MemoryEngineStatus({
   decidedCount,
   hasIdentity,
   mirrorUnlocked = false,
+  foundingAvailable = false,
   onScrollToHistory,
 }: Props) {
   if (sessionCount === 0) return null
@@ -267,7 +269,7 @@ export default function MemoryEngineStatus({
                     opacity:        0.85,
                   }}
                 >
-                  View Mirror →
+                  {foundingAvailable ? 'Become a Founding Member →' : 'View Mirror →'}
                 </a>
               </p>
             )}

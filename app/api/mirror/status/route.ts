@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState, getMirrorTier } from '@/lib/mirror-access'
+import { isFoundingAvailable } from '@/lib/founding'
 import type { MirrorStatus } from '@/lib/types'
 
 export async function GET(req: Request) {
@@ -51,6 +52,7 @@ export async function GET(req: Request) {
       gateState: 'auth',
       teaserBiases: [],
       tier: 'mirror',
+      foundingAvailable: false,
     }
     return NextResponse.json(response)
   }
@@ -100,6 +102,14 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── 6. Founding Elite cohort offer — only meaningful where the purchase
+  // CTA actually renders (TeaserView, gateState === 'teaser'). Skipped for
+  // 'locked' (no CTA today) and 'unlocked' (already paying) to avoid an
+  // unnecessary count query on those requests.
+  const foundingAvailable = gateState === 'teaser'
+    ? await isFoundingAvailable(supabase)
+    : false
+
   const response: MirrorStatus = {
     authenticated: true,
     sessionCount,
@@ -107,6 +117,7 @@ export async function GET(req: Request) {
     gateState,
     teaserBiases,
     tier,
+    foundingAvailable,
   }
 
   return NextResponse.json(response)

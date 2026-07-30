@@ -99,6 +99,10 @@ interface Props {
    *  Previously hardcoded false — paying Mirror subscribers were getting free-tier
    *  Council behaviour. Now threaded through to RecordReceipt and PersonaPanel. */
   mirrorActive?: boolean
+  // Founding Elite cohort offer (see lib/founding.ts) — threaded to
+  // SynthesisCard's Mirror nudge row and RecordReceipt's upgrade line.
+  // Only meaningful when mirrorActive is false.
+  foundingAvailable?: boolean
   /** P0 tour fix: server-side truth for "has this user already seen the Council tour",
    *  resolved from user_profiles.council_tour_completed_at. Previously this tour was
    *  gated on localStorage alone, so a returning/established user on a fresh device
@@ -173,7 +177,7 @@ function buildExaminerContextForPersona(
   return `The Examiner gathered additional information from the decision-maker after your initial analysis. Review these answers and update your position if the new information changes your assessment:\n\n${lines}\n\nProvide a concise update (under 200 words). If the new information significantly changes your view, say so directly. If it confirms your original analysis, say that — and why.`
 }
 
-export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, mirrorActive = false, councilTourDone = false, examinerAlreadySubmitted = false, examinerSavedResponses = [], appliedRuleFromServer = null, initialSynthesisVersions = [] }: Props) {
+export default function SessionView({ session: initialSession, initialMessages = {}, totalSessionCount, encryptionEnabled = false, mirrorActive = false, foundingAvailable = false, councilTourDone = false, examinerAlreadySubmitted = false, examinerSavedResponses = [], appliedRuleFromServer = null, initialSynthesisVersions = [] }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -1679,6 +1683,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                   interstitialGateOpen={interstitialGateOpen}
                   // O3: gates the auto-surfaced Decision-Maker Observation line
                   mirrorActive={mirrorActive}
+                  foundingAvailable={foundingAvailable}
                   // Bug fix: cached synthesis from a prior visit — skips regenerating
                   // it on remount when already persisted for this session.
                   initialContent={initialSynthesisContent}
@@ -1704,6 +1709,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       return undefined
                     })()}
                     mirrorActive={mirrorActive}
+                    foundingAvailable={foundingAvailable}
                   />
                 </div>
               )}

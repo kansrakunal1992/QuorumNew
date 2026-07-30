@@ -17,6 +17,7 @@ import TrustBadgeStrip from '@/components/TrustBadgeStrip'
 import DecisionTimeline from '@/components/DecisionTimeline'  // RET-5 Sprint 3
 import type { TimelineEntry } from '@/components/DecisionTimeline'
 import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
+import { isFoundingAvailable }  from '@/lib/founding'
 import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
 import RecordDecisionHero from '@/components/RecordDecisionHero'
 import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent, briefLineIsRedundantTitle } from '@/lib/brief-markdown'
@@ -648,6 +649,7 @@ export default async function RecordPage({ params }: Props) {
   // Adds at most 3 DB queries, only when this page is a chain root.
   let timelineEntries:     TimelineEntry[] | null = null
   let hasMirrorAccess      = false
+  let foundingAvailable    = false
   let avgCalibrationDelta: number | null = null
 
   const isChainRoot = !session.parent_session_id && childSessions.length > 0
@@ -677,6 +679,9 @@ export default async function RecordPage({ params }: Props) {
     if (session.user_id) {
       const accessState = await getMirrorAccessState(session.user_id, supabase)
       hasMirrorAccess = accessState === 'unlocked'
+      // Founding Elite cohort offer (see lib/founding.ts) — only meaningful
+      // for the non-Mirror teaser tile below, skip the query otherwise.
+      if (!hasMirrorAccess) foundingAvailable = await isFoundingAvailable(supabase)
     }
 
     // Build outcome map — what_decided is encrypted
@@ -1207,6 +1212,7 @@ export default async function RecordPage({ params }: Props) {
                 entries={timelineEntries}
                 currentSessionId={id}
                 hasMirrorAccess={hasMirrorAccess}
+                foundingAvailable={foundingAvailable}
                 avgCalibrationDelta={avgCalibrationDelta}
               />
             </div>

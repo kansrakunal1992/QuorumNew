@@ -194,6 +194,10 @@ export interface MirrorStatus {
   gateState: MirrorGateState
   teaserBiases: string[]    // bias_parameter keys shown in teaser state
   tier: MirrorTier           // Phase 4 — drives Advisory-only module gating
+  // Founding Elite cohort offer (₹999/mo, cap 20 — see lib/founding.ts).
+  // Only meaningful when gateState === 'teaser' (the only state with a
+  // purchase CTA); false otherwise. Not a product tier — see lib/founding.ts.
+  foundingAvailable: boolean
 }
 
 export interface TimelineSession {

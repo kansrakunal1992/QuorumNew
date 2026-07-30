@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase'
 import SessionView             from '@/components/SessionView'
 import { decrypt }             from '@/lib/encryption'
 import { getMirrorAccessState } from '@/lib/mirror-access'   // O4
+import { isFoundingAvailable }  from '@/lib/founding'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -20,7 +21,7 @@ export default async function SessionPage({ params }: Props) {
 
   if (error || !session) { notFound() }
 
-  const [{ data: messages }, { count: totalSessionCount }, mirrorState, tourProfileResult, ontologyStatusResult, synthesisVersionsResult] = await Promise.all([
+  const [{ data: messages }, { count: totalSessionCount }, mirrorState, foundingAvailable, tourProfileResult, ontologyStatusResult, synthesisVersionsResult] = await Promise.all([
     supabase.from('messages').select('persona, role, content').eq('session_id', id).order('created_at', { ascending: true }),
     session.user_id
       ? supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', session.user_id)
@@ -29,6 +30,10 @@ export default async function SessionPage({ params }: Props) {
     session.user_id
       ? getMirrorAccessState(session.user_id, supabase)
       : Promise.resolve('locked' as const),
+    // Founding Elite cohort offer — cheap indexed count, fetched unconditionally
+    // alongside everything else here (see lib/founding.ts). Only consumed by
+    // RecordReceipt/SynthesisCard's upgrade nudges when mirrorState !== 'unlocked'.
+    isFoundingAvailable(supabase),
     // P0 fix: server-side truth for "has this user already seen the Council tour" —
     // same cross-device durability the Home tour already has (see
     // supabase/add_council_record_tour_completed_to_user_profiles.sql).
@@ -128,6 +133,7 @@ export default async function SessionPage({ params }: Props) {
     totalSessionCount={totalSessionCount ?? undefined}
     encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY}
     mirrorActive={mirrorState === 'unlocked'}     // O4: real mirror access state
+    foundingAvailable={foundingAvailable}
     councilTourDone={councilTourDone}
     examinerAlreadySubmitted={examinerAlreadySubmitted}
     examinerSavedResponses={examinerSavedResponses}
