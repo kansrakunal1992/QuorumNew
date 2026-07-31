@@ -9,6 +9,7 @@ import { createServiceClient, createClient } from '@/lib/supabase'
 import { decrypt } from '@/lib/encryption'
 import { createCompletion } from '@/lib/ai-client'
 import { NextResponse } from 'next/server'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 async function getUserId(req: Request): Promise<string | null> {
   const auth = req.headers.get('Authorization')
@@ -53,6 +54,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const rlResult = checkLimit(getClientIP(req), LIMITS.caseStudySubmit)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'case study submissions')
+
   const userId = await getUserId(req)
   if (!userId) return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
 

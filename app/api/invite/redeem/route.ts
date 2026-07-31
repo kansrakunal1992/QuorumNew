@@ -12,6 +12,7 @@
 import { NextResponse }                      from 'next/server'
 import { createServiceClient, createClient } from '@/lib/supabase'
 import { createHash }                        from 'crypto'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 async function resolveUserId(req: Request): Promise<string | null> {
   const authHeader = req.headers.get('authorization')
@@ -30,6 +31,9 @@ function hashCode(code: string): string {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const rlResult = checkLimit(getClientIP(req), LIMITS.codeRedeem)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'invite redemption attempts')
+
   const userId = await resolveUserId(req)
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

@@ -9,6 +9,8 @@
 // and abuse, not typical power-user sessions.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { NextResponse } from 'next/server'
+
 interface Entry {
   count:   number
   resetAt: number   // Unix ms
@@ -125,6 +127,23 @@ export const LIMITS: Record<string, LimitConfig> = {
     limit:      20,
     windowMs:   15 * 60_000,
   },
+  // Case study submission — authenticated, but calls the LLM to draft an
+  // anonymized summary. Real users submit this rarely (once per case study,
+  // opt-in), so a strict cap has no legitimate cost.
+  caseStudySubmit: {
+    identifier: 'case-study-submit',
+    limit:      10,
+    windowMs:   15 * 60_000,
+  },
+  // Invite / institution code redemption — both do a hash lookup against a
+  // secret code with no other identity check, so repeated attempts are a
+  // guessing attack even though the caller is authenticated. Legitimate
+  // users redeem their own code once.
+  codeRedeem: {
+    identifier: 'code-redeem',
+    limit:      8,
+    windowMs:   15 * 60_000,
+  },
 }
 
 // ── Core check function ───────────────────────────────────────────────────────
@@ -186,7 +205,7 @@ export function getClientIP(req: Request): string {
 //
 // The resetAt timestamp is included so the client can show a live countdown.
 
-export function tooManyRequests(result: LimitResult, action = 'requests'): Response {
+export function tooManyRequests(result: LimitResult, action = 'requests'): NextResponse {
   const now       = Date.now()
   const totalSecs = Math.max(1, result.retryAfterSecs)
   const mins      = Math.floor(totalSecs / 60)
@@ -208,17 +227,16 @@ export function tooManyRequests(result: LimitResult, action = 'requests'): Respo
     `You've sent too many ${action}. ` +
     `Please wait ${waitLabel} — you can try again at ${timeStr}.`
 
-  return new Response(
-    JSON.stringify({
+  return NextResponse.json(
+    {
       error:           'Too many requests',
       message,
       resetAt:         result.resetAt,
       retryAfterSecs:  result.retryAfterSecs,
-    }),
+    },
     {
       status: 429,
       headers: {
-        'Content-Type':       'application/json',
         'Retry-After':        String(result.retryAfterSecs),
         'X-RateLimit-Remaining': '0',
         'X-RateLimit-Reset':  String(Math.ceil(result.resetAt / 1000)),
