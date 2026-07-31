@@ -31,6 +31,7 @@ import {
 } from '@/lib/structural-retrieval'
 import { encrypt, decrypt, encryptJson, decryptJson } from '@/lib/encryption'
 import { upsertStructuralEdge } from '@/lib/graph-engine'  // Sprint G1: live graph edge writes
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 // ── RET-5 Sprint 1: lineage exclusion ────────────────────────────────────────
 // A revisit's own parent (or any ancestor/descendant in its chain) is not a
@@ -71,6 +72,11 @@ async function fetchSessionLineage(
 
 export async function POST(req: Request) {
   try {
+    // LIMITS.structuralMatch already existed for this route but was never
+    // wired up — this endpoint has been reachable with no rate limit at all.
+    const rlResult = checkLimit(getClientIP(req), LIMITS.structuralMatch)
+    if (!rlResult.allowed) return tooManyRequests(rlResult, 'structural-match requests')
+
     const body = await req.json() as {
       sessionId: string
       userEmail?: string

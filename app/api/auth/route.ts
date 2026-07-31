@@ -10,20 +10,23 @@
 //
 // Sprint 12 addition: provider-lock pre-check. If this email already signed
 // up via Google, we don't send a link at all — we return 409 { error:
-// 'wrong_provider' } so the client (AuthPanel) can prompt "use Google instead"
-// rather than sending a link that would just fork a duplicate account.
-// (The real backstop — the one that actually deletes any forked user — lives
-// in /api/auth/link-sessions, which runs after every successful auth of
-// either kind. This pre-check just avoids sending a doomed link in the
-// magic-link direction; it can't catch the Google direction since
-// signInWithOAuth redirects straight to Google before we ever see the email.)
+// 'wrong_provider' } so the client (AuthPanel) can prompt "use Google instead".
+// This is a UX nicety, not a safety mechanism — Supabase auto-links same-email
+// identities to one account regardless, so skipping this check would just cost
+// the user an unnecessary email round-trip, not create a duplicate account.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
+import { writeAuditLog, getAuditContext } from '@/lib/audit'
 
 export async function POST(req: Request) {
   try {
+    // S5-01: rate limit magic link sends — 5 per 15 min per IP
+    const rlResult = checkLimit(getClientIP(req), LIMITS.auth)
+    if (!rlResult.allowed) return tooManyRequests(rlResult, 'sign-in requests')
+
     const { email, deviceId, sessionIds } = await req.json() as {
       email?:      string
       deviceId?:   string
@@ -54,10 +57,16 @@ export async function POST(req: Request) {
     // ── 1. Build the redirect URL, embedding device/session identity ──────
     // so /auth/callback can recover it via ?xd=&xs= even in a different
     // browser context than the one that requested the link.
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.quorumvault.org').replace(/\/$/, '')
+    //
+    // Fallback must be the Railway URL, NOT app.quorumvault.org — that
+    // custom domain is not in Supabase's redirect allowlist, so using it
+    // here would make Supabase silently drop /auth/callback and all
+    // ?xd=/?xs= params (this exact bug was already hit and fixed once).
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL
+      ?? 'https://invigorating-manifestation-production-ecd2.up.railway.app').replace(/\/$/, '')
     const params = new URLSearchParams()
     if (deviceId) params.set('xd', deviceId)
-    if (sessionIds?.length) params.set('xs', sessionIds.join(','))
+    if (sessionIds?.length) params.set('xs', sessionIds.slice(0, 40).join(',')) // keep URL well under 2KB
     const query = params.toString()
     const emailRedirectTo = `${appUrl}/auth/callback${query ? `?${query}` : ''}`
 
@@ -80,6 +89,14 @@ export async function POST(req: Request) {
     }
 
     console.log(`[Auth] Magic link sent to ${normalizedEmail} (deviceId=${deviceId ?? 'none'}, sessions=${sessionIds?.length ?? 0})`)
+
+    // S6-01: audit log — non-blocking
+    void writeAuditLog({
+      actor_email: normalizedEmail,
+      action:      'auth.magic_link_sent',
+      ...getAuditContext(req),
+    })
+
     return NextResponse.json({ status: 'ok' })
 
   } catch (err) {

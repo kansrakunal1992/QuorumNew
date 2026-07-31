@@ -257,7 +257,7 @@ function AuthGate() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0' }}>
             <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
-            <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or, more private</span>
+            <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or, skip Google</span>
             <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
           </div>
 

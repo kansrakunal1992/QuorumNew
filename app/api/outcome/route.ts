@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 import { encrypt } from '@/lib/encryption'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 // Sprint D1 (R11 Avoidance Detection — foundation):
 //   Filing an outcome = resolution signal. Stamp last_action_at so the D2
@@ -10,6 +11,10 @@ import { encrypt } from '@/lib/encryption'
 
 export async function POST(req: Request) {
   try {
+    // LIMITS.outcome already existed for this route but was never wired up.
+    const rlResult = checkLimit(getClientIP(req), LIMITS.outcome)
+    if (!rlResult.allowed) return tooManyRequests(rlResult, 'outcome submissions')
+
     const {
       sessionId,
       what_decided,

@@ -18,6 +18,7 @@ import { createCompletion }   from '@/lib/ai-client'
 import type { PersonaKey }     from '@/lib/types'
 import { encrypt, decrypt }    from '@/lib/encryption'
 import { briefLineIsRedundantTitle } from '@/lib/brief-markdown'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 const APPENDIX_ORDER: PersonaKey[] = [
   'synthesis',
@@ -1496,6 +1497,12 @@ async function buildPdf(
 interface Params { params: Promise<{ id: string }> }
 
 export async function GET(req: Request, { params }: Params) {
+  // No auth on this route (token gate was intentionally removed for the
+  // freemium brief), and no caching before the LLM call below — every GET
+  // regenerates the brief fresh. Rate limiting is the only cost control left.
+  const rlResult = checkLimit(getClientIP(req), LIMITS.briefGenerate)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'brief generation requests')
+
   const { id }  = await params
   const url     = new URL(req.url)
   const theme   = url.searchParams.get('theme') === 'light' ? 'light' : 'dark'

@@ -90,6 +90,41 @@ export const LIMITS: Record<string, LimitConfig> = {
     limit:      30,
     windowMs:   10 * 60_000,
   },
+  // Voice streaming session — opens a real, billed Soniox WebSocket per call.
+  // No auth on this route, so this is the only thing standing between it and
+  // an uncapped external-cost loop. Sized like session creation, not TTS —
+  // a legitimate recording reconnects a handful of times at most, not dozens.
+  voiceStream: {
+    identifier: 'voice-stream',
+    limit:      20,
+    windowMs:   15 * 60_000,
+  },
+  // Voice transcript cleanup — unauthenticated, calls the LLM directly on
+  // arbitrary input up to 3000 chars. Generous over legitimate use (1-3
+  // calls per recording) while still blocking a scripted loop.
+  voiceCleanup: {
+    identifier: 'voice-cleanup',
+    limit:      30,
+    windowMs:   10 * 60_000,
+  },
+  // Brief access token check — validates a single static shared secret
+  // (BRIEF_ACCESS_TOKEN) with no per-user identity at all, so an unlimited
+  // endpoint here is a straightforward brute-force surface. Sized like auth.
+  briefAccess: {
+    identifier: 'brief-access',
+    limit:      8,
+    windowMs:   15 * 60_000,
+  },
+  // Decision Brief PDF generation — no auth, no caching before the LLM call
+  // (confirmed by reading the route: every GET regenerates the brief fresh,
+  // ~1200 tokens, via createCompletion). Sized like session creation, since
+  // a real user generates/re-downloads their own brief only a handful of
+  // times, not repeatedly.
+  briefGenerate: {
+    identifier: 'brief-generate',
+    limit:      20,
+    windowMs:   15 * 60_000,
+  },
 }
 
 // ── Core check function ───────────────────────────────────────────────────────

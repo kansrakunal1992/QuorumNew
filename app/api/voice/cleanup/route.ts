@@ -9,10 +9,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createCompletion } from '@/lib/ai-client'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 const MAX_INPUT_CHARS = 3000
 
 export async function POST(req: NextRequest) {
+  // No auth on this route — it's a direct, unauthenticated path to the LLM.
+  // Rate limiting is the only thing standing between it and a scripted loop
+  // running up the AI provider bill.
+  const rlResult = checkLimit(getClientIP(req), LIMITS.voiceCleanup)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'cleanup requests')
+
   let body: { raw_transcript?: string }
   try {
     body = await req.json()

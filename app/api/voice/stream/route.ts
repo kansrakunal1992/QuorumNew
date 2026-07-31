@@ -30,6 +30,7 @@ import {
   sendSSE,
   type VoiceSession,
 } from '@/lib/voice-sessions'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
 const SONIOX_WS_URL = 'wss://stt-rt.soniox.com/transcribe-websocket'
 
@@ -41,6 +42,11 @@ export async function GET(req: NextRequest) {
   if (!apiKey) {
     return NextResponse.json({ error: 'STT_NOT_CONFIGURED' }, { status: 503 })
   }
+
+  // No auth on this route — each call opens a real, billed Soniox WS
+  // connection, so this is the only cap on that external cost.
+  const rlResult = checkLimit(getClientIP(req), LIMITS.voiceStream)
+  if (!rlResult.allowed) return tooManyRequests(rlResult, 'voice streaming sessions')
 
   const sessionId = req.nextUrl.searchParams.get('sessionId')
   if (!sessionId || sessionId.length < 8) {
