@@ -156,11 +156,12 @@ import { getWorthConfirmingText } from '@/lib/worth-confirming'  // Sprint 1 fol
 import { getMindChangePattern } from '@/lib/mind-change-patterns'  // Phase 3
 import { getAdvisorDivergencePattern } from '@/lib/advisor-divergence'  // Phase 3
 import type { AdvisorKey } from '@/lib/persona-relevance'  // P1: Gap #2 leanShifts typing
-import { isInstitutionalModeEnabled } from '@/lib/feature-flags'
+import { isInstitutionalModeEnabled, isContextIngestionEnabled } from '@/lib/feature-flags'
 import { resolveActiveInstitution }   from '@/lib/active-institution'
 import { getBenchmarkForDimension }   from '@/lib/aggregate-benchmark'
 import { type CouncilContext, EMPTY_COUNCIL_CONTEXT } from '@/lib/council-context'
 import { fetchContinuityContext, EMPTY_CONTINUITY_CONTEXT } from '@/lib/decision-continuity'  // RET-5 Sprint 2
+import { fetchFoundationalContext, EMPTY_FOUNDATIONAL_CONTEXT } from '@/lib/foundational-context'  // Context Ingestion (Elite)
 import {
   upsertStructuralEdge,            // Sprint G1: live graph edge writes
   fetchGraphSynthesisContext,      // Sprint G4: synthesis integration
@@ -313,6 +314,7 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
       maxStructuralScore,                  // Sprint R3
       decisionTypePrimary: (data.decision_type_primary as string) ?? null,  // Sprint BT Phase 2b
       dominantEmotion:     (data.dominant_emotion as string) ?? null,        // Sprint BT Phase 2b
+      userProfile,                          // Context Ingestion — reused by fetchFoundationalContext()
     }
   } catch (err) {
     console.error('[Persona] fetchCouncilContext failed:', err)
@@ -448,6 +450,23 @@ export async function POST(req: Request) {
         )
       : Promise.resolve(EMPTY_GRAPH_SYNTHESIS_CONTEXT)
 
+    // ── Context Ingestion (Elite) — Foundational Context ──────────────────────
+    // Third memory layer, sibling to continuity (past sessions) and Mirror
+    // (long-run patterns) — background the user imported once at onboarding.
+    // Deliberately NOT folded into buildCouncilContext()/councilContextStr so
+    // each layer's provenance stays legible. Reuses userProfile already
+    // fetched by councilContextPromise (SB-3) rather than a second query.
+    // Gated by the same flag as the rest of Context Ingestion — a no-op ''
+    // when disabled, so this is a zero-cost no-op until turned on.
+    const foundationalContextPromise = (isSynthesisCall || isInitialPersona) && isContextIngestionEnabled()
+      ? councilContextPromise.then(({ userId, userProfile }) =>
+          fetchFoundationalContext(userId, userProfile).catch(err => {
+            console.warn('[Persona] fetchFoundationalContext failed (non-fatal):', err)
+            return EMPTY_FOUNDATIONAL_CONTEXT
+          })
+        )
+      : Promise.resolve(EMPTY_FOUNDATIONAL_CONTEXT)
+
     // ── Build chat messages ───────────────────────────────────────────────────
     let chatMessages: { role: 'user' | 'assistant'; content: string }[]
 
@@ -500,11 +519,12 @@ export async function POST(req: Request) {
     }
 
     // ── Resolve council context + bias context + continuity context in parallel ─
-    const [councilResult, biasContext, continuityCtx, graphContext] = await Promise.all([
+    const [councilResult, biasContext, continuityCtx, graphContext, foundationalContext] = await Promise.all([
       councilContextPromise,
       biasContextPromise,
       continuityContextPromise,   // RET-5 Sprint 2
       graphContextPromise,        // Sprint G4
+      foundationalContextPromise, // Context Ingestion (Elite)
     ])
     const councilContext = councilResult.councilContextStr
 
@@ -540,18 +560,27 @@ export async function POST(req: Request) {
     // Layer order (synthesis):
     //   1. persona.prompt         — core identity and mandate
     //   2. councilContext         — ontology + rule engine signals
+    //   2.5. foundationalContext  — imported background (Context Ingestion, Elite) ← distinct from councilContext
     //   3. synthesisBlock         — longitudinal bias record (synthesis only)
     //   4. relevanceBlock         — MANDATORY council weighting directive (synthesis only) ← R3
     //
     // Layer order (initial personas):
     //   1. persona.prompt
     //   2. councilContext
+    //   2.5. foundationalContext  — imported background (Context Ingestion, Elite)
     //   4. pushbackProtocol       — pushback acknowledgment enforcement (pushback only)
     //   5. personaAlertBlock      — top confirmed+distorting bias (initial personas only)
 
     let basePrompt = councilContext
       ? `${persona.prompt}\n\n${councilContext}`
       : persona.prompt
+
+    // Layer 2.5: Foundational Context — separate from councilContext so the
+    // model (and anyone debugging a prompt) can tell "background the user
+    // gave once" apart from "structural signals from this decision".
+    if (foundationalContext) {
+      basePrompt = `${basePrompt}\n\n${foundationalContext}`
+    }
 
     // Layer 3: full bias block for synthesis — MANDATORY directive included
     if (isSynthesisCall && biasContext.synthesisBlock) {

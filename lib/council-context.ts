@@ -18,7 +18,7 @@
  */
 
 import type { OntologyScoreMap } from '@/lib/bias-scorer'
-import type { RuleEngineResult } from '@/lib/rule-engine'
+import type { RuleEngineResult, CouncilUserProfile } from '@/lib/rule-engine'
 
 export interface CouncilContext {
   councilContextStr:  string | null
@@ -29,6 +29,9 @@ export interface CouncilContext {
   maxStructuralScore: number | null             // Sprint R3
   decisionTypePrimary: string | null            // Sprint BT Phase 2b
   dominantEmotion:     string | null            // Sprint BT Phase 2b
+  // Context Ingestion — reused by fetchFoundationalContext() so it doesn't
+  // need its own user_profiles query; already fetched here for SB-3.
+  userProfile:        CouncilUserProfile | null
 }
 
 export const EMPTY_COUNCIL_CONTEXT: CouncilContext = {
@@ -40,4 +43,5 @@ export const EMPTY_COUNCIL_CONTEXT: CouncilContext = {
   maxStructuralScore:  null,
   decisionTypePrimary: null,
   dominantEmotion:     null,
+  userProfile:         null,
 }

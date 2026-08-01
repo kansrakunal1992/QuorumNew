@@ -37,3 +37,31 @@ export function isWatchlistEnabled(): boolean {
 export function isInstitutionalModeEnabled(): boolean {
   return process.env.NEXT_PUBLIC_INSTITUTIONAL_MODE_ENABLED === 'true'
 }
+
+// Context Ingestion master kill switch — same pattern as the two flags above:
+// one NEXT_PUBLIC_ var, default OFF when unset, checked identically client
+// and server, baked in at build time (redeploy required after changing it).
+//
+// Like isInstitutionalModeEnabled(), this gates real logic (Elite-tier check,
+// extraction pipeline, encrypted storage), not just a UI surface — every
+// app/api/context-ingestion/* route checks this server-side in addition to
+// the client hiding the entry points in ProfileCaptureOverlay/Mirror/Settings.
+//
+// To enable in Railway: set NEXT_PUBLIC_CONTEXT_INGESTION_ENABLED=true on
+// the service, then redeploy.
+
+export function isContextIngestionEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_CONTEXT_INGESTION_ENABLED === 'true'
+}
+
+// Whether an accepted context-ingestion fact is allowed to override a
+// conflicting structured UserProfile field (archetype/fears/life_stage/
+// risk_stance) inside buildCouncilContext(). Server-only — never read from a
+// client component — so no NEXT_PUBLIC_ prefix. Default OFF: imported facts
+// stay strictly supplementary; explicit profile picks always win.
+//
+// To allow override in Railway: set CONTEXT_INGESTION_ALLOW_PROFILE_OVERRIDE=true.
+
+export function contextIngestionCanOverrideProfile(): boolean {
+  return process.env.CONTEXT_INGESTION_ALLOW_PROFILE_OVERRIDE === 'true'
+}

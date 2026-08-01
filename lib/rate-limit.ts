@@ -144,6 +144,16 @@ export const LIMITS: Record<string, LimitConfig> = {
     limit:      8,
     windowMs:   15 * 60_000,
   },
+  // Context Ingestion (Elite) — POST calls the extraction LLM + an embedding
+  // API on up to ~400k chars of input, so this is the most expensive route
+  // in this table per-call. The real abuse guard is context_ingestion's own
+  // 30-day reimport cooldown (DB-enforced, not this in-memory limiter, since
+  // it resets on deploy) — this is just the floor against a scripted burst.
+  contextIngestion: {
+    identifier: 'context-ingestion',
+    limit:      10,
+    windowMs:   15 * 60_000,
+  },
 }
 
 // ── Core check function ───────────────────────────────────────────────────────

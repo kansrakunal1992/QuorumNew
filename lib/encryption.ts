@@ -23,11 +23,20 @@ import 'server-only'
  *   outcomes           — what_decided, notes
  *   structural_matches — context_block (text), matches_json (JSONB via _enc wrapper)
  *   graph_edges        — explanation_text (user_asserted edges only; null for all computed types)
+ *   user_memory_facts  — insight_text (Context Ingestion, Elite) — see note below
  *
  * ── EXCLUDED (derived tables — numeric scores, enums, AI summaries) ───────────
  *   sessions_ontology, bias_library, structural_scores, independence_score_log,
  *   contradiction_runs, avoidance_alerts, mirror_access, user_preferences,
  *   contradictions.principle_text / violation_text (AI-derived, not raw user input)
+ *
+ *   user_memory_facts.insight_text is a deliberate EXCEPTION to the
+ *   AI-derived-content exclusion above: it's AI-distilled like
+ *   contradictions.principle_text, but its source material (a ChatGPT/Claude
+ *   export or self-description) skews far more personal than any other
+ *   AI-derived column in this app, so it's encrypted anyway. Written/read via
+ *   plain encrypt()/decrypt() — see lib/foundational-context.ts and
+ *   app/api/context-ingestion/*.
  *
  * ── KEY SETUP ─────────────────────────────────────────────────────────────────
  *   Add DB_ENCRYPTION_KEY to Railway environment variables.

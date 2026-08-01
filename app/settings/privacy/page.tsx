@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import InstitutionConsentSettings from '@/components/InstitutionConsentSettings' // Institutional Sprint 2
 import AuthPanel from '@/components/AuthPanel'
+import ContextIngestionPanel from '@/components/ContextIngestionPanel'          // Context Ingestion (Elite)
 
 const CONSENT_KEY = 'quorum_cookie_consent'
 
@@ -58,11 +59,13 @@ export default function PrivacyCenterPage() {
   // signed out don't hit a dead end.
   const [sessionEmail,   setSessionEmail]   = useState<string | null>(null)
   const [sessionChecked, setSessionChecked] = useState(false)
+  const [authToken,      setAuthToken]      = useState<string | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSessionEmail(session?.user?.email ?? null)
+      setAuthToken(session?.access_token ?? null)
       setSessionChecked(true)
     })
   }, [])
@@ -272,6 +275,12 @@ export default function PrivacyCenterPage() {
               Renders nothing if the flag is off or the user has no
               institution memberships — self-contained, no props needed. */}
           <InstitutionConsentSettings />
+
+          {/* Context Ingestion (Elite) — same self-contained panel as Mirror;
+              shows status/manage (saved state includes Reanalyze + Forget)
+              rather than the full upload flow, since Mirror is the primary
+              entry point for starting a new import. */}
+          {sessionChecked && sessionEmail && <ContextIngestionPanel authToken={authToken} />}
 
           {/* ── Data Rights ─────────────────────────────────────────────────── */}
           <SettingsCard title="Your Data Rights">

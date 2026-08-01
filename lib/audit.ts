@@ -21,6 +21,10 @@ export type AuditAction =
   | 'admin.access'
   | 'admin.auth_failed'
   | 'admin.locked_out'
+  | 'context_ingestion.upload'
+  | 'context_ingestion.save'
+  | 'context_ingestion.reanalyze'
+  | 'context_ingestion.forget'
 
 export interface AuditEvent {
   actor_id?:    string                       // auth.users.id (when authenticated)

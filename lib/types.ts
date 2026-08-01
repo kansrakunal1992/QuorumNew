@@ -344,3 +344,88 @@ export interface SessionScoreData {
   distortingBiasLabels: string[]    // labels of biases flagged as distorting this session
   actionPlan:           string      // global: what to improve next — always present
 }
+
+// ── Context Ingestion (Elite) ─────────────────────────────────────────────────
+// Optional, Elite-gated onboarding accelerant. User imports a ChatGPT/Claude
+// export (or types a self-description) once; we extract a small set of
+// distilled "memory facts" and never persist the raw text. See
+// supabase/add_context_ingestion.sql, lib/context-extractor.ts,
+// lib/foundational-context.ts, app/api/context-ingestion/*.
+
+export type ContextIngestionSource = 'chatgpt' | 'claude' | 'manual' | 'pasted_summary'
+
+export type ContextIngestionStatus =
+  | 'uploaded'            // raw text received, not yet processed
+  | 'analyzing'           // extraction call in flight
+  | 'insights_extracted'  // extraction returned; raw_purged_at set atomically
+  | 'review_pending'      // candidate facts inserted, awaiting accept/edit/reject
+  | 'saved'               // user confirmed; facts finalized
+  | 'failed'              // extraction/embedding errored — see error_message
+  | 'forgotten'           // user hit "Forget imported context"
+
+export interface ContextIngestion {
+  id:                     string
+  user_id:                string
+  source_type:            ContextIngestionSource
+  status:                 ContextIngestionStatus
+  char_count:             number | null
+  error_message:          string | null
+  extraction_model:       string | null
+  retry_count:            number
+  product_tier_at_import: string | null
+  reimport_count:         number
+  processed_at:           string | null
+  raw_purged_at:          string | null
+  last_ingested_at:       string | null
+  created_at:             string
+  updated_at:             string
+}
+
+export type MemoryFactCategory =
+  | 'goal'
+  | 'value'
+  | 'constraint'
+  | 'decision_pattern'
+  | 'communication_style'
+  | 'relationship'
+  | 'long_term_context'
+  | 'other'
+
+export type MemoryFactStatus = 'proposed' | 'accepted' | 'edited' | 'rejected'
+
+export interface UserMemoryFact {
+  id:                string
+  user_id:           string
+  ingestion_id:      string | null
+  category:          MemoryFactCategory
+  insight_text:      string     // decrypted, when read via the API
+  confidence:        number     // 0–1, LLM-reported
+  importance:        number     // 0–1, LLM-reported — used for the top-15 cap
+  source:            ContextIngestionSource
+  status:            MemoryFactStatus
+  last_confirmed_at: string
+  created_at:        string
+  updated_at:        string
+}
+
+// Extraction pipeline's intermediate shape — before embedding/dedup/persistence.
+export interface MemoryFactCandidate {
+  category:     MemoryFactCategory
+  insight_text: string
+  confidence:   number
+  importance:   number
+}
+
+export interface MemoryFactCandidateWithEmbedding extends MemoryFactCandidate {
+  embedding: number[] | null   // null when the embedding call failed — degrades gracefully
+}
+
+// Client → GET /api/context-ingestion response shape.
+export interface ContextIngestionStatusResponse {
+  enabled:  boolean                 // feature flag state
+  locked:   boolean                 // true when tier === 'free' — render the upsell teaser
+  tier:     ProductTier
+  ingestion: ContextIngestion | null
+  facts:     UserMemoryFact[]       // 'proposed' facts during review; 'accepted'/'edited' once saved
+  cooldownDaysRemaining: number     // 0 when a fresh reimport is allowed right now
+}

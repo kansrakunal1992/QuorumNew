@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react'
 import ThemeToggle from './ThemeToggle'
+import { isContextIngestionEnabled } from '@/lib/feature-flags'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -327,6 +328,11 @@ export default function ProfileCaptureOverlay({ authToken, deviceId, onDone }: P
         >
           Set up later from Mirror
         </button>
+        {isContextIngestionEnabled() && (
+          <p style={{ fontSize: 11, color: 'var(--text-4)', textAlign: 'center', marginTop: 10, lineHeight: 1.5 }}>
+            Elite: skip months of rebuilding context — optionally import what another AI already knows about you, from Mirror.
+          </p>
+        )}
       </div>
       </div>
     </>

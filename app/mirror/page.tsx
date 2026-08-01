@@ -57,6 +57,7 @@ import { PaymentButton }         from '@/components/PaymentButton'           // 
 import { CancelSubscription }    from '@/components/CancelSubscription'       // Sprint CX-PAY
 import DecisionGraph             from '@/components/DecisionGraph'             // Sprint G3
 import ProfileCaptureOverlay     from '@/components/ProfileCaptureOverlay'    // SB-1
+import ContextIngestionPanel     from '@/components/ContextIngestionPanel'    // Context Ingestion (Elite)
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
 const BIAS_LABELS: Record<string, string> = {
@@ -1543,6 +1544,10 @@ function UnlockedView({
       {!showWelcome && (
         <MirrorNav highlightedSections={highlightedModule ? [highlightedModule] : []} />
       )}
+
+      {/* Context Ingestion (Elite) — self-contained: fetches its own tier/status,
+          renders locked teaser / upload flow / review / saved+manage state */}
+      {!showWelcome && <ContextIngestionPanel authToken={authToken} />}
 
       {/* Decisions Still Open */}
       {avoidanceAlerts.length > 0 && (

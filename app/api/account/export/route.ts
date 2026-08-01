@@ -30,6 +30,8 @@
 //      watchlist_items, graph_edges, contradictions, structural_matches,
 //      user_preferences, avoidance_alerts, independence_score_log,
 //      mirror_access, user_profiles, push_subscriptions.
+//   3. Context Ingestion (Elite) — added context_ingestion (metadata only;
+//      never held raw content) and user_memory_facts (decrypted below).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }              from 'next/server'
@@ -123,6 +125,8 @@ export async function GET(req: Request) {
     consentAuditLogResult,
     userInstitutionPreferenceResult,
     seenUnlockNoticesResult,
+    contextIngestionResult,
+    userMemoryFactsResult,
   ] = await Promise.all([
     sessionIds.length
       ? supabase.from('outcomes').select('*').in('session_id', sessionIds)
@@ -160,6 +164,11 @@ export async function GET(req: Request) {
     // UI-state flag, both genuinely this user's data.
     supabase.from('user_institution_preference').select('*').eq('user_id', user.id),
     supabase.from('seen_unlock_notices').select('*').eq('user_id', user.id),
+    // Context Ingestion (Elite) — the ingestion row is metadata only (no raw
+    // content ever lived there); user_memory_facts.insight_text is the one
+    // encrypted field, decrypted below alongside the others.
+    supabase.from('context_ingestion').select('*').eq('user_id', user.id).maybeSingle(),
+    supabase.from('user_memory_facts').select('*').eq('user_id', user.id),
   ])
 
   // ── 4. Decrypt encrypted fields ────────────────────────────────────────────
@@ -207,6 +216,12 @@ export async function GET(req: Request) {
     matches_json:  decryptJson(m.matches_json),
   }))
 
+  const userMemoryFacts = (userMemoryFactsResult.data ?? []).map(f => ({
+    ...f,
+    insight_text: decrypt(f.insight_text as string) ?? f.insight_text,
+    embedding: undefined,   // large numeric vector, not meaningful to the user in an export
+  }))
+
   // ── 5. Assemble export payload ─────────────────────────────────────────────
   const exportDate = new Date().toISOString().split('T')[0]
   const payload = {
@@ -243,6 +258,8 @@ export async function GET(req: Request) {
     consent_audit_log:       consentAuditLogResult.data ?? [],
     user_institution_preference: userInstitutionPreferenceResult.data ?? [],
     seen_unlock_notices:         seenUnlockNoticesResult.data ?? [],
+    context_ingestion:           contextIngestionResult.data ?? null,
+    user_memory_facts:           userMemoryFacts,
   }
 
   // ── 6. Record export in cooldown + audit log ───────────────────────────────
