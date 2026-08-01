@@ -5,6 +5,7 @@ import CookieConsent from '@/components/CookieConsent'
 import AppFooter from '@/components/AppFooter'
 import UpdateBanner from '@/components/UpdateBanner'
 import InstitutionModeBadge from '@/components/InstitutionModeBadge'   // Institutional Sprint 5
+import PlanBadge from '@/components/PlanBadge'                         // Free/Elite plan identifier
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
@@ -74,6 +75,9 @@ export default function RootLayout({
         {/* Institutional Sprint 5 — fixed top-right, renders null unless the
             signed-in user actually belongs to an institution */}
         <InstitutionModeBadge />
+        {/* Free/Elite plan identifier — in-flow strip, renders null when
+            signed out. Stacks below InstitutionModeBadge's strip when both apply. */}
+        <PlanBadge />
         {children}
         {/* S2-04 — legal footer on every page */}
         <AppFooter />

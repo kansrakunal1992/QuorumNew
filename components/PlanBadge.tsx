@@ -1,0 +1,94 @@
+'use client'
+// components/PlanBadge.tsx
+// ── Global plan identifier (Free / Elite) ────────────────────────────────────
+//
+// Request: "there should be some identifier on each page telling me as user
+// if I am on free or paid Elite plan."
+//
+// Mounted in the root layout (app/layout.tsx) so it appears on every route —
+// same "mount globally, render null when irrelevant" pattern as
+// CookieConsent/UpdateBanner/InstitutionModeBadge already use in that file,
+// not a new pattern. Renders null for signed-out visitors (gateState
+// 'auth') — there's no "plan" to show someone who isn't signed in yet.
+//
+// Reuses GET /api/mirror/status rather than a new endpoint — it already
+// resolves gateState (locked/teaser = free, unlocked = paid) from a single
+// source of truth (lib/mirror-access.ts), so this can't drift out of sync
+// with what the Mirror page itself shows for the same user.
+//
+// In-flow strip, not a floating pill — same reasoning as
+// InstitutionModeBadge's own layout fix (see that file's doc comment):
+// every page has a different top structure, so nothing reserved space for a
+// floating badge and it would end up overlapping page content on some
+// routes. This reserves its own document height instead.
+
+import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase'
+import type { MirrorStatus } from '@/lib/types'
+
+async function getAuthToken(): Promise<string | null> {
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ?? null
+}
+
+export default function PlanBadge() {
+  const [status, setStatus] = useState<MirrorStatus | null>(null)
+
+  const load = useCallback(async () => {
+    const token = await getAuthToken()
+    if (!token) return
+    try {
+      const res = await fetch('/api/mirror/status', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) setStatus(await res.json() as MirrorStatus)
+    } catch {
+      // Non-blocking — badge just doesn't render this load
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // Not signed in, or status hasn't resolved yet → render nothing.
+  if (!status || status.gateState === 'auth') return null
+
+  const isPaid = status.gateState === 'unlocked'
+
+  return (
+    <div className="plan-badge-strip" style={{
+      background:   'var(--bg-card)',
+      borderBottom: '1px solid var(--border-dim)',
+    }}>
+      <Link
+        href="/mirror"
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'center',
+          gap:            6,
+          width:          '100%',
+          padding:        '6px 16px',
+          fontSize:       11,
+          fontFamily:     'var(--font-mono)',
+          fontWeight:     600,
+          letterSpacing:  '0.06em',
+          textTransform:  'uppercase',
+          textDecoration: 'none',
+          color:          isPaid ? 'var(--gold)' : 'var(--text-4)',
+        }}
+      >
+        <span style={{
+          width:        6,
+          height:       6,
+          borderRadius: '50%',
+          background:   isPaid ? 'var(--gold)' : 'var(--text-4)',
+          flexShrink:   0,
+        }} />
+        <span>{isPaid ? 'Quorum Elite' : 'Free plan'}</span>
+        {!isPaid && <span style={{ opacity: 0.6, textTransform: 'none', letterSpacing: 'normal' }}>· Upgrade →</span>}
+      </Link>
+    </div>
+  )
+}

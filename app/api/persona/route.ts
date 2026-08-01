@@ -144,6 +144,36 @@
 
 import { PERSONAS, MISTRAL_EVIDENCE_DISCIPLINE, MISTRAL_SYNTHESIS_PUSH, MISTRAL_PERSONA_PUSH } from '@/lib/personas'
 import { createServiceClient }                 from '@/lib/supabase'
+
+// ── Bug fix: messages insert retry ──────────────────────────────────────────
+// See usage below (assistant/user message save) for the full root-cause
+// writeup. A bare `await supabase.from('messages').insert(...)` with the
+// error only logged meant a transient failure silently dropped content that
+// the live session UI had already shown the user (it's parsed straight from
+// the in-memory stream, independent of whether the DB write succeeded) —
+// invisible until they later opened the Record page or PDF, which read from
+// this same table and simply found the row missing. Three attempts with a
+// short backoff absorbs the transient case (network blip, pooled-connection
+// hiccup) without changing the streaming response format at all. A
+// persistent failure (e.g. a real RLS/schema problem) still surfaces via the
+// final console.error at the call site — this only closes the "should have
+// succeeded on retry" gap, not a permanently broken write path.
+async function insertMessageWithRetry(
+  supabase: ReturnType<typeof createServiceClient>,
+  row: { session_id: string; persona: string; role: 'assistant' | 'user'; content: string },
+  attempts = 3,
+): Promise<{ error: unknown }> {
+  let lastError: unknown = null
+  for (let i = 0; i < attempts; i++) {
+    const { error } = await supabase.from('messages').insert(row)
+    if (!error) return { error: null }
+    lastError = error
+    if (i < attempts - 1) {
+      await new Promise(resolve => setTimeout(resolve, 300 * (i + 1)))
+    }
+  }
+  return { error: lastError }
+}
 import { createStream, getModelFamily }        from '@/lib/ai-client'
 import {
   PERSONAS_WITH_STRUCTURAL_CONTEXT,
@@ -913,7 +943,7 @@ Apply the VERDICT STABILITY instruction above using this data.`
       systemPrompt,
       chatMessages,
       personaKey === 'synthesis' ? 'anthropic' : 'deepseek',
-      personaKey === 'synthesis' ? 2200 : 1200,
+      personaKey === 'synthesis' ? 2200 : 1800,
     )
 
     const passthrough = new ReadableStream<Uint8Array>({
@@ -959,12 +989,13 @@ Apply the VERDICT STABILITY instruction above using this data.`
           if (sessionId && messages.length > 0 && !rawMessages) {
             const lastMsg = messages[messages.length - 1]
             if (lastMsg.role === 'user') {
-              await supabase.from('messages').insert({
+              const { error } = await insertMessageWithRetry(supabase, {
                 session_id: sessionId,
                 persona:    personaKey,
                 role:       'user',
                 content:    encrypt(lastMsg.content),
               })
+              if (error) console.error('[Persona] Supabase insert error (user message, after retries):', error)
             }
           }
 
@@ -973,13 +1004,13 @@ Apply the VERDICT STABILITY instruction above using this data.`
           // peer-challenge context — deliberately saved so it appears in the record
           // page and is included in the Decision Brief PDF.
           if (sessionId && assistantContent) {
-            const { error } = await supabase.from('messages').insert({
+            const { error } = await insertMessageWithRetry(supabase, {
               session_id: sessionId,
               persona:    personaKey,
               role:       'assistant',
               content:    encrypt(assistantContent),
             })
-            if (error) console.error('[Persona] Supabase insert error:', error)
+            if (error) console.error('[Persona] Supabase insert error (assistant message, after retries):', error)
           }
 
           controller.close()

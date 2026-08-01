@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { pushSessionId, getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
@@ -204,6 +204,26 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   const [session,    setSession]    = useState<Session>(initialSession)
   const [sessionKey, setSessionKey] = useState(0)
+
+  // Bug fix ("decision graph keeps oscillating on the Council page"): this
+  // object used to be an inline literal at the DecisionGraph call site below,
+  // recreated with a brand-new `created_at: new Date().toISOString()` on
+  // EVERY SessionView render. DecisionGraph's buildAuthlessLockedData
+  // (useCallback) depends on this object by reference, so a new reference
+  // every render meant its data-fetch effect re-ran every render, which
+  // meant the d3-force render effect (keyed on `data`) tore down and
+  // rebuilt the entire simulation from scratch every render — visually
+  // indistinguishable from the graph "oscillating," but actually a full
+  // reset-and-relayout loop rather than physics jitter. Memoizing on stable
+  // session fields (and reusing session.created_at instead of minting a new
+  // timestamp) keeps the object reference — and therefore the simulation —
+  // stable across re-renders that don't actually change the session.
+  const decisionGraphFallbackNode = useMemo(() => ({
+    id:               session.id,
+    decision_snippet: session.decision_text.slice(0, 120),
+    created_at:       session.created_at,
+    status:           'active' as const,
+  }), [session.id, session.decision_text, session.created_at])
 
   // Bug fix: `initialMessages` (built server-side from the `messages` table) contains
   // an entry per DISTINCT persona value ever saved for this session — which includes
@@ -1636,12 +1656,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                     <DecisionGraph
                                           authToken={authTokenSV ?? ''}
                                           fallbackSessionCount={totalSessionCount ?? getStoredSessionIds().length}
-                                          fallbackCurrentNode={{
-                                            id: session.id,
-                                            decision_snippet: session.decision_text.slice(0, 120),
-                                            created_at: new Date().toISOString(),
-                                            status: 'active',
-                                          }}
+                                          fallbackCurrentNode={decisionGraphFallbackNode}
                                         />
                   </div>
                 )

@@ -316,7 +316,13 @@ function AuthGate() {
 }
 
 // ── Gate: Session threshold not met ──────────────────────────────────────────
-function LockedView({ sessionCount, authToken }: { sessionCount: number; authToken: string }) {
+function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onUnlocked }: {
+  sessionCount: number
+  authToken: string
+  userEmail: string
+  foundingAvailable: boolean
+  onUnlocked: () => void
+}) {
   const router = useRouter()
   const LOCK_THRESHOLD = 3
   const remaining = LOCK_THRESHOLD - sessionCount
@@ -432,6 +438,73 @@ function LockedView({ sessionCount, authToken }: { sessionCount: number; authTok
           lets it reach the free/pre-threshold audience it was written for. */}
       <div style={{ width: '100%', textAlign: 'left' }}>
         <ContextIngestionPanel authToken={authToken} />
+      </div>
+
+      {/* Bug fix: LockedView previously had no payment CTA at all — a user
+          could not activate premium until they'd logged enough sessions to
+          reach TeaserView, even though lib/mirror-access.ts's own doc
+          comment says subscription (not session count) is what's supposed
+          to unlock Mirror. Condensed version of TeaserView's CTA card. */}
+      <div id="mirror-cta-locked" style={{
+        width:        '100%',
+        background:   'var(--bg-card)',
+        border:       '1px solid var(--gold-dim)',
+        borderRadius: 14,
+        padding:      '24px 24px',
+      }}>
+        <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>
+          {foundingAvailable ? 'Founding Elite' : 'Quorum Elite'}
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 16px', fontStyle: 'italic' }}>
+          Where your judgment compounds.
+        </p>
+        {foundingAvailable ? (
+          <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
+              ₹999/month · ₹9,999/year — regular price is ₹2,999/month · ₹29,999/year. Locked in for as long as you stay subscribed. Limited founding member seats. Activate now — no need to wait for {LOCK_THRESHOLD} decisions.
+            </p>
+            <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+              <PaymentButton
+                plan="founding_monthly"
+                label="Become a Founding Member — ₹999/month →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+              <PaymentButton
+                plan="founding_annual"
+                label="₹9,999/year — best value →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
+              ₹2,999/month · ₹29,999/year. Activate now — no need to wait for {LOCK_THRESHOLD} decisions.
+            </p>
+            <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+              <PaymentButton
+                plan="monthly"
+                label="₹2,999 / month →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+              <PaymentButton
+                plan="annual"
+                label="₹29,999 / year  — best value →"
+                authToken={authToken}
+                userEmail={userEmail}
+                onSuccess={onUnlocked}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Social proof — same case study as the marketing site, so a
@@ -2046,7 +2119,13 @@ export default function MirrorPage() {
             <>
               {status.gateState === 'auth'     && <AuthGate />}
               {status.gateState === 'locked'   && (
-                <LockedView sessionCount={status.sessionCount} authToken={authToken ?? ''} />
+                <LockedView
+                  sessionCount={status.sessionCount}
+                  authToken={authToken ?? ''}
+                  userEmail={userEmail}
+                  foundingAvailable={status.foundingAvailable}
+                  onUnlocked={handleUnlocked}
+                />
               )}
               {status.gateState === 'teaser'   && (
                 <TeaserView

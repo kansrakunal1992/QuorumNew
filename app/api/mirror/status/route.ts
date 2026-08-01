@@ -102,11 +102,15 @@ export async function GET(req: Request) {
     }
   }
 
-  // ── 6. Founding Elite cohort offer — only meaningful where the purchase
-  // CTA actually renders (TeaserView, gateState === 'teaser'). Skipped for
-  // 'locked' (no CTA today) and 'unlocked' (already paying) to avoid an
-  // unnecessary count query on those requests.
-  const foundingAvailable = gateState === 'teaser'
+  // ── 6. Founding Elite cohort offer — only meaningful where a purchase CTA
+  // actually renders. Bug fix: LockedView (gateState 'locked') now also
+  // renders a Founding/Elite pricing CTA (previously it had no payment CTA
+  // at all — see app/mirror/page.tsx), so 'locked' needs this computed too,
+  // not just 'teaser' — otherwise a pre-threshold user would always see
+  // standard Elite pricing even during an active Founding Elite window.
+  // Still skipped for 'unlocked' (already paying, no CTA to inform) to avoid
+  // an unnecessary count query on that request.
+  const foundingAvailable = (gateState === 'teaser' || gateState === 'locked')
     ? await isFoundingAvailable(supabase)
     : false
 
