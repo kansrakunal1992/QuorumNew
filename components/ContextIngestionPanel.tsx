@@ -86,7 +86,7 @@ export default function ContextIngestionPanel({ authToken }: Props) {
         <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55, marginBottom: 16 }}>
           Skip months of rebuilding context — optionally import what another AI already knows about you, or describe yourself in a few sentences. Only distilled insights are ever kept; nothing raw is stored.
         </p>
-        <a href="/settings/billing" className="btn-primary" style={{ display: 'inline-block', fontSize: 13, padding: '10px 18px', textDecoration: 'none' }}>
+        <a href="/mirror#mirror-cta" className="btn-primary" style={{ display: 'inline-block', fontSize: 13, padding: '10px 18px', textDecoration: 'none' }}>
           Unlock with Elite →
         </a>
       </div>
