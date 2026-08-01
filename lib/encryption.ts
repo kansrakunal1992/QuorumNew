@@ -99,6 +99,10 @@ function getKey(): Buffer | null {
  * (fail-closed: prevents plaintext from being silently written to the DB).
  * In development, returns the original value when no key is set (backward compat).
  */
+export function encrypt(value: string): string
+export function encrypt(value: string | null): string | null
+export function encrypt(value: string | undefined): string | undefined
+export function encrypt(value: string | null | undefined): string | null | undefined
 export function encrypt(value: string | null | undefined): string | null | undefined {
   if (value === null || value === undefined || value === '') return value
   const key = getKey()
