@@ -41,7 +41,11 @@ const FAQS: FAQItem[] = [
   },
   {
     q: "What's the difference between the Council and Mirror?",
-    a: 'The Council is the six-advisor session you get on any single decision. Mirror is the layer underneath it that compounds across sessions — your bias fingerprint, calibration over time, recurring patterns — and unlocks once you have enough decision history for it to be meaningful.',
+    a: 'The Council is the six-advisor session you get on any single decision. Mirror is the layer underneath it that compounds across sessions — your bias fingerprint, calibration over time, recurring patterns — and unlocks once you have enough decision history for it to be meaningful. On Elite, you can also jumpstart it by importing context you\u2019ve already built elsewhere, instead of waiting for it to accumulate from scratch.',
+  },
+  {
+    q: 'Can I import context instead of starting from scratch?',
+    a: "Yes, on Elite. Paste a description of yourself or upload a ChatGPT/Claude conversation export, and Quorum extracts a handful of distilled insights \u2014 goals, values, decision patterns \u2014 for you to review before anything is saved. Only those reviewed insights are kept; the raw conversation or text you upload is never stored.",
   },
   {
     q: 'What AI models power Quorum?',

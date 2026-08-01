@@ -61,6 +61,11 @@ const MIRROR_ITEMS: { label: string; detail: string }[] = [
     detail:
       'Anything Mirror shows you carries an implicit confidence level based on how much evidence supports it. Early on, that means Mirror says less. That\u2019s deliberate — a false pattern shown with confidence is worse than no pattern at all.',
   },
+  {
+    label: 'You don\u2019t have to start from zero',
+    detail:
+      'On Elite, you can import context you\u2019ve already built elsewhere — a description of yourself, or a ChatGPT/Claude export — and Quorum extracts a handful of distilled insights for you to review before anything is saved. Raw content is never stored.',
+  },
 ]
 
 export default function MethodologyPage() {

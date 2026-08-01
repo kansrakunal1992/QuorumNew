@@ -804,7 +804,7 @@ export default function Home() {
                     maxWidth:      320,
                     letterSpacing: '0.02em',
                   }}>
-                    Over time, Mirror builds a precise model of how you actually make decisions — not how you think you do.
+                    Over time, Mirror builds a precise model of how you actually make decisions — not how you think you do. On Elite, you can also import context you&apos;ve already built elsewhere to get started faster.
                   </p>
                 </>
               )}

@@ -425,6 +425,15 @@ function LockedView({ sessionCount, authToken }: { sessionCount: number; authTok
         </div>
       )}
 
+      {/* Context Ingestion (Elite) — self-contained, renders its own "Free
+          tier" upsell teaser via GET /api/context-ingestion. Previously only
+          mounted post-unlock, where the teaser branch could never fire since
+          a mirror_access row always implies a paid tier. Surfacing it here
+          lets it reach the free/pre-threshold audience it was written for. */}
+      <div style={{ width: '100%', textAlign: 'left' }}>
+        <ContextIngestionPanel authToken={authToken} />
+      </div>
+
       {/* Social proof — same case study as the marketing site, so a
           locked-out visitor doesn't have to leave the app to see it. */}
       <SocialProofCard />
@@ -954,6 +963,14 @@ function TeaserView({
         />
       </div>
 
+      {/* Context Ingestion (Elite) — self-contained, renders its own "Free
+          tier" upsell teaser via GET /api/context-ingestion. This is the
+          paywall screen itself, so it's the highest-intent place for this
+          teaser to actually be seen. */}
+      <div style={{ marginBottom: 28 }}>
+        <ContextIngestionPanel authToken={authToken} />
+      </div>
+
       {/* CTA card */}
       <div id="mirror-cta" className="mirror-cta-card" style={{
         background:   'var(--bg-card)',
@@ -982,6 +999,7 @@ function TeaserView({
             'Session Reliability Index',
             'Open Loop — your Monthly Judgment Review',
             'Peer Benchmark — how your decisions compare structurally to others',
+            'Context Import — teach Quorum who you are instead of starting from scratch',
           ].map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold-dim)', marginTop: 7, flexShrink: 0 }} />
@@ -1284,7 +1302,7 @@ function WelcomeMirrorCard({
         gap: 16, flexWrap: 'wrap',
       }}>
         <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5, flex: 1 }}>
-          Answer the follow-up questions in depth — that&apos;s the primary signal source across most modules.
+          Answer the follow-up questions in depth — that&apos;s the primary signal source across most modules. You can also import context below to skip ahead.
         </p>
         <button
           onClick={handleDismiss}
