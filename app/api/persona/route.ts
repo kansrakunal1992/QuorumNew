@@ -996,17 +996,19 @@ Apply the VERDICT STABILITY instruction above using this data.`
           // strips it via cleanPushbackText() and the record page does the same.
           // We save it so the full exchange (user context + advisor update) is
           // captured in the record and included in the Decision Brief.
-          if (        
+          const userMessageContent = lastUserMessageContent
+
+          if (
             sessionId &&
-            !rawMessages &&          
-            lastUserMessageContent !== null &&          
-            lastUserMessageContent.trim().length > 0          
-          ) {          
+            !rawMessages &&
+            typeof userMessageContent === 'string' &&
+            userMessageContent.trim().length > 0
+          ) {
             const { error } = await insertMessageWithRetry(supabase, {
               session_id: sessionId,
-              persona:    personaKey,
-              role:       'user',
-              content:    encrypt(lastUserMessageContent),
+              persona: personaKey,
+              role: 'user',
+              content: encrypt(userMessageContent),
             })
 
             if (error) {
