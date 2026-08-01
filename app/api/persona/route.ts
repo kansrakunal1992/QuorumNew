@@ -987,17 +987,39 @@ Apply the VERDICT STABILITY instruction above using this data.`
           // We save it so the full exchange (user context + advisor update) is
           // captured in the record and included in the Decision Brief.
           if (sessionId && messages.length > 0 && !rawMessages) {
-            const lastMsg = messages[messages.length - 1]
-            if (lastMsg.role === 'user') {
-              const { error } = await insertMessageWithRetry(supabase, {
-                session_id: sessionId,
-                persona:    personaKey,
-                role:       'user',
-                content:    encrypt(lastMsg.content),
-              })
-              if (error) console.error('[Persona] Supabase insert error (user message, after retries):', error)
+          const lastMsg = messages[messages.length - 1]
+          const lastMsgContent = lastMsg?.content
+
+          if (
+            lastMsg?.role === 'user' &&
+            typeof lastMsgContent === 'string' &&
+            lastMsgContent.trim().length > 0
+          ) {
+            const { error } = await insertMessageWithRetry(supabase, {
+              session_id: sessionId,
+              persona:    personaKey,
+              role:       'user',
+              content:    encrypt(lastMsgContent),
+            })
+
+            if (error) {
+              console.error(
+                '[Persona] Supabase insert error (user message, after retries):',
+                error,
+              )
             }
+          } else if (lastMsg?.role === 'user') {
+            console.error(
+              '[Persona] User message was not persisted because content was missing or empty',
+              {
+                sessionId,
+                personaKey,
+                contentType: typeof lastMsgContent,
+                contentWasNull: lastMsgContent === null,
+              },
+            )
           }
+        }
 
           // Save assistant response.
           // For isExaminerContextCall this is the advisor's update after receiving
