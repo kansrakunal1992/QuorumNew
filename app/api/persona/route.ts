@@ -578,9 +578,19 @@ export async function POST(req: Request) {
     // the wrapper prompt text to leak into record-page "You challenged" blocks.
     const isPushbackCall = !rawMessages && messages.length > 0
     const lastMsg = messages[messages.length - 1]
-    const pushbackText = isPushbackCall && !isExaminerContextCall && lastMsg?.role === 'user'
-      ? lastMsg.content.trim()
-      : null
+    // Message.content is nullable in the shared Message type. Narrow it once
+    // before using .trim() or passing it to encrypt().
+    const lastUserMessageContent =
+    lastMsg?.role === 'user' && typeof lastMsg.content === 'string'
+    ? lastMsg.content
+    : null
+
+    const pushbackText =
+    isPushbackCall &&
+    !isExaminerContextCall &&
+    lastUserMessageContent?.trim()
+    ? lastUserMessageContent.trim()
+    : null
 
     const pushbackProtocol = pushbackText
       ? `\n\nMANDATORY PUSHBACK PROTOCOL — NON-NEGOTIABLE:\nThe decision-maker has just submitted the following challenge or new information:\n"${pushbackText}"\n\nRESPONSE FORMAT — follow exactly, no exceptions:\n\n1. FIRST sentence only: identify what they introduced. One sentence. Nothing before it.\n   Valid forms: "You've introduced [X]." / "Your pushback adds [X]." / "The new information here is [X]."\n\n2. THEN in 3–5 sentences: state specifically what this changes in your prior analysis, and what it does NOT change — and why.\n\n3. Stop. Maximum 150 words total.\n\nHARD BANS — any violation renders the response invalid:\n• NEVER open with "PUSHBACK MODE" or any other label, header, or prefix\n• NEVER restart your full analysis framework — no "The pre-mortem:", no "Execution risk:", no "Assumption risk:", no "Dependency risk:" headers\n• NEVER repeat analysis you already gave — cover only what the pushback changes\n• NEVER start with "I" as the first word\n• NEVER use transition openers ("I hear you, but…" / "That said…" / "However…")\n• Keep under 150 words — always finish the sentence you are writing before stopping`
@@ -986,20 +996,17 @@ Apply the VERDICT STABILITY instruction above using this data.`
           // strips it via cleanPushbackText() and the record page does the same.
           // We save it so the full exchange (user context + advisor update) is
           // captured in the record and included in the Decision Brief.
-          if (sessionId && messages.length > 0 && !rawMessages) {
-          const lastMsg = messages[messages.length - 1]
-          const lastMsgContent = lastMsg?.content
-
-          if (
-            lastMsg?.role === 'user' &&
-            typeof lastMsgContent === 'string' &&
-            lastMsgContent.trim().length > 0
-          ) {
+          if (        
+            sessionId &&
+            !rawMessages &&          
+            lastUserMessageContent !== null &&          
+            lastUserMessageContent.trim().length > 0          
+          ) {          
             const { error } = await insertMessageWithRetry(supabase, {
               session_id: sessionId,
               persona:    personaKey,
               role:       'user',
-              content:    encrypt(lastMsgContent),
+              content:    encrypt(lastUserMessageContent),
             })
 
             if (error) {
@@ -1008,18 +1015,7 @@ Apply the VERDICT STABILITY instruction above using this data.`
                 error,
               )
             }
-          } else if (lastMsg?.role === 'user') {
-            console.error(
-              '[Persona] User message was not persisted because content was missing or empty',
-              {
-                sessionId,
-                personaKey,
-                contentType: typeof lastMsgContent,
-                contentWasNull: lastMsgContent === null,
-              },
-            )
           }
-        }
 
           // Save assistant response.
           // For isExaminerContextCall this is the advisor's update after receiving
