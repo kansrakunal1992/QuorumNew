@@ -28,6 +28,7 @@ import { computePersonalBiasTriggers } from '@/lib/bias-trigger-engine'
 // Phase 2 (backend improvement roadmap): decision-speed + risk-tolerance
 // signals feeding the narrative prompt's new INPUT DATA fields.
 import { getDecisionSpeedPattern, getRiskTolerancePattern } from '@/lib/decision-patterns'
+import { fetchFoundationalFactsForNarrative } from '@/lib/foundational-context'   // Context Ingestion v2
 import type { FingerprintTile, FingerprintData } from '@/lib/types'
 
 const NO_DATA_YET = 'not enough data yet'
@@ -168,6 +169,7 @@ async function generateFingerprintContent(
   emotionPatterns: string,
   decisionSpeedSummary: string,   // Phase 2 — NO_DATA_YET when ungated
   riskToleranceSummary: string,   // Phase 2 — NO_DATA_YET when ungated
+  foundationalFactsSummary: string | null,   // Context Ingestion v2 — null when none/disabled
 ): Promise<AIFingerprintResponse> {
   const confirmedBiasesJson = confirmedBiasRows.map(b => ({
     bias_key:        b.biasKey,
@@ -212,7 +214,18 @@ Entries marked status: "forming" have been detected only once. For these entries
 - If some entries are confirmed and some forming, include only confirmed patterns in the narrative paragraph.`
     : ''
 
-  const prompt = basePrompt + formingGuidance
+  // Context Ingestion v2: identity-adjacent imported facts (values, goals,
+  // long-term context) as supplementary INPUT DATA — supplementary in the
+  // same sense as Context Ingestion generally: never overrides what the
+  // actual session/bias evidence above already shows, only fills in for a
+  // user with too few sessions for a pattern to have formed yet.
+  const foundationalGuidance = foundationalFactsSummary
+    ? `\n\nADDITIONAL INPUT — BACKGROUND THE USER IMPORTED (supplementary, not evidence from sessions):
+${foundationalFactsSummary}
+Weave this in only where it adds color consistent with the bias/decision-type evidence above — never let it override or contradict what the actual session data shows. Do not quote these lines verbatim or mention that they were imported.`
+    : ''
+
+  const prompt = basePrompt + formingGuidance + foundationalGuidance
 
   const raw   = await createCompletion(prompt, 2000, { provider: 'deepseek' })
   const clean = raw.replace(/```json|```/g, '').trim()
@@ -308,9 +321,10 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
   // already fails open to null internally, so a problem in either one never
   // blocks the narrative or tile content that worked before this phase
   // existed.
-  const [decisionSpeedPattern, riskTolerancePattern] = await Promise.all([
+  const [decisionSpeedPattern, riskTolerancePattern, foundationalFactsSummary] = await Promise.all([
     getDecisionSpeedPattern(userId),
     getRiskTolerancePattern(userId),
+    fetchFoundationalFactsForNarrative(userId),   // Context Ingestion v2 — null when disabled/none
   ])
 
   // ── 5. Generate AI content ────────────────────────────────────────────────
@@ -350,6 +364,7 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
       emotionPatterns,
       decisionSpeedPattern?.summary ?? NO_DATA_YET,
       riskTolerancePattern?.summary ?? NO_DATA_YET,
+      foundationalFactsSummary,
     )
   }
 

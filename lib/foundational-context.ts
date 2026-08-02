@@ -16,7 +16,8 @@ import 'server-only'
 
 import { createServiceClient } from './supabase'
 import { decrypt } from './encryption'
-import { contextIngestionCanOverrideProfile } from './feature-flags'
+import { contextIngestionCanOverrideProfile, isContextIngestionEnabled } from './feature-flags'
+import { embedText, cosineSimilarity } from './embeddings'
 import type { MemoryFactCategory } from './types'
 import type { CouncilUserProfile } from './rule-engine'
 
@@ -38,13 +39,31 @@ interface FoundationalFactRow {
   insight_text: string
   importance:   number
   confidence:   number
+  embedding:    number[] | null
 }
 
+// v1 capped injection at 15 because that was also the per-import cap, so the
+// two numbers happened to coincide. They're logically separate: a user who's
+// been through more than one import/reanalyze cycle (old accepted facts
+// aren't cleared by a fresh import — only "Forget" clears them) can
+// accumulate more than 15 accepted facts over time. FETCH_LIMIT is a
+// defensive ceiling on the query itself; INJECT_CAP is what actually goes
+// into the prompt, chosen by relevance once a decision's text is available.
+const FETCH_LIMIT = 50
+const INJECT_CAP   = 8
+
 /**
- * Fetch the user's accepted/edited memory facts (top 15 by importance ×
- * confidence, matching the cap already enforced at save time — this second
- * cap here is defensive, not load-bearing) and render them as a labeled
- * block for injection into the Council system prompt.
+ * Fetch the user's accepted/edited memory facts and render them as a
+ * labeled block for injection into the Council system prompt.
+ *
+ * v2: when `decisionText` is provided AND the user has more facts than
+ * INJECT_CAP, ranking blends semantic relevance to THIS decision (cosine
+ * similarity against each fact's stored embedding) with importance, instead
+ * of always injecting the same static top-N regardless of what's being
+ * decided. Falls back to importance × confidence ordering — v1's behavior —
+ * whenever decisionText is omitted, the embedding call fails, or the total
+ * fact count is small enough that ranking doesn't matter (≤ INJECT_CAP facts
+ * just all get included).
  *
  * `profile` is optional — when passed and the override flag is off (the
  * default), any fact that looks like it contradicts an explicit profile
@@ -54,6 +73,7 @@ interface FoundationalFactRow {
 export async function fetchFoundationalContext(
   userId:  string | null,
   profile?: CouncilUserProfile | null,
+  decisionText?: string,
 ): Promise<string> {
   if (!userId) return EMPTY_FOUNDATIONAL_CONTEXT
 
@@ -61,11 +81,11 @@ export async function fetchFoundationalContext(
     const supabase = createServiceClient()
     const { data, error } = await supabase
       .from('user_memory_facts')
-      .select('category, insight_text, importance, confidence')
+      .select('category, insight_text, importance, confidence, embedding')
       .eq('user_id', userId)
       .in('status', ['accepted', 'edited'])
       .order('importance', { ascending: false })
-      .limit(15)
+      .limit(FETCH_LIMIT)
 
     if (error) {
       console.warn('[FoundationalContext] fetch failed (non-fatal):', error.message)
@@ -81,8 +101,11 @@ export async function fetchFoundationalContext(
       insight_text: decrypt(f.insight_text) ?? f.insight_text,
     }))
 
-    const lines = decrypted
-      .filter(f => allowOverride || !conflictsWithProfile(f, profile))
+    const eligible = decrypted.filter(f => allowOverride || !conflictsWithProfile(f, profile))
+    const ranked = await rankByRelevance(eligible, decisionText)
+
+    const lines = ranked
+      .slice(0, INJECT_CAP)
       .map(f => `- [${CATEGORY_LABELS[f.category] ?? 'Context'}] ${f.insight_text}`)
 
     if (lines.length === 0) return EMPTY_FOUNDATIONAL_CONTEXT
@@ -95,6 +118,72 @@ export async function fetchFoundationalContext(
   } catch (err) {
     console.error('[FoundationalContext] unexpected error (non-fatal):', err)
     return EMPTY_FOUNDATIONAL_CONTEXT
+  }
+}
+
+// Semantic-relevance reranking — only does real work when there's more to
+// rank than INJECT_CAP and a decisionText was supplied. Otherwise returns
+// the input in its existing importance-sorted order (v1 behavior), which
+// keeps this a no-op — not a regression — for the common case of someone
+// with a single import's worth of facts.
+async function rankByRelevance(
+  facts: (FoundationalFactRow & { insight_text: string })[],
+  decisionText?: string,
+): Promise<(FoundationalFactRow & { insight_text: string })[]> {
+  if (facts.length <= INJECT_CAP || !decisionText) return facts
+
+  const queryEmbedding = await embedText(decisionText)
+  if (!queryEmbedding) return facts   // embedding unavailable — fall back to importance order, not an error
+
+  return [...facts].sort((a, b) => {
+    const scoreA = blendedScore(a, queryEmbedding)
+    const scoreB = blendedScore(b, queryEmbedding)
+    return scoreB - scoreA
+  })
+}
+
+// 60/40 weight toward semantic relevance over stated importance — a highly
+// relevant but self-rated-as-minor fact should still surface for THIS
+// decision; importance alone would otherwise permanently bury it beneath
+// unrelated "important" facts every single session.
+function blendedScore(fact: FoundationalFactRow, queryEmbedding: number[]): number {
+  const relevance = fact.embedding ? cosineSimilarity(fact.embedding, queryEmbedding) : 0.5   // neutral prior when unembedded
+  return relevance * 0.6 + fact.importance * 0.4
+}
+
+// ── Mirror narrative integration (v2) ────────────────────────────────────────
+// Separate, much smaller fetch than fetchFoundationalContext(): Mirror's
+// narrative is about who the person durably is, not what's relevant to a
+// specific decision, so only the identity-adjacent categories are pulled,
+// capped small to avoid dominating a narrative that's primarily built from
+// actual session/bias evidence. Returns null (not '') when there's nothing
+// to add, so lib/mirror-fingerprint.ts can skip its prompt addendum entirely
+// rather than append an empty instruction block.
+const NARRATIVE_CATEGORIES: MemoryFactCategory[] = ['value', 'goal', 'long_term_context']
+const MAX_NARRATIVE_FACTS = 5
+
+export async function fetchFoundationalFactsForNarrative(userId: string): Promise<string | null> {
+  if (!isContextIngestionEnabled()) return null
+  try {
+    const supabase = createServiceClient()
+    const { data, error } = await supabase
+      .from('user_memory_facts')
+      .select('category, insight_text, importance')
+      .eq('user_id', userId)
+      .in('status', ['accepted', 'edited'])
+      .in('category', NARRATIVE_CATEGORIES)
+      .order('importance', { ascending: false })
+      .limit(MAX_NARRATIVE_FACTS)
+
+    if (error || !data || data.length === 0) return null
+
+    const lines = (data as FoundationalFactRow[]).map(f =>
+      `- ${decrypt(f.insight_text) ?? f.insight_text}`
+    )
+    return lines.join('\n')
+  } catch (err) {
+    console.warn('[FoundationalContext] narrative fetch failed (non-fatal):', err)
+    return null
   }
 }
 

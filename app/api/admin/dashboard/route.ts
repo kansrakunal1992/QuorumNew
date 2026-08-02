@@ -49,6 +49,7 @@ import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { writeAuditLog }        from '@/lib/audit'
 import { decryptJson }          from '@/lib/encryption'
+import { isContextIngestionEnabled } from '@/lib/feature-flags'   // Context Ingestion v2 — KPI section
 
 // council_helped → numeric helpfulness score for averaging
 const HELPED_SCORE: Record<string, number> = {
@@ -384,10 +385,59 @@ async function handleDashboard() {
     },
   }
 
+  // ── Context Ingestion KPI (v2) ─────────────────────────────────────────────
+  // Cold-start reduction: does having accepted memory facts correlate with
+  // fewer clarification-register sessions and higher post-decision
+  // confidence, vs. cold-start users? Same "fetch raw rows, aggregate in
+  // JS" convention as R7/R8 above rather than a Postgres group-by — this
+  // table's queries are already written that way throughout this route.
+  // Skipped entirely (not just hidden) when the feature is off, so an
+  // unused code path never adds a query to every dashboard load.
+  let contextIngestionKpi: {
+    cohorts: { withImport: { sessions: number; clarificationRate: number | null; avgConfidence: number | null }
+             ; coldStart:  { sessions: number; clarificationRate: number | null; avgConfidence: number | null } }
+    totalUsersWithFacts: number
+  } | null = null
+
+  if (isContextIngestionEnabled()) {
+    try {
+      const [sessionsRes, factsUsersRes] = await Promise.all([
+        supabase.from('sessions').select('had_context_ingestion, register_mode, post_decision_confidence'),
+        supabase.from('user_memory_facts').select('user_id').in('status', ['accepted', 'edited']),
+      ])
+
+      const rows = sessionsRes.data ?? []
+      const withImport = rows.filter(r => r.had_context_ingestion === true)
+      const coldStart  = rows.filter(r => r.had_context_ingestion !== true)
+
+      const summarize = (group: typeof rows) => {
+        if (group.length === 0) return { sessions: 0, clarificationRate: null, avgConfidence: null }
+        const clarificationCount = group.filter(r => r.register_mode === 'clarification').length
+        const withConfidence = group.filter(r => typeof r.post_decision_confidence === 'number')
+        const avgConfidence = withConfidence.length > 0
+          ? withConfidence.reduce((sum, r) => sum + (r.post_decision_confidence as number), 0) / withConfidence.length
+          : null
+        return {
+          sessions: group.length,
+          clarificationRate: +(clarificationCount / group.length).toFixed(3),
+          avgConfidence: avgConfidence != null ? +avgConfidence.toFixed(2) : null,
+        }
+      }
+
+      contextIngestionKpi = {
+        cohorts: { withImport: summarize(withImport), coldStart: summarize(coldStart) },
+        totalUsersWithFacts: new Set((factsUsersRes.data ?? []).map(f => f.user_id)).size,
+      }
+    } catch (err) {
+      console.warn('[Admin dashboard] Context Ingestion KPI query failed (non-fatal):', err)
+    }
+  }
+
   return NextResponse.json({
     r7,
     r8,
     r11,
+    contextIngestionKpi,
     meta: {
       generated_at:    new Date().toISOString(),
       window_days:     90,

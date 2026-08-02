@@ -89,10 +89,22 @@ interface R11Data {
   }
 }
 
+interface ContextIngestionKpiCohort {
+  sessions: number
+  clarificationRate: number | null
+  avgConfidence: number | null
+}
+
+interface ContextIngestionKpi {
+  cohorts: { withImport: ContextIngestionKpiCohort; coldStart: ContextIngestionKpiCohort }
+  totalUsersWithFacts: number
+}
+
 interface DashboardData {
   r7:   R7Row[]
   r8:   R8Row[]
   r11:  R11Data
+  contextIngestionKpi: ContextIngestionKpi | null
   meta: {
     generated_at:           string
     window_days:            number
@@ -307,7 +319,7 @@ export default function AdminPage() {
 
   if (!data) return null
 
-  const { r7, r8, r11, meta } = data
+  const { r7, r8, r11, contextIngestionKpi, meta } = data
   const storedCode = sessionStorage.getItem('quorum_admin_code') ?? ''
 
   // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -615,6 +627,46 @@ export default function AdminPage() {
           </p>
         </div>
       </section>
+
+      {/* ── Context Ingestion KPI (v2) — cold-start reduction ────────────────── */}
+      {contextIngestionKpi && (
+        <section style={cardStyle}>
+          <div style={cardHeaderStyle}>
+            <p style={cardHeaderTitleStyle}>Context Ingestion — Cold-Start KPI</p>
+          </div>
+          <div style={{ padding: '14px 18px 18px' }}>
+            <p style={sectionNoteStyle}>
+              Do users with accepted memory facts ask fewer clarification-register questions and report higher post-decision confidence than cold-start users? {contextIngestionKpi.totalUsersWithFacts} user{contextIngestionKpi.totalUsersWithFacts === 1 ? '' : 's'} currently {contextIngestionKpi.totalUsersWithFacts === 1 ? 'has' : 'have'} at least one accepted fact.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              {([
+                { label: 'With imported context', data: contextIngestionKpi.cohorts.withImport },
+                { label: 'Cold start',             data: contextIngestionKpi.cohorts.coldStart },
+              ] as const).map(({ label, data: cohort }) => (
+                <div key={label} style={{ border: '1px solid var(--border-dim)', borderRadius: 10, padding: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>{label}</p>
+                  <div style={statsGridStyle}>
+                    <div style={statCardStyle}>
+                      <div style={{ fontSize: 19, fontWeight: 600, color: 'var(--text-1)' }}>{cohort.sessions}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-4)', marginTop: 3 }}>Sessions</div>
+                    </div>
+                    <div style={statCardStyle}>
+                      <div style={{ fontSize: 19, fontWeight: 600, color: 'var(--text-1)' }}>
+                        {cohort.clarificationRate != null ? `${(cohort.clarificationRate * 100).toFixed(1)}%` : '—'}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-4)', marginTop: 3 }}>Clarification rate</div>
+                    </div>
+                    <div style={statCardStyle}>
+                      <div style={{ fontSize: 19, fontWeight: 600, color: 'var(--text-1)' }}>{cohort.avgConfidence ?? '—'}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-4)', marginTop: 3 }}>Avg confidence</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <p style={{ fontSize: 11.5, color: 'var(--text-4)', paddingBottom: 8 }}>
         Quorum Admin · Review cadence: R7 monthly · R8 at 100 and 250 sessions · R11 thresholds tunable anytime via Railway Variables

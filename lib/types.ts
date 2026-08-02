@@ -352,16 +352,23 @@ export interface SessionScoreData {
 // supabase/add_context_ingestion.sql, lib/context-extractor.ts,
 // lib/foundational-context.ts, app/api/context-ingestion/*.
 
-export type ContextIngestionSource = 'chatgpt' | 'claude' | 'manual' | 'pasted_summary'
+export type ContextIngestionSource = 'chatgpt' | 'claude' | 'file_upload' | 'manual' | 'pasted_summary'
+// v2: 'file_upload' covers .md/.html/.docx/generic-JSON uploads that aren't
+// confidently a native ChatGPT or Claude export shape — see
+// lib/context-export-parser.ts. Extraction quality doesn't depend on this
+// label; it's provenance only.
 
 export type ContextIngestionStatus =
   | 'uploaded'            // raw text received, not yet processed
-  | 'analyzing'           // extraction call in flight
+  | 'analyzing'           // extraction call in flight (sync or v2 async background task)
   | 'insights_extracted'  // extraction returned; raw_purged_at set atomically
   | 'review_pending'      // candidate facts inserted, awaiting accept/edit/reject
-  | 'saved'               // user confirmed; facts finalized
+  | 'saved'               // user confirmed with >= 1 fact retained
+  | 'discarded'           // v2: user rejected every proposed fact pre-save — distinct from
+                          // 'failed' (nothing broke) and 'forgotten' (was saved, then removed).
+                          // Bypasses the reimport cooldown, same as 'failed'.
   | 'failed'              // extraction/embedding errored — see error_message
-  | 'forgotten'           // user hit "Forget imported context"
+  | 'forgotten'           // user hit "Forget imported context" after a save
 
 export interface ContextIngestion {
   id:                     string
@@ -427,5 +434,6 @@ export interface ContextIngestionStatusResponse {
   tier:     ProductTier
   ingestion: ContextIngestion | null
   facts:     UserMemoryFact[]       // 'proposed' facts during review; 'accepted'/'edited' once saved
+  staleFacts: UserMemoryFact[]      // v2: accepted/edited facts past the freshness window — "still true?" nudge
   cooldownDaysRemaining: number     // 0 when a fresh reimport is allowed right now
 }

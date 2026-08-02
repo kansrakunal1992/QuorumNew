@@ -490,7 +490,7 @@ export async function POST(req: Request) {
     // when disabled, so this is a zero-cost no-op until turned on.
     const foundationalContextPromise = (isSynthesisCall || isInitialPersona) && isContextIngestionEnabled()
       ? councilContextPromise.then(({ userId, userProfile }) =>
-          fetchFoundationalContext(userId, userProfile).catch(err => {
+          fetchFoundationalContext(userId, userProfile, decisionText).catch(err => {
             console.warn('[Persona] fetchFoundationalContext failed (non-fatal):', err)
             return EMPTY_FOUNDATIONAL_CONTEXT
           })

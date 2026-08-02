@@ -3,27 +3,41 @@
 //
 // Point 7: refresh confidence/importance/wording on the user's EXISTING
 // accepted/edited facts using the current model — no new raw source
-// required or accepted. This has no cooldown (unlike a fresh POST /
-// import): it never touches raw text, so it carries none of the cost or
-// noise risk the 30-day cooldown exists to bound, and is the release valve
-// that keeps people from needing a full reimport just to get a refresh.
+// required or accepted. No cooldown (unlike a fresh POST / import): it
+// never touches raw text, so it carries none of the cost or noise risk the
+// 30-day cooldown exists to bound, and is the release valve that keeps
+// people from needing a full reimport just to get a refresh.
+//
+// v2: this no longer writes anything by itself. It returns proposed
+// revisions (old vs. new, per fact) for the client to show as a diff —
+// see ContextIngestionPanel's "Refresh with latest model" flow — and
+// POST /reanalyze/apply persists whichever ones the user confirms. A
+// revision that comes back functionally unchanged (same text, scores
+// within a small tolerance) is dropped before it's even shown, so a
+// reanalyze on facts the model still agrees with doesn't produce a
+// pointless diff.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }        from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import { getUserFromBearer, getAuditContext, writeAuditLog } from '@/lib/audit'
+import { getUserFromBearer } from '@/lib/audit'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 import { isContextIngestionEnabled } from '@/lib/feature-flags'
 import { getProductTier }      from '@/lib/product-tier'
-import { encrypt, decrypt }    from '@/lib/encryption'
+import { decrypt }             from '@/lib/encryption'
 import { reanalyzeFacts }      from '@/lib/context-extractor'
 import type { MemoryFactCategory } from '@/lib/types'
 
 const MIN_FACTS_TO_REANALYZE = 3
+const SCORE_TOLERANCE = 0.05   // revisions within this on both confidence and importance, with identical text, don't count as a real change
+
+export interface ReanalyzeRevision {
+  id:            string
+  before: { category: MemoryFactCategory; insight_text: string; confidence: number; importance: number }
+  after:  { category: MemoryFactCategory; insight_text: string; confidence: number; importance: number }
+}
 
 export async function POST(req: Request) {
-  const ctx = getAuditContext(req)
-
   if (!isContextIngestionEnabled()) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
@@ -42,7 +56,7 @@ export async function POST(req: Request) {
 
   const { data: existing } = await supabase
     .from('user_memory_facts')
-    .select('id, category, insight_text')
+    .select('id, category, insight_text, confidence, importance')
     .eq('user_id', user.id)
     .in('status', ['accepted', 'edited'])
 
@@ -50,6 +64,8 @@ export async function POST(req: Request) {
     id: f.id as string,
     category: f.category as MemoryFactCategory,
     insight_text: decrypt(f.insight_text as string) ?? (f.insight_text as string),
+    confidence: f.confidence as number,
+    importance: f.importance as number,
   }))
 
   if (facts.length < MIN_FACTS_TO_REANALYZE) {
@@ -64,29 +80,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Reanalyze failed', message: 'Please try again shortly.' }, { status: 502 })
   }
 
-  const nowIso = new Date().toISOString()
-  await Promise.all(
-    Array.from(revisions.entries()).map(([id, rev]) =>
-      supabase.from('user_memory_facts').update({
-        category:          rev.category,
-        insight_text:      encrypt(rev.insight_text),
-        confidence:        rev.confidence,
-        importance:        rev.importance,
-        last_confirmed_at: nowIso,
-        updated_at:        nowIso,
-      }).eq('id', id).eq('user_id', user.id)
-    )
-  )
+  const factsById = new Map(facts.map(f => [f.id, f]))
+  const changed: ReanalyzeRevision[] = []
 
-  await supabase.from('context_ingestion')
-    .update({ extraction_model: model, updated_at: nowIso })
-    .eq('user_id', user.id)
+  for (const [id, rev] of Array.from(revisions.entries())) {
+    const before = factsById.get(id)
+    if (!before) continue
+    const isRealChange =
+      rev.insight_text !== before.insight_text ||
+      rev.category !== before.category ||
+      Math.abs(rev.confidence - before.confidence) > SCORE_TOLERANCE ||
+      Math.abs(rev.importance - before.importance) > SCORE_TOLERANCE
+    if (!isRealChange) continue
 
-  writeAuditLog({
-    actor_id: user.id, actor_email: user.email ?? undefined,
-    action: 'context_ingestion.reanalyze', ...ctx,
-    metadata: { revisedCount: revisions.size },
-  })
+    changed.push({
+      id,
+      before: { category: before.category, insight_text: before.insight_text, confidence: before.confidence, importance: before.importance },
+      after:  { category: rev.category, insight_text: rev.insight_text, confidence: rev.confidence, importance: rev.importance },
+    })
+  }
 
-  return NextResponse.json({ status: 'reanalyzed', revisedCount: revisions.size })
+  return NextResponse.json({ status: 'reanalyzed', model, unchangedCount: facts.length - changed.length, revisions: changed })
 }

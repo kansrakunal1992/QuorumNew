@@ -98,16 +98,23 @@ export async function POST(req: Request) {
       .in('id', unacted)
   }
 
-  await supabase.from('context_ingestion')
-    .update({ status: 'saved', updated_at: new Date().toISOString() })
-    .eq('id', ingestion.id)
-
   const { data: retained } = await supabase
     .from('user_memory_facts')
     .select('category')
     .eq('user_id', user.id)
     .eq('ingestion_id', ingestion.id)
     .in('status', ['accepted', 'edited'])
+
+  const retainedCount = retained?.length ?? 0
+
+  // v2: rejecting everything ("Reject all & start over") is not the same
+  // outcome as saving zero insights on purpose — it means this whole
+  // attempt produced nothing worth keeping, so it shouldn't count as a
+  // completed import against the 30-day reimport cooldown. 'discarded'
+  // bypasses that cooldown the same way 'failed' already does.
+  await supabase.from('context_ingestion')
+    .update({ status: retainedCount === 0 ? 'discarded' : 'saved', updated_at: new Date().toISOString() })
+    .eq('id', ingestion.id)
 
   const byCategory: Partial<Record<MemoryFactCategory, number>> = {}
   for (const r of retained ?? []) {
@@ -118,12 +125,12 @@ export async function POST(req: Request) {
   writeAuditLog({
     actor_id: user.id, actor_email: user.email ?? undefined,
     action: 'context_ingestion.save', resource_id: ingestion.id, ...ctx,
-    metadata: { retainedCount: retained?.length ?? 0, byCategory },
+    metadata: { retainedCount, byCategory, discarded: retainedCount === 0 },
   })
 
   return NextResponse.json({
-    status: 'saved',
-    retainedCount: retained?.length ?? 0,
+    status: retainedCount === 0 ? 'discarded' : 'saved',
+    retainedCount,
     byCategory,
   })
 }
