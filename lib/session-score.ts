@@ -26,6 +26,37 @@ import { createServiceClient } from '@/lib/supabase'
 import type { SessionScoreData }  from '@/lib/types'
 import { decrypt, decryptJson }  from '@/lib/encryption'
 
+// ── Bias parameter display labels ─────────────────────────────────────────────
+// Bug fix: distortingBiasLabels (below) was being populated straight from the
+// raw bias_parameter DB key (e.g. "complexity_opacity") and that raw key flowed
+// unchanged into deriveActionPlan()'s user-facing "Next move" copy. Every other
+// bias-display path in the app (app/mirror/page.tsx, lib/mirror-fingerprint.ts,
+// lib/bias-trigger-engine.ts, the alert routes) translates through a
+// getBiasLabel() map before showing a bias key to the user — this file was the
+// one place that didn't. Same map + fallback pattern as those.
+const BIAS_LABELS: Record<string, string> = {
+  fomo_urgency:                      'FOMO / Manufactured Urgency',
+  overconfidence:                    'Overconfidence',
+  attribution_asymmetry:             'Attribution Asymmetry',
+  social_proof:                      'Social Proof Bias',
+  control_illusion:                  'Control Illusion',
+  speed_bias:                        'Speed Bias',
+  exit_optionality_mispricing:       'Exit Optionality Mispricing',
+  recency_bias:                      'Recency Bias',
+  uniqueness_fallacy:                'Uniqueness Fallacy',
+  deference_distortion:              'Deference Distortion',
+  relationship_alignment_assumption: 'Relationship Alignment',
+  success_compression:               'Success Compression',
+  commitment_escalation:             'Commitment Escalation',
+  information_anchoring:             'Information Anchoring',
+  loss_aversion_asymmetry:           'Loss Aversion Asymmetry',
+  complexity_opacity:                'Complexity Opacity',
+}
+
+function getBiasLabel(key: string): string {
+  return BIAS_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 // ── Sub-score: structural match ───────────────────────────────────────────────
 // Source: structural_matches.matches_json (populated by /api/structural-match,
 // encrypted at rest). NOT sessions_ontology.
@@ -95,7 +126,7 @@ function scoreBiasClarity(biasRows: BiasRow[], sessionId: string): {
 
   return {
     score,
-    distortingLabels: distorting.map(r => r.bias_parameter as string),
+    distortingLabels: distorting.map(r => getBiasLabel(r.bias_parameter as string)),
   }
 }
 

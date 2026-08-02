@@ -122,6 +122,13 @@ export default function MemoryEngineStatus({
   const patternActive         = sessionCount >= PATTERN_MEMORY_THRESHOLD
   const mirrorTeaserReady     = sessionCount >= MIRROR_TEASER_THRESHOLD
   const mirrorReady           = sessionCount >= PATTERN_MEMORY_THRESHOLD
+  // Bug fix: the badge pill/dot below previously ignored mirrorUnlocked
+  // entirely and derived "Active"/"Inactive" from session count alone, so a
+  // user who'd already activated Elite (via unlock code or Razorpay) still
+  // saw "Inactive" at 2 sessions or "Mirror Preview" at 3 — even though
+  // statusLabel just below it correctly said "Mirror active". This makes
+  // both agree.
+  const engineActive          = mirrorUnlocked || patternActive
 
   let statusLabel: string
   let statusColor: string
@@ -177,8 +184,8 @@ export default function MemoryEngineStatus({
                 width: 7,
                 height: 7,
                 borderRadius: '50%',
-                background: patternActive ? 'var(--green-text)' : 'var(--gold)',
-                animation: (patternActive || mirrorTeaserReady) ? 'none' : 'dot-blink 2s ease-in-out infinite',
+                background: engineActive ? 'var(--green-text)' : 'var(--gold)',
+                animation: (engineActive || mirrorTeaserReady) ? 'none' : 'dot-blink 2s ease-in-out infinite',
                 flexShrink: 0,
               }}
             />
@@ -199,13 +206,13 @@ export default function MemoryEngineStatus({
             style={{
               fontSize: 10,
               fontWeight: 600,
-              color: patternActive ? 'var(--green-text)' : 'var(--gold)',
+              color: engineActive ? 'var(--green-text)' : 'var(--gold)',
               letterSpacing: '0.06em',
               textTransform: 'uppercase',
             }}
           >
-            {patternActive
-              ? (mirrorReady ? '● Active' : '● Pattern Memory')
+            {engineActive
+              ? '● Active'
               : mirrorTeaserReady
                 ? '● Mirror Preview'
                 : '○ Inactive'}

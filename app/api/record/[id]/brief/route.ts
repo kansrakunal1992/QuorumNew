@@ -145,6 +145,23 @@ function stripAdvisorTags(raw: string): string {
     .replace(/^\s+/, '')
 }
 
+// Bug fix: <realcost> and <lean> were being deleted by stripAdvisorTags above
+// with no equivalent content shown anywhere in the PDF — same root cause as
+// the record page's stripHeaderTags. <realcost> is substantive advisor prose
+// (content-preserving, like <assumption>); <lean> is machine-only but
+// PersonaPanel.tsx surfaces it to users as a "Leaning: X" line, which the PDF
+// had no equivalent for either.
+const LEAN_LABELS: Record<string, string> = {
+  proceed: 'Proceed',
+  wait:    'Wait',
+  mixed:   'Mixed',
+}
+
+function extractTag(raw: string, tag: string): string {
+  const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'))
+  return m ? m[1].trim() : ''
+}
+
 // ── Colour palettes — dark (original) + light ─────────────────────────────────
 // buildPdf() selects one into a local `const C` and `const PERSONA_ACCENT` at
 // the top of the function; every existing C.xxx / PERSONA_ACCENT[key] reference
@@ -1452,6 +1469,40 @@ async function buildPdf(
       doc.setLineWidth(0.3)
       doc.line(ML, Y, PW - MR, Y)
       Y += 12
+
+      if (!isSynthesis) {
+        const assistantMsgs  = msgs.filter(m => m.role === 'assistant')
+        const realCost       = extractTag(assistantMsgs[0]?.content ?? '', 'realcost')
+        const initialLeanRaw = extractTag(assistantMsgs[0]?.content ?? '', 'lean').toLowerCase()
+        const finalLeanRaw   = extractTag(assistantMsgs[assistantMsgs.length - 1]?.content ?? '', 'lean').toLowerCase()
+        const initialLean    = LEAN_LABELS[initialLeanRaw] ? initialLeanRaw : ''
+        const finalLean      = LEAN_LABELS[finalLeanRaw]   ? finalLeanRaw   : ''
+
+        if (initialLean) {
+          ensure(14)
+          doc.setFont('Helvetica', 'bold')
+          doc.setFontSize(8.5)
+          doc.setTextColor(...C.mutedText)
+          const label = finalLean && finalLean !== initialLean
+            ? `SHIFTED AFTER PUSHBACK -> NOW LEANING ${LEAN_LABELS[finalLean].toUpperCase()}`
+            : `LEANING: ${LEAN_LABELS[initialLean].toUpperCase()}`
+          doc.text(sanitise(label), ML, Y)
+          Y += 14
+        }
+
+        if (realCost) {
+          ensure(20)
+          doc.setFont('Helvetica', 'bold')
+          doc.setFontSize(7.5)
+          doc.setTextColor(...C.goldLight)
+          doc.setCharSpace(0.8)
+          doc.text('REAL COST', ML, Y)
+          doc.setCharSpace(0)
+          Y += 10
+          bodyBlock(realCost, 0, 9.5, C.mutedText)
+          Y += 4
+        }
+      }
 
       for (const msg of msgs) {
         if (msg.role === 'user') {

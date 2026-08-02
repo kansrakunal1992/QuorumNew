@@ -49,7 +49,14 @@ export default function PlanBadge() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    // Bug fix: without this, activating Elite (code or payment) on /mirror
+    // left this badge showing "Free plan" until a hard refresh, since this
+    // component's own fetch only ever ran once on mount.
+    window.addEventListener('quorum:mirror-status-changed', load)
+    return () => window.removeEventListener('quorum:mirror-status-changed', load)
+  }, [load])
 
   // Not signed in, or status hasn't resolved yet → render nothing.
   if (!status || status.gateState === 'auth') return null

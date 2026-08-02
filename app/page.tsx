@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
 import { useRouter } from 'next/navigation'
@@ -228,6 +228,28 @@ export default function Home() {
   const [serverTourDone, setServerTourDone] = useState(false)
   const [serverCheckDone, setServerCheckDone] = useState(false)
 
+  // Bug fix: extracted so it can run both on mount and again whenever the
+  // Mirror page broadcasts that gate status changed (activation via code or
+  // Razorpay) — previously this only ever ran once on mount, so this page
+  // kept showing mirrorUnlocked=false / stale mirror preview state until a
+  // full reload, even though the user had already activated Elite elsewhere.
+  const refreshMirrorStatus = useCallback((token: string) => {
+    fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        setMirrorUnlocked(d?.gateState === 'unlocked')
+        if (d?.gateState === 'unlocked') {
+          // Also fetch pattern dimensions for 4c (RecurringConditionCard)
+          fetch('/api/mirror/patterns', { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(pd => { if (pd?.top_dimensions) setPatternDimensions(pd.top_dimensions) })
+            .catch(() => {})
+        }
+        if (typeof d?.foundingAvailable === 'boolean') setFoundingAvailable(d.foundingAvailable)
+      })
+      .catch(() => {})
+  }, [])
+
   // ── Effects ───────────────────────────────────────────
   useEffect(() => {
     setDecision('')
@@ -347,20 +369,7 @@ export default function Home() {
           setServerCheckDone(true) // no session to check — localStorage is authoritative
         }
         if (token) {
-          fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
-            .then(r => r.json())
-            .then(d => {
-              if (d?.gateState === 'unlocked') {
-                setMirrorUnlocked(true)
-                // Also fetch pattern dimensions for 4c (RecurringConditionCard)
-                fetch('/api/mirror/patterns', { headers: { Authorization: `Bearer ${token}` } })
-                  .then(r => r.json())
-                  .then(pd => { if (pd?.top_dimensions) setPatternDimensions(pd.top_dimensions) })
-                  .catch(() => {})
-              }
-              if (typeof d?.foundingAvailable === 'boolean') setFoundingAvailable(d.foundingAvailable)
-            })
-            .catch(() => {})
+          refreshMirrorStatus(token)
         }
         if (authSession?.user?.email) {
           setUserEmail(authSession.user.email)
@@ -376,6 +385,16 @@ export default function Home() {
     }
     loadHistory()
   }, [])
+
+  // Bug fix: re-fetch mirror status if the user activates Elite (code or
+  // Razorpay payment) on /mirror and navigates back here without a hard
+  // reload — see refreshMirrorStatus above.
+  useEffect(() => {
+    if (!authToken) return
+    const onChanged = () => refreshMirrorStatus(authToken)
+    window.addEventListener('quorum:mirror-status-changed', onChanged)
+    return () => window.removeEventListener('quorum:mirror-status-changed', onChanged)
+  }, [authToken, refreshMirrorStatus])
 
   // ── Handlers ──────────────────────────────────────────
   const markOnboarded = () => {
@@ -548,7 +567,7 @@ export default function Home() {
 
       {/* ── Fixed Navbar ─────────────────────────────────── */}
       <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0,
+        position: 'sticky', top: 0,
         height: 56, zIndex: 100,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 24px',
@@ -582,7 +601,6 @@ export default function Home() {
       {/* ── Main ─────────────────────────────────────────── */}
       <main style={{
         minHeight: '100vh',
-        paddingTop: 56,
         paddingBottom: 80,
         background: 'var(--bg-void)',
       }}>

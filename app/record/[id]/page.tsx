@@ -22,6 +22,28 @@ import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
 import RecordDecisionHero from '@/components/RecordDecisionHero'
 import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent, briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 
+// Bug fix: <realcost> and <lean> were being deleted by stripHeaderTags below
+// with nothing rendered in their place. <realcost> is substantive advisor
+// content (same category as <assumption>, which the code already treats as
+// content-preserving) — PersonaPanel.tsx shows it as its own "Real Cost"
+// section, but the record page had no equivalent, so it just vanished here.
+// <lean> is genuinely machine-only (per PersonaPanel's own design, never
+// shown as raw text) but PersonaPanel does translate it into a visible
+// "Leaning: X" / "Shifted after pushback → now leaning X" indicator — the
+// record page had no equivalent for that either, so the leaning signal was
+// silently lost, not just the raw tag. Same label wording as
+// PersonaPanel.tsx/WhatChangedDrawer.tsx's LEAN_LABELS.
+const LEAN_LABELS: Record<string, string> = {
+  proceed: 'Proceed',
+  wait:    'Wait',
+  mixed:   'Mixed',
+}
+
+function extractTag(raw: string, tag: string): string {
+  const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
+  return m ? m[1].trim() : ''
+}
+
 // Strip <lens>, <position>, <realcost>, <lean> tags stored in DB — rendered separately
 // in PersonaPanel (lean is never rendered, only used for the S3-01 tension interstitial)
 // but never cleaned before persistence, so record page must strip them before display
@@ -1073,6 +1095,15 @@ export default async function RecordPage({ params }: Props) {
               const isBrief     = key === 'decision_brief'
               const isElevated  = isSynthesis || isBrief
 
+              // Bug fix: see extractTag/LEAN_LABELS above — realcost/lean
+              // were being discarded with nothing shown in their place.
+              const assistantMsgs = isElevated ? [] : msgs.filter(m => m.role === 'assistant')
+              const realCost      = extractTag(assistantMsgs[0]?.content ?? '', 'realcost')
+              const initialLeanRaw = extractTag(assistantMsgs[0]?.content ?? '', 'lean').toLowerCase()
+              const finalLeanRaw   = extractTag(assistantMsgs[assistantMsgs.length - 1]?.content ?? '', 'lean').toLowerCase()
+              const initialLean = LEAN_LABELS[initialLeanRaw] ? initialLeanRaw : ''
+              const finalLean   = LEAN_LABELS[finalLeanRaw]   ? finalLeanRaw   : ''
+
               return (
                 <div
                   key={key}
@@ -1152,6 +1183,51 @@ export default async function RecordPage({ params }: Props) {
                       </>
                     )}
                   </div>
+
+                  {(initialLean || realCost) && (
+                    <div style={{
+                      padding: '0 18px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}>
+                      {initialLean && (
+                        <p style={{
+                          fontSize: 11,
+                          fontFamily: 'var(--font-mono)',
+                          letterSpacing: '0.04em',
+                          color: 'var(--text-3)',
+                          margin: 0,
+                        }}>
+                          {finalLean && finalLean !== initialLean
+                            ? <>Shifted after pushback → now leaning <strong style={{ color: 'var(--gold)' }}>{LEAN_LABELS[finalLean]}</strong></>
+                            : <>Leaning: <strong style={{ color: 'var(--gold)' }}>{LEAN_LABELS[initialLean]}</strong></>}
+                        </p>
+                      )}
+                      {realCost && (
+                        <div style={{
+                          padding: '10px 12px',
+                          background: 'var(--bg-inset)',
+                          border: '1px solid var(--border-dim)',
+                          borderRadius: 8,
+                        }}>
+                          <p style={{
+                            fontSize: 9.5,
+                            fontFamily: 'var(--font-mono)',
+                            letterSpacing: '0.1em',
+                            textTransform: 'uppercase',
+                            color: 'var(--text-4)',
+                            margin: '0 0 4px',
+                          }}>
+                            Real Cost
+                          </p>
+                          <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-2)', margin: 0 }}>
+                            {realCost}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* ── Card body ── */}
                   <div style={{

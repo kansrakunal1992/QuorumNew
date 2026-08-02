@@ -445,7 +445,7 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
           reach TeaserView, even though lib/mirror-access.ts's own doc
           comment says subscription (not session count) is what's supposed
           to unlock Mirror. Condensed version of TeaserView's CTA card. */}
-      <div id="mirror-cta-locked" style={{
+      <div id="mirror-cta" className="mirror-cta-card" style={{
         width:        '100%',
         background:   'var(--bg-card)',
         border:       '1px solid var(--gold-dim)',
@@ -763,6 +763,7 @@ function UnlockCodeInput({ authToken, onSuccess }: { authToken: string; onSucces
           autoFocus
           style={{
             flex:         1,
+            minWidth:     0,
             background:   'var(--bg-inset)',
             border:       `1px solid ${error ? '#e05050' : 'var(--border-mid)'}`,
             borderRadius: 8,
@@ -1962,6 +1963,14 @@ export default function MirrorPage() {
   const handleUnlocked = useCallback(() => {
     setLoading(true)
     fetchStatus(authToken)
+    // Bug fix: PlanBadge (layout.tsx) and the home page's own mirrorUnlocked
+    // state each fetch /api/mirror/status independently, once, on their own
+    // mount — neither knows this page just changed that status server-side.
+    // Broadcasting lets them self-refresh in place instead of staying stale
+    // until a full reload/remount.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('quorum:mirror-status-changed'))
+    }
   }, [authToken, fetchStatus])
 
   // ── Render ─────────────────────────────────────────────────────────────────
