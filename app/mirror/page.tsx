@@ -456,12 +456,12 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
           {foundingAvailable ? 'Founding Elite' : 'Quorum Elite'}
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 16px', fontStyle: 'italic' }}>
-          Where your judgment compounds.
+          Sharper Council today. Deeper Mirror over time.
         </p>
         {foundingAvailable ? (
           <>
             <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
-              ₹999/month · ₹9,999/year — regular price is ₹2,999/month · ₹29,999/year. Locked in for as long as you stay subscribed. Limited founding member seats. Activate now — no need to wait for {LOCK_THRESHOLD} decisions.
+              ₹999/month · ₹9,999/year — regular price is ₹2,999/month · ₹29,999/year. Locked in for as long as you stay subscribed. Limited founding member seats. Council's full model quality and Mirror access apply immediately — Mirror's pattern insight still builds from your decisions either way.
             </p>
             <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
@@ -484,7 +484,7 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
         ) : (
           <>
             <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
-              ₹2,999/month · ₹29,999/year. Activate now — no need to wait for {LOCK_THRESHOLD} decisions.
+              ₹2,999/month · ₹29,999/year. Council's full model quality and Mirror access apply immediately — Mirror's pattern insight still builds from your decisions either way.
             </p>
             <UnlockCodeInput authToken={authToken} onSuccess={onUnlocked} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
@@ -1057,10 +1057,13 @@ function TeaserView({
           {status.foundingAvailable ? 'Founding Elite' : 'Quorum Elite'}
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px', fontStyle: 'italic' }}>
-          Where your judgment compounds.
+          Sharper Council today. Deeper Mirror over time.
         </p>
-        <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
-          Unlocks these sections:
+        <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 4px' }}>
+          Council's model quality upgrades immediately.
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 10px' }}>
+          These build as you log more decisions:
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
           {[
@@ -1376,7 +1379,14 @@ function WelcomeMirrorCard({
         gap: 16, flexWrap: 'wrap',
       }}>
         <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0, lineHeight: 1.5, flex: 1 }}>
-          Answer the follow-up questions in depth — that&apos;s the primary signal source across most modules. You can also import context below to skip ahead.
+          Answer the follow-up questions in depth — that&apos;s the primary signal source across most modules.{' '}
+          <span
+            onClick={() => document.getElementById('context-ingestion')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            style={{ color: 'var(--gold)', cursor: 'pointer', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 }}
+          >
+            Import context now
+          </span>
+          {' '}to give it a running start.
         </p>
         <button
           onClick={handleDismiss}
@@ -1638,8 +1648,16 @@ function UnlockedView({
       )}
 
       {/* Context Ingestion (Elite) — self-contained: fetches its own tier/status,
-          renders locked teaser / upload flow / review / saved+manage state */}
-      {!showWelcome && <ContextIngestionPanel authToken={authToken} />}
+          renders locked teaser / upload flow / review / saved+manage state.
+          UX fix: previously gated behind !showWelcome, so it was hidden
+          during the exact moment the welcome card's own footer note points
+          to it ("import context below to skip ahead") — that pointer wasn't
+          true yet since dismissing the card was required first. Rendering it
+          unconditionally means an early payer has a genuine post-checkout
+          action to take immediately, not after an extra step. */}
+      <div id="context-ingestion">
+        <ContextIngestionPanel authToken={authToken} />
+      </div>
 
       {/* Decisions Still Open */}
       {avoidanceAlerts.length > 0 && (
