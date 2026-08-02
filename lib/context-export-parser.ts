@@ -102,24 +102,54 @@ function flattenChatGPTConversation(convo: ChatGPTConversation): string {
   const lines: string[] = []
   if (convo.title) lines.push(`# ${convo.title}`)
 
-  const nodes = Object.values(convo.mapping)
-  const root = nodes.find(n => n.parent === null)
-  if (!root) return lines.join('\n')
+  // Walk BACKWARD from current_node via .parent, then reverse — this is the
+  // one reliable way to get the actual displayed conversation. Walking
+  // forward from the root via children[0] (the original approach here)
+  // assumes the first branch at every fork is the live one; verified
+  // against a real 570-conversation export that this is wrong essentially
+  // always — root.children was empty/undefined in every single case,
+  // so that walk terminated after one node and extracted zero messages
+  // from all 570 conversations. current_node is ChatGPT's own pointer to
+  // the leaf of whichever branch is actually showing, so walking up from
+  // there and reversing is the correct chain regardless of how many
+  // regenerations/edits a conversation has.
+  const nodes = convo.mapping
+  let node: ChatGPTNode | undefined = convo.current_node ? nodes[convo.current_node] : undefined
 
-  let current: ChatGPTNode | undefined = root
-  const visited = new Set<string>()
-  while (current && !visited.has(current.id)) {
-    visited.add(current.id)
-    const role = current.message?.author?.role
-    const parts = current.message?.content?.parts
-    if ((role === 'user' || role === 'assistant') && Array.isArray(parts)) {
-      const text = parts.filter(p => typeof p === 'string').join(' ').trim()
-      if (text) lines.push(`${role === 'user' ? 'User' : 'Assistant'}: ${text}`)
+  // Fallback for the rare export shape without a usable current_node: fall
+  // back to the previous root-forward walk rather than emitting nothing.
+  if (!node) {
+    const root = Object.values(nodes).find(n => n.parent === null)
+    let current: ChatGPTNode | undefined = root
+    const visitedFallback = new Set<string>()
+    while (current && !visitedFallback.has(current.id)) {
+      visitedFallback.add(current.id)
+      appendMessageLine(lines, current)
+      const nextId: string | undefined = current.children?.[0]
+      current = nextId ? nodes[nextId] : undefined
     }
-    const nextId: string | undefined = current.children?.[0]
-    current = nextId ? convo.mapping[nextId] : undefined
+    return lines.join('\n')
   }
+
+  const chain: ChatGPTNode[] = []
+  const visited = new Set<string>()
+  while (node && !visited.has(node.id)) {
+    visited.add(node.id)
+    chain.unshift(node)   // build oldest-to-newest by unshifting as we walk upward
+    node = node.parent ? nodes[node.parent] : undefined
+  }
+
+  for (const n of chain) appendMessageLine(lines, n)
   return lines.join('\n')
+}
+
+function appendMessageLine(lines: string[], node: ChatGPTNode): void {
+  const role = node.message?.author?.role
+  const parts = node.message?.content?.parts
+  if ((role === 'user' || role === 'assistant') && Array.isArray(parts)) {
+    const text = parts.filter(p => typeof p === 'string').join(' ').trim()
+    if (text) lines.push(`${role === 'user' ? 'User' : 'Assistant'}: ${text}`)
+  }
 }
 
 // Real OpenAI "Export data" archives can shard conversations across
