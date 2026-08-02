@@ -49,6 +49,41 @@ const POLL_INTERVAL_MS = 3000
 const POLL_TIMEOUT_MS  = 5 * 60_000   // give up surfacing progress after 5 min — the job keeps running server-side regardless
 const TERMINAL_STATUSES = ['review_pending', 'saved', 'discarded', 'failed', 'forgotten']
 
+// v2 — soft "may reference someone by name" flag for the review screen.
+// The extraction prompt already instructs the model not to extract facts
+// about third parties, but that instruction didn't hold on a real import
+// (a colleague's name leaked into a "Constraint" fact) — this is a second,
+// independent layer of defense: a plain heuristic, not a hard filter, that
+// visually flags a fact for extra scrutiny rather than silently stripping
+// it (false positives are expected and fine; false negatives are the
+// acceptable failure mode for a "worth a second look" signal, not a
+// guarantee). Two signals: a capitalized, non-stoplisted word that either
+// (a) takes a possessive "'s" — the strongest signal, since that's exactly
+// the shape "Abhilash's ramp-up time" took — or (b) appears anywhere other
+// than the start of a sentence.
+const NAME_FLAG_STOPLIST = new Set([
+  'Quorum', 'Council', 'Mirror', 'Elite', 'WhatsApp', 'LinkedIn', 'Instagram', 'Twitter', 'Facebook',
+  'Google', 'Slack', 'Notion', 'Zoom', 'ChatGPT', 'Claude', 'OpenAI', 'Anthropic',
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+  'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December',
+])
+
+function mayReferenceAName(text: string): boolean {
+  const words = text.split(/\s+/)
+  let afterSentenceEnd = true
+  for (const raw of words) {
+    const hasPossessive = /['’]s$/i.test(raw)
+    const clean = raw.replace(/^[^A-Za-z]+|[^A-Za-z'’]+$/g, '').replace(/['’]s$/i, '')
+    if (!clean) { afterSentenceEnd = /[.!?]$/.test(raw); continue }
+    const isSentenceStart = afterSentenceEnd
+    afterSentenceEnd = /[.!?]$/.test(raw)
+    const looksCapitalized = /^[A-Z][a-z]{2,}$/.test(clean)
+    if (!looksCapitalized || NAME_FLAG_STOPLIST.has(clean)) continue
+    if (hasPossessive || !isSentenceStart) return true
+  }
+  return false
+}
+
 type ReviewAction = { id: string; action: 'accept' | 'edit' | 'reject'; editedText?: string }
 
 function authHeaders(token: string | null): Record<string, string> {
@@ -348,8 +383,13 @@ export default function ContextIngestionPanel({ authToken }: Props) {
                 style={{ marginTop: 3, cursor: 'pointer' }}
               />
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 8 }}>
                   {CATEGORY_LABELS[f.category]}
+                  {mayReferenceAName(editDrafts[f.id] ?? f.insight_text) && (
+                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--error)', textTransform: 'none', letterSpacing: 'normal' }}>
+                      ⚠ may reference someone by name
+                    </span>
+                  )}
                 </p>
                 {editingId === f.id ? (
                   <div>

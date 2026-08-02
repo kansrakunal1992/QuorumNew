@@ -36,7 +36,9 @@ Return ONLY a JSON array (no prose, no markdown fences), each element:
 Rules:
 - Return at most ${MAX_CANDIDATES} facts. Fewer, higher-quality facts beat many weak ones.
 - insight_text must be an ABSTRACTED characterization, never a near-verbatim quote or specific identifying detail (no names, dates, employers, dollar figures, medical/legal specifics). Write "navigates high-stakes financial decisions cautiously", not "considering bankruptcy after the March lease default".
-- Only extract facts about the account owner (the person whose export/description this is) — never about other people who appear in their conversations.
+- Only extract facts about the account owner (the person whose export/description this is) — never about other people who appear in their conversations, even in passing (a colleague, a collaborator, a friend named in the text). If a sentence is really about what someone ELSE believes, decided, or is limited by, skip it.
+- Do NOT extract facts about a product, tool, or system the person is building, discussing, or using — including this product, Quorum — as if they were facts about the person. "This tool reads the structure of a decision before it answers" describes a product's behavior, not the person's own value or judgment, even if the person said it enthusiastically or said it often. Only extract a value/pattern/goal if the sentence is about how the PERSON thinks, decides, or behaves — not about what a product does.
+- Prefer DURABLE patterns likely to matter across many different future decisions over TACTICAL specifics tied to one current project. "Tests messaging against real prospects before committing to a channel" is durable; "uses WhatsApp and LinkedIn for outreach this quarter" is tactical and should usually be skipped unless nothing more durable is available. When a conversation reveals both, extract the durable pattern underneath the tactic, not the tactic itself.
 - Skip anything that is really about a third party, a one-off factual question, or too generic to be useful (e.g. "likes helpful answers").
 - If the source material is too thin to support any confident fact, return [].`
 

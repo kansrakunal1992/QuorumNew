@@ -11,10 +11,16 @@
 // extraction returns (see lib/context-extractor.ts).
 //
 // Supported formats:
-//   1. ChatGPT export — conversations.json (standalone or inside the .zip
-//      OpenAI's "Export data" produces). Tree-structured: each conversation
-//      is a `mapping` of node id → { message, parent, children }, walked
-//      from the root to flatten in order.
+//   1. ChatGPT export — conversations.json (standalone, or sharded across
+//      conversations-000.json, conversations-001.json, etc. inside the .zip
+//      OpenAI's "Export data" produces — confirmed against a real 570-
+//      conversation export that large accounts get sharded, not a single
+//      file). Tree-structured: each conversation is a `mapping` of node id →
+//      { message, parent, children }; the live branch is read by walking
+//      BACKWARD from current_node via .parent, not forward from the root
+//      (see flattenChatGPTConversation's comment — walking forward assumes
+//      children[0] is the live branch, which was verified false in every
+//      one of 570 real conversations tested).
 //   2. Claude export — conversations.json with a flat `chat_messages` array
 //      per conversation. Simpler shape, no tree walk needed.
 //   3. v2 — Markdown (.md) — read as-is. Extraction already handles ##
@@ -61,21 +67,110 @@ export const ACCEPTED_FILE_EXTENSIONS = '.zip,.json,.md,.html,.docx'
 // Hard cap before anything reaches the server — a full year of ChatGPT
 // history can be tens of MB. Truncating (not rejecting) means a large
 // export still yields a usable — if partial — result.
-//
-// Keeps the FRONT of the text, not the tail: parseChatGPTExport() below
-// sorts conversations newest-first before flattening specifically so this
-// works correctly — a real export can arrive sharded across multiple
-// conversations-NNN.json files that are NOT in chronological order relative
-// to each other (confirmed against an actual OpenAI export: shard 000
-// spanned Jan 2023–Mar 2026, shard 005 spanned May 2023–Aug 2024 — nothing
-// about shard order implies time order), so naively keeping "whatever ends
-// up last after concatenation" would not reliably keep the most recent
-// conversations. Sort first, then keep the front.
 const MAX_CHARS = 400_000   // ~100k tokens
 
+// Simple head-slice truncation — used for formats without a reliable
+// per-item timestamp to bucket by (generic JSON, .md/.html/.docx, pasted
+// text). ChatGPT and Claude use bucketAndAllocate() below instead.
 function truncate(text: string): { text: string; truncated: boolean } {
   if (text.length <= MAX_CHARS) return { text, truncated: false }
   return { text: text.slice(0, MAX_CHARS), truncated: true }
+}
+
+// Strips OpenAI's internal browsing/search citation tokens that sometimes
+// leak directly into message text — e.g. "citeturn0search2turn0search0"
+// or "citeturn1academia4turn2news1" (one or more "turn{N}{tool}{M}"
+// chunks concatenated with no separator after "cite"). Confirmed present
+// in real export data; harmless noise for extraction but worth cleaning up
+// since it's free to do. Applied once, at the point each format's text is
+// finalized, rather than per-message, so every format benefits without
+// needing its own call site.
+function stripCitationArtifacts(text: string): string {
+  return text.replace(/\s*cite(?:turn\d+\w*?\d+)+\s*/gi, ' ')
+}
+
+// ── Diversity-aware bucketed truncation ──────────────────────────────────────
+//
+// A straight "sort newest-first, keep the first N characters" truncation
+// (v2's original approach) has a real failure mode: if the account has been
+// in an intense sprint on one topic recently, that sprint alone can fill
+// the entire character budget, and every other conversation — regardless
+// of how relevant it'd be to a future, unrelated decision — never reaches
+// extraction at all. Verified this concretely: a real export produced a
+// Foundational Context that was 15/15 facts about one GTM sprint.
+//
+// Fix: bucket conversations by age (last 30 days / 31–180 days / 180+ days,
+// relative to the most recent conversation's own timestamp, not wall-clock
+// "now" — an export itself could be old), allocate a fixed share of the
+// character budget to each bucket (50/30/20), and within each bucket still
+// prefer the newest conversations first. Whole conversations are kept or
+// dropped — never split mid-conversation — and the very first conversation
+// considered for a bucket is always included even if it alone exceeds that
+// bucket's budget, so one large conversation can't zero out an entire time
+// period, only dominate it. That's a known, accepted tradeoff over building
+// something more elaborate (e.g. capping any single conversation's share of
+// its own bucket) — the 50/30/20 split alone was enough to turn "0 of 198
+// older conversations included" into "11 of 198 included" against the real
+// export this was tested on, which is the actual problem worth solving here.
+
+interface TimestampedItem {
+  timestamp: number | null   // epoch seconds; null when the format has no reliable per-item time
+  text:      string
+}
+
+const DAY_SECONDS = 86_400
+const RECENT_MAX_AGE_DAYS = 30
+const MID_MAX_AGE_DAYS    = 180
+const BUCKET_SHARES = { recent: 0.5, mid: 0.3, older: 0.2 } as const
+
+function bucketAndAllocate(items: TimestampedItem[], totalBudget: number): { text: string; truncated: boolean } {
+  const withTs    = items.filter((i): i is { timestamp: number; text: string } => i.timestamp !== null)
+  const withoutTs = items.filter(i => i.timestamp === null)
+
+  // No usable timestamps at all (e.g. every conversation lacked one) —
+  // fall back to the simple newest-first-order-assumed head slice rather
+  // than bucketing on nothing.
+  if (withTs.length === 0) {
+    const joined = items.map(i => i.text).join('\n\n---\n\n')
+    return truncate(joined)
+  }
+
+  const mostRecent = Math.max(...withTs.map(i => i.timestamp))
+  const buckets = {
+    recent: { items: [] as typeof withTs, budget: totalBudget * BUCKET_SHARES.recent },
+    mid:    { items: [] as typeof withTs, budget: totalBudget * BUCKET_SHARES.mid },
+    older:  { items: [] as typeof withTs, budget: totalBudget * BUCKET_SHARES.older },
+  }
+  for (const item of withTs) {
+    const ageDays = (mostRecent - item.timestamp) / DAY_SECONDS
+    if (ageDays <= RECENT_MAX_AGE_DAYS) buckets.recent.items.push(item)
+    else if (ageDays <= MID_MAX_AGE_DAYS) buckets.mid.items.push(item)
+    else buckets.older.items.push(item)
+  }
+
+  const chunks: string[] = []
+  let includedCount = 0
+  for (const bucket of [buckets.recent, buckets.mid, buckets.older]) {
+    const sorted = [...bucket.items].sort((a, b) => b.timestamp - a.timestamp)
+    let used = 0
+    for (const item of sorted) {
+      if (used > 0 && used + item.text.length > bucket.budget) break
+      chunks.push(item.text)
+      used += item.text.length
+      includedCount++
+    }
+  }
+
+  // Untimestamped items (shouldn't normally happen for ChatGPT/Claude, but
+  // don't silently drop them if they occur) — appended last, budget-permitting.
+  let combined = chunks.join('\n\n---\n\n')
+  for (const item of withoutTs) {
+    if (combined.length + item.text.length > totalBudget) break
+    combined += (combined ? '\n\n---\n\n' : '') + item.text
+    includedCount++
+  }
+
+  return { text: combined, truncated: includedCount < items.length }
 }
 
 // ── ChatGPT: walk the mapping tree ───────────────────────────────────────────
@@ -93,9 +188,18 @@ interface ChatGPTNode {
 
 interface ChatGPTConversation {
   title?: string
-  create_time?: number | null   // conversation-level timestamp — used to sort shards into recency order
+  create_time?: number | null   // conversation-level timestamp — used for bucketing/sorting across shards
   mapping: Record<string, ChatGPTNode>
   current_node?: string
+}
+
+function appendMessageLine(lines: string[], node: ChatGPTNode): void {
+  const role = node.message?.author?.role
+  const parts = node.message?.content?.parts
+  if ((role === 'user' || role === 'assistant') && Array.isArray(parts)) {
+    const text = parts.filter(p => typeof p === 'string').join(' ').trim()
+    if (text) lines.push(`${role === 'user' ? 'User' : 'Assistant'}: ${text}`)
+  }
 }
 
 function flattenChatGPTConversation(convo: ChatGPTConversation): string {
@@ -143,26 +247,20 @@ function flattenChatGPTConversation(convo: ChatGPTConversation): string {
   return lines.join('\n')
 }
 
-function appendMessageLine(lines: string[], node: ChatGPTNode): void {
-  const role = node.message?.author?.role
-  const parts = node.message?.content?.parts
-  if ((role === 'user' || role === 'assistant') && Array.isArray(parts)) {
-    const text = parts.filter(p => typeof p === 'string').join(' ').trim()
-    if (text) lines.push(`${role === 'user' ? 'User' : 'Assistant'}: ${text}`)
-  }
-}
-
 // Real OpenAI "Export data" archives can shard conversations across
 // multiple conversations-NNN.json files rather than one conversations.json
-// (confirmed: a 570-conversation export split into 6 files of ~100 each).
-// Shards are not necessarily in time order relative to each other, so every
-// conversation across every shard is sorted by create_time (newest first)
-// here, once, before flattening — see the note on truncate() for why this
-// ordering matters once the combined text exceeds MAX_CHARS.
-function parseChatGPTExport(json: unknown): string {
+// (confirmed: a 570-conversation export split into 6 files of ~100 each),
+// and shards are not necessarily in time order relative to each other. Every
+// conversation across every merged shard is flattened here, then handed to
+// bucketAndAllocate() so recency AND cross-time diversity both hold, instead
+// of a flat sort+slice that lets one recent sprint crowd out everything else.
+function parseChatGPTExport(json: unknown, budget: number): { text: string; truncated: boolean } {
   const conversations = Array.isArray(json) ? json as ChatGPTConversation[] : []
-  const sorted = [...conversations].sort((a, b) => (b.create_time ?? 0) - (a.create_time ?? 0))
-  return sorted.map(flattenChatGPTConversation).filter(Boolean).join('\n\n---\n\n')
+  const items: TimestampedItem[] = conversations
+    .map(c => ({ timestamp: c.create_time ?? null, text: flattenChatGPTConversation(c) }))
+    .filter(i => i.text.trim())
+  const { text, truncated } = bucketAndAllocate(items, budget)
+  return { text: stripCitationArtifacts(text), truncated }
 }
 
 // ── Claude: flat chat_messages array ─────────────────────────────────────────
@@ -175,6 +273,7 @@ interface ClaudeMessage {
 
 interface ClaudeConversation {
   name?: string
+  created_at?: string   // ISO timestamp, when present — used for the same bucketing as ChatGPT
   chat_messages?: ClaudeMessage[]
 }
 
@@ -189,9 +288,21 @@ function flattenClaudeConversation(convo: ClaudeConversation): string {
   return lines.join('\n')
 }
 
-function parseClaudeExport(json: unknown): string {
+// Same bucketing as ChatGPT when created_at is present; falls back to
+// bucketAndAllocate's own no-timestamp path (simple head slice) otherwise —
+// Claude's export doesn't always include a conversation-level timestamp in
+// every version of the format, so this degrades gracefully rather than
+// assuming it's always there.
+function parseClaudeExport(json: unknown, budget: number): { text: string; truncated: boolean } {
   const conversations = Array.isArray(json) ? json as ClaudeConversation[] : []
-  return conversations.map(flattenClaudeConversation).filter(Boolean).join('\n\n---\n\n')
+  const items: TimestampedItem[] = conversations
+    .map(c => ({
+      timestamp: c.created_at ? Math.floor(Date.parse(c.created_at) / 1000) || null : null,
+      text: flattenClaudeConversation(c),
+    }))
+    .filter(i => i.text.trim())
+  const { text, truncated } = bucketAndAllocate(items, budget)
+  return { text: stripCitationArtifacts(text), truncated }
 }
 
 // ── v2: generic JSON conversation shape ──────────────────────────────────────
@@ -199,7 +310,9 @@ function parseClaudeExport(json: unknown): string {
 // something like [{role: 'user', content: '...'}, ...] or
 // [{sender: 'assistant', text: '...'}, ...] without matching ChatGPT's or
 // Claude's specific shape. Deliberately loose field-name matching since
-// there's no single standard here.
+// there's no single standard here. No reliable per-item timestamp for an
+// arbitrary third-party shape, so this stays on the simple head-slice
+// truncation rather than bucketing.
 
 interface GenericMessage {
   role?: unknown; sender?: unknown; speaker?: unknown
@@ -230,7 +343,7 @@ function flattenGenericConversation(arr: unknown[]): string {
     const role = /assistant|ai|bot|claude|gpt|chatgpt|model/.test(roleStr) ? 'Assistant' : 'User'
     lines.push(`${role}: ${text}`)
   }
-  return lines.join('\n')
+  return stripCitationArtifacts(lines.join('\n'))
 }
 
 // Unwraps a common one-level-of-nesting shape: { messages: [...] } or
@@ -248,20 +361,23 @@ function unwrapToArray(json: unknown): unknown[] | null {
 
 // ── Shape sniffing ────────────────────────────────────────────────────────────
 
-function detectAndParse(json: unknown): { text: string; sourceType: ContextIngestionSource } | null {
+function detectAndParse(json: unknown): { text: string; sourceType: ContextIngestionSource; truncated: boolean } | null {
   const arr = unwrapToArray(json)
   if (!arr || arr.length === 0) return null
   const first = arr[0] as Record<string, unknown>
   if (typeof first !== 'object' || first === null) return null
 
   if ('mapping' in first) {
-    return { text: parseChatGPTExport(arr), sourceType: 'chatgpt' }
+    const { text, truncated } = parseChatGPTExport(arr, MAX_CHARS)
+    return { text, sourceType: 'chatgpt', truncated }
   }
   if ('chat_messages' in first) {
-    return { text: parseClaudeExport(arr), sourceType: 'claude' }
+    const { text, truncated } = parseClaudeExport(arr, MAX_CHARS)
+    return { text, sourceType: 'claude', truncated }
   }
   if (looksLikeGenericConversation(arr)) {
-    return { text: flattenGenericConversation(arr), sourceType: 'file_upload' }
+    const { text, truncated } = truncate(flattenGenericConversation(arr))
+    return { text, sourceType: 'file_upload', truncated }
   }
   return null
 }
@@ -318,7 +434,7 @@ export async function parseExportFile(file: File): Promise<ParsedExport> {
     if (!text.trim()) {
       throw new Error("Couldn't find readable text in this .docx. Try pasting the text instead.")
     }
-    const truncatedResult = truncate(text)
+    const truncatedResult = truncate(stripCitationArtifacts(text))
     return { text: truncatedResult.text, charCount: truncatedResult.text.length, sourceType: 'file_upload', truncated: truncatedResult.truncated }
   }
 
@@ -327,7 +443,7 @@ export async function parseExportFile(file: File): Promise<ParsedExport> {
   if (name.endsWith('.md') || name.endsWith('.markdown')) {
     const raw = await file.text()
     if (!raw.trim()) throw new Error('This file looks empty. Try pasting the text instead.')
-    const { text, truncated } = truncate(raw.trim())
+    const { text, truncated } = truncate(stripCitationArtifacts(raw.trim()))
     return { text, charCount: text.length, sourceType: 'file_upload', truncated }
   }
 
@@ -336,7 +452,7 @@ export async function parseExportFile(file: File): Promise<ParsedExport> {
     const raw = await file.text()
     const text = parseHtmlToText(raw)
     if (!text) throw new Error("Couldn't find readable text in this HTML file. Try pasting the text instead.")
-    const truncatedResult = truncate(text)
+    const truncatedResult = truncate(stripCitationArtifacts(text))
     return { text: truncatedResult.text, charCount: truncatedResult.text.length, sourceType: 'file_upload', truncated: truncatedResult.truncated }
   }
 
@@ -358,9 +474,9 @@ export async function parseExportFile(file: File): Promise<ParsedExport> {
       throw new Error("Couldn't find a conversations.json (or conversations-NNN.json) inside this .zip — is this a ChatGPT data export?")
     }
 
-    // Merge every shard's array into one before parsing, so sorting-by-
-    // recency in parseChatGPTExport() operates across the whole export, not
-    // just whichever shard happened to be found first.
+    // Merge every shard's array into one before parsing, so bucketing in
+    // parseChatGPTExport() operates across the whole export, not just
+    // whichever shard happened to be found first.
     const shardArrays = await Promise.all(
       convoFiles.map(async f => {
         try {
@@ -377,12 +493,11 @@ export async function parseExportFile(file: File): Promise<ParsedExport> {
       throw new Error("Found conversation files in this .zip, but couldn't read any conversations from them. Try pasting the text instead.")
     }
 
-    const text = parseChatGPTExport(merged)
+    const { text, truncated } = parseChatGPTExport(merged, MAX_CHARS)
     if (!text.trim()) {
       throw new Error("This .zip's conversation files didn't contain any readable messages. Try pasting the text instead.")
     }
-    const { text: truncatedText, truncated } = truncate(text)
-    return { text: truncatedText, charCount: truncatedText.length, sourceType: 'chatgpt', truncated }
+    return { text, charCount: text.length, sourceType: 'chatgpt', truncated }
   } else if (name.endsWith('.json')) {
     raw = await file.text()
   } else {
@@ -401,8 +516,7 @@ export async function parseExportFile(file: File): Promise<ParsedExport> {
     throw new Error("This doesn't match a supported export format. You can paste text instead.")
   }
 
-  const { text, truncated } = truncate(parsed.text)
-  return { text, charCount: text.length, sourceType: parsed.sourceType, truncated }
+  return { text: parsed.text, charCount: parsed.text.length, sourceType: parsed.sourceType, truncated: parsed.truncated }
 }
 
 /**
