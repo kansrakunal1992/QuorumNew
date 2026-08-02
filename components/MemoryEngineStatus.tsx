@@ -122,13 +122,14 @@ export default function MemoryEngineStatus({
   const patternActive         = sessionCount >= PATTERN_MEMORY_THRESHOLD
   const mirrorTeaserReady     = sessionCount >= MIRROR_TEASER_THRESHOLD
   const mirrorReady           = sessionCount >= PATTERN_MEMORY_THRESHOLD
-  // Bug fix: the badge pill/dot below previously ignored mirrorUnlocked
-  // entirely and derived "Active"/"Inactive" from session count alone, so a
-  // user who'd already activated Elite (via unlock code or Razorpay) still
-  // saw "Inactive" at 2 sessions or "Mirror Preview" at 3 — even though
-  // statusLabel just below it correctly said "Mirror active". This makes
-  // both agree.
-  const engineActive          = mirrorUnlocked || patternActive
+  // UX fix (post-launch journey review): a subscribed user below the
+  // pattern-memory threshold previously showed a flat "Active" (misleading —
+  // nothing's active yet) via the old engineActive = mirrorUnlocked ||
+  // patternActive. That's now split into its own "recording" state: paid,
+  // access granted, genuinely building — not the same as fully active, and
+  // not the same as the free-tier "hasn't started" Inactive state either.
+  const recording              = mirrorUnlocked && !patternActive
+  const engineActive           = patternActive
 
   let statusLabel: string
   let statusColor: string
@@ -137,9 +138,12 @@ export default function MemoryEngineStatus({
     statusLabel = 'Pattern Memory active · Mirror active'
     statusColor = 'var(--green-text)'
   } else if (mirrorUnlocked) {
-    // Mirror unlocked but local session count hasn't hit 5 yet (cross-device edge case)
-    statusLabel = 'Mirror active'
-    statusColor = 'var(--green-text)'
+    // Mirror access active (subscription), but not enough decisions yet for
+    // Pattern Memory itself. Was "Mirror active" (misleading) — now an
+    // honest in-progress count, same tone as the free-tier countdown below.
+    const remaining = PATTERN_MEMORY_THRESHOLD - sessionCount
+    statusLabel = `Recording — ${sessionCount} of ${PATTERN_MEMORY_THRESHOLD} decisions · Mirror access active`
+    statusColor = 'var(--gold)'
   } else if (patternActive) {
     // ≥5 sessions, no Mirror subscription
     statusLabel = 'Pattern Memory active · Mirror ready to activate'
@@ -185,7 +189,7 @@ export default function MemoryEngineStatus({
                 height: 7,
                 borderRadius: '50%',
                 background: engineActive ? 'var(--green-text)' : 'var(--gold)',
-                animation: (engineActive || mirrorTeaserReady) ? 'none' : 'dot-blink 2s ease-in-out infinite',
+                animation: (engineActive || recording || mirrorTeaserReady) ? 'none' : 'dot-blink 2s ease-in-out infinite',
                 flexShrink: 0,
               }}
             />
@@ -213,9 +217,11 @@ export default function MemoryEngineStatus({
           >
             {engineActive
               ? '● Active'
-              : mirrorTeaserReady
-                ? '● Mirror Preview'
-                : '○ Inactive'}
+              : recording
+                ? `◐ Recording — ${sessionCount} of ${PATTERN_MEMORY_THRESHOLD}`
+                : mirrorTeaserReady
+                  ? '● Mirror Preview'
+                  : '○ Inactive'}
           </span>
         </div>
 
@@ -238,7 +244,7 @@ export default function MemoryEngineStatus({
             </p>
             {mirrorUnlocked && (
               <p style={{ fontSize: 11, color: 'var(--green-text)', margin: '3px 0 0', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 0 }}>
-                Mirror active
+                {patternActive ? 'Mirror active' : 'Mirror access active — recording your decisions'}
                 <a
                   href="/mirror"
                   style={{

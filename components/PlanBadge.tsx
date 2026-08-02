@@ -24,6 +24,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { MirrorStatus } from '@/lib/types'
 
@@ -34,9 +35,11 @@ async function getAuthToken(): Promise<string | null> {
 }
 
 export default function PlanBadge() {
+  const pathname = usePathname()
   const [status, setStatus] = useState<MirrorStatus | null>(null)
 
   const load = useCallback(async () => {
+    if (pathname === '/') return
     const token = await getAuthToken()
     if (!token) return
     try {
@@ -47,7 +50,7 @@ export default function PlanBadge() {
     } catch {
       // Non-blocking — badge just doesn't render this load
     }
-  }, [])
+  }, [pathname])
 
   useEffect(() => {
     load()
@@ -57,6 +60,13 @@ export default function PlanBadge() {
     window.addEventListener('quorum:mirror-status-changed', load)
     return () => window.removeEventListener('quorum:mirror-status-changed', load)
   }, [load])
+
+  // UX fix: the home page renders its own plan badge inline in its nav row
+  // (see app/page.tsx) instead of this global in-flow strip — as a separate
+  // stacked strip above the page's own header, it read as "two header bars"
+  // once styled in high-contrast gold for Elite. Every other route is
+  // unchanged.
+  if (pathname === '/') return null
 
   // Not signed in, or status hasn't resolved yet → render nothing.
   if (!status || status.gateState === 'auth') return null

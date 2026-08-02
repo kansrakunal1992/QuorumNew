@@ -365,12 +365,12 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
 
       <div style={{ textAlign: 'center' }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>
-          Mirror activates at {LOCK_THRESHOLD} decisions
+          Council unlocks instantly. Mirror grows with you.
         </h2>
         <p style={{ fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.65, margin: 0 }}>
           {remaining === 1
-            ? 'One more decision and your Mirror preview activates.'
-            : `${remaining} more decisions and your Mirror preview activates.`
+            ? `You're 1 decision from Mirror's first preview — every decision counts toward it, on Free or Elite.`
+            : `You're ${sessionCount} of ${LOCK_THRESHOLD} decisions into Mirror's preview — every decision counts toward it, on Free or Elite.`
           }
         </p>
       </div>

@@ -192,6 +192,7 @@ export default function Home() {
   const [authToken,      setAuthToken]      = useState<string | null>(null)
   const [userId,         setUserId]         = useState<string | null>(null) // Item #17 — referral link
   const [mirrorUnlocked, setMirrorUnlocked] = useState(false)
+  const [mirrorStatusLoaded, setMirrorStatusLoaded] = useState(false)
   // Founding Elite cohort offer (see lib/founding.ts) — read from the same
   // /api/mirror/status response already fetched below, no extra request.
   const [foundingAvailable, setFoundingAvailable] = useState(false)
@@ -238,6 +239,7 @@ export default function Home() {
       .then(r => r.json())
       .then(d => {
         setMirrorUnlocked(d?.gateState === 'unlocked')
+        setMirrorStatusLoaded(true)
         if (d?.gateState === 'unlocked') {
           // Also fetch pattern dimensions for 4c (RecurringConditionCard)
           fetch('/api/mirror/patterns', { headers: { Authorization: `Bearer ${token}` } })
@@ -594,6 +596,35 @@ export default function Home() {
           }}>
             Quorum
           </span>
+          {mirrorStatusLoaded && (
+            <Link
+              href="/mirror"
+              style={{
+                display:        'flex',
+                alignItems:     'center',
+                gap:            5,
+                marginLeft:     4,
+                padding:        '3px 9px 3px 7px',
+                borderRadius:   999,
+                border:         `1px solid ${mirrorUnlocked ? 'var(--gold-dim)' : 'var(--border-mid)'}`,
+                fontSize:       9.5,
+                fontFamily:     'var(--font-mono)',
+                fontWeight:     600,
+                letterSpacing:  '0.05em',
+                textTransform:  'uppercase',
+                textDecoration: 'none',
+                color:          mirrorUnlocked ? 'var(--gold)' : 'var(--text-4)',
+                whiteSpace:     'nowrap',
+              }}
+            >
+              <span style={{
+                width: 5, height: 5, borderRadius: '50%',
+                background: mirrorUnlocked ? 'var(--gold)' : 'var(--text-4)',
+                flexShrink: 0,
+              }} />
+              {mirrorUnlocked ? 'Elite' : 'Free'}
+            </Link>
+          )}
         </div>
         <span className="nav-tagline">Decision Intelligence for high-stakes calls</span>
       </nav>

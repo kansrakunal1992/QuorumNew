@@ -87,6 +87,21 @@ function stripSynthesisTags(raw: string): string {
     .replace(/^\s+/, '')
 }
 
+// Bug fix: flagged alongside the record-page/brief-PDF fix for the same
+// <realcost>/<lean> discard bug — stripSynthesisTags above deletes both with
+// nothing shown in their place. Same fix shape: extract instead of discard,
+// same label wording as PersonaPanel.tsx.
+const LEAN_LABELS: Record<string, string> = {
+  proceed: 'Proceed',
+  wait:    'Wait',
+  mixed:   'Mixed',
+}
+
+function extractTag(raw: string, tag: string): string {
+  const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'))
+  return m ? m[1].trim() : ''
+}
+
 function stripMd(s: string): string {
   return s
     .replace(/\*\*(.+?)\*\*/g, '$1')
@@ -517,6 +532,34 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
           doc.setLineWidth(0.3)
           doc.line(ML, y, ML + CW, y)
           y += 5
+
+          if (!isSynthesis) {
+            const realCost       = extractTag(msgs.assistant[0] ?? '', 'realcost')
+            const initialLeanRaw = extractTag(msgs.assistant[0] ?? '', 'lean').toLowerCase()
+            const finalLeanRaw   = extractTag(msgs.assistant[msgs.assistant.length - 1] ?? '', 'lean').toLowerCase()
+            const initialLean    = LEAN_LABELS[initialLeanRaw] ? initialLeanRaw : ''
+            const finalLean      = LEAN_LABELS[finalLeanRaw]   ? finalLeanRaw   : ''
+
+            if (initialLean) {
+              checkBreak(6)
+              const label = finalLean && finalLean !== initialLean
+                ? `Shifted after pushback -> now leaning ${LEAN_LABELS[finalLean]}`
+                : `Leaning: ${LEAN_LABELS[initialLean]}`
+              renderLine(label, { size: 8, colorR: 116, colorG: 122, colorB: 140 })
+              y += 2
+            }
+
+            if (realCost) {
+              checkBreak(8)
+              doc.setFont('helvetica', 'bold')
+              doc.setFontSize(7)
+              doc.setTextColor(201, 168, 76)
+              doc.text('REAL COST', ML, y)
+              y += 4
+              renderLine(realCost, { size: 8.5, colorR: 148, colorG: 155, colorB: 170 })
+              y += 3
+            }
+          }
 
           for (let i = 0; i < msgs.assistant.length; i++) {
             if (i > 0 && msgs.user[i - 1]) {
