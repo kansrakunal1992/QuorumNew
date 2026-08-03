@@ -68,7 +68,7 @@ create table if not exists user_memory_facts (
   insight_text      text not null,   -- ENCRYPTED at the application layer (lib/encryption.ts)
   confidence        numeric not null check (confidence >= 0 and confidence <= 1),
   importance        numeric not null check (importance >= 0 and importance <= 1),
-  embedding         vector(1536),    -- text-embedding-3-small; null if embedding call failed (degrades gracefully)
+  embedding         vector(1536),    -- superseded by add_context_ingestion_mistral_embed.sql (now 1024-dim, mistral-embed)
 
   source            text not null
                     check (source in ('chatgpt','claude','manual','pasted_summary')),

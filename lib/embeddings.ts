@@ -2,14 +2,19 @@ import 'server-only'
 // lib/embeddings.ts
 // ── Context Ingestion — embeddings ───────────────────────────────────────────
 //
-// New vendor dependency: OPENAI_API_KEY. None of the existing model families
-// (Anthropic/DeepSeek/Mistral/Qwen — see lib/ai-client.ts) expose an
-// embeddings endpoint through the OpenAI-compatible client already wired up
-// there, so this is a small, isolated addition rather than a reuse of
-// existing routing. Flagging as an ops item: a new key needs to be set in
-// Railway → Variables before Context Ingestion's dedup step will do anything
-// (it degrades gracefully — see embedText() below — rather than failing the
-// whole import when the key is missing).
+// Uses Mistral's mistral-embed model via MISTRAL_API_KEY — the same key
+// lib/ai-client.ts already uses for mistral-small-latest chat completions —
+// so unlike the original OpenAI-based version, this needs no new vendor
+// account. Called directly via fetch() rather than the `openai` package's
+// client pointed at Mistral's baseURL (the pattern lib/ai-client.ts uses
+// for chat): Mistral's embeddings endpoint takes the source text under an
+// `inputs` field, not OpenAI's `input`, so the OpenAI client's request
+// shape doesn't line up here even though it does for chat completions.
+//
+// mistral-embed produces 1024-dim vectors, not OpenAI's 1536 — see
+// supabase/add_context_ingestion_mistral_embed.sql, which resizes
+// user_memory_facts.embedding accordingly (and necessarily clears any
+// previously-stored 1536-dim vectors — see that migration's comment).
 //
 // Used for two things (both point back to lib/context-dedup.ts and the
 // `embedding` column on user_memory_facts):
@@ -22,38 +27,51 @@ import 'server-only'
 //      a backfill pass.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import OpenAI from 'openai'
+const EMBEDDING_MODEL = 'mistral-embed'   // 1024 dims — matches user_memory_facts.embedding
+const EMBEDDINGS_URL   = 'https://api.mistral.ai/v1/embeddings'
 
-const EMBEDDING_MODEL = 'text-embedding-3-small'   // 1536 dims — matches user_memory_facts.embedding
+interface MistralEmbeddingResponse {
+  data: Array<{ embedding: number[]; index: number }>
+}
 
-let client: OpenAI | null = null
-function getClient(): OpenAI | null {
-  if (client) return client
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) return null
-  client = new OpenAI({ apiKey })
-  return client
+async function callMistralEmbeddings(inputs: string[]): Promise<number[][] | null> {
+  const apiKey = process.env.MISTRAL_API_KEY
+  if (!apiKey) {
+    console.warn('[Embeddings] MISTRAL_API_KEY not set — skipping embedding (dedup degraded, semantic retrieval unavailable)')
+    return null
+  }
+  try {
+    const res = await fetch(EMBEDDINGS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model: EMBEDDING_MODEL, inputs: inputs.map(t => t.slice(0, 8000)) }),
+    })
+    if (!res.ok) {
+      console.error('[Embeddings] Mistral API error:', res.status, await res.text().catch(() => ''))
+      return null
+    }
+    const json = await res.json() as MistralEmbeddingResponse
+    // Mistral returns results in request order already, but sort by the
+    // returned index defensively rather than assume that always holds.
+    return [...json.data].sort((a, b) => a.index - b.index).map(d => d.embedding)
+  } catch (err) {
+    console.error('[Embeddings] Mistral call failed:', err)
+    return null
+  }
 }
 
 /**
- * Embed a single string. Returns null (never throws) when OPENAI_API_KEY is
+ * Embed a single string. Returns null (never throws) when MISTRAL_API_KEY is
  * unset or the call fails — callers must treat a null embedding as "skip
  * dedup / semantic retrieval for this fact", not as a fatal error. Extraction
  * quality never depends on embeddings being available.
  */
 export async function embedText(text: string): Promise<number[] | null> {
-  const c = getClient()
-  if (!c) {
-    console.warn('[Embeddings] OPENAI_API_KEY not set — skipping embedding (dedup degraded, semantic retrieval unavailable)')
-    return null
-  }
-  try {
-    const res = await c.embeddings.create({ model: EMBEDDING_MODEL, input: text.slice(0, 8000) })
-    return res.data[0]?.embedding ?? null
-  } catch (err) {
-    console.error('[Embeddings] embedText failed:', err)
-    return null
-  }
+  const results = await callMistralEmbeddings([text])
+  return results?.[0] ?? null
 }
 
 /**
@@ -63,18 +81,9 @@ export async function embedText(text: string): Promise<number[] | null> {
  */
 export async function embedBatch(texts: string[]): Promise<(number[] | null)[]> {
   if (texts.length === 0) return []
-  const c = getClient()
-  if (!c) {
-    console.warn('[Embeddings] OPENAI_API_KEY not set — skipping batch embedding')
-    return texts.map(() => null)
-  }
-  try {
-    const res = await c.embeddings.create({ model: EMBEDDING_MODEL, input: texts.map(t => t.slice(0, 8000)) })
-    return res.data.map(d => d.embedding ?? null)
-  } catch (err) {
-    console.error('[Embeddings] embedBatch failed:', err)
-    return texts.map(() => null)
-  }
+  const results = await callMistralEmbeddings(texts)
+  if (!results) return texts.map(() => null)
+  return texts.map((_, i) => results[i] ?? null)
 }
 
 /** Cosine similarity, 0 (unrelated) to 1 (identical direction). */
