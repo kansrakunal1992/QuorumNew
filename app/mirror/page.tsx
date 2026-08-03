@@ -49,7 +49,7 @@ import MindChangeTile         from '@/components/MindChangeTile'        // Phase
 import FAQSection             from '@/components/FAQSection'
 import SocialProofCard        from '@/components/SocialProofCard'
 import type { SummaryData }   from '@/components/MirrorSummaryCard'
-import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier } from '@/lib/types'
+import type { MirrorStatus, TimelineSession, BenchmarkData, StyleCue, MirrorTier, UserProfile } from '@/lib/types'
 // AdvisoryUpsellCard/ADVISORY_UPSELL_COPY imports removed — Advisory tier
 // retired, Peer Benchmark now unconditional for any paid tier (see
 // BenchmarkModule below).
@@ -57,6 +57,7 @@ import { PaymentButton }         from '@/components/PaymentButton'           // 
 import { CancelSubscription }    from '@/components/CancelSubscription'       // Sprint CX-PAY
 import DecisionGraph             from '@/components/DecisionGraph'             // Sprint G3
 import ProfileCaptureOverlay     from '@/components/ProfileCaptureOverlay'    // SB-1
+import ProfileSummaryCard        from '@/components/ProfileSummaryCard'      // SB-1 (extracted — used by Locked/Teaser/Unlocked)
 import ContextIngestionPanel     from '@/components/ContextIngestionPanel'    // Context Ingestion (Elite)
 
 // ── Bias parameter display labels ─────────────────────────────────────────────
@@ -348,12 +349,14 @@ function AuthGate() {
 }
 
 // ── Gate: Session threshold not met ──────────────────────────────────────────
-function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onUnlocked }: {
+function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onUnlocked, userProfile, onEditProfile }: {
   sessionCount: number
   authToken: string
   userEmail: string
   foundingAvailable: boolean
   onUnlocked: () => void
+  userProfile: UserProfile | null
+  onEditProfile: () => void
 }) {
   const router = useRouter()
   const LOCK_THRESHOLD = 3
@@ -408,6 +411,11 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
             : `You're ${sessionCount} of ${LOCK_THRESHOLD} decisions into Mirror's preview — every decision counts toward it, on Free or Elite.`
           }
         </p>
+      </div>
+
+      {/* SB-1 (opened up to Free/locked users — see ProfileSummaryCard) */}
+      <div style={{ width: '100%' }}>
+        <ProfileSummaryCard userProfile={userProfile} onEditProfile={onEditProfile} />
       </div>
 
       {/* Progress bar */}
@@ -466,20 +474,16 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
         </div>
       )}
 
-      {/* Context Ingestion (Elite) — self-contained, renders its own "Free
-          tier" upsell teaser via GET /api/context-ingestion. Previously only
-          mounted post-unlock, where the teaser branch could never fire since
-          a mirror_access row always implies a paid tier. Surfacing it here
-          lets it reach the free/pre-threshold audience it was written for. */}
-      <div style={{ width: '100%', textAlign: 'left' }}>
-        <ContextIngestionPanel authToken={authToken} />
-      </div>
-
       {/* Bug fix: LockedView previously had no payment CTA at all — a user
           could not activate premium until they'd logged enough sessions to
           reach TeaserView, even though lib/mirror-access.ts's own doc
           comment says subscription (not session count) is what's supposed
-          to unlock Mirror. Condensed version of TeaserView's CTA card. */}
+          to unlock Mirror. Condensed version of TeaserView's CTA card.
+          Task 3: Context Ingestion's separate locked-teaser card (previously
+          mounted just above this) has been folded into this card's benefit
+          list below instead — one pricing card, not two competing upsells
+          on the same screen. Full benefit list also added here to match
+          TeaserView's CTA (parity — this card was previously missing it). */}
       <div id="mirror-cta" className="mirror-cta-card" style={{
         width:        '100%',
         background:   'var(--bg-card)',
@@ -490,9 +494,34 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
         <p style={{ fontSize: 12, color: 'var(--gold)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 4px' }}>
           {foundingAvailable ? 'Founding Elite' : 'Quorum Elite'}
         </p>
-        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 16px', fontStyle: 'italic' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px', fontStyle: 'italic' }}>
           Sharper Council today. Deeper Mirror over time.
         </p>
+        <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 4px' }}>
+          Council's model quality upgrades immediately.
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--text-4)', margin: '0 0 10px' }}>
+          These build as you log more decisions:
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
+          {[
+            'Bias Fingerprint — your patterns, named and specific to your decisions',
+            'Decision Independence Score',
+            'Decision Rules — your implicit operating principles, extracted',
+            'Patterns — which structural rules recur, how often, and where',
+            'Contradiction Detector',
+            'Confidence Calibration',
+            'Session Reliability Index',
+            'Open Loop — your Monthly Judgment Review',
+            'Peer Benchmark — how your decisions compare structurally to others',
+            'Context Import — teach Quorum who you are instead of starting from scratch',
+          ].map((item, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gold-dim)', marginTop: 7, flexShrink: 0 }} />
+              <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>{item}</p>
+            </div>
+          ))}
+        </div>
         {foundingAvailable ? (
           <>
             <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: '0 0 16px' }}>
@@ -859,12 +888,16 @@ function TeaserView({
   authToken,
   userEmail,
   onUnlocked,
+  userProfile,
+  onEditProfile,
 }: {
   status: MirrorStatus
   sessions: TimelineSession[]
   authToken: string
   userEmail: string
   onUnlocked: () => void
+  userProfile: UserProfile | null
+  onEditProfile: () => void
 }) {
   const [teaser, setTeaser] = useState<TeaserData | null>(null)
   // Bug fix: this view renders the #mirror-cta card (see below) but never
@@ -884,6 +917,9 @@ function TeaserView({
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
+
+      {/* SB-1 (opened up to Free/teaser users — see ProfileSummaryCard) */}
+      <ProfileSummaryCard userProfile={userProfile} onEditProfile={onEditProfile} />
 
       {/* Section: Decision Timeline (always free) */}
       <div style={{ marginBottom: 40 }}>
@@ -1075,15 +1111,10 @@ function TeaserView({
         />
       </div>
 
-      {/* Context Ingestion (Elite) — self-contained, renders its own "Free
-          tier" upsell teaser via GET /api/context-ingestion. This is the
-          paywall screen itself, so it's the highest-intent place for this
-          teaser to actually be seen. */}
-      <div style={{ marginBottom: 28 }}>
-        <ContextIngestionPanel authToken={authToken} />
-      </div>
-
-      {/* CTA card */}
+      {/* CTA card. Task 3: Context Ingestion's separate locked-teaser card
+          (previously mounted just above this) has been removed — its pitch
+          duplicated the "Context Import" bullet already in this card's list
+          below. One pricing card, one upsell, not two stacked back to back. */}
       <div id="mirror-cta" className="mirror-cta-card" style={{
         background:   'var(--bg-card)',
         border:       '1px solid var(--gold-dim)',
@@ -1712,66 +1743,7 @@ function UnlockedView({
       {summaryData && <MirrorInsightCard data={summaryData} />}
 
       {/* SB-1: Decision-Maker Profile — edit link for profile set on home page */}
-      <div id="msec-profile" style={{
-        marginBottom: 28,
-        padding: '18px 20px',
-        borderRadius: 12,
-        border: '1px solid var(--border-dim)',
-        borderLeft: '3px solid var(--gold-dim)',
-        background: 'var(--bg-card)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: 0 }}>
-            Your Decision-Maker Profile
-          </p>
-          <button
-            type="button"
-            onClick={() => onEditProfile()}
-            style={{
-              fontSize: 11, fontWeight: 600, color: 'var(--gold)',
-              background: 'none', border: '1px solid var(--gold-dim)',
-              borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            {userProfile ? 'Edit' : 'Set up →'}
-          </button>
-        </div>
-        {userProfile && (userProfile.archetype || userProfile.primary_fears || userProfile.life_stage || userProfile.risk_stance || userProfile.mbti_type) ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-            {userProfile.archetype && (
-              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--gold-dim)', color: 'var(--gold)', background: 'rgba(201,168,76,0.08)' }}>
-                {String(userProfile.archetype).charAt(0).toUpperCase() + String(userProfile.archetype).slice(1)}
-              </span>
-            )}
-            {userProfile.life_stage && (
-              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border-dim)', color: 'var(--text-3)' }}>
-                {String(userProfile.life_stage).charAt(0).toUpperCase() + String(userProfile.life_stage).slice(1)}
-              </span>
-            )}
-            {userProfile.risk_stance && (
-              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border-dim)', color: 'var(--text-3)' }}>
-                {String(userProfile.risk_stance).charAt(0).toUpperCase() + String(userProfile.risk_stance).slice(1)} risk
-              </span>
-            )}
-            {userProfile.mbti_type && (
-              <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border-dim)', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                {String(userProfile.mbti_type)}
-              </span>
-            )}
-            {(userProfile.primary_fears as string[] | null)?.map((f: string) => (
-              <span key={f} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid rgba(136,64,196,0.3)', color: '#b070e0', background: 'rgba(136,64,196,0.06)' }}>
-                {f}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.55, margin: 0 }}>
-            Your profile tells the Council who is bringing each decision — archetype, fears, life stage, risk stance.
-            The more complete it is, the more precisely the Council orients to you.
-          </p>
-        )}
-      </div>
+      <ProfileSummaryCard userProfile={userProfile} onEditProfile={onEditProfile} />
 
       <SectionWrapper {...sw('fingerprint')} title="Bias Fingerprint" type="core" animDelay={60}
         desc="The conditions that trigger your patterns — not that you have them, but exactly when and why they show up.">
@@ -2184,6 +2156,8 @@ export default function MirrorPage() {
                   userEmail={userEmail}
                   foundingAvailable={status.foundingAvailable}
                   onUnlocked={handleUnlocked}
+                  userProfile={userProfile}
+                  onEditProfile={() => setShowProfileEdit(true)}
                 />
               )}
               {status.gateState === 'teaser'   && (
@@ -2193,6 +2167,8 @@ export default function MirrorPage() {
                   authToken={authToken ?? ''}
                   userEmail={userEmail}
                   onUnlocked={handleUnlocked}
+                  userProfile={userProfile}
+                  onEditProfile={() => setShowProfileEdit(true)}
                 />
               )}
               {status.gateState === 'unlocked' && (
@@ -2211,11 +2187,13 @@ export default function MirrorPage() {
         </div>
       </div>
 
-      {/* SB-1: Profile edit overlay — opens from "Edit" button in profile section */}
+      {/* SB-1: Profile edit overlay — opens from "Edit" button in profile section.
+          Bug fix: now pre-filled via initialProfile instead of opening blank. */}
       {showProfileEdit && (
         <ProfileCaptureOverlay
           authToken={authToken}
           deviceId={null}
+          initialProfile={userProfile}
           onDone={() => {
             setShowProfileEdit(false)
             if (authToken) {

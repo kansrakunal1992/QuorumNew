@@ -7,12 +7,14 @@
 // No charts, no bars — narrative confirmation only.
 // Mirror mention only if mirrorActive (user has subscription).
 //
-// Footer line also carries the contextual upgrade nudge for non-Mirror users —
-// this is the highest-value moment in the product (right after synthesis),
-// so the line differs by whether Founding Elite is still open
-// (status.foundingAvailable, see lib/founding.ts) or not, but never names a
-// specific plan beyond that — same component keeps working unchanged once
-// Founding closes and this quietly becomes a plain Elite nudge.
+// Bug fix: this used to carry its own "Become a Founding Member" CTA in its
+// footer line — nearly identical wording to, and rendered directly beneath,
+// SynthesisCard's own Mirror nudge row. Two upgrade prompts stacked back to
+// back for the same offer. SynthesisCard's sits at the higher-ROI position
+// (attached to the synthesis content itself, the moment the user is reading
+// their actual answer) and already covers all three states (Mirror active /
+// Founding open / Founding closed), so this component now stays a plain
+// factual receipt and leaves the upgrade ask to SynthesisCard entirely.
 
 interface Props {
   sessionCount:  number          // total decisions in the user's record
@@ -21,7 +23,6 @@ interface Props {
   stakesLevel?: string           // from ontology: e.g. "partially reversible"
   urgencySource?: string         // from ontology: "external" | "self-created" | etc.
   mirrorActive?: boolean         // only show Mirror mention if user has access
-  foundingAvailable?: boolean    // only meaningful when !mirrorActive — see lib/founding.ts
 }
 
 const IRREVERSIBILITY_LABEL: Record<string, string> = {
@@ -108,14 +109,6 @@ export default function RecordReceipt({
         Added to your judgment record
         {mirrorActive ? ' · Mirror updated' : ''}
       </p>
-      {!mirrorActive && (
-        <p style={{ fontSize: 10.5, color: 'var(--text-4)', margin: '4px 0 0' }}>
-          {foundingAvailable
-            ? <>Mirror would have flagged what this decision has in common with your last few. <a href="/mirror#mirror-cta" style={{ color: 'var(--gold)', fontWeight: 600, textDecoration: 'none' }}>Become a Founding Member — ₹999/mo →</a></>
-            : <>Mirror would have flagged what this decision has in common with your last few. <a href="/mirror#mirror-cta" style={{ color: 'var(--gold)', fontWeight: 600, textDecoration: 'none' }}>See what's tracked →</a></>
-          }
-        </p>
-      )}
     </div>
   )
 }

@@ -4,6 +4,14 @@
 // Shows when user_profile IS NULL and 'quorum_profile_overlay_shown' is not in localStorage.
 // All fields optional. Saves to /api/profile on submit.
 // Fires for new users AND existing users who haven't filled in a profile.
+//
+// Also reused for editing (opened via the "Edit" button on
+// ProfileSummaryCard in app/mirror/page.tsx). Bug fix: that edit flow
+// previously reopened this overlay with every field blank, even though the
+// summary card right next to the button already showed the user's saved
+// answers — editing meant re-answering everything from scratch instead of
+// adjusting what was already there. `initialProfile` now seeds state so the
+// form opens pre-filled with whatever's already saved.
 
 import { useState, useEffect } from 'react'
 import ThemeToggle from './ThemeToggle'
@@ -20,6 +28,16 @@ interface Props {
   authToken: string | null
   deviceId:  string | null
   onDone:    () => void   // called on save OR dismiss
+  // Bug fix: pre-fills the form when reopened for editing an existing
+  // profile. Omitted (or null) for first-visit capture, where there's
+  // nothing to pre-fill yet.
+  initialProfile?: {
+    archetype?:     string | null
+    primary_fears?: string[] | null
+    mbti_type?:     string | null
+    life_stage?:    string | null
+    risk_stance?:   string | null
+  } | null
 }
 
 // ── Config data ───────────────────────────────────────────────────────────────
@@ -62,13 +80,16 @@ const VALID_MBTI = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function ProfileCaptureOverlay({ authToken, deviceId, onDone }: Props) {
-  const [archetype,    setArchetype]    = useState<Archetype | null>(null)
-  const [fears,        setFears]        = useState<PrimaryFear[]>([])
-  const [mbti,         setMbti]         = useState('')
-  const [mbtiValid,    setMbtiValid]    = useState<boolean | null>(null)
-  const [lifeStage,    setLifeStage]    = useState<LifeStage | null>(null)
-  const [riskStance,   setRiskStance]   = useState<RiskStance | null>(null)
+export default function ProfileCaptureOverlay({ authToken, deviceId, onDone, initialProfile }: Props) {
+  const initialMbti = initialProfile?.mbti_type ?? ''
+  const [archetype,    setArchetype]    = useState<Archetype | null>((initialProfile?.archetype as Archetype) ?? null)
+  const [fears,        setFears]        = useState<PrimaryFear[]>((initialProfile?.primary_fears as PrimaryFear[]) ?? [])
+  const [mbti,         setMbti]         = useState(initialMbti)
+  const [mbtiValid,    setMbtiValid]    = useState<boolean | null>(
+    initialMbti ? VALID_MBTI.includes(initialMbti.toUpperCase()) : null
+  )
+  const [lifeStage,    setLifeStage]    = useState<LifeStage | null>((initialProfile?.life_stage as LifeStage) ?? null)
+  const [riskStance,   setRiskStance]   = useState<RiskStance | null>((initialProfile?.risk_stance as RiskStance) ?? null)
   const [saving,       setSaving]       = useState(false)
   const [visible,      setVisible]      = useState(false)
 

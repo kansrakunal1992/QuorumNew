@@ -1724,7 +1724,6 @@ export default function SessionView({ session: initialSession, initialMessages =
                       return undefined
                     })()}
                     mirrorActive={mirrorActive}
-                    foundingAvailable={foundingAvailable}
                   />
                 </div>
               )}

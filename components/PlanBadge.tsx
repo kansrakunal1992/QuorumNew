@@ -1,6 +1,6 @@
 'use client'
 // components/PlanBadge.tsx
-// ── Global plan identifier (Free / Elite) ────────────────────────────────────
+// ── Global plan identifier (Free / Elite) + Settings entry point ────────────
 //
 // Request: "there should be some identifier on each page telling me as user
 // if I am on free or paid Elite plan."
@@ -21,6 +21,12 @@
 // every page has a different top structure, so nothing reserved space for a
 // floating badge and it would end up overlapping page content on some
 // routes. This reserves its own document height instead.
+//
+// Settings link: added so Settings → Personalization (profile, Council
+// style, imported context) is reachable from every page, not just the ones
+// that happen to link to /settings/privacy. This is the strip that already
+// renders on every non-home page, so it's the natural place for it rather
+// than introducing a second persistent element.
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
@@ -75,6 +81,8 @@ export default function PlanBadge() {
 
   return (
     <div className="plan-badge-strip" style={{
+      display:      'flex',
+      alignItems:   'center',
       background:   'var(--bg-card)',
       borderBottom: '1px solid var(--border-dim)',
     }}>
@@ -102,7 +110,7 @@ export default function PlanBadge() {
           alignItems:     'center',
           justifyContent: 'center',
           gap:            6,
-          width:          '100%',
+          flex:           1,
           padding:        '6px 16px',
           fontSize:       11,
           fontFamily:     'var(--font-mono)',
@@ -122,6 +130,27 @@ export default function PlanBadge() {
         }} />
         <span>{isPaid ? 'Quorum Elite' : 'Free plan'}</span>
         {!isPaid && <span style={{ opacity: 0.6, textTransform: 'none', letterSpacing: 'normal' }}>· Upgrade →</span>}
+      </Link>
+      {/* Settings entry point — see file header. Second link in the same
+          strip rather than a separate persistent element. */}
+      <Link
+        href="/settings/personalization"
+        title="Personalization settings"
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          gap:            4,
+          padding:        '6px 16px 6px 12px',
+          borderLeft:     '1px solid var(--border-dim)',
+          fontSize:       10.5,
+          fontFamily:     'var(--font-mono)',
+          letterSpacing:  '0.04em',
+          textDecoration: 'none',
+          color:          'var(--text-4)',
+          whiteSpace:     'nowrap',
+        }}
+      >
+        ⚙ Personalize
       </Link>
     </div>
   )

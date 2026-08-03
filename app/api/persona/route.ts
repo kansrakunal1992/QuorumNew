@@ -144,6 +144,35 @@
 
 import { PERSONAS, MISTRAL_EVIDENCE_DISCIPLINE, MISTRAL_SYNTHESIS_PUSH, MISTRAL_PERSONA_PUSH } from '@/lib/personas'
 import { createServiceClient }                 from '@/lib/supabase'
+import { createStream, getModelFamily }        from '@/lib/ai-client'
+import {
+  PERSONAS_WITH_STRUCTURAL_CONTEXT,
+  getPersonaStructuralDirective,             // Sprint R1
+}                                            from '@/lib/structural-retrieval'
+import { buildCouncilContext }               from '@/lib/rule-engine'
+import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
+import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock, explainPersonaWeights, type BoostEvent } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5 + Sprint 1 follow-on + boost logging
+import { getWorthConfirmingText } from '@/lib/worth-confirming'  // Sprint 1 follow-on (merged Features #1 + #6)
+import { getMindChangePattern } from '@/lib/mind-change-patterns'  // Phase 3
+import { getAdvisorDivergencePattern } from '@/lib/advisor-divergence'  // Phase 3
+import type { AdvisorKey } from '@/lib/persona-relevance'  // P1: Gap #2 leanShifts typing
+import { isInstitutionalModeEnabled, isContextIngestionEnabled } from '@/lib/feature-flags'
+import { resolveActiveInstitution }   from '@/lib/active-institution'
+import { getBenchmarkForDimension }   from '@/lib/aggregate-benchmark'
+import { type CouncilContext, EMPTY_COUNCIL_CONTEXT } from '@/lib/council-context'
+import { fetchContinuityContext, EMPTY_CONTINUITY_CONTEXT } from '@/lib/decision-continuity'  // RET-5 Sprint 2
+import { fetchFoundationalContext, EMPTY_FOUNDATIONAL_CONTEXT } from '@/lib/foundational-context'  // Context Ingestion (Elite)
+import {
+  upsertStructuralEdge,            // Sprint G1: live graph edge writes
+  fetchGraphSynthesisContext,      // Sprint G4: synthesis integration
+  EMPTY_GRAPH_SYNTHESIS_CONTEXT,   // Sprint G4
+} from '@/lib/graph-engine'
+import type { OntologyScoreMap }             from '@/lib/bias-scorer'
+import type { ScoredVector }                 from '@/lib/ontology-tagger'
+import type { RuleEngineResult }             from '@/lib/rule-engine'
+import type { PersonaKey, Message }          from '@/lib/types'
+import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
+import { encrypt, decryptJson }              from '@/lib/encryption'
 
 // ── Bug fix: messages insert retry ──────────────────────────────────────────
 // See usage below (assistant/user message save) for the full root-cause
@@ -174,35 +203,6 @@ async function insertMessageWithRetry(
   }
   return { error: lastError }
 }
-import { createStream, getModelFamily }        from '@/lib/ai-client'
-import {
-  PERSONAS_WITH_STRUCTURAL_CONTEXT,
-  getPersonaStructuralDirective,             // Sprint R1
-}                                            from '@/lib/structural-retrieval'
-import { buildCouncilContext }               from '@/lib/rule-engine'
-import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
-import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock, explainPersonaWeights, type BoostEvent } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5 + Sprint 1 follow-on + boost logging
-import { getWorthConfirmingText } from '@/lib/worth-confirming'  // Sprint 1 follow-on (merged Features #1 + #6)
-import { getMindChangePattern } from '@/lib/mind-change-patterns'  // Phase 3
-import { getAdvisorDivergencePattern } from '@/lib/advisor-divergence'  // Phase 3
-import type { AdvisorKey } from '@/lib/persona-relevance'  // P1: Gap #2 leanShifts typing
-import { isInstitutionalModeEnabled, isContextIngestionEnabled } from '@/lib/feature-flags'
-import { resolveActiveInstitution }   from '@/lib/active-institution'
-import { getBenchmarkForDimension }   from '@/lib/aggregate-benchmark'
-import { type CouncilContext, EMPTY_COUNCIL_CONTEXT } from '@/lib/council-context'
-import { fetchContinuityContext, EMPTY_CONTINUITY_CONTEXT } from '@/lib/decision-continuity'  // RET-5 Sprint 2
-import { fetchFoundationalContext, EMPTY_FOUNDATIONAL_CONTEXT } from '@/lib/foundational-context'  // Context Ingestion (Elite)
-import {
-  upsertStructuralEdge,            // Sprint G1: live graph edge writes
-  fetchGraphSynthesisContext,      // Sprint G4: synthesis integration
-  EMPTY_GRAPH_SYNTHESIS_CONTEXT,   // Sprint G4
-} from '@/lib/graph-engine'
-import type { OntologyScoreMap }             from '@/lib/bias-scorer'
-import type { ScoredVector }                 from '@/lib/ontology-tagger'
-import type { RuleEngineResult }             from '@/lib/rule-engine'
-import type { PersonaKey, Message }          from '@/lib/types'
-import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
-import { encrypt, decryptJson }              from '@/lib/encryption'
 
 // ── Council context fetch (Sprint 12 / R2 / R3 update) ───────────────────────
 //

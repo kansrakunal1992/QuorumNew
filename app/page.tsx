@@ -675,6 +675,21 @@ export default function Home() {
               {!mirrorUnlocked && <span style={{ opacity: 0.65, textTransform: 'none', letterSpacing: 'normal' }}>· Upgrade →</span>}
             </Link>
           )}
+          <Link
+            href="/settings/personalization"
+            title="Personalization settings"
+            style={{
+              display:        'flex',
+              alignItems:     'center',
+              marginLeft:     6,
+              padding:        '4px',
+              borderRadius:   999,
+              color:          'var(--text-4)',
+              textDecoration: 'none',
+            }}
+          >
+            ⚙
+          </Link>
         </div>
         <span className="nav-tagline">Decision Intelligence for high-stakes calls</span>
       </nav>
