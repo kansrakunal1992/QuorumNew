@@ -598,7 +598,13 @@ export default function Home() {
           </span>
           {mirrorStatusLoaded && (
             <Link
-              href="/mirror"
+              // Bug fix: matches the "Free plan · Upgrade →" wording used by
+              // the global PlanBadge strip on every other page (see
+              // components/PlanBadge.tsx) — this pill previously just said
+              // "Free" with no upgrade affordance. Hash lands on the Mirror
+              // page's payment CTA card directly for free users, same as
+              // PlanBadge's own link.
+              href={mirrorUnlocked ? '/mirror' : '/mirror#mirror-cta'}
               style={{
                 display:        'flex',
                 alignItems:     'center',
@@ -622,7 +628,8 @@ export default function Home() {
                 background: mirrorUnlocked ? 'var(--gold)' : 'var(--text-4)',
                 flexShrink: 0,
               }} />
-              {mirrorUnlocked ? 'Elite' : 'Free'}
+              {mirrorUnlocked ? 'Elite' : 'Free plan'}
+              {!mirrorUnlocked && <span style={{ opacity: 0.65, textTransform: 'none', letterSpacing: 'normal' }}>· Upgrade →</span>}
             </Link>
           )}
         </div>

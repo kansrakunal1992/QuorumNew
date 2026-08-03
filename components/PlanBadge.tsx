@@ -79,7 +79,24 @@ export default function PlanBadge() {
       borderBottom: '1px solid var(--border-dim)',
     }}>
       <Link
-        href="/mirror"
+        // Bug fix: this always linked to a bare /mirror, which did nothing
+        // when the badge is already rendered on the Mirror page itself — no
+        // route change means no remount, so nothing scrolled. From any other
+        // page, the hash still gets a real navigation + mount, which now
+        // scrolls correctly (see useScrollToMirrorCTA in app/mirror/page.tsx).
+        // Same isPaid-conditional hash pattern already used elsewhere (see
+        // SynthesisCard.tsx). Paid users have nothing to pay for, so their
+        // link is unchanged.
+        href={isPaid ? '/mirror' : '/mirror#mirror-cta'}
+        onClick={e => {
+          // Already on /mirror: same fix LockedBadge uses for its own
+          // same-page CTA button — scroll directly instead of relying on a
+          // route change that won't happen.
+          if (!isPaid && pathname === '/mirror') {
+            e.preventDefault()
+            document.getElementById('mirror-cta')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }}
         style={{
           display:        'flex',
           alignItems:     'center',

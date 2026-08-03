@@ -130,6 +130,38 @@ const IconArrowLeft = () => (
   </svg>
 )
 
+// Bug fix: this deep-link-to-payment scroll effect used to live only inside
+// UnlockedView, but the #mirror-cta card it scrolls to is only ever rendered
+// in LockedView and TeaserView (the two free-tier views) — UnlockedView
+// never renders it, since an unlocked user has nothing left to pay for. So
+// every "Free plan · Upgrade" / "Upgrade to Mirror" link pointing at
+// /mirror#mirror-cta silently did nothing for the free users it was actually
+// meant for. Extracted into a shared hook so LockedView and TeaserView can
+// use it too, instead of duplicating the polling logic three times.
+function useScrollToMirrorCTA() {
+  useEffect(() => {
+    if (window.location.hash !== '#mirror-cta') return
+    let lastY = -1; let stable = 0
+    const poll = setInterval(() => {
+      const el = document.getElementById('mirror-cta')
+      if (!el) return
+      const y = el.getBoundingClientRect().top + window.scrollY
+      if (Math.abs(y - lastY) < 4) {
+        stable++
+        if (stable >= 3) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          clearInterval(poll)
+        }
+      } else {
+        stable = 0
+      }
+      lastY = y
+    }, 300)
+    const giveUp = setTimeout(() => clearInterval(poll), 5000)
+    return () => { clearInterval(poll); clearTimeout(giveUp) }
+  }, [])
+}
+
 // ── Gate: Not authenticated ───────────────────────────────────────────────────
 function AuthGate() {
   const [email,    setEmail]    = useState('')
@@ -326,6 +358,9 @@ function LockedView({ sessionCount, authToken, userEmail, foundingAvailable, onU
   const router = useRouter()
   const LOCK_THRESHOLD = 3
   const remaining = LOCK_THRESHOLD - sessionCount
+  // Bug fix: this view renders the #mirror-cta card (see below) but never
+  // had the scroll-to-it effect — see useScrollToMirrorCTA's doc comment.
+  useScrollToMirrorCTA()
 
   return (
     <div style={{
@@ -832,6 +867,9 @@ function TeaserView({
   onUnlocked: () => void
 }) {
   const [teaser, setTeaser] = useState<TeaserData | null>(null)
+  // Bug fix: this view renders the #mirror-cta card (see below) but never
+  // had the scroll-to-it effect — see useScrollToMirrorCTA's doc comment.
+  useScrollToMirrorCTA()
 
   useEffect(() => {
     if (!authToken) return
@@ -1594,30 +1632,10 @@ function UnlockedView({
 
   // Sprint CX2: deep-link scroll to the payment CTA card when landing on
   // /mirror#mirror-cta (e.g. from BehaviorAlerts' "Upgrade to Mirror" link).
-  // mirror-cta isn't one of MirrorNav's SECTIONS pills, so its #msec- polling
-  // effect won't catch this hash — same polling-for-stability approach,
-  // applied to this one literal id instead.
-  useEffect(() => {
-    if (window.location.hash !== '#mirror-cta') return
-    let lastY = -1; let stable = 0
-    const poll = setInterval(() => {
-      const el = document.getElementById('mirror-cta')
-      if (!el) return
-      const y = el.getBoundingClientRect().top + window.scrollY
-      if (Math.abs(y - lastY) < 4) {
-        stable++
-        if (stable >= 3) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          clearInterval(poll)
-        }
-      } else {
-        stable = 0
-      }
-      lastY = y
-    }, 300)
-    const giveUp = setTimeout(() => clearInterval(poll), 5000)
-    return () => { clearInterval(poll); clearTimeout(giveUp) }
-  }, [])
+  // Kept here as a no-op safety net (UnlockedView doesn't render #mirror-cta)
+  // in case of a stale bookmarked link; see useScrollToMirrorCTA above for
+  // where this actually does something.
+  useScrollToMirrorCTA()
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 0 60px' }}>
@@ -1900,6 +1918,18 @@ export default function MirrorPage() {
   const [userProfile,     setUserProfile]     = useState<import('@/lib/types').UserProfile | null>(null)
   const [showProfileEdit, setShowProfileEdit] = useState(false)
 
+  // Bug fix: authToken's initial state is `null` (not `undefined`), so the
+  // "has the token resolved yet" check below was true from the very first
+  // render — before supabase.auth.getSession() (which is what actually takes
+  // the 4-5s) had a chance to run. That fired fetchStatus(null) immediately,
+  // which the API correctly reads as signed-out and returns gateState:
+  // 'auth', so AuthGate ("link your email") rendered for several seconds on
+  // every visit — including already-activated Elite users — until the real
+  // token came back and status was re-fetched. Tracking resolution with its
+  // own flag (instead of inferring it from authToken's value) keeps the
+  // loading spinner up until we actually know the real gate state.
+  const [tokenResolved, setTokenResolved] = useState(false)
+
   // ── 1. Get auth token ──────────────────────────────────────────────────────
   useEffect(() => {
     const getToken = async () => {
@@ -1910,6 +1940,8 @@ export default function MirrorPage() {
         setUserEmail(session?.user?.email   ?? '')
       } catch {
         setAuthToken(null)
+      } finally {
+        setTokenResolved(true)
       }
     }
     getToken()
@@ -1962,10 +1994,10 @@ export default function MirrorPage() {
 
   // Trigger fetch when token state is resolved (including null — unauthenticated)
   useEffect(() => {
-    if (authToken !== undefined) {
+    if (tokenResolved) {
       fetchStatus(authToken)
     }
-  }, [authToken, fetchStatus])
+  }, [tokenResolved, authToken, fetchStatus])
 
   // SB-1: fetch user profile once auth resolves
   useEffect(() => {

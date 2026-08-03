@@ -17,7 +17,7 @@
 //   - Purely presentational; all data is computed server-side in
 //     app/record/[id]/page.tsx and passed in as a prop
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface Props {
   note: {
@@ -28,6 +28,30 @@ interface Props {
 
 export default function BiasNoteCard({ note }: Props) {
   const [expanded, setExpanded] = useState(false)
+  // Bug fix (user report: "still not showing 'See More' and is truncated"):
+  // whether the 3-line clamp below actually cuts the text off used to be
+  // guessed from a fixed `note.reasoning.length > 220` character count. Line
+  // wrapping depends on rendered width and font size, not raw character
+  // count, so reasoning text under 220 chars could still get visually
+  // clamped (word wrap eating a line early) with no "Show more" button
+  // available to un-clamp it. Measuring the actual rendered overflow instead
+  // makes this correct regardless of viewport width or how the text wraps.
+  const [isTruncated, setIsTruncated] = useState(false)
+  const textRef = useRef<HTMLParagraphElement>(null)
+
+  // Reset expand state if the note itself changes, so a stale "expanded"
+  // from a previous note doesn't skip the clamped measurement below for
+  // the new one.
+  useEffect(() => {
+    setExpanded(false)
+  }, [note?.reasoning])
+
+  useEffect(() => {
+    if (expanded) return // not clamped while expanded — nothing to measure
+    const el = textRef.current
+    if (!el) return
+    setIsTruncated(el.scrollHeight - el.clientHeight > 1)
+  }, [expanded, note?.reasoning])
 
   if (!note) return null
 
@@ -86,7 +110,9 @@ export default function BiasNoteCard({ note }: Props) {
         }}>
           {note.label} was flagged in this analysis.
         </p>
-        <p style={expanded ? {
+        <p
+          ref={textRef}
+          style={expanded ? {
           fontSize:   12,
           color:      'var(--text-4)',
           margin:     0,
@@ -103,7 +129,7 @@ export default function BiasNoteCard({ note }: Props) {
         }}>
           {note.reasoning}
         </p>
-        {note.reasoning.length > 220 && (
+        {isTruncated && (
           <button
             onClick={() => setExpanded(v => !v)}
             style={{
