@@ -218,6 +218,14 @@ export default function Home() {
   const [navScrolled,    setNavScrolled]    = useState(false)
   const [historyShowAll, setHistoryShowAll] = useState(false)
   const HISTORY_PREVIEW = 5
+  // Bug fix: pending-outcome nudge strip — dismissable per visit, same
+  // convention as EmailCaptureCard's own dismiss flag (sessionStorage, not
+  // localStorage) so it's quiet for the rest of this session but comes back
+  // next time if the outcome is still unrecorded.
+  const [pendingStripDismissed, setPendingStripDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try { return sessionStorage.getItem('quorum_pending_strip_dismissed') === '1' } catch { return false }
+  })
   // Sprint TOUR-1: home tour
   const [showHomeTour,   setShowHomeTour]   = useState(false)
   const [homeTourSteps,  setHomeTourSteps]  = useState<TourStep[]>(HOME_STEPS_BASE)
@@ -683,23 +691,36 @@ export default function Home() {
               sees, new or returning — a user with a decision still waiting
               on its outcome had to scroll past it to find that out. This
               nudge surfaces that context first; tapping it jumps straight
-              to the pending tab in the judgment record below. */}
-          {pending.length > 0 && !loadingHist && (
-            <button
+              to the pending tab in the judgment record below. Dismissable
+              (× button) — same sessionStorage-per-visit convention as
+              EmailCaptureCard's dismiss flag, so it's quiet for the rest of
+              this visit but returns next time if still unrecorded. Explicit
+              marginTop/marginBottom (rather than relying on the card's own
+              spacing) so it reads as its own element on both the nav side
+              and the card side, not stacked flush against either. */}
+          {pending.length > 0 && !loadingHist && !pendingStripDismissed && (
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 setActiveTab('pending')
               }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  setActiveTab('pending')
+                }
+              }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                width: '100%', textAlign: 'left',
-                marginTop: 16,
-                padding: '12px 16px',
+                marginTop: 28,
+                marginBottom: 24,
+                padding: '12px 12px 12px 16px',
                 background: 'rgba(201,168,76,0.08)',
                 border: '1px solid var(--gold-dim)',
                 borderRadius: 12,
                 cursor: 'pointer',
-                fontFamily: 'inherit',
               }}
             >
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#c9a84c', flexShrink: 0 }} />
@@ -709,7 +730,23 @@ export default function Home() {
                   : `${pending.length} decisions are waiting for their outcome`}
               </span>
               <span style={{ fontSize: 12, color: 'var(--gold)', flexShrink: 0 }}>Log it →</span>
-            </button>
+              <button
+                onClick={e => {
+                  e.stopPropagation()
+                  setPendingStripDismissed(true)
+                  try { sessionStorage.setItem('quorum_pending_strip_dismissed', '1') } catch {}
+                }}
+                aria-label="Dismiss"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 22, height: 22, flexShrink: 0,
+                  background: 'none', border: 'none', padding: 0,
+                  fontSize: 16, lineHeight: 1, color: 'var(--text-4)', cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+            </div>
           )}
 
           {/* ── Flip card wrapper ─────────────────────────── */}
