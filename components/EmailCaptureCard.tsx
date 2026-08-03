@@ -168,10 +168,10 @@ export default function EmailCaptureCard({ sessionId }: Props) {
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
             <div>
               <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-2)', margin: '0 0 3px' }}>
-                Want us to check back on this?
+                Sign in to save this decision
               </p>
               <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0, lineHeight: 1.55 }}>
-                Leave your email and we&apos;ll bring this decision back to you in two weeks with a fresh perspective.
+                Access it from any device, and we&apos;ll bring it back to you in two weeks with a fresh perspective.
               </p>
             </div>
             <button
@@ -191,7 +191,7 @@ export default function EmailCaptureCard({ sessionId }: Props) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
             <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
-            <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or, skip Google</span>
+            <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or sign in with email</span>
             <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
           </div>
 

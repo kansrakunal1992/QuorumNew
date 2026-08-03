@@ -388,6 +388,41 @@ export default function Home() {
     loadHistory()
   }, [])
 
+  // Bug fix: the mount-time fetch above only ever runs once. On mobile,
+  // reopening the app after some time away very often *resumes* this page
+  // from the browser's back-forward cache instead of doing a fresh load —
+  // so a decision recorded elsewhere (e.g. via an email link) could still
+  // show as "pending" here even though the server is already up to date.
+  // Re-sync session/outcome state whenever the tab becomes visible again or
+  // is restored from bfcache (pageshow's persisted flag), without re-running
+  // the rest of the mount effect (invite/referral capture, onboarding check,
+  // etc.) — this only refreshes the data that can actually go stale.
+  const refetchSessions = useCallback(async () => {
+    try {
+      const ids = getStoredSessionIds()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+      const res  = await fetch('/api/history', { method: 'POST', headers, body: JSON.stringify({ ids }) })
+      const data = await res.json()
+      setSessions(data.sessions ?? [])
+    } catch {}
+  }, [authToken])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refetchSessions()
+    }
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) refetchSessions()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [refetchSessions])
+
   // Bug fix: re-fetch mirror status if the user activates Elite (code or
   // Razorpay payment) on /mirror and navigates back here without a hard
   // reload — see refreshMirrorStatus above.
@@ -643,6 +678,39 @@ export default function Home() {
         background: 'var(--bg-void)',
       }}>
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 16px' }}>
+
+          {/* Bug fix: the hero card below is the first thing every visitor
+              sees, new or returning — a user with a decision still waiting
+              on its outcome had to scroll past it to find that out. This
+              nudge surfaces that context first; tapping it jumps straight
+              to the pending tab in the judgment record below. */}
+          {pending.length > 0 && !loadingHist && (
+            <button
+              onClick={() => {
+                historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                setActiveTab('pending')
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', textAlign: 'left',
+                marginTop: 16,
+                padding: '12px 16px',
+                background: 'rgba(201,168,76,0.08)',
+                border: '1px solid var(--gold-dim)',
+                borderRadius: 12,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#c9a84c', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: 'var(--text-2)', flex: 1 }}>
+                {pending.length === 1
+                  ? '1 decision is waiting for its outcome'
+                  : `${pending.length} decisions are waiting for their outcome`}
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--gold)', flexShrink: 0 }}>Log it →</span>
+            </button>
+          )}
 
           {/* ── Flip card wrapper ─────────────────────────── */}
           <div style={{ position: 'relative', marginBottom: 0 }}>
