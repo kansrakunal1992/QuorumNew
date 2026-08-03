@@ -43,7 +43,6 @@ export default function RecordReceipt({
   irreversibility,
   urgencySource,
   mirrorActive = false,
-  foundingAvailable = false,
 }: Props) {
   const dimensions: string[] = []
   if (irreversibility && IRREVERSIBILITY_LABEL[irreversibility]) {
