@@ -493,6 +493,16 @@ function logResolvedRequest(result: ResolveResult, callLabel: string): void {
 interface StreamResult {
   readable:   ReadableStream<Uint8Array>
   getContent: () => string
+  // Diagnostic only (bug fix — see [SynthesisAudit] in app/api/persona/route.ts):
+  // exposes why the underlying provider stream ended, so callers can tell a
+  // model that stopped naturally (stop_reason 'end_turn' / finish_reason 'stop')
+  // apart from one that got cut off mid-output ('max_tokens' / 'length').
+  // Previously this information was discarded inside each stream* helper —
+  // the only visible symptom of a truncated run was a mandatory tag silently
+  // missing downstream, with no way to tell truncation apart from the model
+  // just not following the tag instruction. Optional so existing callers that
+  // don't need it (every call site before this fix) are unaffected.
+  getStopReason?: () => string | null
 }
 
 /**
@@ -545,18 +555,24 @@ async function streamOpenAICompatible(
   ) as AsyncIterable<any>
   const encoder = new TextEncoder()
   let fullContent = ''
+  let stopReason: string | null = null
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         for await (const chunk of stream) {
           const text = chunk.choices[0]?.delta?.content ?? ''
           if (text) { fullContent += text; controller.enqueue(encoder.encode(text)) }
+          // finish_reason only appears on the final chunk for a given choice;
+          // every other chunk carries null, so this naturally settles on the
+          // last non-null value seen.
+          const finishReason = chunk.choices[0]?.finish_reason
+          if (finishReason) stopReason = finishReason
         }
         controller.close()
       } catch (err) { controller.error(err) }
     },
   })
-  return { readable, getContent: () => fullContent }
+  return { readable, getContent: () => fullContent, getStopReason: () => stopReason }
 }
 
 async function completeOpenAICompatible(
@@ -658,6 +674,7 @@ async function streamAnthropic(
   })
   const encoder = new TextEncoder()
   let fullContent = ''
+  let stopReason: string | null = null
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
@@ -666,12 +683,19 @@ async function streamAnthropic(
             fullContent += event.delta.text
             controller.enqueue(encoder.encode(event.delta.text))
           }
+          // 'max_tokens' here means the run was cut off mid-output — as opposed
+          // to 'end_turn', which means the model stopped on its own. See the
+          // getStopReason doc comment on StreamResult above for why this is
+          // captured at all.
+          if (event.type === 'message_delta' && event.delta.stop_reason) {
+            stopReason = event.delta.stop_reason
+          }
         }
         controller.close()
       } catch (err) { controller.error(err) }
     },
   })
-  return { readable, getContent: () => fullContent }
+  return { readable, getContent: () => fullContent, getStopReason: () => stopReason }
 }
 
 // ── Non-streaming completion ───────────────────────────────────────────────────

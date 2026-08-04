@@ -144,7 +144,7 @@
 
 import { PERSONAS, MISTRAL_EVIDENCE_DISCIPLINE, MISTRAL_SYNTHESIS_PUSH, MISTRAL_PERSONA_PUSH } from '@/lib/personas'
 import { createServiceClient }                 from '@/lib/supabase'
-import { createStream, getModelFamily }        from '@/lib/ai-client'
+import { createStream, getModelFamily, createCompletion } from '@/lib/ai-client'
 import {
   PERSONAS_WITH_STRUCTURAL_CONTEXT,
   getPersonaStructuralDirective,             // Sprint R1
@@ -949,16 +949,33 @@ Apply the VERDICT STABILITY instruction above using this data.`
     // synthesis regularly ran out of budget mid-tag on those trailing
     // sections (see lib/ai-client.ts createStream doc comment) — raising it
     // here only for synthesis leaves every advisor call's budget untouched.
-    const { readable, getContent } = await createStream(
+    //
+    // Bug fix #2 (Aug 2026): 2200 was still not enough headroom on verbose
+    // runs — [SynthesisAudit] logs showed <action_plan> going missing in
+    // production. Raised further to 3200. This alone doesn't guarantee the
+    // tag survives (word limits in the prompt are soft, not enforced), so
+    // it's paired with the backfill below rather than relied on alone.
+    // Bug fix #3 (Aug 2026): bumped from 1800 to 2200 as a safety margin for
+    // the per-persona <structural> tag investigation. Worth being direct
+    // about what this is and isn't: a persona's body is hard-capped at
+    // 180–200 words by WORD_LIMIT_PREFIX/SUFFIX in lib/personas.ts, plus a
+    // handful of short header tags — call it 350–400 tokens in the worst
+    // case, nowhere near even the old 1800 ceiling. So this bump is unlikely
+    // to be *the* fix for missing structural echoes; the audit log below
+    // (paired with getStopReason) exists to actually confirm that rather
+    // than assume it, and to rule truncation in or out with real numbers
+    // instead of guessing.
+    const { readable, getContent, getStopReason } = await createStream(
       systemPrompt,
       chatMessages,
       personaKey === 'synthesis' ? 'anthropic' : 'deepseek',
-      personaKey === 'synthesis' ? 2200 : 1800,
+      personaKey === 'synthesis' ? 3200 : 2200,
     )
 
     const passthrough = new ReadableStream<Uint8Array>({
       async start(controller) {
         const reader  = readable.getReader()
+        const encoder = new TextEncoder()
         try {
           while (true) {
             const { done, value } = await reader.read()
@@ -966,8 +983,8 @@ Apply the VERDICT STABILITY instruction above using this data.`
             controller.enqueue(value)
           }
 
-          const assistantContent = getContent()?.trim()
-          const supabase         = createServiceClient()
+          let assistantContent = getContent()?.trim() ?? ''
+          const supabase       = createServiceClient()
 
           // Audit: lib/personas.ts's SYNTHESIS prompt marks <verdict>,
           // <tension>, <key_question>, and <action_plan> as mandatory — every
@@ -978,17 +995,83 @@ Apply the VERDICT STABILITY instruction above using this data.`
           // reaching it (most likely for <action_plan>, since it's placed
           // last). The frontend guards already make a missing tag degrade
           // silently rather than leak raw markup, which is correct for
-          // display but means this would otherwise be undiagnosable without
-          // someone noticing by eye. Non-blocking — logs only, doesn't alter
-          // the response or retry anything.
+          // display but previously left this undiagnosable without someone
+          // noticing by eye.
+          //
+          // Bug fix (Aug 2026): stop_reason is now logged alongside the
+          // missing-tag list (see getStopReason on StreamResult) so a
+          // genuine truncation ('max_tokens') is distinguishable from the
+          // model simply omitting the tag on a run that ended normally
+          // ('end_turn') — previously these were indistinguishable from the
+          // logs alone. <action_plan> specifically is backfilled with a
+          // small supplemental call below rather than just logged, since
+          // it's the tag most exposed to truncation (placed last) and the
+          // one the product depends on most (every synthesis is supposed to
+          // ship one, per lib/personas.ts).
           if (personaKey === 'synthesis' && assistantContent) {
+            const stopReason = getStopReason?.() ?? null
             const missingMandatory = ['verdict', 'tension', 'key_question', 'action_plan']
               .filter(tag => !new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`).test(assistantContent))
             if (missingMandatory.length > 0) {
               console.warn(
-                `[SynthesisAudit] session=${sessionId ?? 'unknown'} missing mandatory tag(s): ${missingMandatory.join(', ')}`
+                `[SynthesisAudit] session=${sessionId ?? 'unknown'} missing mandatory tag(s): ${missingMandatory.join(', ')} | stop_reason=${stopReason ?? 'unknown'}`
               )
             }
+
+            if (missingMandatory.includes('action_plan')) {
+              try {
+                const verdictMatch = assistantContent.match(/<verdict>([\s\S]*?)<\/verdict>/)
+                const backfillPrompt = `A decision synthesis was just written for this decision:\n\nDECISION: ${decisionText}\n\nSYNTHESIS VERDICT: ${verdictMatch?.[1]?.trim() ?? '(not captured)'}\n\nFULL SYNTHESIS TEXT (for context — the action plan must be consistent with this, not repeat it):\n${assistantContent.replace(/<[^>]+>/g, '').slice(0, 2000)}\n\nThe synthesis above is missing its mandatory <action_plan> tag (most likely cut off before reaching it). Write ONLY that tag now — nothing else, no preamble, no closing remarks.\n\nRules:\n- 3 to 4 items, ordered by impact, each: a short imperative lead phrase (2–5 words) in double asterisks, an em dash, then one concrete "how/why now" clause.\n- Separate items with a pipe character.\n- Each item must be concrete and specific to this decision — never generic advice like "do more research."\n- Format exactly: <action_plan>**Lead one** — clause one.|**Lead two** — clause two.|**Lead three** — clause three.</action_plan>`
+
+                const backfill = await createCompletion(backfillPrompt, 400, {
+                  provider:    'anthropic',
+                  temperature: 0.4,
+                })
+                const backfillMatch = backfill.match(/<action_plan>[\s\S]*?<\/action_plan>/)
+                if (backfillMatch) {
+                  const tagText = `\n${backfillMatch[0]}`
+                  // Append to what's persisted (so a reload still shows it)...
+                  assistantContent += tagText
+                  // ...and to the live stream already in flight, so the
+                  // client's own final-extraction-pass regex (SynthesisCard.tsx)
+                  // picks it up from the same accumulated text with no
+                  // frontend changes needed.
+                  controller.enqueue(encoder.encode(tagText))
+                  console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} action_plan backfilled successfully`)
+                } else {
+                  console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} action_plan backfill failed to parse`)
+                }
+              } catch (backfillErr) {
+                console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} action_plan backfill call failed:`, backfillErr)
+              }
+            }
+          }
+
+          // Audit (Aug 2026, issue #1 investigation): <structural> is NOT
+          // mandatory the way <action_plan> is — lib/personas.ts explicitly
+          // tells each persona to omit it entirely, and never fabricate one,
+          // when the structural record doesn't genuinely bear on that
+          // persona's specific angle. So a missing tag here is expected and
+          // healthy most of the time; this block exists purely to separate
+          // "the model judged it not relevant" (stop_reason 'end_turn') from
+          // "it got cut off before writing it" (stop_reason 'max_tokens'),
+          // which up to now were indistinguishable from the outside. No
+          // backfill on purpose — unlike <action_plan>, fabricating a
+          // citation here would directly contradict the "do not fabricate"
+          // instruction the persona was given, so a truncated miss is left
+          // as a miss, just a diagnosed one.
+          if (
+            personaKey !== 'synthesis' &&
+            structuralContext &&
+            PERSONAS_WITH_STRUCTURAL_CONTEXT.has(personaKey) &&
+            messages.length === 0 &&
+            assistantContent
+          ) {
+            const stopReason = getStopReason?.() ?? null
+            const hasStructuralTag = /<structural>[\s\S]*?<\/structural>/.test(assistantContent)
+            console.warn(
+              `[StructuralEchoAudit] session=${sessionId ?? 'unknown'} persona=${personaKey} cited=${hasStructuralTag} | stop_reason=${stopReason ?? 'unknown'}`
+            )
           }
 
           // Save pushback / share-context user message.
