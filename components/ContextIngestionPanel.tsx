@@ -98,6 +98,11 @@ export default function ContextIngestionPanel({ authToken }: Props) {
   // Submission flow
   const [inputMode, setInputMode] = useState<'text' | 'file'>('text')
   const [pastedText, setPastedText] = useState('')
+  // v3 — per-import consent for specific details. Deliberately local state,
+  // reset to false on every mount/re-render of the start screen (i.e. every
+  // fresh import) rather than read from a previous choice — see UI copy
+  // just above the toggle for why this isn't made sticky.
+  const [allowSpecificDetails, setAllowSpecificDetails] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [asyncPolling, setAsyncPolling] = useState(false)
   const [progressStep, setProgressStep] = useState(0)
@@ -191,7 +196,7 @@ export default function ContextIngestionPanel({ authToken }: Props) {
     try {
       const res = await fetch('/api/context-ingestion', {
         method: 'POST', headers: authHeaders(authToken),
-        body: JSON.stringify({ mode, text }),
+        body: JSON.stringify({ mode, text, allowSpecificDetails }),
       })
       const json = await res.json()
       if (!res.ok) {
@@ -249,7 +254,7 @@ export default function ContextIngestionPanel({ authToken }: Props) {
         method: 'POST', headers: authHeaders(authToken),
         body: JSON.stringify({ facts: actions }),
       })
-      if (res.ok) { setReviewFacts([]); setConfirmRejectAll(false); await fetchStatus() }
+      if (res.ok) { setReviewFacts([]); setConfirmRejectAll(false); setAllowSpecificDetails(false); await fetchStatus() }
     } finally { setSaving(false) }
   }
 
@@ -278,7 +283,7 @@ export default function ContextIngestionPanel({ authToken }: Props) {
     setBusyAction('forget')
     try {
       const res = await fetch('/api/context-ingestion', { method: 'DELETE', headers: authHeaders(authToken) })
-      if (res.ok) { setConfirmForget(false); await fetchStatus() }
+      if (res.ok) { setConfirmForget(false); setAllowSpecificDetails(false); await fetchStatus() }
     } finally { setBusyAction(null) }
   }
 
@@ -385,6 +390,11 @@ export default function ContextIngestionPanel({ authToken }: Props) {
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 8 }}>
                   {CATEGORY_LABELS[f.category]}
+                  {f.is_specific && (
+                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'none', letterSpacing: 'normal', padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border-dim)' }}>
+                      Specific detail
+                    </span>
+                  )}
                   {mayReferenceAName(editDrafts[f.id] ?? f.insight_text) && (
                     <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--error)', textTransform: 'none', letterSpacing: 'normal' }}>
                       ⚠ may reference someone by name
@@ -455,8 +465,13 @@ export default function ContextIngestionPanel({ authToken }: Props) {
                 onChange={e => setReanalyzeChecked(prev => ({ ...prev, [r.id]: e.target.checked }))}
                 style={{ marginTop: 3, cursor: 'pointer' }} />
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
                   {CATEGORY_LABELS[r.after.category]}{r.before.category !== r.after.category && ` (was ${CATEGORY_LABELS[r.before.category]})`}
+                  {r.is_specific && (
+                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'none', letterSpacing: 'normal', padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border-dim)' }}>
+                      Specific detail
+                    </span>
+                  )}
                 </p>
                 <p style={{ fontSize: 12.5, color: 'var(--text-4)', textDecoration: 'line-through', marginBottom: 3, lineHeight: 1.4 }}>{r.before.insight_text}</p>
                 <p style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.4 }}>{r.after.insight_text}</p>
@@ -480,6 +495,7 @@ export default function ContextIngestionPanel({ authToken }: Props) {
   // ── Render: saved state — retained summary + manage ──────────────────────────
   if (status === 'saved') {
     const acceptedCount = data.facts.length
+    const specificCount = data.facts.filter(f => f.is_specific).length
     const byCategory: Partial<Record<MemoryFactCategory, number>> = {}
     for (const f of data.facts) byCategory[f.category] = (byCategory[f.category] ?? 0) + 1
 
@@ -490,9 +506,14 @@ export default function ContextIngestionPanel({ authToken }: Props) {
         <p style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 4, lineHeight: 1.5 }}>
           {Object.entries(byCategory).map(([cat, n]) => `${n} ${CATEGORY_LABELS[cat as MemoryFactCategory]}${n === 1 ? '' : 's'}`).join(' · ')}
         </p>
-        <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 16 }}>
+        <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: specificCount > 0 ? 4 : 16 }}>
           Raw source content was never stored. These insights now inform your Council sessions.
         </p>
+        {specificCount > 0 && (
+          <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 16 }}>
+            {specificCount} include{specificCount === 1 ? 's' : ''} a specific detail you opted into — these are checked for freshness sooner than the rest.
+          </p>
+        )}
 
         {/* v2 — reanalyze note (e.g. "nothing to update") */}
         {reanalyzeNote && (
@@ -525,7 +546,7 @@ export default function ContextIngestionPanel({ authToken }: Props) {
             {busyAction === 'reanalyze' ? 'Checking…' : 'Refresh with latest model'}
           </button>
           {data.cooldownDaysRemaining === 0 ? (
-            <button type="button" onClick={() => setInputMode('text')}
+            <button type="button" onClick={() => { setAllowSpecificDetails(false); setInputMode('text') }}
               style={{ fontSize: 12, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-dim)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>
               Import again
             </button>
@@ -564,6 +585,28 @@ export default function ContextIngestionPanel({ authToken }: Props) {
       {submitError && (
         <p style={{ fontSize: 12, color: 'var(--error)', marginBottom: 12 }}>{submitError}</p>
       )}
+
+      {/* v3 — specific-details opt-in. Off by default, asked fresh every import. */}
+      <label style={{
+        display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+        padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border-dim)',
+        background: 'var(--bg-inset)', marginBottom: 14,
+      }}>
+        <input
+          type="checkbox" checked={allowSpecificDetails}
+          onChange={e => setAllowSpecificDetails(e.target.checked)}
+          style={{ marginTop: 3, cursor: 'pointer' }}
+        />
+        <span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', display: 'block', marginBottom: 3 }}>
+            Let insights include specific details
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, display: 'block' }}>
+            Off by default. When on, insights may include concrete details — names, employers, dates, amounts — where they matter to a real decision. Sharper right now, but they age faster, so you&rsquo;ll be asked again on your next import. Still reviewed before saving, still encrypted, still deletable anytime.
+          </span>
+        </span>
+      </label>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <button type="button" onClick={() => setInputMode('text')}
           style={tabStyle(inputMode === 'text')}>Describe myself</button>

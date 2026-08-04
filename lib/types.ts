@@ -384,6 +384,7 @@ export interface ContextIngestion {
   processed_at:           string | null
   raw_purged_at:          string | null
   last_ingested_at:       string | null
+  allow_specific_details: boolean   // v3 — consent for this import; re-asked every time, not sticky
   created_at:             string
   updated_at:             string
 }
@@ -410,6 +411,7 @@ export interface UserMemoryFact {
   importance:        number     // 0–1, LLM-reported — used for the top-15 cap
   source:            ContextIngestionSource
   status:            MemoryFactStatus
+  is_specific:       boolean   // v3 — true when this fact was extracted under an explicit specific-details opt-in
   last_confirmed_at: string
   created_at:        string
   updated_at:        string
@@ -421,6 +423,7 @@ export interface MemoryFactCandidate {
   insight_text: string
   confidence:   number
   importance:   number
+  is_specific:  boolean   // v3 — always false when the import didn't opt in, regardless of model output
 }
 
 export interface MemoryFactCandidateWithEmbedding extends MemoryFactCandidate {

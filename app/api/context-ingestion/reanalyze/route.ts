@@ -33,6 +33,7 @@ const SCORE_TOLERANCE = 0.05   // revisions within this on both confidence and i
 
 export interface ReanalyzeRevision {
   id:            string
+  is_specific:   boolean   // v3 — unchanged by reanalyze; carried through for the diff view's badge
   before: { category: MemoryFactCategory; insight_text: string; confidence: number; importance: number }
   after:  { category: MemoryFactCategory; insight_text: string; confidence: number; importance: number }
 }
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
 
   const { data: existing } = await supabase
     .from('user_memory_facts')
-    .select('id, category, insight_text, confidence, importance')
+    .select('id, category, insight_text, confidence, importance, is_specific')
     .eq('user_id', user.id)
     .in('status', ['accepted', 'edited'])
 
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
     insight_text: decrypt(f.insight_text as string) ?? (f.insight_text as string),
     confidence: f.confidence as number,
     importance: f.importance as number,
+    is_specific: (f.is_specific as boolean) ?? false,
   }))
 
   if (facts.length < MIN_FACTS_TO_REANALYZE) {
@@ -95,6 +97,7 @@ export async function POST(req: Request) {
 
     changed.push({
       id,
+      is_specific: before.is_specific,
       before: { category: before.category, insight_text: before.insight_text, confidence: before.confidence, importance: before.importance },
       after:  { category: rev.category, insight_text: rev.insight_text, confidence: rev.confidence, importance: rev.importance },
     })

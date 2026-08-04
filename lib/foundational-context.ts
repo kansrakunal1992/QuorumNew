@@ -40,6 +40,7 @@ interface FoundationalFactRow {
   importance:   number
   confidence:   number
   embedding:    number[] | null
+  is_specific:  boolean   // v3 — drives which injection block this fact lands in, see fetchFoundationalContext()
 }
 
 // v1 capped injection at 15 because that was also the per-import cap, so the
@@ -81,7 +82,7 @@ export async function fetchFoundationalContext(
     const supabase = createServiceClient()
     const { data, error } = await supabase
       .from('user_memory_facts')
-      .select('category, insight_text, importance, confidence, embedding')
+      .select('category, insight_text, importance, confidence, embedding, is_specific')
       .eq('user_id', userId)
       .in('status', ['accepted', 'edited'])
       .order('importance', { ascending: false })
@@ -103,18 +104,43 @@ export async function fetchFoundationalContext(
 
     const eligible = decrypted.filter(f => allowOverride || !conflictsWithProfile(f, profile))
     const ranked = await rankByRelevance(eligible, decisionText)
+    const capped = ranked.slice(0, INJECT_CAP)
 
-    const lines = ranked
-      .slice(0, INJECT_CAP)
+    if (capped.length === 0) return EMPTY_FOUNDATIONAL_CONTEXT
+
+    // v3 — abstracted and specific facts get different instructions, not
+    // just different content. Abstracted facts are meant to be woven in as
+    // background, never echoed back at the person in their own words —
+    // that's what makes them feel like durable understanding rather than a
+    // transcript. Specific facts are the opposite case: the person
+    // explicitly opted in so the Council COULD reference the concrete
+    // detail directly (a named employer, an actual figure) — instructing
+    // the model to paraphrase those away would defeat the point of the
+    // opt-in.
+    const abstractedLines = capped
+      .filter(f => !f.is_specific)
+      .map(f => `- [${CATEGORY_LABELS[f.category] ?? 'Context'}] ${f.insight_text}`)
+    const specificLines = capped
+      .filter(f => f.is_specific)
       .map(f => `- [${CATEGORY_LABELS[f.category] ?? 'Context'}] ${f.insight_text}`)
 
-    if (lines.length === 0) return EMPTY_FOUNDATIONAL_CONTEXT
-
-    return [
+    const blocks: string[] = [
       '── FOUNDATIONAL CONTEXT (imported by the user at onboarding, not from live sessions) ──',
-      'Background the person chose to share once. Weave it in naturally where relevant to this decision — do not quote these lines verbatim or announce that you are drawing on imported context.',
-      ...lines,
-    ].join('\n')
+    ]
+    if (abstractedLines.length > 0) {
+      blocks.push(
+        'Background the person chose to share once. Weave it in naturally where relevant to this decision — do not quote these lines verbatim or announce that you are drawing on imported context.',
+        ...abstractedLines,
+      )
+    }
+    if (specificLines.length > 0) {
+      blocks.push(
+        'The person explicitly opted in to sharing these concrete specifics for exactly this purpose — reference them directly where relevant to this decision, rather than paraphrasing them into something vaguer.',
+        ...specificLines,
+      )
+    }
+
+    return blocks.join('\n')
   } catch (err) {
     console.error('[FoundationalContext] unexpected error (non-fatal):', err)
     return EMPTY_FOUNDATIONAL_CONTEXT
