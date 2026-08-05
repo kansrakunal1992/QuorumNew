@@ -155,7 +155,23 @@ async function getTierFromHeaders(): Promise<ProductTierInfo | undefined> {
   try {
     const h = await headers()
     const tier = h.get('x-product-tier') as ProductTier | null
-    if (!tier) return undefined
+    if (!tier) {
+      // Distinguish "genuinely no auth on this request" from "middleware
+      // should have set this and didn't" — legitimate free-tier requests
+      // still get an explicit x-product-tier: free header from middleware.ts,
+      // so a totally MISSING header on a matched route (see middleware.ts's
+      // config.matcher) means the per-request tier lookup itself failed or
+      // was skipped. That failure is caught non-fatally inside middleware's
+      // try/catch and logged there — but middleware runs on the Edge runtime
+      // (see middleware.ts's doc comment), which on most hosts (Railway
+      // included) logs to a SEPARATE stream from this one. Confirmed via
+      // real logs (2026-08-05, session 9e1239d7): an Elite-tier synthesis
+      // call silently routed to mistral-cloud instead of anthropic-elite —
+      // exactly what this fallback produces — with nothing in the app-server
+      // log explaining why. This line exists so that's visible from here too.
+      console.warn(`[AIClient] no x-product-tier header on a tiered-routing-eligible request — falling back to free. If this account should be paid, check the Edge/middleware log stream (separate from this one) for '[middleware] tier resolution failed'.`)
+      return undefined
+    }
     const family = h.get('x-private-model-family') as PrivateModelFamily | null
 
     // JSON.parse can throw on malformed input — treat that as "no endpoint
@@ -238,12 +254,61 @@ function getPrivateClient(endpoint: PrivateEndpoint): OpenAI {
 // to route.ts's catch block on the FIRST attempt — no retry — which is a
 // meaningfully likely trigger for the original bug, on top of the sequential-
 // gate issue itself. Broadened to cover all of these; still bounded and still
-// only for genuinely transient conditions (NOT 429 — a real rate limit should
-// surface to the client's own rate-limit handling, not be silently absorbed
-// here). Reused for every OpenAI-compatible provider (DeepSeek, Mistral,
-// self-hosted Qwen/Mistral) — none of these failure modes are provider-specific.
+// only for genuinely transient conditions. (429 rate limits were originally
+// excluded here on the theory that they should surface to client-side
+// rate-limit handling instead — see the Rate-limit section below for why
+// that turned out not to hold up and got its own retry path.) Reused for
+// every OpenAI-compatible provider (DeepSeek, Mistral, self-hosted
+// Qwen/Mistral) — none of these failure modes are provider-specific.
 const RETRY_WAIT_MS      = 5000
 const MAX_TRANSIENT_RETRIES = 2
+
+// ── Rate-limit (429) handling ────────────────────────────────────────────────
+// Bug fix (Aug 2026): 429 was explicitly excluded from isTransientError below
+// by design — the reasoning was that a real rate limit "should surface to the
+// client's own rate-limit handling" rather than being silently absorbed here.
+// In practice no such client-side handling exists: a 429 anywhere in the call
+// chain throws straight out to route.ts's outer catch, which returns a bare
+// "Internal server error" (500) with no indication it was a rate limit, and
+// SynthesisCard.tsx has no special case for it — the user just sees a failed
+// synthesis and has to reload. Confirmed via real Railway logs (2026-08-05,
+// session 9e1239d7): all 6 persona calls + several scoring completions fired
+// against mistral-cloud within ~15s, then the synthesis call (the single
+// heaviest, 3200 tokens) hit the same provider's per-minute limit and threw
+// a raw 429 with zero retry. Given a burst-triggered per-minute rate limit
+// typically clears within seconds, retrying (honoring Retry-After when the
+// provider sends one) is the right fix — kept as its own function, separate
+// from isTransientError, since it's a distinct failure mode with its own
+// backoff logic rather than a generic "service had a hiccup" case.
+const RATE_LIMIT_WAIT_MS = 8000
+
+function isRateLimitError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  return (err as Record<string, unknown>)['status'] === 429
+}
+
+// Extracts a provider-supplied Retry-After (seconds, or an HTTP date) when
+// present. Both the OpenAI SDK (Mistral/DeepSeek) and Anthropic SDK expose
+// response headers on thrown errors, but not identically — OpenAI's tends to
+// be a plain Record, Anthropic's a Headers-like object with .get() — so both
+// shapes are checked. Returns null (caller falls back to RATE_LIMIT_WAIT_MS)
+// if absent or unparsable, rather than guessing.
+function getRetryAfterMs(err: unknown): number | null {
+  if (!err || typeof err !== 'object') return null
+  const headers = (err as Record<string, unknown>)['headers'] as
+    | Record<string, string>
+    | { get?: (k: string) => string | null }
+    | undefined
+  if (!headers) return null
+  const raw = typeof (headers as { get?: (k: string) => string | null }).get === 'function'
+    ? (headers as { get: (k: string) => string | null }).get('retry-after')
+    : (headers as Record<string, string>)['retry-after'] ?? (headers as Record<string, string>)['Retry-After']
+  if (!raw) return null
+  const asSeconds = Number(raw)
+  if (!Number.isNaN(asSeconds)) return Math.max(0, asSeconds * 1000)
+  const asDate = Date.parse(raw)
+  return Number.isNaN(asDate) ? null : Math.max(0, asDate - Date.now())
+}
 
 function isTransientError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -275,9 +340,11 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
     try {
       return await fn()
     } catch (err) {
-      if (isTransientError(err) && attempt < MAX_TRANSIENT_RETRIES) {
-        console.warn(`[AIClient] transient error on ${label} (${(err as Record<string, unknown>)?.['status'] ?? (err as Record<string, unknown>)?.['name'] ?? 'unknown'}) — retrying in ${RETRY_WAIT_MS}ms (attempt ${attempt + 1}/${MAX_TRANSIENT_RETRIES})`)
-        await new Promise(r => setTimeout(r, RETRY_WAIT_MS))
+      const rateLimited = isRateLimitError(err)
+      if ((rateLimited || isTransientError(err)) && attempt < MAX_TRANSIENT_RETRIES) {
+        const wait = rateLimited ? (getRetryAfterMs(err) ?? RATE_LIMIT_WAIT_MS) : RETRY_WAIT_MS
+        console.warn(`[AIClient] ${rateLimited ? 'rate limited (429)' : 'transient error'} on ${label} — retrying in ${wait}ms (attempt ${attempt + 1}/${MAX_TRANSIENT_RETRIES})`)
+        await new Promise(r => setTimeout(r, wait))
         lastErr = err
       } else {
         throw err
@@ -749,10 +816,12 @@ async function streamAnthropic(
           controller.close()
           return
         } catch (err) {
-          const canRetry = fullContent === '' && isTransientError(err) && attempt < MAX_TRANSIENT_RETRIES
+          const rateLimited = isRateLimitError(err)
+          const canRetry = fullContent === '' && (rateLimited || isTransientError(err)) && attempt < MAX_TRANSIENT_RETRIES
           if (canRetry) {
-            console.warn(`[AIClient] transient error on ${label} (retrying in ${RETRY_WAIT_MS}ms, attempt ${attempt + 1}/${MAX_TRANSIENT_RETRIES})`)
-            await new Promise(r => setTimeout(r, RETRY_WAIT_MS))
+            const wait = rateLimited ? (getRetryAfterMs(err) ?? RATE_LIMIT_WAIT_MS) : RETRY_WAIT_MS
+            console.warn(`[AIClient] ${rateLimited ? 'rate limited (429)' : 'transient error'} on ${label} (retrying in ${wait}ms, attempt ${attempt + 1}/${MAX_TRANSIENT_RETRIES})`)
+            await new Promise(r => setTimeout(r, wait))
             continue
           }
           controller.error(err)
