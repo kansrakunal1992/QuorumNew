@@ -249,7 +249,15 @@ function isTransientError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
   const e = err as Record<string, unknown>
   if (e['status'] === 503 || e['status'] === 502 || e['status'] === 504) return true
-  if (e['code'] === 'service_unavailable_error') return true
+  // Anthropic-specific: 529 is their dedicated "overloaded_error" status,
+  // returned when the API is under heavy load — transient by definition,
+  // distinct from the generic 502/503/504 set above (which is why it needs
+  // its own check; a plain numeric-range test would miss it). This was
+  // previously unhandled everywhere in this file, and streamAnthropic (the
+  // synthesis call's provider) had no retry wrapper at all — so a 529 during
+  // synthesis failed the whole request outright with no recovery attempt.
+  if (e['status'] === 529) return true
+  if (e['code'] === 'service_unavailable_error' || e['code'] === 'overloaded_error') return true
   // OpenAI SDK connection-level errors (no HTTP status at all — the request
   // never got a response): APIConnectionError / APIConnectionTimeoutError.
   const name = typeof e['name'] === 'string' ? e['name'] : ''
@@ -257,7 +265,7 @@ function isTransientError(err: unknown): boolean {
   const code = typeof e['code'] === 'string' ? e['code'] : ''
   if (['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN'].includes(code)) return true
   const message = typeof e['message'] === 'string' ? e['message'] : ''
-  if (/timeout|timed out|network|socket hang up/i.test(message)) return true
+  if (/timeout|timed out|network|socket hang up|overloaded/i.test(message)) return true
   return false
 }
 
@@ -658,13 +666,13 @@ export async function createStream(
 
   switch (target.kind) {
     case 'anthropic-legacy':
-      return streamAnthropic(systemPrompt, messages, maxTokens, ANTHROPIC_MODEL)
+      return streamAnthropic(systemPrompt, messages, maxTokens, ANTHROPIC_MODEL, 'streamAnthropic')
     case 'deepseek-legacy':
       return streamOpenAICompatible(deepseek, DEEPSEEK_MODEL, systemPrompt, messages, maxTokens, 'streamDeepSeek', DEEPSEEK_THINKING)
     case 'mistral-cloud':
       return streamOpenAICompatible(mistral, MISTRAL_MODEL, systemPrompt, messages, maxTokens, 'streamMistral')
     case 'anthropic-elite':
-      return streamAnthropic(systemPrompt, messages, maxTokens, ELITE_PREMIUM_MODEL)
+      return streamAnthropic(systemPrompt, messages, maxTokens, ELITE_PREMIUM_MODEL, 'streamAnthropic/elite')
     case 'qwen-selfhosted':
       return streamOpenAICompatible(
         getPrivateClient(target.endpoint),
@@ -685,34 +693,72 @@ async function streamAnthropic(
   messages:     { role: 'user' | 'assistant'; content: string }[],
   maxTokens:    number = 1200,
   model:        string = ANTHROPIC_MODEL,
+  label:        string = 'streamAnthropic',
 ): Promise<StreamResult> {
-  const stream = await anthropic.messages.stream({
-    model,
-    max_tokens: maxTokens,
-    system:     systemPrompt,
-    messages:   messages as Anthropic.MessageParam[],
-  })
+  // Bug fix (Aug 2026): this call had no retry protection at all, unlike
+  // streamOpenAICompatible below — every DeepSeek/Mistral call (the 6 initial
+  // personas) transparently absorbs a transient 502/503/504/connection-reset
+  // via withRetry. The Anthropic call (synthesis — also the single longest,
+  // heaviest call in the app: 3200 max_tokens plus the deepest system prompt,
+  // more exposed to hitting a transient condition purely by running longer)
+  // had none, and simply wrapping the initial anthropic.messages.stream(...)
+  // call in withRetry (as a first pass at this fix did) doesn't actually
+  // help: .stream() returns a MessageStream synchronously and never throws
+  // for request-level errors — those only surface later, when consuming it
+  // as an async iterator (see MessageStream's _run(), which routes failures
+  // through an 'error' event rather than rejecting the call that created
+  // it). So the real point of failure is the `for await` below, and that's
+  // where retry needs to live. Symptom before this fix: synthesis fails
+  // with a clean 500 right as it fires (i.e. exactly when persona traffic —
+  // and therefore load on both this server and Anthropic's API — is
+  // highest), but a reload succeeds because it's a fresh, isolated attempt
+  // made once the transient condition (e.g. a 529 overloaded_error spike)
+  // has usually cleared.
+  //
+  // Retry is only safe/attempted while fullContent is still '' — i.e.
+  // nothing has been enqueued to the client yet. Once real text has started
+  // streaming, restarting with a brand-new .stream() call would duplicate
+  // or garble what's already rendered client-side, so a failure past that
+  // point still fails outright (same as before this fix).
   const encoder = new TextEncoder()
   let fullContent = ''
   let stopReason: string | null = null
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
-      try {
-        for await (const event of stream) {
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            fullContent += event.delta.text
-            controller.enqueue(encoder.encode(event.delta.text))
+      for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+        try {
+          const stream = anthropic.messages.stream({
+            model,
+            max_tokens: maxTokens,
+            system:     systemPrompt,
+            messages:   messages as Anthropic.MessageParam[],
+          })
+          for await (const event of stream) {
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+              fullContent += event.delta.text
+              controller.enqueue(encoder.encode(event.delta.text))
+            }
+            // 'max_tokens' here means the run was cut off mid-output — as opposed
+            // to 'end_turn', which means the model stopped on its own. See the
+            // getStopReason doc comment on StreamResult above for why this is
+            // captured at all.
+            if (event.type === 'message_delta' && event.delta.stop_reason) {
+              stopReason = event.delta.stop_reason
+            }
           }
-          // 'max_tokens' here means the run was cut off mid-output — as opposed
-          // to 'end_turn', which means the model stopped on its own. See the
-          // getStopReason doc comment on StreamResult above for why this is
-          // captured at all.
-          if (event.type === 'message_delta' && event.delta.stop_reason) {
-            stopReason = event.delta.stop_reason
+          controller.close()
+          return
+        } catch (err) {
+          const canRetry = fullContent === '' && isTransientError(err) && attempt < MAX_TRANSIENT_RETRIES
+          if (canRetry) {
+            console.warn(`[AIClient] transient error on ${label} (retrying in ${RETRY_WAIT_MS}ms, attempt ${attempt + 1}/${MAX_TRANSIENT_RETRIES})`)
+            await new Promise(r => setTimeout(r, RETRY_WAIT_MS))
+            continue
           }
+          controller.error(err)
+          return
         }
-        controller.close()
-      } catch (err) { controller.error(err) }
+      }
     },
   })
   return { readable, getContent: () => fullContent, getStopReason: () => stopReason }
