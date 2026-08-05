@@ -173,7 +173,21 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [examinerUpdate,    setExaminerUpdate]    = useState('')
   const [examinerUpdateState, setExaminerUpdateState] = useState<'idle' | 'streaming' | 'done'>('idle')
   const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null)
-  const clearRateLimit = useCallback(() => setRateLimitInfo(null), [])
+  // Ref to streamResponse (defined further down), kept current via the
+  // useEffect near it — same stale-closure-avoidance pattern already used
+  // for onCompleteRef/onLeanUpdateRef/etc. above. Needed here because
+  // clearRateLimit is defined before streamResponse exists.
+  const streamResponseRef = useRef<((msgs: Message[], isFirst: boolean, examinerCtx?: string) => Promise<void>) | null>(null)
+  // Bug fix: this used to only clear the banner when the countdown expired —
+  // nothing then re-issued the call, so a rate-limited persona just sat idle
+  // forever (invisible once the banner disappeared) until the user manually
+  // reloaded. Now it clears the banner AND re-fires the same call that got
+  // rate-limited, same recovery path as the manual Retry button.
+  const clearRateLimit = useCallback(() => {
+    setRateLimitInfo(null)
+    const args = lastCallArgsRef.current
+    if (args) streamResponseRef.current?.(args.msgs, args.isFirst, args.examinerCtx)
+  }, [])
 
   const responseRef   = useRef(initialContent ?? '')
   // Bug fix: rebuilding `fullContent` for persistence after any pushback or
@@ -216,6 +230,23 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // whether the cause is a transient stream hiccup (e.g. right after a cold
   // start) or the model occasionally not following the mandatory format.
   const headerRetryRef = useRef(0)
+  // Bug fix ("some personas never fired at all"): streamResponse used to go
+  // straight to panelState 'error' on the FIRST non-OK response or network
+  // exception, with no retry and no way to recover short of a full page
+  // reload/Reanalyze. Combined with the old sequential gate (SessionView),
+  // one persona hitting a transient provider hiccup silently blocked every
+  // persona after it. The gate is now removed (SessionView fires all six in
+  // parallel), but a transient failure should still recover on its own
+  // rather than dead-ending the card. This tracks bounded auto-retries for
+  // non-OK/network failures, separate from headerRetryRef above (which
+  // retries a different failure mode — a malformed/missing header block on
+  // an otherwise-successful response).
+  const transientRetryRef = useRef(0)
+  const MAX_TRANSIENT_RETRIES = 2
+  const TRANSIENT_RETRY_DELAYS_MS = [1500, 4000]
+  // Stored so the manual "Retry" button (shown once auto-retries are
+  // exhausted) can re-issue the exact same call the user was waiting on.
+  const lastCallArgsRef = useRef<{ msgs: Message[]; isFirst: boolean; examinerCtx?: string } | null>(null)
   const exchangesRef  = useRef(exchanges)
   const onCompleteRef = useRef(onComplete)
   const onLeanUpdateRef = useRef(onLeanUpdate)
@@ -376,8 +407,25 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const isThisSpeaking = activeSpeakerId === persona.key
 
   const streamResponse = useCallback(async (msgs: Message[], isFirst: boolean, examinerCtx?: string) => {
+    lastCallArgsRef.current = { msgs, isFirst, examinerCtx }
     setPanelState('streaming')
     if (isFirst) setResponse('')
+
+    // Bounded auto-retry for a non-OK response or a network exception (the
+    // rate-limit case is handled separately below and is NOT auto-retried
+    // here — it has its own countdown/expiry path). Same call, same args,
+    // after a short backoff. Only after MAX_TRANSIENT_RETRIES is exhausted
+    // does this fall through to panelState 'error' with a manual Retry button.
+    const retryOrFail = (message: string) => {
+      if (transientRetryRef.current < MAX_TRANSIENT_RETRIES) {
+        const delay = TRANSIENT_RETRY_DELAYS_MS[transientRetryRef.current] ?? 4000
+        transientRetryRef.current += 1
+        setTimeout(() => streamResponse(msgs, isFirst, examinerCtx), delay)
+        return
+      }
+      setPanelState('error')
+      setResponse(message)
+    }
 
     try {
       const res = await fetch('/api/persona', {
@@ -388,8 +436,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       if (!res.ok || !res.body) {
         const rl = await parseRateLimit(res)
         if (rl) { setRateLimitInfo(rl); setPanelState('idle'); return }
-        setPanelState('error')
-        setResponse('Failed to load. Check API key.')
+        retryOrFail('Failed to load. Check API key.')
         return
       }
 
@@ -426,6 +473,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       }
 
       setPanelState('done')
+      transientRetryRef.current = 0
 
       if (isFirst) {
         rawInitialRef.current = acc   // preserve tag-intact original response for future saves
@@ -485,10 +533,21 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         onExaminerUpdateCompleteRef.current?.(persona.key, fullContent)
       }
     } catch {
-      setPanelState('error')
-      setResponse('Connection error.')
+      retryOrFail('Connection error.')
     }
   }, [sessionId, persona.key, decisionText, contextText, registerMode, structuralContext, extractHeaderTags, stripHeaderTags])
+
+  useEffect(() => { streamResponseRef.current = streamResponse }, [streamResponse])
+
+  // Manual retry — shown once auto-retries are exhausted. Resets both retry
+  // counters and re-issues the exact call that was in flight when it failed.
+  const retryNow = useCallback(() => {
+    transientRetryRef.current = 0
+    headerRetryRef.current = 0
+    const args = lastCallArgsRef.current
+    if (args) streamResponse(args.msgs, args.isFirst, args.examinerCtx)
+    else streamResponse([], true, initialExaminerContext)
+  }, [streamResponse, initialExaminerContext])
 
   // Parse header tags from initialContent so Lens/Position/Trade-off render on Back to Council
   useEffect(() => {
@@ -636,7 +695,26 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       </span>
     )
     if (panelState === 'done') return <span style={{ fontSize: 11, color: 'var(--success-text)' }}>✓</span>
-    if (panelState === 'error') return <span style={{ fontSize: 11, color: '#e05050' }}>✗ error</span>
+    if (panelState === 'error') return (
+      <span style={{ fontSize: 11, color: '#e05050', display: 'flex', alignItems: 'center', gap: 8 }}>
+        ✗ error
+        <button
+          onClick={retryNow}
+          style={{
+            fontSize:     11,
+            fontWeight:   600,
+            color:        '#e05050',
+            background:   'transparent',
+            border:       '1px solid #e05050',
+            borderRadius: 4,
+            padding:      '1px 7px',
+            cursor:       'pointer',
+          }}
+        >
+          Retry
+        </button>
+      </span>
+    )
     return null
   }
 

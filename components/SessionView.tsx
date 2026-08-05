@@ -371,7 +371,16 @@ export default function SessionView({ session: initialSession, initialMessages =
   // (d): matched past session's id, so the S1-07 echo banner can link to it
   const [structuralMatchSessionId, setStructuralMatchSessionId] = useState<string | null>(null)
 
-  // S1-02: Sequential streaming — unlocks one persona at a time as each completes
+  // S1-02: Sequential *reveal* — purely cosmetic entrance stagger for the six
+  // persona cards. Originally this also GATED the underlying /api/persona
+  // fetch (canStream={personaIndex <= streamUnlockedUpTo}), advanced only via
+  // onPersonaComplete when a card reached panelState 'done'. That meant a
+  // single card that errored, hit a rate limit, or otherwise never reached
+  // 'done' permanently stalled every card after it in PERSONA_ORDER — the
+  // exact "some personas never fired at all" bug. Fetches now fire in
+  // parallel for all six (see canStream below); this state and its timer
+  // (below) only control the visual fade-in order and can never block data
+  // from loading.
   const [streamUnlockedUpTo, setStreamUnlockedUpTo] = useState<number>(0)
 
   // S1-06: Council complete badge — timestamp captured when synthesis finishes
@@ -766,6 +775,19 @@ export default function SessionView({ session: initialSession, initialMessages =
   const ceremonyApplicable = (totalSessionCount ?? 0) <= 3 && !redirectBlocked
   const ceremonyGateOpen   = !ceremonyApplicable || ceremonyDismissed
   const ceremonyActive     = examinerSubmitted && ceremonyApplicable && !ceremonyDismissed
+
+  // Cosmetic reveal: ticks streamUnlockedUpTo forward on a fixed timer once
+  // personas are eligible to stream. This ONLY controls the fade-in stagger
+  // below (personaIndex <= streamUnlockedUpTo) — it is intentionally
+  // decoupled from any card's completion/failure, so one card erroring can
+  // never keep the others from being revealed (or, more importantly per
+  // canStream below, from fetching in the first place).
+  useEffect(() => {
+    if (!(examinerSubmitted && ceremonyGateOpen)) return
+    if (streamUnlockedUpTo >= PERSONA_ORDER.length) return
+    const t = setTimeout(() => setStreamUnlockedUpTo(c => c + 1), 260)
+    return () => clearTimeout(t)
+  }, [examinerSubmitted, ceremonyGateOpen, streamUnlockedUpTo])
 
   // S3-01: Tension interstitial — fires once all 6 advisors have finished AND the user
   // has answered the follow-up questions (the exact moment synthesis would otherwise
@@ -1855,12 +1877,26 @@ export default function SessionView({ session: initialSession, initialMessages =
                   pointerEvents: redirectBlocked ? 'none' : 'auto',
                 }}
               >
-                {orderedPersonaKeys.map((key, personaIndex) => (
-                  <div
-                    key={`${key}-${sessionKey}`}
-                    ref={el => { cardRefs.current[key] = el }}
-                    style={{ willChange: 'transform' }}
-                  >
+                {orderedPersonaKeys.map((key, personaIndex) => {
+                  // Card is DB-hydrated (Back to Council / reload) — always shown
+                  // instantly, never held back by the cosmetic stagger below.
+                  const isHydrated = sessionKey === 0 && !!initialMessages[key]
+                  const isRevealed = isHydrated || personaIndex <= streamUnlockedUpTo
+                  return (
+                    <div
+                      key={`${key}-${sessionKey}`}
+                      ref={el => { cardRefs.current[key] = el }}
+                      style={{
+                        willChange: 'transform',
+                        // Cosmetic-only entrance stagger (see streamUnlockedUpTo above) —
+                        // purely visual; the underlying fetch is NOT gated on this, so a
+                        // card that's already loaded never sits invisible waiting on an
+                        // earlier card that errored.
+                        opacity:    isRevealed ? 1 : 0,
+                        transform:  isRevealed ? 'none' : 'translateY(6px)',
+                        transition: 'opacity 320ms ease, transform 320ms ease',
+                      }}
+                    >
                     <PersonaPanel
                       persona={PERSONAS[key]}
                       sessionId={session.id}
@@ -1877,11 +1913,14 @@ export default function SessionView({ session: initialSession, initialMessages =
                       onFirstChallengeUsed={handleFirstChallengeUsed}
                       onExaminerUpdateComplete={handleExaminerUpdateComplete}
                       initialContent={sessionKey === 0 ? initialMessages[key] : undefined}
-                      // S1-02: Sequential streaming — each persona unlocks only after
-                      // the previous one completes. initialContent (DB load) bypasses
-                      // the gate so re-reads render instantly without cascading delays.
-                      // S2-07: also gated on ceremonyGateOpen — sessions 1–3 hold for the
-                      // 3s Opening Ceremony beat before the first advisor begins streaming.
+                      // Parallel streaming: all six personas become eligible to fetch
+                      // together, the instant the examiner step + ceremony beat clear —
+                      // no persona's fetch depends on another's outcome. initialContent
+                      // (DB load) bypasses this so re-reads render instantly. The visual
+                      // reveal order (streamUnlockedUpTo, above) is a separate, cosmetic
+                      // concern and never gates this.
+                      // S2-07: gated on ceremonyGateOpen — sessions 1–3 hold for the 3s
+                      // Opening Ceremony beat before any advisor begins streaming.
                       //
                       // Bug fix: initialMessages is a static prop from the ORIGINAL
                       // server-rendered session and never updates client-side. Without
@@ -1889,15 +1928,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                       // brand-new session id) would still see the PRIOR session's
                       // persona text here, rendering stale cached content instead of
                       // running the six advisors fresh against the new decision text.
-                      canStream={
-                        (sessionKey === 0 && !!initialMessages[key]) ||
-                        (examinerSubmitted && ceremonyGateOpen && personaIndex <= streamUnlockedUpTo)
-                      }
+                      canStream={isHydrated || (examinerSubmitted && ceremonyGateOpen)}
                       initialExaminerContext={examinerInitialContext[key]}
-                      // S1-02: fires when this persona reaches 'done', unlocking the next
-                      onPersonaComplete={() =>
-                        setStreamUnlockedUpTo(prev => Math.max(prev, personaIndex + 1))
-                      }
                       // R6: match date/session id are session-wide (which past decision
                       // matched) and passed to every persona unconditionally — harmless
                       // for the 4 non-eligible/uncited cases, since each card's citation
@@ -1906,8 +1938,9 @@ export default function SessionView({ session: initialSession, initialMessages =
                       structuralMatchDate={structuralMatchDate}
                       structuralMatchSessionId={structuralMatchSessionId}
                     />
-                  </div>
-                ))}
+                    </div>
+                  )
+                })}
               </div>
 
               {/* ── Capture Position — after personas, giving time to read all six advisors ── */}

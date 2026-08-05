@@ -227,28 +227,48 @@ function getPrivateClient(endpoint: PrivateEndpoint): OpenAI {
   return new OpenAI({ apiKey: endpoint.apiKey, baseURL: endpoint.baseUrl })
 }
 
-// ── 503 retry helper ───────────────────────────────────────────────────────────
-// DeepSeek returns 503 during peak load. One retry after a short wait recovers
-// the majority of transient overloads without meaningfully increasing latency.
-// Reused for every OpenAI-compatible provider (DeepSeek, Mistral, self-hosted
-// Qwen/Mistral) — the 503-under-load pattern isn't DeepSeek-specific.
-const RETRY_WAIT_MS   = 5000
-const MAX_503_RETRIES = 2
+// ── Transient-error retry helper ────────────────────────────────────────────
+// DeepSeek returns 503 during peak load; a short wait and one retry recovers
+// the majority of those. Originally this ONLY covered 503 — but a client-side
+// investigation (PersonaPanel) into "some personas never fired at all" traced
+// several first-failures back to errors that never reached this retry at all:
+// 502/504 (upstream gateway hiccups), and connection-level failures (timeout,
+// reset, DNS blip) that the OpenAI SDK surfaces with no `status` field, only
+// a `code`/`name`/message. Every one of those used to throw straight through
+// to route.ts's catch block on the FIRST attempt — no retry — which is a
+// meaningfully likely trigger for the original bug, on top of the sequential-
+// gate issue itself. Broadened to cover all of these; still bounded and still
+// only for genuinely transient conditions (NOT 429 — a real rate limit should
+// surface to the client's own rate-limit handling, not be silently absorbed
+// here). Reused for every OpenAI-compatible provider (DeepSeek, Mistral,
+// self-hosted Qwen/Mistral) — none of these failure modes are provider-specific.
+const RETRY_WAIT_MS      = 5000
+const MAX_TRANSIENT_RETRIES = 2
 
-function is503(err: unknown): boolean {
+function isTransientError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
   const e = err as Record<string, unknown>
-  return e['status'] === 503 || e['code'] === 'service_unavailable_error'
+  if (e['status'] === 503 || e['status'] === 502 || e['status'] === 504) return true
+  if (e['code'] === 'service_unavailable_error') return true
+  // OpenAI SDK connection-level errors (no HTTP status at all — the request
+  // never got a response): APIConnectionError / APIConnectionTimeoutError.
+  const name = typeof e['name'] === 'string' ? e['name'] : ''
+  if (name === 'APIConnectionError' || name === 'APIConnectionTimeoutError') return true
+  const code = typeof e['code'] === 'string' ? e['code'] : ''
+  if (['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN'].includes(code)) return true
+  const message = typeof e['message'] === 'string' ? e['message'] : ''
+  if (/timeout|timed out|network|socket hang up/i.test(message)) return true
+  return false
 }
 
 async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
   let lastErr: unknown
-  for (let attempt = 0; attempt <= MAX_503_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
     try {
       return await fn()
     } catch (err) {
-      if (is503(err) && attempt < MAX_503_RETRIES) {
-        console.warn(`[AIClient] 503 on ${label} — retrying in ${RETRY_WAIT_MS}ms (attempt ${attempt + 1}/${MAX_503_RETRIES})`)
+      if (isTransientError(err) && attempt < MAX_TRANSIENT_RETRIES) {
+        console.warn(`[AIClient] transient error on ${label} (${(err as Record<string, unknown>)?.['status'] ?? (err as Record<string, unknown>)?.['name'] ?? 'unknown'}) — retrying in ${RETRY_WAIT_MS}ms (attempt ${attempt + 1}/${MAX_TRANSIENT_RETRIES})`)
         await new Promise(r => setTimeout(r, RETRY_WAIT_MS))
         lastErr = err
       } else {
