@@ -68,6 +68,16 @@ interface Props {
   decisionText: string
   contextText?: string
   registerMode?: 'analytical' | 'clarification'
+  /** Bug fix (Aug 2026): every /api/persona fetch below was missing this
+   *  entirely, so middleware.ts never saw a Bearer token, never set
+   *  x-product-tier, and lib/ai-client.ts's resolveProvider() fell back to
+   *  FREE_TIER for every persona call regardless of the user's actual tier —
+   *  this, not any Supabase/header-forwarding issue, was the real cause of
+   *  Elite-tier calls silently landing on Mistral instead of Claude. Passed
+   *  down from SessionView's authTokenSV; undefined/null is fine — it just
+   *  means an unauthenticated session, same as before, and the fetch omits
+   *  the header exactly like today. */
+  authToken?: string | null
   onComplete?: (personaKey: string, content: string) => void
   /** When set, triggers a supplemental stream showing updated analysis with examiner answers */
   examinerContext?: string
@@ -124,7 +134,7 @@ interface Props {
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, authToken, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -430,7 +440,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     try {
       const res = await fetch('/api/persona', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Bug fix (Aug 2026): this header was missing entirely — see the
+          // authToken doc comment on this component's Props for why that
+          // silently forced every persona call onto FREE_TIER routing.
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({ sessionId, personaKey: persona.key, messages: msgs, decisionText, contextText, registerMode: registerMode ?? 'analytical', structuralContext, examinerContext: isFirst ? examinerCtx : undefined }),
       })
       if (!res.ok || !res.body) {
@@ -587,7 +603,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         ]
         const res = await fetch('/api/persona', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
           body: JSON.stringify({
             sessionId,
             personaKey: persona.key,

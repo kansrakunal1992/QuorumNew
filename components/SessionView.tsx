@@ -1703,6 +1703,9 @@ export default function SessionView({ session: initialSession, initialMessages =
                   totalPersonas={PERSONA_ORDER.length}
                   version={synthesisVersion}
                   registerMode={registerMode}
+                  // Bug fix (Aug 2026): thread authToken through so synthesis +
+                  // decision_brief fetches carry the Bearer header.
+                  authToken={authTokenSV}
                   examinerReady={examinerReady}
                   redirectBlocked={redirectBlocked}
                   redirectQuestion={redirectQuestion}
@@ -1903,6 +1906,10 @@ export default function SessionView({ session: initialSession, initialMessages =
                       decisionText={session.decision_text}
                       contextText={session.context_text ?? undefined}
                       registerMode={registerMode}
+                      // Bug fix (Aug 2026): thread authToken through so every
+                      // /api/persona fetch carries the Bearer header and
+                      // middleware.ts can correctly resolve the product tier.
+                      authToken={authTokenSV}
                       onComplete={handlePersonaComplete}
                       onLeanUpdate={handleLeanUpdate}
                       currentLean={personaLeans[key]}

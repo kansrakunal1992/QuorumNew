@@ -19,6 +19,13 @@ interface Props {
   totalPersonas:     number
   version:           number
   registerMode?:     'analytical' | 'clarification'
+  /** Bug fix (Aug 2026): both /api/persona fetches below (synthesis +
+   *  decision_brief) omitted this entirely, so middleware.ts never saw a
+   *  Bearer token and every synthesis call — the most expensive, most
+   *  user-visible AI call in the app — silently fell back to FREE_TIER
+   *  (Mistral) regardless of the user actually being on Elite. Passed down
+   *  from SessionView's authTokenSV. */
+  authToken?:        string | null
   examinerReady?:    boolean
   redirectBlocked?:  boolean
   redirectQuestion?: string
@@ -69,7 +76,8 @@ type State = 'waiting' | 'streaming' | 'done' | 'error'
 export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
-  registerMode, examinerReady,
+  registerMode, authToken,
+  examinerReady,
   redirectBlocked,
   redirectQuestion,
   onOverrideRedirect,
@@ -438,7 +446,12 @@ export default function SynthesisCard({
       try {
         const res = await fetch('/api/persona', {
           method: 'POST', signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // Bug fix (Aug 2026): synthesis fetch was missing the Authorization
+            // header entirely — see authToken prop doc comment above.
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
           body: JSON.stringify({
             sessionId:      sessionIdRef.current,
             personaKey:     'synthesis',
@@ -673,7 +686,11 @@ export default function SynthesisCard({
     try {
       const res = await fetch('/api/persona', {
         method: 'POST', signal: ctrl.signal,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Bug fix (Aug 2026): decision_brief fetch also lacked the token.
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({ sessionId: sessionIdRef.current, personaKey: 'decision_brief', messages: [{ role: 'user', content: msg }], decisionText: decisionRef.current, contextText: contextRef.current, rawMessages: true }),
       })
       if (!res.ok || !res.body) { setBriefState('error'); return }
