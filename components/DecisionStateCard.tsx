@@ -40,6 +40,15 @@ import { useState } from 'react'
 
 interface Props {
   sessionId: string
+  /**
+   * Bug fix (2026-08-06): proceedSave() below POSTs to
+   * /api/session/commitment, whose handler calls detectAdvisorDivergence()
+   * (lib/advisor-divergence.ts) — a real createCompletion call — with no
+   * Authorization header at all, so it always fell back to Free-tier
+   * Mistral routing regardless of the user's real tier. Passed down from
+   * SessionView's authTokenSV, same pattern as every other panel.
+   */
+  authToken?: string | null
 }
 
 type Mode = 'form' | 'saved' | 'skipped'
@@ -50,7 +59,7 @@ interface Commitment {
   review_date:      string
 }
 
-export default function DecisionStateCard({ sessionId }: Props) {
+export default function DecisionStateCard({ sessionId, authToken }: Props) {
   const [mode,     setMode]     = useState<Mode>('form')
   const [leaning,  setLeaning]  = useState('')
   const [switchC,  setSwitchC]  = useState('')
@@ -75,7 +84,10 @@ export default function DecisionStateCard({ sessionId }: Props) {
     try {
       const res = await fetch('/api/session/commitment', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({
           sessionId,
           leaning:          leaning.trim()  || null,

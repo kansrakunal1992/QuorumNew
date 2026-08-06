@@ -132,6 +132,7 @@ import { headers } from 'next/headers'
 import { getCurrentTier } from './tier-context'
 import { createServiceClient } from './supabase'
 import { FREE_TIER } from './product-tier'
+import { scheduleMistralCall, estimateTokens } from './mistral-limiter'
 import type { ProductTierInfo } from './product-tier'
 import type { ProductTier, PrivateModelFamily, RouteOverride, PrivateEndpoint } from './types'
 
@@ -736,8 +737,19 @@ export async function createStream(
       return streamAnthropic(systemPrompt, messages, maxTokens, ANTHROPIC_MODEL, 'streamAnthropic')
     case 'deepseek-legacy':
       return streamOpenAICompatible(deepseek, DEEPSEEK_MODEL, systemPrompt, messages, maxTokens, 'streamDeepSeek', DEEPSEEK_THINKING)
-    case 'mistral-cloud':
-      return streamOpenAICompatible(mistral, MISTRAL_MODEL, systemPrompt, messages, maxTokens, 'streamMistral')
+    case 'mistral-cloud': {
+      // Shared-account admission control — see lib/mistral-limiter.ts and
+      // the matching comment in createCompletion's 'mistral-cloud' case
+      // above.
+      const priority = result.tierInfo?.tier === 'elite' ? 'elite' : 'free'
+      const estimatedTokens =
+        messages.reduce((sum, m) => sum + estimateTokens(m.content), 0) +
+        estimateTokens(systemPrompt) + maxTokens
+      return scheduleMistralCall(
+        () => streamOpenAICompatible(mistral, MISTRAL_MODEL, systemPrompt, messages, maxTokens, 'streamMistral'),
+        { priority, estimatedTokens, label: 'streamMistral' },
+      )
+    }
     case 'anthropic-elite':
       return streamAnthropic(systemPrompt, messages, maxTokens, ELITE_PREMIUM_MODEL, 'streamAnthropic/elite')
     case 'qwen-selfhosted':
@@ -871,8 +883,18 @@ export async function createCompletion(
   switch (target.kind) {
     case 'deepseek-legacy':
       return completeOpenAICompatible(deepseek, DEEPSEEK_MODEL, prompt, maxTokens, 'createCompletion/deepseek', systemPrompt, temperature, DEEPSEEK_THINKING)
-    case 'mistral-cloud':
-      return completeOpenAICompatible(mistral, MISTRAL_MODEL, prompt, maxTokens, 'createCompletion/mistral', systemPrompt, temperature)
+    case 'mistral-cloud': {
+      // Shared-account admission control (lib/mistral-limiter.ts) — see that
+      // file's doc comment for why this is needed and why it's scoped to
+      // exactly this branch (mistral-selfhosted/deepseek/anthropic are all
+      // separate accounts/providers and must not share this queue).
+      const priority = result.tierInfo?.tier === 'elite' ? 'elite' : 'free'
+      const estimatedTokens = estimateTokens(prompt) + estimateTokens(systemPrompt) + maxTokens
+      return scheduleMistralCall(
+        () => completeOpenAICompatible(mistral, MISTRAL_MODEL, prompt, maxTokens, 'createCompletion/mistral', systemPrompt, temperature),
+        { priority, estimatedTokens, label: 'createCompletion/mistral' },
+      )
+    }
     case 'qwen-selfhosted':
       return completeOpenAICompatible(
         getPrivateClient(target.endpoint),

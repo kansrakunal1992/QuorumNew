@@ -47,6 +47,7 @@ import { createCompletion }      from '@/lib/ai-client'
 import { fetchExaminerBiasHint } from '@/lib/bias-scorer'  // Sprint R_JC
 import { encrypt, decrypt }      from '@/lib/encryption'
 import { checkR7Resolvable }     from '@/lib/examiner-resolvability-check'  // Audit fix #3
+import { forwardTierHeaders }    from '@/lib/tier-forward'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Template banks — deterministic per session, varied across sessions
@@ -745,9 +746,14 @@ async function fireBiasScore(sessionId: string, req: Request): Promise<void> {
   const port = process.env.PORT ?? '8080'
   const base = process.env.INTERNAL_API_URL ?? `http://localhost:${port}`
   const internalSecret = process.env.INTERNAL_API_SECRET ?? ''
+  // Bug fix (2026-08-06): this internal hop carries x-internal-secret, not
+  // this request's Authorization Bearer token — forward the tier headers
+  // middleware already resolved for THIS request, or bias-scorer.ts's
+  // createCompletion call silently falls back to Free-tier Mistral routing
+  // regardless of the real caller's tier. See lib/tier-forward.ts.
   const res = await fetch(`${base}/api/bias-score`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
+    headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret, ...forwardTierHeaders(req.headers) },
     body:    JSON.stringify({ sessionId }),
   })
   if (!res.ok) {
@@ -764,12 +770,16 @@ async function fireBiasScore(sessionId: string, req: Request): Promise<void> {
  * Upserts one row per session_id — idempotent, safe to call every submit.
  * No-ops silently if session has no user_id (anonymous session).
  */
-async function fireIndependenceScore(sessionId: string, _req: Request): Promise<void> {
+async function fireIndependenceScore(sessionId: string, req: Request): Promise<void> {
   const port = process.env.PORT ?? '8080'
   const base = process.env.INTERNAL_API_URL ?? `http://localhost:${port}`
+  // lib/independence-score.ts is deterministic today (no AI call), so this
+  // doesn't currently hit the tier-fallback bug the other two fire* helpers
+  // here do — forwarding anyway, cheaply, so it stays correct if that ever
+  // changes. See lib/tier-forward.ts.
   const res = await fetch(`${base}/api/mirror/independence`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...forwardTierHeaders(req.headers) },
     body:    JSON.stringify({ sessionId }),
   })
   if (!res.ok) {
@@ -788,12 +798,14 @@ async function fireIndependenceScore(sessionId: string, _req: Request): Promise<
  * contradictions do not change meaningfully session-to-session.
  * No-ops silently if session has no user_id (anonymous session).
  */
-async function fireContradictions(sessionId: string, _req: Request): Promise<void> {
+async function fireContradictions(sessionId: string, req: Request): Promise<void> {
   const port = process.env.PORT ?? '8080'
   const base = process.env.INTERNAL_API_URL ?? `http://localhost:${port}`
+  // Bug fix (2026-08-06): lib/contradiction-detector.ts calls createCompletion
+  // — same tier-forwarding gap as fireBiasScore above. See lib/tier-forward.ts.
   const res = await fetch(`${base}/api/mirror/contradictions`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...forwardTierHeaders(req.headers) },
     body:    JSON.stringify({ sessionId }),
   })
   if (!res.ok) {

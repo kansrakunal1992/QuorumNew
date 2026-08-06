@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { tagDecision } from '@/lib/ontology-tagger'
 import { evaluateRules } from '@/lib/rule-engine'
+import { forwardTierHeaders } from '@/lib/tier-forward'
 import type { OntologyTag } from '@/lib/ontology-tagger'
 
 // ── Validation ─────────────────────────────────────────────────────────────────
@@ -189,7 +190,14 @@ export async function POST(req: Request) {
     // check at the top of that route makes a duplicate call a cheap no-op),
     // and its retry budget is separately widened as a fallback if this one
     // fails for any reason (e.g. INTERNAL cold start, transient DB error).
-    fireStructuralMatch(sessionId)
+    // Bug fix (2026-08-06): re-forward the tier headers THIS request
+    // received (which, after the fix to fireOntologyTagger in
+    // app/api/session/route.ts, now carry the original caller's real tier)
+    // onto the next hop — this request itself carries x-internal-secret,
+    // not an Authorization Bearer token, so without this the chain drops
+    // the tier here even after the previous hop was fixed. See
+    // lib/tier-forward.ts's doc comment.
+    fireStructuralMatch(sessionId, forwardTierHeaders(req.headers))
 
     return NextResponse.json({
       ok:          true,
@@ -220,11 +228,11 @@ export async function POST(req: Request) {
 // app/api/session/route.ts — errors are logged only, never surfaced to the
 // caller, since this route's own response must not be delayed or failed by
 // a downstream step that already has its own client-side fallback.
-function fireStructuralMatch(sessionId: string) {
+function fireStructuralMatch(sessionId: string, tierHeaders: Record<string, string>) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   fetch(`${baseUrl}/api/structural-match`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...tierHeaders },
     body:    JSON.stringify({ sessionId }),
   }).catch(err => {
     console.error('[Ontology] fireStructuralMatch failed to dispatch:', err)

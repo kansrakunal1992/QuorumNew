@@ -598,10 +598,23 @@ export default function SessionView({ session: initialSession, initialMessages =
     const MAX_ATTEMPTS = 6
     const RETRY_MS     = 6000
 
+    // Bug fix (2026-08-06): this call had no Authorization header at all —
+    // /api/structural-match is a tiered-routing-eligible route (see
+    // middleware.ts's matcher), and structural-retrieval.ts's scoring calls
+    // go through lib/ai-client.ts's createCompletion, so an Elite user
+    // hitting this fallback path (the primary path is the server-to-server
+    // call chained from app/api/ontology/route.ts's fireStructuralMatch,
+    // which is now fixed separately — see lib/tier-forward.ts) still got
+    // silently downgraded to Free-tier Mistral routing. Fetched locally
+    // (not from authTokenSV state) to avoid a mount-order race — this
+    // effect fires immediately, same as fetchStyleCue above, before
+    // authTokenSV's own effect may have resolved.
+    let structuralMatchAuthHeader: Record<string, string> = {}
+
     const fetchStructuralContext = () => {
       fetch('/api/structural-match', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...structuralMatchAuthHeader },
         body:    JSON.stringify({ sessionId: initialSession.id }),
       })
         .then(r => r.json())
@@ -643,7 +656,14 @@ export default function SessionView({ session: initialSession, initialMessages =
         .catch(err => console.error('[SessionView] Structural match fetch failed:', err))
     }
 
-    fetchStructuralContext()
+    createClient().auth.getSession()
+      .then(({ data: { session: authSession } }) => {
+        if (authSession?.access_token) {
+          structuralMatchAuthHeader = { Authorization: `Bearer ${authSession.access_token}` }
+        }
+      })
+      .catch(() => {})
+      .finally(() => fetchStructuralContext())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSession.id])
 
@@ -1793,7 +1813,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Fires post-synthesis, same beat as ValidationCard above it.         */}
               {synthesisDone && (
                 <div className="sv-fade sv-fade-2">
-                  <EarlyEchoCard sessionId={session.id} />
+                  <EarlyEchoCard sessionId={session.id} authToken={authTokenSV} />
                 </div>
               )}
 
@@ -1839,6 +1859,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                     visible={true}
                     onComplete={handleExaminerComplete}
                     forceDismissed={examinerDismissed}
+                    authToken={authTokenSV}
                   />
                 </div>
               )}
@@ -1955,7 +1976,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* their stance after absorbing the full Council, not just the synthesis.      */}
               {synthesisDone && (
                 <div className="sv-fade sv-fade-3" data-tour-id="council-capture" style={{ marginTop: 8 }}>
-                  <DecisionStateCard sessionId={session.id} />
+                  <DecisionStateCard sessionId={session.id} authToken={authTokenSV} />
                 </div>
               )}
             </TTSProvider>

@@ -2,6 +2,7 @@ import { createServiceClient, createClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 import { encrypt, decrypt } from '@/lib/encryption'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
+import { forwardTierHeaders } from '@/lib/tier-forward'
 
 export async function POST(req: Request) {
   // S5-01: rate limit session creation — 20 per 15 min per IP
@@ -103,7 +104,15 @@ export async function POST(req: Request) {
 
     const sessionId = data.id
 
-    fireOntologyTagger(sessionId, decision_text.trim(), context_text?.trim() ?? null)
+    // Bug fix (2026-08-06): this fire-and-forget internal call is a BRAND
+    // NEW HTTP request from middleware.ts's point of view — it carries
+    // x-internal-secret, not this request's Authorization Bearer token, so
+    // without explicitly forwarding the tier headers middleware already
+    // resolved for THIS request, the downstream /api/ontology call (and
+    // everything it triggers — fireStructuralMatch → /api/structural-match)
+    // silently falls back to Free-tier Mistral routing regardless of the
+    // real caller's tier. See lib/tier-forward.ts's doc comment.
+    fireOntologyTagger(sessionId, decision_text.trim(), context_text?.trim() ?? null, forwardTierHeaders(req.headers))
 
     return NextResponse.json({ id: sessionId })
   } catch (err) {
@@ -115,13 +124,14 @@ export async function POST(req: Request) {
 function fireOntologyTagger(
   sessionId:    string,
   decisionText: string,
-  contextText:  string | null
+  contextText:  string | null,
+  tierHeaders:  Record<string, string>,
 ) {
   const baseUrl        = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const internalSecret = process.env.INTERNAL_API_SECRET ?? ''
   fetch(`${baseUrl}/api/ontology`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
+    headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret, ...tierHeaders },
     body:    JSON.stringify({ sessionId, decisionText, contextText }),
   }).catch(err => {
     console.error('[Session] Ontology tagger fire failed:', err)

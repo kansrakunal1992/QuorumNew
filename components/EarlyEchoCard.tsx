@@ -32,6 +32,21 @@ import { getStoredSessionIds } from '@/lib/storage'
 interface Props {
   /** The ID of the session the user is currently viewing */
   sessionId: string
+  /**
+   * Bug fix (2026-08-06): the echo-hint fetch below had no Authorization
+   * header — its route (app/api/record/[id]/echo-hint/route.ts) calls
+   * scoreStructuralSimilarity's annotation step via createCompletion
+   * (lib/structural-retrieval.ts), which under tiered routing still
+   * resolves via the caller's real tier (an explicit `provider: 'anthropic'`
+   * request maps to the 'premium' role, not a hardcoded bypass — see
+   * lib/ai-client.ts's resolveProvider), so a missing tier fell back to
+   * Free-tier Mistral routing regardless of the real caller's tier.
+   * Optional — the app/record/[id]/page.tsx render site is a semi-public
+   * shareable view that intentionally doesn't resolve a personal token
+   * (see its sibling authToken={null} usage nearby); only SessionView's
+   * in-session render site has one to pass.
+   */
+  authToken?: string | null
 }
 
 // Bug fix (cross-device count mismatch): must match MemoryEngineStatus's
@@ -65,7 +80,7 @@ function getSignal(count: number): { headline: string; sub: string } | null {
   }
 }
 
-export default function EarlyEchoCard({ sessionId }: Props) {
+export default function EarlyEchoCard({ sessionId, authToken }: Props) {
   const [signal,  setSignal]  = useState<{ headline: string; sub: string } | null>(null)
   const [visible, setVisible] = useState(false)
 
@@ -93,7 +108,9 @@ export default function EarlyEchoCard({ sessionId }: Props) {
       // (a returning user on a new device, local count 1-2, real count 200+)
       // and hide the stale milestone instead of showing it.
       if (count >= 2) {
-        fetch(`/api/record/${sessionId}/echo-hint`)
+        fetch(`/api/record/${sessionId}/echo-hint`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        })
           .then(res => res.ok ? res.json() : null)
           .then((data: { available?: boolean; dimensionLabel?: string; matchDate?: string | null; trueSessionCount?: number | null } | null) => {
             // Bug fix: server-verified count wins over local-device count

@@ -56,6 +56,14 @@ export const config = {
     '/api/structural-match/:path*',
     '/api/ontology/:path*',
     '/api/bias-score/:path*',
+    // Bug fix (2026-08-06): this whole route family was missing entirely.
+    // lib/context-extractor.ts (used by both routes below) calls
+    // createCompletion directly, and Context Ingestion is an Elite-only
+    // feature — but since neither route was ever matched here, this
+    // middleware never ran for them at all, regardless of what the client
+    // sent, so tier resolution never happened and every call silently fell
+    // back to Free-tier Mistral routing for every user, Elite or not.
+    '/api/context-ingestion/:path*',
   ],
 }
 

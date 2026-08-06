@@ -325,14 +325,24 @@ export default function SynthesisCard({
 
   // O3: once synthesis completes, auto-fetch the Decision-Maker Observation for
   // Mirror subscribers. Fire-and-forget; failure just means the line doesn't show.
+  //
+  // Bug fix (2026-08-06): this call had no headers at all — no Authorization,
+  // meaning /api/session/[id]/observation/route.ts's createCompletion call
+  // (see lib/ai-client.ts) always fell back to Free-tier Mistral routing,
+  // even for the Elite/Mirror subscribers this feature is gated to (see the
+  // mirrorActive check above). Same class of bug as the persona/synthesis
+  // fetches above — see authToken prop doc comment.
   useEffect(() => {
     if (state !== 'done' || !synthesis || !mirrorActive || observationFetched) return
     setObservationFetched(true)
-    fetch(`/api/session/${sessionId}/observation`, { method: 'POST' })
+    fetch(`/api/session/${sessionId}/observation`, {
+      method:  'POST',
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    })
       .then(r => r.json())
       .then(data => setDecisionObservation(data.observation ?? null))
       .catch(() => setDecisionObservation(null))
-  }, [state, synthesis, mirrorActive, observationFetched, sessionId])
+  }, [state, synthesis, mirrorActive, observationFetched, sessionId, authToken])
 
   // S3-07: lock page scroll while Observatory mode is open, and allow Escape to exit
   useEffect(() => {

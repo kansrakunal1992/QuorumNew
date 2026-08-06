@@ -42,6 +42,17 @@ interface Props {
     redirectQuestion?: string   // Sprint 16b: R1 question text — shown in SynthesisCard REDIRECT banner
   ) => void
   forceDismissed?: boolean  // set true by SessionView when user clicks "This doesn't apply — continue to Council"
+  /**
+   * Bug fix (2026-08-06): every fetch in this component previously carried
+   * no Authorization header at all — this Props interface didn't even have
+   * an authToken field. app/api/examiner/route.ts calls createCompletion
+   * directly (bias-personalisation, gap-question generation — the 80-max-
+   * token completions), and its POST handler also fires the internal
+   * bias-score/independence/contradictions chain (see lib/tier-forward.ts)
+   * — none of it could ever resolve a real tier without this. Passed down
+   * from SessionView's authTokenSV, same pattern as every other panel.
+   */
+  authToken?: string | null
 }
 
 type FetchStatus  = 'idle' | 'loading' | 'ready' | 'no_gaps' | 'retry' | 'error'
@@ -59,7 +70,7 @@ type SubmitStatus = 'idle' | 'submitting' | 'done'
 const MAX_RETRIES    = 10
 const RETRY_DELAY_MS = 3000
 
-export default function ExaminerPanel({ sessionId, visible, onComplete, forceDismissed }: Props) {
+export default function ExaminerPanel({ sessionId, visible, onComplete, forceDismissed, authToken }: Props) {
   const [questions,         setQuestions]         = useState<ExaminerQuestion[]>([])
   const [answers,           setAnswers]            = useState<Record<number, string>>({})
   const [fetchStatus,       setFetchStatus]        = useState<FetchStatus>('idle')
@@ -113,7 +124,9 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
   const fetchQuestions = async () => {
     setFetchStatus('loading')
     try {
-      const res  = await fetch(`/api/examiner?sessionId=${sessionId}`)
+      const res  = await fetch(`/api/examiner?sessionId=${sessionId}`, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      })
       const data = await res.json()
 
       const mode: RuleMode = data.rule_mode ?? null
@@ -185,7 +198,10 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
     try {
       await fetch('/api/examiner', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body:    JSON.stringify({ sessionId, skipped: true }),
       })
     } catch { /* non-blocking */ }
@@ -198,7 +214,10 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
     try {
       await fetch('/api/examiner', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body:    JSON.stringify({ sessionId, skipped: true }),
       })
     } catch { /* non-blocking */ }
@@ -218,7 +237,10 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
     try {
       await fetch('/api/examiner', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body:    JSON.stringify({ sessionId, responses }),
       })
     } catch { /* non-blocking */ }
