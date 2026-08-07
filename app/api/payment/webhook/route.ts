@@ -7,10 +7,20 @@
 //
 // Handled events:
 //   subscription.activated   → upsert mirror_access (initial activation)
-//   payment.captured         → extend expires_at on renewal
+//   payment.captured         → extend expires_at on renewal (subscriptions);
+//                               for one-time Decision Session orders, a
+//                               fallback confirmation only — see below
 //   subscription.cancelled   → no-op (row remains, expires_at gates naturally)
 //   subscription.expired     → no-op (same)
 //   all others               → 200 / ignored (prevents Razorpay retry storms)
+//
+// Sprint DS-1: payment.captured events with no subscription_id but
+// notes.product === 'decision_session' are routed to
+// decision_session_payments instead of mirror_access — see that branch
+// below and supabase/add_decision_session_payments.sql. This is a fallback
+// only; the primary confirmation path is the synchronous
+// /api/decision-session/verify-order call the browser makes right after
+// checkout.
 //
 // expires_at buffer: +3 days over plan period to absorb late webhook delivery.
 //   monthly → +33 days
@@ -167,8 +177,56 @@ export async function POST(req: NextRequest) {
   // ─────────────────────────────────────────────────────────────────────────
   if (eventName === 'payment.captured') {
     const payment = event.payload?.payment?.entity
+
     if (!payment?.subscription_id) {
-      // Not a subscription payment (e.g. one-time order) — ignore
+      // Not a subscription payment. Decision Session (Sprint DS-1) added
+      // one-time ORDER payments — /api/decision-session/verify-order is the
+      // primary, synchronous path that marks these paid and hands the
+      // browser its booking_token. This is a fallback safety net only, for
+      // the case where checkout succeeded but the browser never completed
+      // that call (tab closed, network drop): it independently confirms the
+      // payment against decision_session_payments so the record is correct
+      // even if no token ever reached that visitor. notes.product guards
+      // against matching unrelated future one-time-order use cases.
+      const orderId = payment?.order_id as string | undefined
+      const isDecisionSession = payment?.notes?.product === 'decision_session'
+
+      if (!orderId || !isDecisionSession) {
+        return NextResponse.json({ ok: true })
+      }
+
+      const { data: existing } = await supabase
+        .from('decision_session_payments')
+        .select('status')
+        .eq('razorpay_order_id', orderId)
+        .maybeSingle()
+
+      if (!existing) {
+        console.warn(`[webhook] payment.captured (order): no decision_session_payments row for ${orderId}`)
+        return NextResponse.json({ ok: true })
+      }
+
+      if (existing.status !== 'paid') {
+        const { error } = await supabase
+          .from('decision_session_payments')
+          .update({
+            status:              'paid',
+            razorpay_payment_id: payment.id,
+            paid_at:             new Date().toISOString(),
+            // No booking_token minted here on purpose — verify-order is the
+            // only path that hands a token to a live browser session; this
+            // webhook branch exists for DB-truth reconciliation, not to
+            // retroactively grant booking access to nobody in particular.
+          })
+          .eq('razorpay_order_id', orderId)
+
+        if (error) {
+          console.error('[webhook] payment.captured (order) update failed:', error)
+          return NextResponse.json({ error: 'DB write failed' }, { status: 500 })
+        }
+        console.log(`[webhook] Decision Session confirmed paid (via webhook fallback) | order: ${orderId}`)
+      }
+
       return NextResponse.json({ ok: true })
     }
 
