@@ -32,6 +32,10 @@ const FAQS: FAQItem[] = [
     a: 'Your raw inputs are encrypted at the field level. You can export or delete your full data on request at any time. Nothing about your decisions is used in a case study or shared externally without your explicit, opt-in consent.',
   },
   {
+    q: "What shouldn't I put into Quorum?",
+    a: "Quorum is built to reason about decisions, not to store sensitive data. Please don't paste passwords, PINs, API keys or login credentials, full card or bank account numbers, or government ID numbers (like a passport, SSN, or Aadhaar number). Avoid including other people's personal details without their consent. If a decision genuinely involves this kind of detail, describe it in general terms — \"a five-figure investment,\" not the account number — Quorum's reasoning works from the shape of the decision, not the sensitive data itself.",
+  },
+  {
     q: 'Who is Quorum actually built for?',
     a: "Founders, CXOs, and family office principals — people making decisions where being wrong is expensive. It isn't built for everyday, low-stakes choices.",
   },
@@ -49,7 +53,11 @@ const FAQS: FAQItem[] = [
   },
   {
     q: 'What AI models power Quorum?',
-    a: "Quorum uses different models for different plans, matched to what each plan is for. Free runs on Mistral Small end-to-end — strong reasoning at a cost that keeps the free tier sustainable for everyone. Elite pairs Mistral Small for fast reasoning with Claude Sonnet for Quorum's deepest analysis — Council Synthesis, Mirror, and long-term pattern-reading. Private runs entirely inside your own infrastructure, on either self-hosted Qwen or self-hosted Mistral, whichever you choose.",
+    a: "Quorum uses different models for different plans, matched to what each plan is for. Free runs on DeepSeek V4 Pro end-to-end — strong reasoning at a cost that keeps the free tier sustainable for everyone. Elite pairs DeepSeek V4 Pro for fast reasoning with Claude Sonnet for Quorum's deepest analysis — Council Synthesis, Mirror, and long-term pattern-reading. Private runs entirely inside your own infrastructure, on either self-hosted Qwen or self-hosted Mistral, whichever you choose.",
+  },
+  {
+    q: 'Is my data safe with DeepSeek?',
+    a: "DeepSeek handles Free-tier reasoning and Elite's fast-role passes. It's a China-based provider, and its own privacy policy states that the data it processes is stored on servers in China — we want to be upfront about that rather than glossing over it. Only what's needed for that specific call is sent, over an encrypted connection, but we can't override DeepSeek's own data-residency terms. If keeping your data off China-based infrastructure matters to you, Private tier runs entirely on infrastructure you control, using self-hosted Qwen or Mistral — DeepSeek is never part of that path.",
   },
   {
     q: "Why doesn't every plan use the same model?",
