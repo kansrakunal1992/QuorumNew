@@ -92,16 +92,24 @@ import 'server-only'
  * above).
  *
  * Tier → role → model table:
- *   free                    fast → Mistral Small (cloud)
- *                           premium → Mistral Small (cloud) — same model,
- *                             Free is Mistral end-to-end per the Locked v1
- *                             pricing doc, so role is a no-op here.
- *   elite                   fast → Mistral Small (cloud)
+ *   free                    fast → resolveFastCloudTarget() — see
+ *                           premium → FAST_MODEL_PROVIDER below; same
+ *                             resolution for both roles (Free is that
+ *                             provider end-to-end per the Locked v1 pricing
+ *                             doc, so role is a no-op here).
+ *   elite                   fast → resolveFastCloudTarget() (same as Free)
  *                           premium → Claude Sonnet 4.6 (ELITE_PREMIUM_MODEL)
  *   private / Option A      fast → self-hosted Qwen (small)
  *   (qwen)                  premium → self-hosted Qwen (large)
  *   private / Option B      fast → self-hosted Mistral Small
  *   (mistral)                premium → self-hosted Mistral Large
+ *
+ * FAST_MODEL_PROVIDER env var (mistral | openai | gemini, default mistral):
+ *   Controls what resolveFastCloudTarget() resolves to for BOTH Free
+ *   (end-to-end) and Elite's fast role, moving them together. Added Aug 2026
+ *   to A/B Mistral Small against GPT-5 mini and Gemini 2.5 Flash as fast-role
+ *   candidates without a code change per candidate. See resolveFastCloudTarget
+ *   below and OPENAI_FAST_MODEL / GEMINI_FAST_MODEL for the model names used.
  *
  * Private tier note: the self-hosted Qwen/Mistral endpoints this depends on
  * do not exist yet (separate infra track — GPU provisioning, deploy tooling).
@@ -217,6 +225,31 @@ const MISTRAL_API_KEY    = process.env.MISTRAL_API_KEY ?? ''
 const MISTRAL_MODEL      = process.env.MISTRAL_MODEL   ?? 'mistral-small-latest'
 const ELITE_PREMIUM_MODEL = process.env.ELITE_PREMIUM_MODEL ?? 'claude-sonnet-4-6'
 
+// ── Fast-role cloud provider switch (Aug 2026) ───────────────────────────────
+// Free tier end-to-end + Elite's fast role were Mistral-only (mistral-cloud).
+// Mistral Small's quality (hallucinated stakeholders, shallow synthesis — see
+// the MISTRAL_* prompt-extension doc comment in lib/personas.ts) and Mistral
+// Large's account RPS ceiling (0.25 req/s — sub-viable against this app's
+// ~11-call-per-session volume; see lib/mistral-limiter.ts) both motivated
+// evaluating non-Mistral alternatives. Rather than commit to one, this env
+// var lets Free/Elite's fast role be pointed at any of three candidates with
+// zero code change, so the comparison can be run and switched live:
+//   FAST_MODEL_PROVIDER=mistral (default) → unchanged legacy behavior
+//   FAST_MODEL_PROVIDER=openai            → OpenAI GPT-5 mini
+//   FAST_MODEL_PROVIDER=gemini            → Google Gemini 2.5 Flash
+// Single choke point: resolveFastCloudTarget() below is the only place this
+// is read, and both the 'elite' and 'free' branches of resolveTieredTarget
+// call it — so one env var change moves both tiers together, consistently.
+// Default is 'mistral' — same reversible-opt-in posture as AI_PROVIDER.
+const FAST_MODEL_PROVIDER = (process.env.FAST_MODEL_PROVIDER ?? 'mistral').toLowerCase() as
+  'mistral' | 'openai' | 'gemini'
+
+const OPENAI_API_KEY    = process.env.OPENAI_API_KEY ?? ''
+const OPENAI_FAST_MODEL = process.env.OPENAI_FAST_MODEL ?? 'gpt-5-mini'
+
+const GEMINI_API_KEY    = process.env.GEMINI_API_KEY ?? ''
+const GEMINI_FAST_MODEL = process.env.GEMINI_FAST_MODEL ?? 'gemini-2.5-flash'
+
 // Private tier — self-hosted, buyer's Option A (Qwen) or Option B (Mistral).
 // Infra not live yet (see doc comment above); these are read lazily, only
 // when a Private-tier call is actually made, so an unconfigured deployment
@@ -229,6 +262,17 @@ const deepseek  = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY ?? '', baseU
 // See https://docs.mistral.ai/api — /v1/chat/completions accepts the same
 // request/response shape as OpenAI's SDK expects.
 const mistral = new OpenAI({ apiKey: MISTRAL_API_KEY, baseURL: 'https://api.mistral.ai/v1' })
+
+// OpenAI (GPT-5 mini) — fast-role candidate. Default OpenAI SDK baseURL
+// (api.openai.com) needs no override.
+const openaiFast = new OpenAI({ apiKey: OPENAI_API_KEY })
+
+// Gemini (2.5 Flash) — fast-role candidate, via Google's OpenAI-compatibility
+// endpoint. Same request/response shape as Mistral/DeepSeek above (confirmed:
+// standard temperature/max_tokens/stream params are handled), so it reuses
+// streamOpenAICompatible/completeOpenAICompatible with zero new parsing code.
+// See https://ai.google.dev/gemini-api/docs/openai
+const gemini = new OpenAI({ apiKey: GEMINI_API_KEY, baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/' })
 
 // Self-hosted Qwen/Mistral (Private tier) — NO global client here anymore.
 // Each Private customer has their own cloud account, own URL, own key (see
@@ -311,6 +355,21 @@ function getRetryAfterMs(err: unknown): number | null {
   return Number.isNaN(asDate) ? null : Math.max(0, asDate - Date.now())
 }
 
+// ── GPT-5-family request-shape quirks ────────────────────────────────────────
+// OpenAI's GPT-5 family (gpt-5, gpt-5-mini, gpt-5-nano, and dated snapshots)
+// rejects two params every other OpenAI-compatible provider in this file
+// (DeepSeek, Mistral, Gemini, self-hosted) accepts fine:
+//   - `max_tokens` → 400 "Unsupported parameter: 'max_tokens'... use
+//     'max_completion_tokens' instead"
+//   - `temperature` (any value but the default, 1) → 400 "Unsupported value:
+//     'temperature' does not support X with this model"
+// Detected by model-name prefix rather than by ResolvedTarget.kind, so this
+// stays correct if OPENAI_FAST_MODEL is ever pointed at a non-GPT-5 OpenAI
+// model (e.g. gpt-4.1-mini), which has neither restriction.
+function isGpt5ReasoningModel(model: string): boolean {
+  return /^gpt-5/.test(model)
+}
+
 function isTransientError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
   const e = err as Record<string, unknown>
@@ -363,6 +422,8 @@ type ResolvedTarget =
   | { kind: 'anthropic-legacy' }
   | { kind: 'deepseek-legacy' }
   | { kind: 'mistral-cloud' }
+  | { kind: 'openai-fast' }
+  | { kind: 'gemini-fast' }
   | { kind: 'anthropic-elite' }
   | { kind: 'qwen-selfhosted';    role: Role; endpoint: PrivateEndpoint }
   | { kind: 'mistral-selfhosted'; role: Role; endpoint: PrivateEndpoint }
@@ -374,10 +435,23 @@ function roleFromRequested(requested?: 'anthropic' | 'deepseek'): Role {
   return requested === 'anthropic' ? 'premium' : 'fast'
 }
 
+// Single choke point for "which cloud provider serves the fast role" — Free
+// tier end-to-end AND Elite's fast role both resolve through here, so
+// flipping FAST_MODEL_PROVIDER moves both tiers together. See that env var's
+// doc comment above.
+function resolveFastCloudTarget(): ResolvedTarget {
+  switch (FAST_MODEL_PROVIDER) {
+    case 'openai': return { kind: 'openai-fast' }
+    case 'gemini': return { kind: 'gemini-fast' }
+    case 'mistral':
+    default:        return { kind: 'mistral-cloud' }
+  }
+}
+
 function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTarget {
   switch (tierInfo.tier) {
     case 'elite':
-      return role === 'premium' ? { kind: 'anthropic-elite' } : { kind: 'mistral-cloud' }
+      return role === 'premium' ? { kind: 'anthropic-elite' } : resolveFastCloudTarget()
     case 'private': {
       // Conservative default if a Private row somehow has no family set —
       // Option B (Mistral) rather than silently picking the China-origin
@@ -403,7 +477,7 @@ function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTar
     }
     case 'free':
     default:
-      return { kind: 'mistral-cloud' }
+      return resolveFastCloudTarget()
   }
 }
 
@@ -510,7 +584,7 @@ async function resolveProvider(requested?: 'anthropic' | 'deepseek'): Promise<Re
 // Cost: identical to one resolveProvider() call — header reads + a switch
 // statement, no DB query, no network call. Safe to call once per AI call
 // site, immediately before building that call's systemPrompt.
-export type ModelFamily = 'anthropic' | 'deepseek' | 'mistral' | 'qwen'
+export type ModelFamily = 'anthropic' | 'deepseek' | 'mistral' | 'qwen' | 'openai' | 'gemini'
 
 export async function getModelFamily(requested?: 'anthropic' | 'deepseek'): Promise<ModelFamily> {
   const { target } = await resolveProvider(requested)
@@ -523,6 +597,10 @@ export async function getModelFamily(requested?: 'anthropic' | 'deepseek'): Prom
     case 'mistral-cloud':
     case 'mistral-selfhosted':
       return 'mistral'
+    case 'openai-fast':
+      return 'openai'
+    case 'gemini-fast':
+      return 'gemini'
     case 'qwen-selfhosted':
       return 'qwen'
   }
@@ -533,6 +611,8 @@ function describeTarget(t: ResolvedTarget): string {
     case 'anthropic-legacy':   return `anthropic (${ANTHROPIC_MODEL})`
     case 'deepseek-legacy':    return `deepseek (${DEEPSEEK_MODEL})`
     case 'mistral-cloud':      return `mistral-cloud (${MISTRAL_MODEL})`
+    case 'openai-fast':        return `openai-fast (${OPENAI_FAST_MODEL})`
+    case 'gemini-fast':        return `gemini-fast (${GEMINI_FAST_MODEL})`
     case 'anthropic-elite':    return `anthropic-elite (${ELITE_PREMIUM_MODEL})`
     case 'qwen-selfhosted':    return `qwen-selfhosted/${t.role} (${t.endpoint.baseUrl}, ${t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel})`
     case 'mistral-selfhosted': return `mistral-selfhosted/${t.role} (${t.endpoint.baseUrl}, ${t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel})`
@@ -546,6 +626,8 @@ function modelForTarget(t: ResolvedTarget): string {
     case 'anthropic-legacy':   return ANTHROPIC_MODEL
     case 'deepseek-legacy':    return DEEPSEEK_MODEL
     case 'mistral-cloud':      return MISTRAL_MODEL
+    case 'openai-fast':        return OPENAI_FAST_MODEL
+    case 'gemini-fast':        return GEMINI_FAST_MODEL
     case 'anthropic-elite':    return ELITE_PREMIUM_MODEL
     case 'qwen-selfhosted':    return t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel
     case 'mistral-selfhosted': return t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel
@@ -639,10 +721,13 @@ async function streamOpenAICompatible(
   label:        string,
   thinking?:    'enabled' | 'disabled',
 ): Promise<StreamResult> {
+  // See isGpt5ReasoningModel doc comment — GPT-5-family models need
+  // max_completion_tokens instead of max_tokens.
+  const gpt5 = isGpt5ReasoningModel(model)
   const stream = await withRetry(
     () => client.chat.completions.create({
       model,
-      max_tokens: maxTokens,
+      ...(gpt5 ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
       stream:     true,
       messages:   [{ role: 'system', content: systemPrompt }, ...messages],
       ...(thinking ? { thinking: { type: thinking } } : {}),
@@ -685,12 +770,18 @@ async function completeOpenAICompatible(
   if (systemPrompt) msgs.push({ role: 'system', content: systemPrompt })
   msgs.push({ role: 'user', content: prompt })
 
+  // See isGpt5ReasoningModel doc comment — GPT-5-family models need
+  // max_completion_tokens instead of max_tokens, and reject any non-default
+  // temperature outright (structured/low-temperature callers — e.g. the
+  // ontology tagger, bias scorer — silently lose temperature control on this
+  // target; there is no equivalent knob to substitute it with).
+  const gpt5 = isGpt5ReasoningModel(model)
   const res = await withRetry(
     () => client.chat.completions.create({
       model,
-      max_tokens: maxTokens,
+      ...(gpt5 ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
       stream:     false,
-      ...(temperature !== undefined && thinking !== 'enabled' ? { temperature } : {}),
+      ...(temperature !== undefined && thinking !== 'enabled' && !gpt5 ? { temperature } : {}),
       messages:   msgs,
       ...(thinking ? { thinking: { type: thinking } } : {}),
     } as any),
@@ -750,6 +841,16 @@ export async function createStream(
         { priority, estimatedTokens, label: 'streamMistral' },
       )
     }
+    case 'openai-fast':
+      // No admission-control queue here (unlike mistral-cloud above) — GPT-5
+      // mini's per-account RPS/TPM ceiling is far above this app's real call
+      // volume even at Tier 1, so proactive gating isn't needed; withRetry's
+      // reactive 429 handling (shared by all OpenAI-compatible targets) is
+      // sufficient. Re-evaluate if real usage says otherwise.
+      return streamOpenAICompatible(openaiFast, OPENAI_FAST_MODEL, systemPrompt, messages, maxTokens, 'streamOpenAIFast')
+    case 'gemini-fast':
+      // Same reasoning as openai-fast above — no admission-control queue.
+      return streamOpenAICompatible(gemini, GEMINI_FAST_MODEL, systemPrompt, messages, maxTokens, 'streamGeminiFast')
     case 'anthropic-elite':
       return streamAnthropic(systemPrompt, messages, maxTokens, ELITE_PREMIUM_MODEL, 'streamAnthropic/elite')
     case 'qwen-selfhosted':
@@ -895,6 +996,10 @@ export async function createCompletion(
         { priority, estimatedTokens, label: 'createCompletion/mistral' },
       )
     }
+    case 'openai-fast':
+      return completeOpenAICompatible(openaiFast, OPENAI_FAST_MODEL, prompt, maxTokens, 'createCompletion/openai-fast', systemPrompt, temperature)
+    case 'gemini-fast':
+      return completeOpenAICompatible(gemini, GEMINI_FAST_MODEL, prompt, maxTokens, 'createCompletion/gemini-fast', systemPrompt, temperature)
     case 'qwen-selfhosted':
       return completeOpenAICompatible(
         getPrivateClient(target.endpoint),
@@ -935,5 +1040,8 @@ export function getProviderInfo() {
     deepseekThinking:     DEEPSEEK_THINKING,
     mistralModel:         MISTRAL_MODEL,
     elitePremiumModel:    ELITE_PREMIUM_MODEL,
+    fastModelProvider:    FAST_MODEL_PROVIDER,
+    openaiFastModel:      OPENAI_FAST_MODEL,
+    geminiFastModel:      GEMINI_FAST_MODEL,
   }
 }
