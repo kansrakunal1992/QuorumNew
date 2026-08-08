@@ -593,40 +593,7 @@ ${enforcementBlock}`
 // Returns '' for any persona not in PERSONAS_WITH_STRUCTURAL_CONTEXT — safe to
 // call for any personaKey without an existence check at the call site.
 
-export function getPersonaStructuralDirective(personaKey: string): string {
-  const directives: Record<string, string> = {
-    pattern_analyst:
-      'Use this structural memory to identify the recurring pattern architecture — what configuration repeats across these decisions, and what does its recurrence reveal about this person\'s decision-making?',
-    risk_architect:
-      'If this structural record contains a prior failure, near-failure, or regret under this configuration, treat it as your primary pre-mortem input — the most specific failure data available for this structural type.',
-    elder:
-      'Use this structural recurrence to ground your temporal framing — this configuration has appeared before in this person\'s arc, and that repetition is itself the signal worth naming.',
-    contrarian:
-      'If this record shows a prior decision that went wrong or produced regret under structurally similar conditions, make it your sharpest line of challenge — past failure under the same structure is your strongest adversarial evidence.',
-    stakeholder_mirror:
-      'If this record shows a recurring stakeholder dynamic, relationship pattern, or interpersonal architecture, use it to sharpen your analysis — recurring relational structures often indicate a deeper pattern the decision-maker hasn\'t yet named.',
-  }
-  return directives[personaKey] ?? ''
-}
-
-// ── Personas that receive structural context (Sprint R1 expansion) ────────────
-//
-// Original (Sprint 5): pattern_analyst, risk_architect, elder
-//
-// Sprint R1 additions:
-//   contrarian        — past failures under same structure = strongest attack surface.
-//   stakeholder_mirror — recurring relationship patterns visible in structural record.
-//
-// Intentionally excluded:
-//   competitor        — mandate is external market landscape; personal decision
-//                       history adds noise, not signal.
-//   synthesis         — receives council outputs, not structural pre-briefing.
-//   decision_brief    — summary format; structural context would distort brevity.
-
-export const PERSONAS_WITH_STRUCTURAL_CONTEXT = new Set([
-  'pattern_analyst',
-  'risk_architect',
-  'elder',
-  'contrarian',         // Sprint R1
-  'stakeholder_mirror', // Sprint R1
-])
+// Build fix (2026-08-08): moved to lib/structural-dims.ts for the same
+// reason VECTOR_DIMS/DIM_LABELS above were — client-safe, re-exported here
+// so every existing importer of this file keeps working unchanged.
+export { PERSONAS_WITH_STRUCTURAL_CONTEXT, getPersonaStructuralDirective } from './structural-dims'

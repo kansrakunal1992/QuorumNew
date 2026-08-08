@@ -66,3 +66,54 @@ export interface VectorDim {
 export type OntologyVector = Partial<Record<VectorDimName, VectorDim>> & {
   vector_version?: string
 }
+
+// ── Structural-context persona eligibility ─────────────────────────────────
+//
+// Moved here 2026-08-08 (structural-echo retroactive-enrichment fix) for the
+// same reason VECTOR_DIMS/DIM_LABELS above were moved: pure data, zero
+// server dependencies, but used to live in lib/structural-retrieval.ts
+// alongside `import { createCompletion } from '@/lib/ai-client'`, which is
+// server-only. components/PersonaPanel.tsx ('use client') now needs
+// PERSONAS_WITH_STRUCTURAL_CONTEXT to decide whether a given persona is
+// even eligible for a retroactive structural-citation enrichment call — see
+// app/api/persona/structural-enrich/route.ts. lib/structural-retrieval.ts
+// re-exports both from here, so every existing server-side importer keeps
+// working unchanged. No behavior change — values identical to before.
+//
+// Original (Sprint 5): pattern_analyst, risk_architect, elder
+// Sprint R1 additions:
+//   contrarian        — past failures under same structure = strongest attack surface.
+//   stakeholder_mirror — recurring relationship patterns visible in structural record.
+// Intentionally excluded:
+//   competitor        — mandate is external market landscape; personal decision
+//                       history adds noise, not signal.
+//   synthesis         — receives council outputs, not structural pre-briefing.
+//   decision_brief    — summary format; structural context would distort brevity.
+
+export const PERSONAS_WITH_STRUCTURAL_CONTEXT = new Set([
+  'pattern_analyst',
+  'risk_architect',
+  'elder',
+  'contrarian',         // Sprint R1
+  'stakeholder_mirror', // Sprint R1
+])
+
+// Persona-specific one-sentence directive for how to use structural context,
+// if present. Returns '' for any persona not in
+// PERSONAS_WITH_STRUCTURAL_CONTEXT — safe to call for any personaKey without
+// an existence check at the call site.
+export function getPersonaStructuralDirective(personaKey: string): string {
+  const directives: Record<string, string> = {
+    pattern_analyst:
+      'Use this structural memory to identify the recurring pattern architecture — what configuration repeats across these decisions, and what does its recurrence reveal about this person\'s decision-making?',
+    risk_architect:
+      'If this structural record contains a prior failure, near-failure, or regret under this configuration, treat it as your primary pre-mortem input — the most specific failure data available for this structural type.',
+    elder:
+      'Use this structural recurrence to ground your temporal framing — this configuration has appeared before in this person\'s arc, and that repetition is itself the signal worth naming.',
+    contrarian:
+      'If this record shows a prior decision that went wrong or produced regret under structurally similar conditions, make it your sharpest line of challenge — past failure under the same structure is your strongest adversarial evidence.',
+    stakeholder_mirror:
+      'If this record shows a recurring stakeholder dynamic, relationship pattern, or interpersonal architecture, use it to sharpen your analysis — recurring relational structures often indicate a deeper pattern the decision-maker hasn\'t yet named.',
+  }
+  return directives[personaKey] ?? ''
+}

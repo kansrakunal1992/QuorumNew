@@ -86,6 +86,17 @@ export const LIMITS: Record<string, LimitConfig> = {
     limit:      30,
     windowMs:   10 * 60_000,
   },
+
+  // Added 2026-08-08 alongside the structural-echo retroactive-enrichment
+  // fix (app/api/persona/structural-enrich/route.ts) — bounded the same way
+  // structuralMatch is: at most one call per structural-eligible persona per
+  // session (5 personas max), so this ceiling gives ample headroom for
+  // normal use while still bounding abuse of a route with no other guard.
+  structuralEnrich: {
+    identifier: 'structural-enrich',
+    limit:      30,
+    windowMs:   10 * 60_000,
+  },
   // Outcome recording
   outcome: {
     identifier: 'outcome',

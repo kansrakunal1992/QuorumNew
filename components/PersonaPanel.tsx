@@ -5,6 +5,7 @@ import RateLimitBanner, { parseRateLimit, type RateLimitInfo } from '@/component
 import { useTTSContext } from '@/context/TTSContext'
 import type { PersonaMeta, Message } from '@/lib/types'
 import type { Lean } from './TensionInterstitial'
+import { PERSONAS_WITH_STRUCTURAL_CONTEXT } from '@/lib/structural-dims'
 
 // Vet-fix (b): labels for the "shifted" badge below — same wording as
 // WhatChangedDrawer's LEAN_LABELS, so a lean shift reads the same way
@@ -660,6 +661,58 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
     runExaminerUpdate()
   }, [examinerContext, sessionId, persona.key, decisionText, contextText, registerMode, stripHeaderTags])
+
+  // ── Structural echo — retroactive enrichment (2026-08-08) ─────────────────
+  // structuralContext (prop, from SessionView) depends on a whole ontology-
+  // tagging + scoring pipeline that this persona's own initial call never
+  // waits for — see app/api/persona/structural-enrich/route.ts's doc comment
+  // for the full timing explanation. This effect is what catches the case
+  // where structuralContext arrives after this persona's initial response is
+  // already 'done' with no <structural> tag: it makes exactly one
+  // best-effort call to ask, retroactively, whether the now-available match
+  // applies. `attemptedRef` guards against firing more than once per mount —
+  // this effect legitimately re-runs when structuralContext transitions from
+  // undefined to a real string (it's a dependency), and must not re-fire
+  // again after that on every subsequent unrelated re-render.
+  const structuralEnrichAttemptedRef = useRef(false)
+  useEffect(() => {
+    if (structuralEnrichAttemptedRef.current) return
+    if (panelState !== 'done') return
+    if (!structuralContext) return
+    if (!PERSONAS_WITH_STRUCTURAL_CONTEXT.has(persona.key)) return
+    const currentRaw = rawInitialRef.current || responseRef.current
+    if (!currentRaw) return
+    if (/<structural>[\s\S]*?<\/structural>/.test(currentRaw)) return  // already has one — nothing to add
+
+    structuralEnrichAttemptedRef.current = true
+
+    fetch('/api/persona/structural-enrich', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        sessionId,
+        personaKey:        persona.key,
+        originalResponse:  currentRaw,
+        structuralContext,
+      }),
+    })
+      .then(r => r.json())
+      .then((data: { structuralTag?: string | null }) => {
+        if (!data.structuralTag) return  // no applicable match, or something failed server-side — no-op by design
+        const structuralMatch = data.structuralTag.match(/<structural>([\s\S]*?)<\/structural>/)
+        if (!structuralMatch) return
+        setStructuralCitationText(structuralMatch[1].trim())
+        // Append to the raw tag-intact record (same field every other
+        // supplemental update reads from and writes back to — pushback,
+        // examiner updates — so a reload still shows this citation).
+        rawInitialRef.current = `${currentRaw}\n\n${data.structuralTag}`
+        const fullContent = [rawInitialRef.current,
+          ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`),
+        ].join('\n\n')
+        onCompleteRef.current?.(persona.key, fullContent)
+      })
+      .catch(() => { /* additive-only feature — silent failure is correct here */ })
+  }, [structuralContext, panelState, sessionId, persona.key])
 
   const handlePushback = async () => {
     if (!pushback.trim()) return
