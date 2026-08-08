@@ -42,7 +42,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase'
-import { getProductTier } from '@/lib/product-tier'
+import { getProductTier, FREE_TIER } from '@/lib/product-tier'
 
 export const config = {
   matcher: [
@@ -72,8 +72,24 @@ export async function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers)
 
   if (!authHeader?.startsWith('Bearer ')) {
-    // No token — not this middleware's job to enforce auth. Forward as-is;
-    // ai-client.ts falls back to 'free' when no tier header is present.
+    // No token — not this middleware's job to enforce auth. Genuinely
+    // unauthenticated traffic (unlinked users, first-decision-before-signup
+    // flows) is expected and legitimate — but it must still get an explicit
+    // tier header, not just "no header at all".
+    //
+    // Bug fix (2026-08-08): this branch used to forward with no tier header
+    // set, relying on ai-client.ts's undefined-tier fallback to land on
+    // 'free' anyway. Functionally harmless (anonymous users are free tier),
+    // but it made lib/ai-client.ts's getTierFromHeaders() warning fire on
+    // every single anonymous request — identical to what a genuine paid-tier
+    // resolution failure logs (see that function's doc comment, which
+    // already assumed this header was always set explicitly and was wrong
+    // about it). Confirmed via logs 2026-08-07, session 5b63b9fb: every
+    // AIClient call for one ordinary anonymous free-tier session logged that
+    // warning, which is exactly the kind of signal that should be reserved
+    // for "middleware ran but resolution actually failed". Setting it
+    // explicitly here turns a fully-missing header back into a real anomaly.
+    requestHeaders.set('x-product-tier', FREE_TIER.tier)
     return NextResponse.next({ request: { headers: requestHeaders } })
   }
 

@@ -11,10 +11,14 @@
 // structural-retrieval, contradiction-detector, examiner-resolvability-
 // check) — all within a couple of seconds, per session, with multiple
 // sessions able to overlap. Mistral's account ceiling for mistral-small-2603
-// (from the account dashboard, 2026-08-06): 0.83 requests/second and 50,000
-// tokens/minute. Both are real per-account ceilings, not per-user — so
-// nothing about a single request can know it's "safe"; only a process-wide
-// gate can.
+// (from the account dashboard, 2026-08-08, after an admin-side plan increase —
+// previously 0.83 req/s and 50,000 tokens/min as of 2026-08-06): 1.67
+// requests/second and 100,000 tokens/minute. Both are real per-account
+// ceilings, not per-user — so nothing about a single request can know it's
+// "safe"; only a process-wide gate can. A single isolated session's full
+// call volume (~9 calls, ~65k estimated tokens) now fits under the TPM gate
+// on its own — 2+ concurrent sessions can still exceed it, which is why this
+// gate stays in place rather than being removed.
 //
 // Previously the only protection was REACTIVE: lib/ai-client.ts's withRetry
 // catches a 429 after Mistral has already rejected it and waits before
@@ -63,12 +67,14 @@ import 'server-only'
 export type MistralCallPriority = 'elite' | 'free'
 
 // ── Configuration ────────────────────────────────────────────────────────────
-// Defaults match the account dashboard figures for mistral-small-2603 given
-// 2026-08-06. Overridable via env so a plan upgrade (or Mistral changing the
-// account's ceiling) never needs a code change — restart picks up the new
-// values.
-const RPS = Number(process.env.MISTRAL_RPS ?? '0.83')
-const TPM = Number(process.env.MISTRAL_TPM ?? '50000')
+// Defaults match the account dashboard figures for mistral-small-2603 as of
+// 2026-08-08 (post admin-side increase from the 2026-08-06 figures of 0.83
+// req/s / 50,000 TPM). Overridable via env so a future plan change never
+// needs a code change — restart picks up the new values. If MISTRAL_RPS /
+// MISTRAL_TPM are already set in the deployment environment, these fallbacks
+// are inert; they only matter for local/dev runs without the env vars set.
+const RPS = Number(process.env.MISTRAL_RPS ?? '1.67')
+const TPM = Number(process.env.MISTRAL_TPM ?? '100000')
 
 // Safety margin: stay under the PUBLISHED ceiling, not exactly at it. Our
 // TPM admission is based on ESTIMATED tokens (chars/4 for input, requested
@@ -88,8 +94,9 @@ const WINDOW_MS = 60_000
 // tolerates a thrown error) to fail fast and visibly than to sit past
 // Railway's own upstream timeout and produce a bare, unexplained 502/504.
 // Generous relative to a single session's real call volume (~10–15 mistral
-// calls; at the RPS gate alone that's ~12–18s serialized worst case) so a
-// single busy session is never the thing that trips this.
+// calls; at the RPS gate alone that's ~6–10s serialized worst case as of the
+// 2026-08-08 limit increase) so a single busy session is never the thing
+// that trips this — it's concurrent-session contention this guards against.
 const MAX_QUEUE_WAIT_MS = Number(process.env.MISTRAL_MAX_QUEUE_WAIT_MS ?? '45000')
 
 // Log a queue-pressure warning at most this often — under sustained load

@@ -142,7 +142,7 @@
  *       5. synthesisDirective     — MANDATORY continuity / prior-sitting reference ← NEW
  */
 
-import { PERSONAS, MISTRAL_EVIDENCE_DISCIPLINE, MISTRAL_SYNTHESIS_PUSH, MISTRAL_PERSONA_PUSH } from '@/lib/personas'
+import { PERSONAS, MISTRAL_EVIDENCE_DISCIPLINE, MISTRAL_SYNTHESIS_PUSH, MISTRAL_PERSONA_PUSH, PUSHBACK_DETECTION_PREFIX, PUSHBACK_PROTOCOL_ADDENDUM } from '@/lib/personas'
 import { createServiceClient }                 from '@/lib/supabase'
 import { createStream, getModelFamily, createCompletion } from '@/lib/ai-client'
 import {
@@ -611,9 +611,21 @@ export async function POST(req: Request) {
     //   4. pushbackProtocol       — pushback acknowledgment enforcement (pushback only)
     //   5. personaAlertBlock      — top confirmed+distorting bias (initial personas only)
 
-    let basePrompt = councilContext
-      ? `${persona.prompt}\n\n${councilContext}`
+    // Rate-limit fix, 2026-08-08 (Step A): PUSHBACK_DETECTION_PREFIX used to
+    // be baked into persona.prompt unconditionally, sent on every call
+    // including the 6 initial persona calls fired on session mount, where
+    // there is nothing to detect yet. Gated here on the same `pushbackText`
+    // condition the dynamic pushbackProtocol variable below already uses, so
+    // the two pushback-handling instructions can never appear independently
+    // of each other. See lib/personas.ts's matching comment on
+    // PUSHBACK_PROTOCOL_ADDENDUM for the other half of this.
+    const personaPromptWithPushbackPrefix = pushbackText
+      ? `${PUSHBACK_DETECTION_PREFIX}${persona.prompt}`
       : persona.prompt
+
+    let basePrompt = councilContext
+      ? `${personaPromptWithPushbackPrefix}\n\n${councilContext}`
+      : personaPromptWithPushbackPrefix
 
     // Layer 2.5: Foundational Context — separate from councilContext so the
     // model (and anyone debugging a prompt) can tell "background the user
@@ -932,7 +944,8 @@ Apply the VERDICT STABILITY instruction above using this data.`
       console.log(`[Persona] Mistral-family prompt extension applied for ${personaKey} | session ${sessionId}`)
     }
 
-    const systemPrompt = `${basePrompt}${pushbackProtocol}${personaAlertBlock}${mistralExtension}`
+    const staticPushbackAddendum = pushbackText ? PUSHBACK_PROTOCOL_ADDENDUM : ''
+    const systemPrompt = `${basePrompt}${pushbackProtocol}${staticPushbackAddendum}${personaAlertBlock}${mistralExtension}`
 
     if (councilContext) {
       console.log(`[Persona] Council context injected for ${personaKey} (${isInitialPersona ? 'initial' : 'synthesis'}) | session ${sessionId}`)
@@ -1018,31 +1031,75 @@ Apply the VERDICT STABILITY instruction above using this data.`
               )
             }
 
-            if (missingMandatory.includes('action_plan')) {
-              try {
-                const verdictMatch = assistantContent.match(/<verdict>([\s\S]*?)<\/verdict>/)
-                const backfillPrompt = `A decision synthesis was just written for this decision:\n\nDECISION: ${decisionText}\n\nSYNTHESIS VERDICT: ${verdictMatch?.[1]?.trim() ?? '(not captured)'}\n\nFULL SYNTHESIS TEXT (for context — the action plan must be consistent with this, not repeat it):\n${assistantContent.replace(/<[^>]+>/g, '').slice(0, 2000)}\n\nThe synthesis above is missing its mandatory <action_plan> tag (most likely cut off before reaching it). Write ONLY that tag now — nothing else, no preamble, no closing remarks.\n\nRules:\n- 3 to 4 items, ordered by impact, each: a short imperative lead phrase (2–5 words) in double asterisks, an em dash, then one concrete "how/why now" clause.\n- Separate items with a pipe character.\n- Each item must be concrete and specific to this decision — never generic advice like "do more research."\n- Format exactly: <action_plan>**Lead one** — clause one.|**Lead two** — clause two.|**Lead three** — clause three.</action_plan>`
+            // Bug fix (2026-08-08): was `if (missingMandatory.includes('action_plan'))`
+            // — only ever backfilled that one tag. <tension> is a HEADER-style
+            // tag like <action_plan> is treated for delivery purposes here
+            // (appended and streamed the same way) even though
+            // lib/personas.ts's SYNTHESIS prompt asks the model to place it
+            // inline within Paragraph 2/3 — an appended <tension> recovers
+            // the content even though it loses that inline positioning,
+            // which is a reasonable trade against dropping it silently.
+            // <key_question> is already a HEADER-style tag per that same
+            // prompt (frontend pulls it out of the flowing prose to its own
+            // line), so it backfills the same way <action_plan> always did.
+            // <verdict> is included for completeness even though, being the
+            // mandated first sentence, its absence would mean something more
+            // seriously wrong than a dropped trailing tag — same handling
+            // regardless, since the loop below is generic.
+            const BACKFILL_SPECS: Record<string, { maxTokens: number; instructions: string }> = {
+              verdict: {
+                maxTokens: 150,
+                instructions: `The synthesis above is missing its mandatory <verdict> tag. Write ONLY that tag now — nothing else, no preamble.\n\nRules:\n- Exactly one sentence: the council's actual verdict on this decision.\n- Close the tag immediately after the first period.\n- Format exactly: <verdict>One sentence here.</verdict>`,
+              },
+              tension: {
+                maxTokens: 150,
+                instructions: `The synthesis above is missing its mandatory <tension> tag. Write ONLY that tag now — nothing else, no preamble.\n\nRules:\n- Exactly one sentence describing where the advisors' reasoning genuinely diverges.\n- Format exactly: <tension>One sentence here.</tension>`,
+              },
+              key_question: {
+                maxTokens: 250,
+                instructions: `The synthesis above is missing its mandatory <key_question> tag. Write ONLY that tag now — nothing else, no preamble.\n\nRules:\n- The single highest-value thing to learn next.\n- Always close with the causal "since/because" clause for why it outranks every other unknown in the decision — not optional.\n- Format exactly: <key_question>...since/because clause.</key_question>`,
+              },
+              action_plan: {
+                maxTokens: 400,
+                instructions: `The synthesis above is missing its mandatory <action_plan> tag (most likely cut off before reaching it). Write ONLY that tag now — nothing else, no preamble, no closing remarks.\n\nRules:\n- 3 to 4 items, ordered by impact, each: a short imperative lead phrase (2–5 words) in double asterisks, an em dash, then one concrete "how/why now" clause.\n- Separate items with a pipe character.\n- Each item must be concrete and specific to this decision — never generic advice like "do more research."\n- Format exactly: <action_plan>**Lead one** — clause one.|**Lead two** — clause two.|**Lead three** — clause three.</action_plan>`,
+              },
+            }
 
-                const backfill = await createCompletion(backfillPrompt, 400, {
-                  provider:    'anthropic',
-                  temperature: 0.4,
-                })
-                const backfillMatch = backfill.match(/<action_plan>[\s\S]*?<\/action_plan>/)
-                if (backfillMatch) {
-                  const tagText = `\n${backfillMatch[0]}`
-                  // Append to what's persisted (so a reload still shows it)...
-                  assistantContent += tagText
-                  // ...and to the live stream already in flight, so the
-                  // client's own final-extraction-pass regex (SynthesisCard.tsx)
-                  // picks it up from the same accumulated text with no
-                  // frontend changes needed.
-                  controller.enqueue(encoder.encode(tagText))
-                  console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} action_plan backfilled successfully`)
-                } else {
-                  console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} action_plan backfill failed to parse`)
+            if (missingMandatory.length > 0) {
+              // Captured once, before any backfill — every missing tag's
+              // supplemental call gets the same original-synthesis context,
+              // same as the single-tag version this replaces did.
+              const verdictMatch = assistantContent.match(/<verdict>([\s\S]*?)<\/verdict>/)
+              const capturedVerdict = verdictMatch?.[1]?.trim() ?? '(not captured)'
+              const strippedSynthesis = assistantContent.replace(/<[^>]+>/g, '').slice(0, 2000)
+
+              for (const tag of missingMandatory) {
+                const spec = BACKFILL_SPECS[tag]
+                if (!spec) continue
+                try {
+                  const backfillPrompt = `A decision synthesis was just written for this decision:\n\nDECISION: ${decisionText}\n\nSYNTHESIS VERDICT: ${capturedVerdict}\n\nFULL SYNTHESIS TEXT (for context — the ${tag} must be consistent with this, not repeat it):\n${strippedSynthesis}\n\n${spec.instructions}`
+
+                  const backfill = await createCompletion(backfillPrompt, spec.maxTokens, {
+                    provider:    'anthropic',
+                    temperature: 0.4,
+                  })
+                  const backfillMatch = backfill.match(new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`))
+                  if (backfillMatch) {
+                    const tagText = `\n${backfillMatch[0]}`
+                    // Append to what's persisted (so a reload still shows it)...
+                    assistantContent += tagText
+                    // ...and to the live stream already in flight, so the
+                    // client's own final-extraction-pass regex (SynthesisCard.tsx)
+                    // picks it up from the same accumulated text with no
+                    // frontend changes needed.
+                    controller.enqueue(encoder.encode(tagText))
+                    console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} ${tag} backfilled successfully`)
+                  } else {
+                    console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} ${tag} backfill failed to parse`)
+                  }
+                } catch (backfillErr) {
+                  console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} ${tag} backfill call failed:`, backfillErr)
                 }
-              } catch (backfillErr) {
-                console.warn(`[SynthesisAudit] session=${sessionId ?? 'unknown'} action_plan backfill call failed:`, backfillErr)
               }
             }
           }
