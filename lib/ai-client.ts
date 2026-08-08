@@ -104,12 +104,20 @@ import 'server-only'
  *   private / Option B      fast → self-hosted Mistral Small
  *   (mistral)                premium → self-hosted Mistral Large
  *
- * FAST_MODEL_PROVIDER env var (mistral | openai | gemini, default mistral):
+ * FAST_MODEL_PROVIDER env var (mistral | openai | gemini | deepseek, default mistral):
  *   Controls what resolveFastCloudTarget() resolves to for BOTH Free
  *   (end-to-end) and Elite's fast role, moving them together. Added Aug 2026
  *   to A/B Mistral Small against GPT-5 mini and Gemini 2.5 Flash as fast-role
  *   candidates without a code change per candidate. See resolveFastCloudTarget
  *   below and OPENAI_FAST_MODEL / GEMINI_FAST_MODEL for the model names used.
+ *   deepseek was added the same way — resolves to DeepSeek v4 Pro (DEEPSEEK_MODEL)
+ *   with thinking mode hardcoded OFF for this role (the 'deepseek-fast' target,
+ *   distinct from 'deepseek-legacy'), regardless of the DEEPSEEK_THINKING env
+ *   var: thinking mode adds latency and disables temperature sampling, both
+ *   wrong for a role whose entire purpose is speed. DEEPSEEK_THINKING still
+ *   governs the separate legacy/hybrid DeepSeek path (AI_PROVIDER=deepseek,
+ *   ROUTING_MODE=deepseek_only, and the 'deepseek' per-user route override)
+ *   unchanged.
  *
  * Private tier note: the self-hosted Qwen/Mistral endpoints this depends on
  * do not exist yet (separate infra track — GPU provisioning, deploy tooling).
@@ -237,12 +245,15 @@ const ELITE_PREMIUM_MODEL = process.env.ELITE_PREMIUM_MODEL ?? 'claude-sonnet-4-
 //   FAST_MODEL_PROVIDER=mistral (default) → unchanged legacy behavior
 //   FAST_MODEL_PROVIDER=openai            → OpenAI GPT-5 mini
 //   FAST_MODEL_PROVIDER=gemini            → Google Gemini 2.5 Flash
+//   FAST_MODEL_PROVIDER=deepseek          → DeepSeek v4 Pro, thinking OFF
+//                                            (hardcoded — see DEEPSEEK_THINKING
+//                                            note in the file doc comment)
 // Single choke point: resolveFastCloudTarget() below is the only place this
 // is read, and both the 'elite' and 'free' branches of resolveTieredTarget
 // call it — so one env var change moves both tiers together, consistently.
 // Default is 'mistral' — same reversible-opt-in posture as AI_PROVIDER.
 const FAST_MODEL_PROVIDER = (process.env.FAST_MODEL_PROVIDER ?? 'mistral').toLowerCase() as
-  'mistral' | 'openai' | 'gemini'
+  'mistral' | 'openai' | 'gemini' | 'deepseek'
 
 const OPENAI_API_KEY    = process.env.OPENAI_API_KEY ?? ''
 const OPENAI_FAST_MODEL = process.env.OPENAI_FAST_MODEL ?? 'gpt-5-mini'
@@ -424,6 +435,7 @@ type ResolvedTarget =
   | { kind: 'mistral-cloud' }
   | { kind: 'openai-fast' }
   | { kind: 'gemini-fast' }
+  | { kind: 'deepseek-fast' }
   | { kind: 'anthropic-elite' }
   | { kind: 'qwen-selfhosted';    role: Role; endpoint: PrivateEndpoint }
   | { kind: 'mistral-selfhosted'; role: Role; endpoint: PrivateEndpoint }
@@ -441,10 +453,11 @@ function roleFromRequested(requested?: 'anthropic' | 'deepseek'): Role {
 // doc comment above.
 function resolveFastCloudTarget(): ResolvedTarget {
   switch (FAST_MODEL_PROVIDER) {
-    case 'openai': return { kind: 'openai-fast' }
-    case 'gemini': return { kind: 'gemini-fast' }
+    case 'openai':   return { kind: 'openai-fast' }
+    case 'gemini':   return { kind: 'gemini-fast' }
+    case 'deepseek': return { kind: 'deepseek-fast' }
     case 'mistral':
-    default:        return { kind: 'mistral-cloud' }
+    default:          return { kind: 'mistral-cloud' }
   }
 }
 
@@ -601,6 +614,8 @@ export async function getModelFamily(requested?: 'anthropic' | 'deepseek'): Prom
       return 'openai'
     case 'gemini-fast':
       return 'gemini'
+    case 'deepseek-fast':
+      return 'deepseek'
     case 'qwen-selfhosted':
       return 'qwen'
   }
@@ -613,6 +628,7 @@ function describeTarget(t: ResolvedTarget): string {
     case 'mistral-cloud':      return `mistral-cloud (${MISTRAL_MODEL})`
     case 'openai-fast':        return `openai-fast (${OPENAI_FAST_MODEL})`
     case 'gemini-fast':        return `gemini-fast (${GEMINI_FAST_MODEL})`
+    case 'deepseek-fast':      return `deepseek-fast (${DEEPSEEK_MODEL}, thinking disabled)`
     case 'anthropic-elite':    return `anthropic-elite (${ELITE_PREMIUM_MODEL})`
     case 'qwen-selfhosted':    return `qwen-selfhosted/${t.role} (${t.endpoint.baseUrl}, ${t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel})`
     case 'mistral-selfhosted': return `mistral-selfhosted/${t.role} (${t.endpoint.baseUrl}, ${t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel})`
@@ -628,6 +644,7 @@ function modelForTarget(t: ResolvedTarget): string {
     case 'mistral-cloud':      return MISTRAL_MODEL
     case 'openai-fast':        return OPENAI_FAST_MODEL
     case 'gemini-fast':        return GEMINI_FAST_MODEL
+    case 'deepseek-fast':      return DEEPSEEK_MODEL
     case 'anthropic-elite':    return ELITE_PREMIUM_MODEL
     case 'qwen-selfhosted':    return t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel
     case 'mistral-selfhosted': return t.role === 'premium' ? t.endpoint.premiumModel : t.endpoint.fastModel
@@ -851,6 +868,11 @@ export async function createStream(
     case 'gemini-fast':
       // Same reasoning as openai-fast above — no admission-control queue.
       return streamOpenAICompatible(gemini, GEMINI_FAST_MODEL, systemPrompt, messages, maxTokens, 'streamGeminiFast')
+    case 'deepseek-fast':
+      // Same no-queue reasoning as openai-fast/gemini-fast above. Thinking
+      // hardcoded 'disabled' — see createCompletion's 'deepseek-fast' case
+      // and the file doc comment for why this doesn't read DEEPSEEK_THINKING.
+      return streamOpenAICompatible(deepseek, DEEPSEEK_MODEL, systemPrompt, messages, maxTokens, 'streamDeepSeekFast', 'disabled')
     case 'anthropic-elite':
       return streamAnthropic(systemPrompt, messages, maxTokens, ELITE_PREMIUM_MODEL, 'streamAnthropic/elite')
     case 'qwen-selfhosted':
@@ -1000,6 +1022,12 @@ export async function createCompletion(
       return completeOpenAICompatible(openaiFast, OPENAI_FAST_MODEL, prompt, maxTokens, 'createCompletion/openai-fast', systemPrompt, temperature)
     case 'gemini-fast':
       return completeOpenAICompatible(gemini, GEMINI_FAST_MODEL, prompt, maxTokens, 'createCompletion/gemini-fast', systemPrompt, temperature)
+    case 'deepseek-fast':
+      // Thinking hardcoded 'disabled' — see file doc comment. Deliberately
+      // NOT the DEEPSEEK_THINKING env var: that var governs the legacy
+      // hybrid path and must stay free to be flipped for that path's own
+      // testing without silently slowing down this fast role too.
+      return completeOpenAICompatible(deepseek, DEEPSEEK_MODEL, prompt, maxTokens, 'createCompletion/deepseek-fast', systemPrompt, temperature, 'disabled')
     case 'qwen-selfhosted':
       return completeOpenAICompatible(
         getPrivateClient(target.endpoint),
