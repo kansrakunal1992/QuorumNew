@@ -71,6 +71,12 @@ function stripSynthesisTags(raw: string): string {
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
     .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions|counterfactual|action_plan|confidence_to_act)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
+    // Third bug fix (GPT-5-mini, Aug 2026) — see PersonaPanel.tsx's extractHeaderTags
+    // for the full explanation. Two leaked-lean shapes gpt-5-mini produces that the
+    // guard above doesn't catch: a bare enum word glued to the next capitalized
+    // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
+    .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
+    .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.
     .replace(/<\/?assumption>/g, '')

@@ -127,6 +127,12 @@ function stripAdvisorTags(raw: string): string {
     .replace(/<\/?key_question>/gi, '')
     .replace(/<(?:lens|position|realcost|lean|structural|verdict_lean|conditions)>[\s\S]*$/i, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')      // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
+    // Third bug fix (GPT-5-mini, Aug 2026) — see PersonaPanel.tsx's extractHeaderTags
+    // for the full explanation. Two leaked-lean shapes gpt-5-mini produces that the
+    // guard above doesn't catch: a bare enum word glued to the next capitalized
+    // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
+    .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/i, '')
+    .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     .replace(/<\/?tension>/gi, '')
     // Sprint 2 follow-on: content-preserving, same reasoning as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.

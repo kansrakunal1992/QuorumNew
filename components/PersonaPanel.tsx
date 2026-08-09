@@ -338,6 +338,20 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
       .replace(/<(?:lens|position|realcost|lean|structural|pushback_classification)>[\s\S]*$/, '') // guard: open tag without close
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
+      // Third bug fix (GPT-5-mini, Aug 2026): unlike Claude/DeepSeek, gpt-5-mini has
+      // been observed dropping the <lean> tag markup entirely — two new shapes, neither
+      // caught by the guard above (which only matches the value wrapped in ITS OWN
+      // brackets, e.g. "<wait>"). Shape 1: the bare enum word with no tag characters at
+      // all, glued straight onto the capitalized first word of the actual analysis
+      // (e.g. "mixedThis is a concentration..."). Shape 2: a truncated open tag that
+      // lost "lean>" after the "<", so only the value + a normal close tag survive
+      // (e.g. "<mixed</lean>" instead of "<lean>mixed</lean>"). Since the header block
+      // is contractually the first thing emitted, a leaked lean value can only ever be
+      // sitting at position 0 once lens/position/realcost are already stripped above —
+      // anchoring to the start keeps this from ever matching the word "wait" or "mixed"
+      // if a persona's prose genuinely opened with it.
+      .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
+      .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
       .replace(/^\s+/, '')
   }, [])
 
@@ -365,6 +379,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       // stray-tag guards elsewhere in this file.
       .replace(/<\/?assumption>/g, '')
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
+      // Third bug fix (GPT-5-mini, Aug 2026) — same two leaked-lean shapes as
+      // extractHeaderTags above; see that function's comment for the full explanation.
+      .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
+      .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
       .replace(/^\s+/, '')
   }, [])
 

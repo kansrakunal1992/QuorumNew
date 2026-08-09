@@ -59,6 +59,12 @@ function stripHeaderTags(raw: string): string {
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
     .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
+    // Third bug fix (GPT-5-mini, Aug 2026) — see PersonaPanel.tsx's extractHeaderTags
+    // for the full explanation. Two leaked-lean shapes gpt-5-mini produces that the
+    // guard above doesn't catch: a bare enum word glued to the next capitalized
+    // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
+    .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
+    .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     // Sprint 2 follow-on: <assumption> is content-preserving, unlike the
     // tags above — it wraps substantive prose (Contrarian/Risk Architect's
     // "hidden assumption" sentences), not a machine value or a citation
@@ -194,6 +200,12 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     .replace(/<structural>[\s\S]*?<\/structural>/g, '')
     .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
     .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
+    // Third bug fix (GPT-5-mini, Aug 2026) — see PersonaPanel.tsx's extractHeaderTags
+    // for the full explanation. Two leaked-lean shapes gpt-5-mini produces that the
+    // guard above doesn't catch: a bare enum word glued to the next capitalized
+    // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
+    .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
+    .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     .replace(/<\/?assumption>/g, '')
     .trimStart()
   return { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest }

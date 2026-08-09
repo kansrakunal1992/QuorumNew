@@ -53,11 +53,11 @@ const FAQS: FAQItem[] = [
   },
   {
     q: 'What AI models power Quorum?',
-    a: "Quorum uses different models for different plans, matched to what each plan is for. Free runs on DeepSeek V4 Pro end-to-end — strong reasoning at a cost that keeps the free tier sustainable for everyone. Elite pairs DeepSeek V4 Pro for fast reasoning with Claude Sonnet for Quorum's deepest analysis — Council Synthesis, Mirror, and long-term pattern-reading. Private runs entirely inside your own infrastructure, on either self-hosted Qwen or self-hosted Mistral, whichever you choose.",
+    a: "Quorum uses different models for different plans, matched to what each plan is for. Free runs on GPT-5-mini end-to-end — strong reasoning at a cost that keeps the free tier sustainable for everyone. Elite pairs GPT-5-mini for fast reasoning with Claude Sonnet for Quorum's deepest analysis — Council Synthesis, Mirror, and long-term pattern-reading. Private runs entirely inside your own infrastructure, on either self-hosted Qwen or self-hosted Mistral, whichever you choose.",
   },
   {
-    q: 'Is my data safe with DeepSeek?',
-    a: "DeepSeek handles Free-tier reasoning and Elite's fast-role passes. It's a China-based provider, and its own privacy policy states that the data it processes is stored on servers in China — we want to be upfront about that rather than glossing over it. Only what's needed for that specific call is sent, over an encrypted connection, but we can't override DeepSeek's own data-residency terms. If keeping your data off China-based infrastructure matters to you, Private tier runs entirely on infrastructure you control, using self-hosted Qwen or Mistral — DeepSeek is never part of that path.",
+    q: 'Where is my data processed?',
+    a: "Free and Elite both run on OpenAI and Anthropic infrastructure — no China-based provider is part of either tier. Only what's needed for that specific call is sent, over an encrypted connection. If you need your data to stay entirely on infrastructure you control, Private runs on self-hosted Qwen or Mistral inside your own environment.",
   },
   {
     q: "Why doesn't every plan use the same model?",
