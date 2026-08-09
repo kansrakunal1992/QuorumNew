@@ -92,32 +92,50 @@ import 'server-only'
  * above).
  *
  * Tier → role → model table:
- *   free                    fast → resolveFastCloudTarget() — see
- *                           premium → FAST_MODEL_PROVIDER below; same
+ *   free                    fast → resolveFastCloudTarget('free') — see
+ *                           premium → FAST_MODEL_PROVIDER_FREE below; same
  *                             resolution for both roles (Free is that
  *                             provider end-to-end per the Locked v1 pricing
  *                             doc, so role is a no-op here).
- *   elite                   fast → resolveFastCloudTarget() (same as Free)
+ *   elite                   fast → resolveFastCloudTarget('elite') — its own
+ *                             env var, moves independently from Free (see
+ *                             FAST_MODEL_PROVIDER_ELITE below)
  *                           premium → Claude Sonnet 4.6 (ELITE_PREMIUM_MODEL)
  *   private / Option A      fast → self-hosted Qwen (small)
  *   (qwen)                  premium → self-hosted Qwen (large)
  *   private / Option B      fast → self-hosted Mistral Small
  *   (mistral)                premium → self-hosted Mistral Large
  *
- * FAST_MODEL_PROVIDER env var (mistral | openai | gemini | deepseek, default mistral):
- *   Controls what resolveFastCloudTarget() resolves to for BOTH Free
- *   (end-to-end) and Elite's fast role, moving them together. Added Aug 2026
- *   to A/B Mistral Small against GPT-5 mini and Gemini 2.5 Flash as fast-role
- *   candidates without a code change per candidate. See resolveFastCloudTarget
+ * FAST_MODEL_PROVIDER_FREE / FAST_MODEL_PROVIDER_ELITE env vars
+ * (mistral | openai | gemini | deepseek | anthropic, default mistral):
+ *   Split apart Aug 2026 from a single shared FAST_MODEL_PROVIDER var — Free
+ *   (end-to-end) and Elite's fast role now move independently, since Elite is
+ *   being trial-run on Claude end-to-end (see 'anthropic' below) without
+ *   forcing that same cost onto every Free user. See resolveFastCloudTarget
  *   below and OPENAI_FAST_MODEL / GEMINI_FAST_MODEL for the model names used.
- *   deepseek was added the same way — resolves to DeepSeek v4 Pro (DEEPSEEK_MODEL)
- *   with thinking mode hardcoded OFF for this role (the 'deepseek-fast' target,
- *   distinct from 'deepseek-legacy'), regardless of the DEEPSEEK_THINKING env
- *   var: thinking mode adds latency and disables temperature sampling, both
- *   wrong for a role whose entire purpose is speed. DEEPSEEK_THINKING still
- *   governs the separate legacy/hybrid DeepSeek path (AI_PROVIDER=deepseek,
- *   ROUTING_MODE=deepseek_only, and the 'deepseek' per-user route override)
- *   unchanged.
+ *   Either var falls back to the old FAST_MODEL_PROVIDER var if unset, so an
+ *   existing deployment that only sets that one still works unchanged; if
+ *   neither is set, the ultimate default is 'mistral'.
+ *
+ *   deepseek  → DeepSeek v4 Pro (DEEPSEEK_MODEL) with thinking mode hardcoded
+ *     OFF for this role (the 'deepseek-fast' target, distinct from
+ *     'deepseek-legacy'), regardless of the DEEPSEEK_THINKING env var:
+ *     thinking mode adds latency and disables temperature sampling, both
+ *     wrong for a role whose entire purpose is speed. DEEPSEEK_THINKING still
+ *     governs the separate legacy/hybrid DeepSeek path (AI_PROVIDER=deepseek,
+ *     ROUTING_MODE=deepseek_only, and the 'deepseek' per-user route override)
+ *     unchanged.
+ *   anthropic → Claude Sonnet 4.6 (ELITE_PREMIUM_MODEL) — the SAME model and
+ *     the SAME 'anthropic-elite' target Elite's premium role already uses, on
+ *     purpose (the ask this was built for was "truly identical calls end to
+ *     end" for an Elite Claude trial, not a separate cheaper fast-tier Claude
+ *     model). No new model constant, no extended-thinking config needed —
+ *     streamAnthropic never requests extended thinking for either role today.
+ *     FAST_MODEL_PROVIDER_FREE=anthropic is supported for internal test
+ *     flexibility ONLY — Claude end-to-end is far more expensive than
+ *     DeepSeek and directly contradicts the "keeps the free tier sustainable"
+ *     framing in the product FAQ. This should never be set in a production
+ *     Free deployment; see the startup warning below that fires if it is.
  *
  * Private tier note: the self-hosted Qwen/Mistral endpoints this depends on
  * do not exist yet (separate infra track — GPU provisioning, deploy tooling).
@@ -131,7 +149,11 @@ import 'server-only'
  * /api/admin/grant-mirror-access — e.g. the founder's own account forced to
  * DeepSeek for testing while every other account routes normally by tier, at
  * the same time. Checked before the tier default in resolveProvider() below.
- * NULL (every row's default) means no override.
+ * NULL (every row's default) means no override. This is also the lower-risk
+ * way to trial Elite-on-Claude on a handful of beta accounts before flipping
+ * FAST_MODEL_PROVIDER_ELITE globally — set modelRouteFast='anthropic_elite'
+ * on just those accounts; no code change needed, it already resolves to the
+ * same { kind: 'anthropic-elite' } target.
  *
  * Persisted audit log (TD-LD-10): every tiered-mode call writes a row to
  * ai_request_log — user, tier, role, resolved target/model, whether an
@@ -240,20 +262,50 @@ const ELITE_PREMIUM_MODEL = process.env.ELITE_PREMIUM_MODEL ?? 'claude-sonnet-4-
 // Large's account RPS ceiling (0.25 req/s — sub-viable against this app's
 // ~11-call-per-session volume; see lib/mistral-limiter.ts) both motivated
 // evaluating non-Mistral alternatives. Rather than commit to one, this env
-// var lets Free/Elite's fast role be pointed at any of three candidates with
-// zero code change, so the comparison can be run and switched live:
-//   FAST_MODEL_PROVIDER=mistral (default) → unchanged legacy behavior
-//   FAST_MODEL_PROVIDER=openai            → OpenAI GPT-5 mini
-//   FAST_MODEL_PROVIDER=gemini            → Google Gemini 2.5 Flash
-//   FAST_MODEL_PROVIDER=deepseek          → DeepSeek v4 Pro, thinking OFF
-//                                            (hardcoded — see DEEPSEEK_THINKING
-//                                            note in the file doc comment)
-// Single choke point: resolveFastCloudTarget() below is the only place this
-// is read, and both the 'elite' and 'free' branches of resolveTieredTarget
-// call it — so one env var change moves both tiers together, consistently.
-// Default is 'mistral' — same reversible-opt-in posture as AI_PROVIDER.
-const FAST_MODEL_PROVIDER = (process.env.FAST_MODEL_PROVIDER ?? 'mistral').toLowerCase() as
-  'mistral' | 'openai' | 'gemini' | 'deepseek'
+// var lets Free/Elite's fast role be pointed at any candidate with zero code
+// change, so the comparison can be run and switched live:
+//   FAST_MODEL_PROVIDER_x=mistral (default) → unchanged legacy behavior
+//   FAST_MODEL_PROVIDER_x=openai            → OpenAI GPT-5 mini
+//   FAST_MODEL_PROVIDER_x=gemini            → Google Gemini 2.5 Flash
+//   FAST_MODEL_PROVIDER_x=deepseek          → DeepSeek v4 Pro, thinking OFF
+//                                              (hardcoded — see DEEPSEEK_THINKING
+//                                              note in the file doc comment)
+//   FAST_MODEL_PROVIDER_x=anthropic         → Claude Sonnet 4.6, same model
+//                                              and target as Elite's premium
+//                                              role (see file doc comment) —
+//                                              FREE variant is test-only, see
+//                                              startup warning below
+//
+// Split (Aug 2026) into FAST_MODEL_PROVIDER_FREE and FAST_MODEL_PROVIDER_ELITE
+// so Free and Elite's fast role can move independently — this is what makes
+// an Elite-only Claude trial possible without also putting every Free user
+// on Claude's cost. resolveFastCloudTarget(tier) below is the only place
+// either is read. Each falls back to the old shared FAST_MODEL_PROVIDER var
+// if its own is unset (so an existing single-var deployment keeps working),
+// and ultimately to 'mistral' if nothing is set at all — same reversible-
+// opt-in posture as AI_PROVIDER.
+const FAST_MODEL_PROVIDER_LEGACY = (process.env.FAST_MODEL_PROVIDER ?? 'mistral').toLowerCase() as
+  'mistral' | 'openai' | 'gemini' | 'deepseek' | 'anthropic'
+
+const FAST_MODEL_PROVIDER_FREE = (process.env.FAST_MODEL_PROVIDER_FREE ?? FAST_MODEL_PROVIDER_LEGACY).toLowerCase() as
+  'mistral' | 'openai' | 'gemini' | 'deepseek' | 'anthropic'
+
+const FAST_MODEL_PROVIDER_ELITE = (process.env.FAST_MODEL_PROVIDER_ELITE ?? FAST_MODEL_PROVIDER_LEGACY).toLowerCase() as
+  'mistral' | 'openai' | 'gemini' | 'deepseek' | 'anthropic'
+
+// FAST_MODEL_PROVIDER_FREE=anthropic is supported for internal test
+// flexibility only (see file doc comment) — it should never reach a
+// production Free deployment, since Claude end-to-end is far more expensive
+// than DeepSeek and undercuts the "keeps the free tier sustainable" framing
+// already public in the product FAQ. Fails loud (not silent) if it slips
+// through anyway.
+if (FAST_MODEL_PROVIDER_FREE === 'anthropic' && process.env.NODE_ENV === 'production') {
+  console.warn(
+    '[AIClient] FAST_MODEL_PROVIDER_FREE=anthropic is set in a production environment — ' +
+    'this routes every Free-tier user through Claude end-to-end, which this var is meant ' +
+    'for internal testing only, never production Free traffic. Double-check this is intentional.',
+  )
+}
 
 const OPENAI_API_KEY    = process.env.OPENAI_API_KEY ?? ''
 const OPENAI_FAST_MODEL = process.env.OPENAI_FAST_MODEL ?? 'gpt-5-mini'
@@ -473,24 +525,28 @@ function roleFromRequested(requested?: 'anthropic' | 'deepseek'): Role {
   return requested === 'anthropic' ? 'premium' : 'fast'
 }
 
-// Single choke point for "which cloud provider serves the fast role" — Free
-// tier end-to-end AND Elite's fast role both resolve through here, so
-// flipping FAST_MODEL_PROVIDER moves both tiers together. See that env var's
-// doc comment above.
-function resolveFastCloudTarget(): ResolvedTarget {
-  switch (FAST_MODEL_PROVIDER) {
-    case 'openai':   return { kind: 'openai-fast' }
-    case 'gemini':   return { kind: 'gemini-fast' }
-    case 'deepseek': return { kind: 'deepseek-fast' }
+// Choke point for "which cloud provider serves the fast role" — takes the
+// tier explicitly now (Aug 2026 split) so Free and Elite read their own env
+// var (FAST_MODEL_PROVIDER_FREE / FAST_MODEL_PROVIDER_ELITE) and can move
+// independently. See those vars' doc comment above for the anthropic case.
+function resolveFastCloudTarget(tier: 'free' | 'elite'): ResolvedTarget {
+  const provider = tier === 'elite' ? FAST_MODEL_PROVIDER_ELITE : FAST_MODEL_PROVIDER_FREE
+  switch (provider) {
+    case 'openai':    return { kind: 'openai-fast' }
+    case 'gemini':    return { kind: 'gemini-fast' }
+    case 'deepseek':  return { kind: 'deepseek-fast' }
+    // Same target Elite's premium role already resolves to, on purpose —
+    // see file doc comment ("truly identical calls end to end").
+    case 'anthropic': return { kind: 'anthropic-elite' }
     case 'mistral':
-    default:          return { kind: 'mistral-cloud' }
+    default:           return { kind: 'mistral-cloud' }
   }
 }
 
 function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTarget {
   switch (tierInfo.tier) {
     case 'elite':
-      return role === 'premium' ? { kind: 'anthropic-elite' } : resolveFastCloudTarget()
+      return role === 'premium' ? { kind: 'anthropic-elite' } : resolveFastCloudTarget('elite')
     case 'private': {
       // Conservative default if a Private row somehow has no family set —
       // Option B (Mistral) rather than silently picking the China-origin
@@ -516,7 +572,7 @@ function resolveTieredTarget(tierInfo: ProductTierInfo, role: Role): ResolvedTar
     }
     case 'free':
     default:
-      return resolveFastCloudTarget()
+      return resolveFastCloudTarget('free')
   }
 }
 
@@ -1098,7 +1154,8 @@ export function getProviderInfo() {
     deepseekThinking:     DEEPSEEK_THINKING,
     mistralModel:         MISTRAL_MODEL,
     elitePremiumModel:    ELITE_PREMIUM_MODEL,
-    fastModelProvider:    FAST_MODEL_PROVIDER,
+    fastModelProviderFree:  FAST_MODEL_PROVIDER_FREE,
+    fastModelProviderElite: FAST_MODEL_PROVIDER_ELITE,
     openaiFastModel:      OPENAI_FAST_MODEL,
     geminiFastModel:      GEMINI_FAST_MODEL,
   }
