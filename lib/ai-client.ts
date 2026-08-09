@@ -377,6 +377,32 @@ function getRetryAfterMs(err: unknown): number | null {
 // Detected by model-name prefix rather than by ResolvedTarget.kind, so this
 // stays correct if OPENAI_FAST_MODEL is ever pointed at a non-GPT-5 OpenAI
 // model (e.g. gpt-4.1-mini), which has neither restriction.
+//
+// Bug fix (Aug 2026) — silent truncation via invisible reasoning tokens:
+// a live comparison run against gpt-5-mini as a fast-role candidate showed
+// synthesis output cut to 1-2 lines, most of the 6 persona calls missing
+// entirely, and some calls erroring outright. Root cause: GPT-5-family
+// "reasoning" models spend tokens on an internal, non-visible reasoning pass
+// BEFORE producing visible content, and those reasoning tokens are drawn
+// from the SAME max_completion_tokens budget as the visible output — this
+// file was already correctly using max_completion_tokens (see above), but
+// never set reasoning_effort, so every GPT-5-family call defaulted to
+// standard (non-minimal) reasoning. On Quorum's synthesis prompt in
+// particular (explicitly asks the model to work through several layers of
+// "what's beneath the question" before writing), that default reasoning
+// pass can consume most or all of a 2200-3200 token budget invisibly,
+// leaving little or nothing for the actual verdict/synthesis text — this
+// is a widely-reported OpenAI API behavior (see e.g. openai-python#2546),
+// not specific to Quorum's prompts. Fixed by pinning reasoning_effort to
+// 'minimal' for every GPT-5-family call in this file — this role is meant
+// to be the FAST role to begin with, so suppressing the model's own
+// deliberation is the correct behavior here, not a workaround being forced
+// onto it. This does not necessarily mean gpt-5-mini's underlying output
+// QUALITY is sufficient for Quorum's persona/synthesis prompts — that
+// remains a separate, still-open question — but the truncation/dropped-
+// persona/error symptoms specifically should not recur after this fix, so
+// a re-test with this fix in place is needed before drawing a capability
+// conclusion from the earlier (pre-fix) run.
 function isGpt5ReasoningModel(model: string): boolean {
   return /^gpt-5/.test(model)
 }
@@ -739,12 +765,14 @@ async function streamOpenAICompatible(
   thinking?:    'enabled' | 'disabled',
 ): Promise<StreamResult> {
   // See isGpt5ReasoningModel doc comment — GPT-5-family models need
-  // max_completion_tokens instead of max_tokens.
+  // max_completion_tokens instead of max_tokens, AND reasoning_effort
+  // pinned to 'minimal' or their default reasoning pass can silently eat
+  // the whole token budget before any visible content is written.
   const gpt5 = isGpt5ReasoningModel(model)
   const stream = await withRetry(
     () => client.chat.completions.create({
       model,
-      ...(gpt5 ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
+      ...(gpt5 ? { max_completion_tokens: maxTokens, reasoning_effort: 'minimal' } : { max_tokens: maxTokens }),
       stream:     true,
       messages:   [{ role: 'system', content: systemPrompt }, ...messages],
       ...(thinking ? { thinking: { type: thinking } } : {}),
@@ -788,15 +816,17 @@ async function completeOpenAICompatible(
   msgs.push({ role: 'user', content: prompt })
 
   // See isGpt5ReasoningModel doc comment — GPT-5-family models need
-  // max_completion_tokens instead of max_tokens, and reject any non-default
+  // max_completion_tokens instead of max_tokens, reject any non-default
   // temperature outright (structured/low-temperature callers — e.g. the
   // ontology tagger, bias scorer — silently lose temperature control on this
-  // target; there is no equivalent knob to substitute it with).
+  // target; there is no equivalent knob to substitute it with), and need
+  // reasoning_effort pinned to 'minimal' or their default reasoning pass can
+  // silently consume the whole completion budget before any visible content.
   const gpt5 = isGpt5ReasoningModel(model)
   const res = await withRetry(
     () => client.chat.completions.create({
       model,
-      ...(gpt5 ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
+      ...(gpt5 ? { max_completion_tokens: maxTokens, reasoning_effort: 'minimal' } : { max_tokens: maxTokens }),
       stream:     false,
       ...(temperature !== undefined && thinking !== 'enabled' && !gpt5 ? { temperature } : {}),
       messages:   msgs,
