@@ -40,6 +40,9 @@ function stripHeaderTags(raw: string): string {
     // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
     .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
     .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
+    // Shape 3 (seen leaking specifically in pushback replies, Aug 2026): bare value,
+    // no leading "<", but WITH the closing tag attached — e.g. "mixed</lean>".
+    .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     // Sprint 2 follow-on: content-preserving — this wraps substantive prose
     // the observation model should actually read, not a machine value.
     .replace(/<\/?assumption>/g, '')

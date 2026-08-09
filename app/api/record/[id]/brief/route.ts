@@ -133,6 +133,9 @@ function stripAdvisorTags(raw: string): string {
     // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
     .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/i, '')
     .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
+    // Shape 3 (seen leaking specifically in pushback replies, Aug 2026): bare value,
+    // no leading "<", but WITH the closing tag attached — e.g. "mixed</lean>".
+    .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     .replace(/<\/?tension>/gi, '')
     // Sprint 2 follow-on: content-preserving, same reasoning as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.

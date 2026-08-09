@@ -774,6 +774,8 @@ const WORD_LIMIT_PREFIX = `HARD CONSTRAINTS — READ BEFORE RESPONDING:
 
 <lean>Exactly one word: proceed, wait, or mixed. "proceed" = leans toward taking the action; "wait" = leans toward not taking it / delaying / gathering more information; "mixed" = genuinely balanced, no directional lean. Machine-readable only — output just the word, and never repeat it elsewhere in your response, tagged or untagged.</lean>
 
+TAG FORMAT — zero tolerance for deviation. The opening tag is the six characters <lean>, the closing tag is the seven characters </lean>. Both must be present, complete, and exactly spelled. Do not truncate the opening tag. Do not omit it and leave only the value plus a closing tag. If you cannot produce the tag correctly, omit the entire tag rather than emit a broken fragment — a missing tag causes no visible defect on the page; a malformed one leaks broken markup directly onto it. Examples of WRONG output (never do this): "<mixed</lean>" · "mixed</lean>" · "mixedThis is a concentration..." (the bare word glued straight onto your first sentence with no tag at all). The only correct form is: <lean>mixed</lean>
+
 After the closing </lean> tag, begin your analysis with a blank line. Do not label or explain the tags.
 
 1. QUESTION FIRST: only if the decision description is missing a critical, specific piece of information your analysis depends on (a number, timeline, relationship, constraint), ask exactly ONE sharp question before your assessment. Otherwise proceed directly.

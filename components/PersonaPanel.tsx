@@ -350,8 +350,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       // sitting at position 0 once lens/position/realcost are already stripped above —
       // anchoring to the start keeps this from ever matching the word "wait" or "mixed"
       // if a persona's prose genuinely opened with it.
+      //
+      // Shape 3 (observed in PUSHBACK replies specifically, Aug 2026): the bare value
+      // with no leading "<" but WITH the closing tag attached — e.g. "mixed</lean>" —
+      // different from shape 2 (which has the leading "<" but not this one). Safe to
+      // match case-insensitively like shape 2: the literal "</lean>" fragment can't
+      // occur in genuine prose either way.
       .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
       .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
+      .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
       .replace(/^\s+/, '')
   }, [])
 
@@ -379,10 +386,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       // stray-tag guards elsewhere in this file.
       .replace(/<\/?assumption>/g, '')
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
-      // Third bug fix (GPT-5-mini, Aug 2026) — same two leaked-lean shapes as
+      // Third bug fix (GPT-5-mini, Aug 2026) — same leaked-lean shapes as
       // extractHeaderTags above; see that function's comment for the full explanation.
+      // Shape 3 is the one specifically seen leaking in pushback replies.
       .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
       .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
+      .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
       .replace(/^\s+/, '')
   }, [])
 

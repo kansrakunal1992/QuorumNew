@@ -65,6 +65,9 @@ function stripHeaderTags(raw: string): string {
     // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
     .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
     .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
+    // Shape 3 (seen leaking specifically in pushback replies, Aug 2026): bare value,
+    // no leading "<", but WITH the closing tag attached — e.g. "mixed</lean>".
+    .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     // Sprint 2 follow-on: <assumption> is content-preserving, unlike the
     // tags above — it wraps substantive prose (Contrarian/Risk Architect's
     // "hidden assumption" sentences), not a machine value or a citation
@@ -206,6 +209,9 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
     .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
     .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
+    // Shape 3 (seen leaking specifically in pushback replies, Aug 2026): bare value,
+    // no leading "<", but WITH the closing tag attached — e.g. "mixed</lean>".
+    .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     .replace(/<\/?assumption>/g, '')
     .trimStart()
   return { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest }
