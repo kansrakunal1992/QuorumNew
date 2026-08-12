@@ -1647,7 +1647,14 @@ ${personaContext}
 Generate the Decision Brief now.`
 
       try {
-        const briefContent = await createCompletion(briefPrompt, 1200, { provider: 'deepseek' })
+        // Provider migration (2026-08): was `provider: 'deepseek'`, now
+        // `provider: 'openai'` (GPT-5-mini, unconditional direct target —
+        // see resolveProvider's doc comment in lib/ai-client.ts). No
+        // explicit temperature was set on this call before, so nothing
+        // changes there; GPT-5-family models silently ignore any
+        // temperature option regardless (see completeOpenAICompatible's
+        // doc comment in lib/ai-client.ts).
+        const briefContent = await createCompletion(briefPrompt, 1200, { provider: 'openai' })
         if (briefContent) {
           // Save encrypted to DB
           await supabase.from('messages').insert({

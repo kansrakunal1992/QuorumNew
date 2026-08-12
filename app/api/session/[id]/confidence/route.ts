@@ -50,11 +50,11 @@ export async function PATCH(req: Request, { params }: Params) {
 
     if (!row) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
-    // Idempotency guard: don't overwrite an existing rating
-    if (row.post_decision_confidence !== null && row.post_decision_confidence !== undefined) {
-      return NextResponse.json({ ok: true, skipped: true })
-    }
-
+    // Verify ownership BEFORE anything else that reveals information about
+    // this session. (Bug fix, 2026-08: the idempotency check below used to
+    // run first, which let a caller with no valid ownership signal at all
+    // learn "has this session already been rated" — no sensitive content,
+    // just a boolean, but the check should still gate on ownership first.)
     const ownerEmail = user_email?.trim().toLowerCase() || null
     const owns = !!(
       (serverUserId && row.user_id    === serverUserId) ||
@@ -64,6 +64,11 @@ export async function PATCH(req: Request, { params }: Params) {
 
     if (!owns) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Idempotency guard: don't overwrite an existing rating
+    if (row.post_decision_confidence !== null && row.post_decision_confidence !== undefined) {
+      return NextResponse.json({ ok: true, skipped: true })
     }
 
     await supabase

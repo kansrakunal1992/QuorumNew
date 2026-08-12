@@ -1935,10 +1935,17 @@ export default function Home() {
             setShowHomeTour(false)
           }}
           onSkip={() => {
-            try {
-              ;['quorum_tour.home', 'quorum_tour.council', 'quorum_tour.record']
-                .forEach(k => localStorage.setItem(k, 'skip'))
-            } catch {}
+            // Product decision (2026-08): the three tours (home, council,
+            // record) are independent — skipping the home tour should only
+            // ever record that the *home* tour was skipped. This used to
+            // write 'skip' to all three localStorage keys at once, which
+            // pre-emptively marked the council and record tours as already
+            // dismissed before the user had ever seen them — the actual
+            // root cause of those two tours silently never showing after a
+            // home-tour skip (see the matching fix + comment in
+            // components/SessionView.tsx and components/RecordTour.tsx,
+            // which removed the *other* half of this same coupling).
+            try { localStorage.setItem('quorum_tour.home', 'skip') } catch {}
             if (authToken) {
               fetch('/api/onboarding/complete', {
                 method: 'POST',

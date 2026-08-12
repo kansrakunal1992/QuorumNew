@@ -12,7 +12,9 @@
 // up via Google, we don't send a link at all — we return 409 { error:
 // 'wrong_provider' } so the client (AuthPanel) can prompt "use Google instead".
 // This is a UX nicety, not a safety mechanism — Supabase auto-links same-email
-// identities to one account regardless, so skipping this check would just cost
+// identities to one account regardless (confirmed directly against this
+// project's Supabase configuration, 2026-08 — see the matching note in
+// app/api/auth/link-sessions/route.ts), so skipping this check would just cost
 // the user an unnecessary email round-trip, not create a duplicate account.
 // ─────────────────────────────────────────────────────────────────────────────
 

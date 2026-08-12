@@ -594,6 +594,23 @@ export function pickMostRelevantDimension(ontologyVector: OntologyScoreMap | nul
   return best
 }
 
+// ── getDimensionsForPersona ─────────────────────────────────────────────────
+// Sprint 1 (worth-confirming smarter-version, 2026-08): reverse-lookup into
+// DIM_PERSONA_BOOSTS — "which ontology dimensions feed THIS persona's
+// relevance score." Built for lib/worth-confirming.ts, which needs to know
+// whether a low-confidence dimension is actually one of the ones driving the
+// winning persona's weight, rather than just checking confidence in
+// isolation. Deliberately reuses DIM_PERSONA_BOOSTS itself (the single
+// source of truth computePersonaRelevance() already reads) rather than
+// maintaining a second, parallel mapping that could drift out of sync with
+// it — see this file's own top-of-file comment ("To retune weights, edit
+// RULE_PERSONA_BOOSTS or DIM_PERSONA_BOOSTS values only").
+export function getDimensionsForPersona(persona: AdvisorKey): string[] {
+  return DIM_PERSONA_BOOSTS
+    .filter(entry => persona in entry.boosts)
+    .map(entry => entry.dim)
+}
+
 // Pure formatting function — deliberately does NOT touch the database
 // itself (unlike buildRelevanceBlock's callers, which resolve their inputs
 // via biasContext/councilResult upstream). The caller

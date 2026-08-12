@@ -58,6 +58,7 @@
 import { createCompletion, getProviderInfo } from '@/lib/ai-client'
 import { createServiceClient }               from '@/lib/supabase'
 import { decrypt }                           from '@/lib/encryption'
+import { repairJSON }                        from '@/lib/json-repair'
 import {
   computeDimensionalCalibration,
   isZoneActiveForVector,
@@ -69,6 +70,22 @@ import {
   isSynthesisEligibleTrigger,
   type PersonalBiasTrigger,
 }                                             from '@/lib/bias-trigger-engine'
+
+// ── "Confirmed pattern" threshold ─────────────────────────────────────────────
+// Canonical, single source of truth for "how many detections before a bias
+// pattern counts as confirmed (vs. still forming)." Originally 2, raised to 3
+// in the R9 fix (two detections isn't enough signal to call something a
+// pattern). That fix landed in lib/mirror-fingerprint.ts and this file's own
+// isConfirmed check below, but NOT in a couple of other places that used to
+// have their own hardcoded `>= 2` — app/api/mirror/summary/route.ts's
+// confirmedPatternCount and app/api/mirror/alerts/fallback/route.ts's lookup
+// query — which meant the same bias could show as "confirmed" on one screen
+// and "forming" on another. Every place in the codebase that decides whether a
+// bias counts as confirmed (UI badges, the Mirror Summary count, the fallback
+// alert lookup, and this file's own synthesis-narrative "CONFIRMED (N
+// detections)" labeling) now imports this constant instead of hardcoding a
+// number, so a future threshold change can't drift out of sync again.
+export const CONFIRMED_BIAS_THRESHOLD = 3
 
 // ── 15 Bias Parameters ───────────────────────────────────────────────────────
 export const BIAS_PARAMETERS = [
@@ -258,82 +275,8 @@ Score all 15 bias parameters. Return the array in the same order as the paramete
 }
 
 // ── JSON repair utility ───────────────────────────────────────────────────
-// DeepSeek returns non-standard JSON in two distinct failure modes.
-// This function handles both in two sequential phases.
-//
-// Phase 1 (structural) — handles the "Expected double-quoted property name"
-//   class of error: single-quoted keys/values, JS comments, trailing commas.
-//
-// Phase 2 (string content) — handles the "Expected ',' or '}' after property
-//   value" class of error: unescaped newlines / tabs / embedded double-quotes
-//   inside string values (typically in long `reasoning` fields).
-//   Uses a character-by-character scan. Peek-ahead heuristic on `"` chars:
-//   if the next non-whitespace character is a JSON structural character
-//   (',', '}', ']', ':') then the quote ends the string; otherwise it is an
-//   embedded unescaped quote and we escape it.
-
-function repairJSON(raw: string): string {
-  // ── Phase 1: structural fixes ──────────────────────────────────────────
-  let s = raw
-    .replace(/\/\*[\s\S]*?\*\//g, '')                  // block comments
-    .replace(/\/\/[^\n\r]*/g, '')                       // line comments
-    .replace(/([{,]\s*)'([^'\\]+)'\s*:/g, '$1"$2":')  // single-quoted keys
-    .replace(/:\s*'([^'\\]*)'/g, ': "$1"')             // single-quoted values
-    .replace(/,(\s*[}\]])/g, '$1')                      // trailing commas
-    .trim()
-
-  // Fast path: Phase 1 was sufficient
-  try { JSON.parse(s); return s } catch { /* fall through to Phase 2 */ }
-
-  // ── Phase 2: string content repair ────────────────────────────────────
-  // Walk character by character; when inside a string, escape illegal raw
-  // control characters and detect embedded unescaped double-quotes via
-  // structural peek-ahead.
-  const STRUCTURAL = new Set([',', '}', ']', ':'])
-  let out = ''
-  let i   = 0
-
-  while (i < s.length) {
-    const ch = s[i]
-
-    if (ch !== '"') { out += ch; i++; continue }
-
-    // ── Entering a string ──
-    out += '"'
-    i++
-
-    while (i < s.length) {
-      const c = s[i]
-
-      // Already-escaped sequence: copy both characters verbatim
-      if (c === '\\') {
-        out += c; i++
-        if (i < s.length) { out += s[i]; i++ }
-        continue
-      }
-
-      // Quote character: decide if it ends the string or is embedded
-      if (c === '"') {
-        // Peek past whitespace to find the next meaningful character
-        let j = i + 1
-        while (j < s.length && (s[j] === ' ' || s[j] === '\r' || s[j] === '\n')) j++
-        if (j >= s.length || STRUCTURAL.has(s[j])) {
-          out += '"'; i++; break        // genuine end-of-string
-        }
-        out += '\\"'; i++; continue    // embedded quote — escape and stay inside string
-      }
-
-      // Illegal raw control characters inside a JSON string
-      if (c === '\n') { out += '\\n'; i++; continue }
-      if (c === '\r') { out += '\\r'; i++; continue }
-      if (c === '\t') { out += '\\t'; i++; continue }
-
-      out += c; i++
-    }
-  }
-
-  return out
-}
+// Moved to lib/json-repair.ts (2026-08) so lib/ontology-tagger.ts could reuse
+// the same recovery logic — see the import at the top of this file.
 
 // ── Main scorer function ──────────────────────────────────────────────────
 // Sprint R2: param renamed from personaResponses → pushbackTexts.
@@ -844,7 +787,8 @@ async function fetchRecurringRegretBlock(
 // ── fetchExaminerBiasHint (Sprint R_JC — exported) ───────────────────────────
 //
 // Returns a compact string of the user's top confirmed distorting biases
-// (detection_count >= 3) for injection into Examiner question personalisation.
+// (detection_count >= CONFIRMED_BIAS_THRESHOLD) for injection into Examiner
+// question personalisation.
 //
 // Used in app/api/examiner/route.ts so the Examiner's diagnostic questions
 // are sharper for users with documented blind spots — e.g. a user with confirmed
@@ -862,7 +806,7 @@ export async function fetchExaminerBiasHint(userId: string): Promise<string> {
       .from('bias_library')
       .select('bias_parameter, detection_count, asymmetry_score_avg')
       .eq('user_id', userId)
-      .gte('detection_count', 3)
+      .gte('detection_count', CONFIRMED_BIAS_THRESHOLD)
       .order('asymmetry_score_avg', { ascending: false })
       .limit(2)
 
@@ -903,11 +847,16 @@ export async function fetchExaminerBiasHint(userId: string): Promise<string> {
 //   run in parallel via Promise.all. Return shape and call signature unchanged.
 //
 // Early-user threshold design:
-//   Detection count >= 1 is included (not >= 2) so that users with 1–3 sessions
-//   still experience bias-aware reasoning. Language in the blocks is calibrated:
-//   - detection_count = 1 → labelled "FORMING (1 detection)" — signals provisional
-//   - detection_count >= 2 → labelled "CONFIRMED (N detections)" — full authority
+//   Detection count >= 1 is included (not >= CONFIRMED_BIAS_THRESHOLD) so that
+//   users with 1–3 sessions still experience bias-aware reasoning. Language in
+//   the blocks is calibrated against the shared CONFIRMED_BIAS_THRESHOLD (see
+//   that constant's own comment above for why this exists as one shared value):
+//   - detection_count < CONFIRMED_BIAS_THRESHOLD → labelled "FORMING (N detections)" — provisional
+//   - detection_count >= CONFIRMED_BIAS_THRESHOLD → labelled "CONFIRMED (N detections)" — full authority
 //   The synthesis directive uses "may be active" for forming vs "is present" for confirmed.
+//   (Corrected 2026-08: this comment previously said ">= 2" — the code itself
+//   was already on the current threshold via isConfirmed below; only this
+//   comment had drifted.)
 //
 // Signal re-classification:
 //   Each bias signal is re-classified against the CURRENT session's ontology vector,
@@ -1010,9 +959,12 @@ export async function fetchUserBiasContext(
         minimalScore,
         ontologyVector,
       )
-      // R9 fix: confirmed raised to >= 3 (was >= 2). Aligns with mirror-fingerprint.ts.
-      // synthesis directive uses "may be active" for forming (<3) vs "is present" for confirmed (3+).
-      const isConfirmed = (b.detection_count as number) >= 3
+      // R9 fix: confirmed raised to CONFIRMED_BIAS_THRESHOLD (was 2). Aligns
+      // with mirror-fingerprint.ts and every other "confirmed" check in the
+      // codebase — see that constant's own comment for why this is a single
+      // shared value now instead of a per-file hardcoded number.
+      // synthesis directive uses "may be active" for forming vs "is present" for confirmed.
+      const isConfirmed = (b.detection_count as number) >= CONFIRMED_BIAS_THRESHOLD
       return {
         biasKey:          b.bias_parameter as string,
         detectionCount:   b.detection_count as number,

@@ -27,7 +27,9 @@
  *
  *       personaAlert    → appended to each initial persona's system prompt.
  *                         Single sentence. Only fires for CONFIRMED + DISTORTING
- *                         biases (detection_count >= 2 + signal = distorting).
+ *                         biases (detection_count >= CONFIRMED_BIAS_THRESHOLD,
+ *                         currently 3, + signal = distorting — see the
+ *                         CONFIRMED_BIAS_THRESHOLD comment in lib/bias-scorer.ts).
  *
  *       synthesisBlock  → appended to synthesis system prompt. Full block with
  *                         all bias rows (confirmed + forming), all scores, and
@@ -172,7 +174,7 @@ import type { ScoredVector }                 from '@/lib/ontology-tagger'
 import type { RuleEngineResult }             from '@/lib/rule-engine'
 import type { PersonaKey, Message }          from '@/lib/types'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
-import { encrypt, decryptJson }              from '@/lib/encryption'
+import { encrypt, decrypt, decryptJson }     from '@/lib/encryption'
 
 // ── Bug fix: messages insert retry ──────────────────────────────────────────
 // See usage below (assistant/user message save) for the full root-cause
@@ -751,9 +753,49 @@ MANDATORY: weave this context into your synthesis naturally. Do not create a sep
         mindChangePattern,
         advisorDivergencePattern,
       )
+
+      // Sprint 1 v2 (2026-08): getWorthConfirmingText's tier 1 now checks
+      // whether a fired rule's Examiner question was actually answered
+      // (not just whether the rule fired), and tier 2 is now scoped to the
+      // dimensions that specifically feed the WINNING persona's own
+      // relevance score (relevanceMap, already computed above) rather than
+      // any high-signal dimension regardless of relevance. One extra,
+      // lightweight query — session-scoped, two columns only, and this
+      // whole block is already gated behind isSynthesisCall so it only
+      // runs once per session, not once per persona call. Fails open to
+      // null (worth-confirming.ts's tier-1 fallback still runs on
+      // ruleEngineResult alone) rather than blocking synthesis over it.
+      let examinerAnswers: { rule_id: string | null; response_text: string | null }[] | null = null
+      if (sessionId) {
+        try {
+          const supabaseWC = createServiceClient()
+          const { data } = await supabaseWC
+            .from('examiner_responses')
+            .select('rule_id, response_text')
+            .eq('session_id', sessionId)
+          // response_text is stored encrypted (see app/api/examiner/route.ts's
+          // POST handler) — must decrypt before the "was this actually
+          // answered, not just an empty/blank submission" check in
+          // worth-confirming.ts can tell a real answer apart from an empty
+          // ciphertext (encrypting '' still produces a non-empty enc:...
+          // string, which would otherwise look "answered" to a naive
+          // truthiness check on the raw column value). decrypt() is a safe
+          // no-op passthrough for null/undefined and for any legacy
+          // unencrypted plaintext row, so this is safe either way.
+          examinerAnswers = (data ?? []).map(row => ({
+            rule_id:       row.rule_id as string | null,
+            response_text: decrypt(row.response_text as string | null) ?? null,
+          }))
+        } catch (err) {
+          console.error('[Persona] examiner_responses fetch for worth-confirming failed (non-fatal):', err)
+        }
+      }
+
       worthConfirmingForHeader = getWorthConfirmingText(
         councilResult.ruleEngineResult,
         councilResult.ontologyVector,
+        examinerAnswers,
+        relevanceMap,
       )
 
       const relevanceBlock = buildRelevanceBlock(
@@ -928,10 +970,25 @@ Apply the VERDICT STABILITY instruction above using this data.`
     // getModelFamily() peeks the SAME `provider` flag the createStream call below will
     // use, so this can never resolve differently from the actual call a few lines down
     // — see the doc comment on getModelFamily in lib/ai-client.ts. No-ops (empty string)
-    // for every other family: Claude and DeepSeek's systemPrompt is byte-identical to
-    // before this layer existed. See lib/personas.ts's MISTRAL_* doc comment for why
+    // for every other family. See lib/personas.ts's MISTRAL_* doc comment for why
     // these three personas/synthesis get the extension and examiner/tagger calls don't yet.
-    const modelFamily = await getModelFamily(personaKey === 'synthesis' ? 'anthropic' : 'deepseek')
+    //
+    // Provider migration (2026-08): every advisor persona call (all six —
+    // synthesis is unaffected, still 'anthropic') used `provider: 'deepseek'`
+    // here and in the createStream call below; now `provider: 'openai'`
+    // (GPT-5-mini, unconditional direct target — see resolveProvider's doc
+    // comment in lib/ai-client.ts). This is the highest-volume real-world
+    // consequence of that migration in the whole codebase — under today's
+    // default (TIERED_ROUTING_ENABLED=false) configuration, this is what
+    // actually generates every advisor's response, not just a utility call.
+    // The Mistral-extension logic just below is unaffected either way: it
+    // was already scoped to `modelFamily === 'mistral'` specifically (to
+    // counteract weaknesses observed in Mistral's output — see
+    // lib/personas.ts), so it already no-ops for both 'deepseek' (before)
+    // and 'openai' (now) exactly the same way — this migration doesn't
+    // change which personas get that extension, only which underlying model
+    // family they run on.
+    const modelFamily = await getModelFamily(personaKey === 'synthesis' ? 'anthropic' : 'openai')
     const mistralExtension = modelFamily !== 'mistral'
       ? ''
       : personaKey === 'synthesis'
@@ -981,7 +1038,7 @@ Apply the VERDICT STABILITY instruction above using this data.`
     const { readable, getContent, getStopReason } = await createStream(
       systemPrompt,
       chatMessages,
-      personaKey === 'synthesis' ? 'anthropic' : 'deepseek',
+      personaKey === 'synthesis' ? 'anthropic' : 'openai',
       personaKey === 'synthesis' ? 3200 : 2200,
     )
 

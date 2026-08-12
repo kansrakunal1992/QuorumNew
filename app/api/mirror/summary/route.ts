@@ -8,7 +8,13 @@
 //   independenceScore     — latest score (null if never scored)
 //   scoreDelta            — delta from previous sessions (null on first score)
 //   examinerQuote         — longest Examiner response from the most recent session
-//   confirmedPatternCount — bias_library rows where detection_count >= 2
+//   confirmedPatternCount — bias_library rows where detection_count >=
+//     CONFIRMED_BIAS_THRESHOLD (lib/bias-scorer.ts). Bug fix (2026-08): this
+//     used to hardcode >= 2 here, out of sync with mirror-fingerprint.ts's own
+//     >= 3 "confirmed" threshold (the R9 fix) — the same bias pattern could
+//     show as "confirmed" on this Summary card and "forming" one click away
+//     on the Fingerprint page. Now imports the same shared constant every
+//     other "confirmed" check in the codebase uses.
 //   formingPatternCount   — bias_library rows where detection_count === 1
 //   openLoopCount         — decisions >30 days old with no outcome filed
 //   nextAction            — actionPlan string from SRI (weakest sub-score fix)
@@ -31,6 +37,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState }                 from '@/lib/mirror-access'
 import { computeUserSessionScores }             from '@/lib/session-score'
 import { decrypt }                              from '@/lib/encryption'
+import { CONFIRMED_BIAS_THRESHOLD }             from '@/lib/bias-scorer'
 
 // ── Auth helper (same pattern as preferences/route.ts) ────────────────────────
 
@@ -184,7 +191,7 @@ export async function GET(req: Request) {
 
   if (patternRes.status === 'fulfilled' && patternRes.value.data) {
     for (const { detection_count } of patternRes.value.data) {
-      if ((detection_count as number) >= 2) confirmedPatternCount++
+      if ((detection_count as number) >= CONFIRMED_BIAS_THRESHOLD) confirmedPatternCount++
       else if ((detection_count as number) === 1) formingPatternCount++
     }
   }

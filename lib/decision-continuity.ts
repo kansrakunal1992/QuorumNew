@@ -243,7 +243,13 @@ export async function fetchContinuityContext(sessionId: string): Promise<Continu
           ? `${cappedEvidence.length > 0 ? '3' : '2'}. The outcome the user logged from that earlier sitting, and what it implies for today.`
           : null,
         hasCommitment
-          ? `${[cappedEvidence.length > 0, hasOutcome].filter(Boolean).length + 1}. Whether the new information changes what would make the user switch course, as they defined it then.`
+          // Bug fix (2026-08): was `.length + 1`, which only counted the
+          // conditional evidence/outcome items above and forgot the
+          // always-present item 1 — so this number collided with whichever
+          // item came right before it (e.g. both item 3 and this one would
+          // print "3." when evidence+outcome+commitment were all present).
+          // +2 correctly accounts for item 1 plus the two conditional items.
+          ? `${[cappedEvidence.length > 0, hasOutcome].filter(Boolean).length + 2}. Whether the new information changes what would make the user switch course, as they defined it then.`
           : null,
       ].filter((x): x is string => x !== null)
 

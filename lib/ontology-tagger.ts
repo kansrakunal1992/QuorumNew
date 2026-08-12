@@ -18,6 +18,7 @@
  */
 
 import { createCompletion } from '@/lib/ai-client'
+import { extractJSONSlice, repairJSON } from '@/lib/json-repair'
 
 // ── Dimension score type ───────────────────────────────────────────────────────
 
@@ -310,12 +311,48 @@ async function callTagger(decisionText: string, contextText: string | null): Pro
 // ── Parse + validate ───────────────────────────────────────────────────────────
 
 function parseTag(raw: string): OntologyTag | null {
-  try {
-    const clean  = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-    const parsed = JSON.parse(clean)
+  const fenceStripped = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
 
+  // Recovery chain (bug fix, 2026-08): previously this was a single
+  // JSON.parse with no fallback — any response with preamble/trailing text
+  // around the JSON (not just inside code fences) failed tagging entirely
+  // and dropped the session to the older v1.0 gap-based Examiner path. Now
+  // tries progressively more tolerant parses before giving up, using the
+  // same recovery utility already proven in lib/bias-scorer.ts:
+  //   1. Parse the fence-stripped text as-is (the common case, unchanged).
+  //   2. Slice out the first balanced {...} object and parse that, in case
+  //      the model added commentary before or after the JSON.
+  //   3. Run that slice through repairJSON (single-quoted keys/values, JS
+  //      comments, trailing commas, unescaped characters in string values)
+  //      before parsing, in case the JSON itself is also malformed.
+  let parsed: unknown
+  let recoveryUsed: 'none' | 'bracket-slice' | 'repair' = 'none'
+
+  try {
+    parsed = JSON.parse(fenceStripped)
+  } catch {
+    const sliced = extractJSONSlice(fenceStripped)
+    try {
+      parsed = JSON.parse(sliced)
+      recoveryUsed = 'bracket-slice'
+    } catch {
+      try {
+        parsed = JSON.parse(repairJSON(sliced))
+        recoveryUsed = 'repair'
+      } catch (err) {
+        console.error('[Tagger] JSON parse failed after all recovery attempts:', err)
+        return null
+      }
+    }
+  }
+
+  if (recoveryUsed !== 'none') {
+    console.warn(`[Tagger] JSON recovered via ${recoveryUsed} — response was not clean JSON`)
+  }
+
+  try {
     // Validate scored_vector exists and has required dimensions
-    const sv = parsed.scored_vector
+    const sv = (parsed as { scored_vector?: unknown }).scored_vector
     if (!sv || typeof sv !== 'object') return null
 
     const required = [
@@ -325,7 +362,8 @@ function parseTag(raw: string): OntologyTag | null {
       'time_pressure', 'decision_unit', 'emotional_intensity',
     ]
     for (const dim of required) {
-      if (!sv[dim] || typeof sv[dim].score !== 'number' || sv[dim].score < 1 || sv[dim].score > 5) {
+      const dimVal = (sv as Record<string, { score?: number }>)[dim]
+      if (!dimVal || typeof dimVal.score !== 'number' || dimVal.score < 1 || dimVal.score > 5) {
         console.warn(`[Tagger] scored_vector missing or invalid: ${dim}`)
         return null
       }
@@ -333,7 +371,7 @@ function parseTag(raw: string): OntologyTag | null {
 
     return parsed as OntologyTag
   } catch (err) {
-    console.error('[Tagger] JSON parse failed:', err)
+    console.error('[Tagger] Validation failed after JSON parse:', err)
     return null
   }
 }

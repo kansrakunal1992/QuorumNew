@@ -34,11 +34,47 @@
 //
 // This operation is irreversible. The client confirmation modal requires the
 // user to type "delete my account" before the button is enabled.
+//
+// Retry + honesty fix (2026-08): this route used to fire every per-table
+// delete once, log any failures to the console, and then ALWAYS respond
+// "your account and all associated data have been permanently deleted" —
+// even when some of those deletes had actually failed. Now:
+//   - Every per-table delete gets one automatic retry after a short pause
+//     before being counted as a real failure (covers the common case of a
+//     brief, transient DB blip).
+//   - Critically, the auth user itself (the most sensitive piece, and the
+//     step that would make the account impossible to log back into and
+//     retry with) is only deleted once every other table has succeeded —
+//     never on a "best effort, some tables may still have leftover rows"
+//     basis. If any table delete is still failing after its retry, the
+//     route stops BEFORE touching the auth user and returns an honest
+//     error asking the customer to try again shortly.
+//   - This makes the whole route safely re-triable: a retry after a
+//     partial failure just re-runs every step, and deleting rows that are
+//     already gone from a previous attempt is a normal no-op, not an error.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse }              from 'next/server'
 import { createServiceClient }       from '@/lib/supabase'
 import { writeAuditLog, getUserFromBearer, getAuditContext } from '@/lib/audit'
+
+const RETRY_DELAY_MS = 400
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// Runs `attempt()` once, and if it reports a failure, waits briefly and
+// tries exactly once more before giving up. `attempt()` should return an
+// error message string on failure, or null on success (including the
+// "table doesn't exist in this environment" case, which was already
+// treated as non-fatal and stays that way here).
+async function withOneRetry(attempt: () => Promise<string | null>): Promise<string | null> {
+  const first = await attempt()
+  if (!first) return null
+  await sleep(RETRY_DELAY_MS)
+  return attempt()
+}
 
 export async function DELETE(req: Request) {
   const ctx = getAuditContext(req)
@@ -74,11 +110,14 @@ export async function DELETE(req: Request) {
     ] as const
 
     for (const table of emailTables) {
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .eq('user_email', user.email)
-      if (error) errors.push(`${table}(email): ${error.message}`)
+      const result = await withOneRetry(async () => {
+        const { error } = await supabase
+          .from(table)
+          .delete()
+          .eq('user_email', user.email!)
+        return error ? error.message : null
+      })
+      if (result) errors.push(`${table}(email): ${result}`)
     }
   }
 
@@ -116,14 +155,16 @@ export async function DELETE(req: Request) {
   ] as const
 
   for (const table of userIdTables) {
-    const { error } = await supabase
-      .from(table as string)
-      .delete()
-      .eq('user_id', user.id)
-    // Non-fatal — tables may not exist in all environments
-    if (error && !error.message.includes('does not exist')) {
-      errors.push(`${table}(user_id): ${error.message}`)
-    }
+    const result = await withOneRetry(async () => {
+      const { error } = await supabase
+        .from(table as string)
+        .delete()
+        .eq('user_id', user.id)
+      // Non-fatal — tables may not exist in all environments
+      if (error && !error.message.includes('does not exist')) return error.message
+      return null
+    })
+    if (result) errors.push(`${table}(user_id): ${result}`)
   }
 
   // ── 5. Delete session_id-keyed tables explicitly (don't rely solely on a
@@ -138,30 +179,43 @@ export async function DELETE(req: Request) {
   if (sessionIds.length > 0) {
     const sessionIdTables = ['outcomes', 'sessions_ontology', 'structural_scores'] as const
     for (const table of sessionIdTables) {
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .in('session_id', sessionIds)
-      if (error && !error.message.includes('does not exist')) {
-        errors.push(`${table}(session_id): ${error.message}`)
-      }
+      const result = await withOneRetry(async () => {
+        const { error } = await supabase
+          .from(table)
+          .delete()
+          .in('session_id', sessionIds)
+        if (error && !error.message.includes('does not exist')) return error.message
+        return null
+      })
+      if (result) errors.push(`${table}(session_id): ${result}`)
     }
   }
 
-  // ── 6. Delete auth.users — cascades sessions + messages/examiner_responses ─
+  // ── 6. If anything is still failing after retries, stop here — do NOT
+  // delete the auth user. The account stays fully intact and logged-in-able
+  // so the customer can simply try "Delete my account" again; every step
+  // above is safe to re-run (deleting already-gone rows is a normal no-op).
+  if (errors.length > 0) {
+    console.error('[Account/Delete] Failing after retry, auth user NOT deleted:', errors)
+    return NextResponse.json(
+      {
+        error: 'Some of your data couldn\u2019t be deleted just now. Your account has not been touched — please try again in a few minutes. If this keeps happening, contact support.',
+      },
+      { status: 500 }
+    )
+  }
+
+  // ── 7. Delete auth.users — cascades sessions + messages/examiner_responses ─
+  // Only reached once every table above has succeeded.
   // supabase.auth.admin.deleteUser() issues a DELETE to the Auth admin API.
   const { error: deleteUserError } = await supabase.auth.admin.deleteUser(user.id)
 
   if (deleteUserError) {
     console.error('[Account/Delete] Auth user deletion failed:', deleteUserError)
     return NextResponse.json(
-      { error: 'Failed to delete account. Contact support.' },
+      { error: 'Failed to delete account. Please try again in a few minutes. If this keeps happening, contact support.' },
       { status: 500 }
     )
-  }
-
-  if (errors.length > 0) {
-    console.warn('[Account/Delete] Partial errors (auth user deleted):', errors)
   }
 
   return NextResponse.json({

@@ -5,14 +5,16 @@ import type { DecisionRecord } from '@/lib/types'
 import { PERSONAS }    from '@/lib/personas'
 import { formatLongDate } from '@/lib/dates'
 // Decision Brief parsing (headers in any of 3 model conventions, inline bold
-// spans) now lives in one shared place. Before this, RecordExport.tsx carried
-// its OWN third independent copy of this detection (narrower than the other
-// two — it only recognized "**Header**", not "## Header" or ALL-CAPS), which
-// is exactly the kind of per-file drift that let "## Decision Brief" render
-// as literal punctuation in the PDF while the live session and record pages
-// (already on the shared parser) rendered it correctly. See
+// spans, and the redundant-title skip) now lives in one shared place. Before
+// this, RecordExport.tsx carried its OWN third independent copy of the header
+// detection (narrower than the other two — it only recognized "**Header**",
+// not "## Header" or ALL-CAPS), which is exactly the kind of per-file drift
+// that let "## Decision Brief" render as literal punctuation in the PDF while
+// the live session and record pages (already on the shared parser) rendered
+// it correctly. This file was also, until 2026-08, the one consumer that had
+// picked up the shared parser but not the later redundant-title fix — see
 // lib/brief-markdown.ts's own header comment for the full history.
-import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent } from '@/lib/brief-markdown'
+import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent, briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 
 export interface ExaminerQA {
   question_text: string
@@ -180,12 +182,25 @@ export default function RecordExport({ record, examinerResponses = [] }: Props) 
       // Render a full persona response, parsing markdown properly
       const renderContent = (content: string, baseSize: number) => {
         const lines = content.split('\n')
+        // Bug fix (2026-08): this renderer was the one consumer of
+        // lib/brief-markdown.ts's shared parser that hadn't picked up the
+        // redundant-title fix the other three consumers already had — the
+        // Decision Brief content sometimes opens with a line that just
+        // restates "Decision Brief" (already shown by this document's own
+        // header above), which would render as a duplicate heading here.
+        // Narrow, position-scoped check (only the very first non-empty
+        // line), matching the same pattern used in SynthesisCard.tsx and
+        // app/record/[id]/page.tsx — see briefLineIsRedundantTitle's own
+        // comment in lib/brief-markdown.ts for exactly what it matches.
+        const firstContentIdx = lines.findIndex(l => l.trim().length > 0)
 
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i].trimEnd()
 
           // Skip empty lines — add small vertical space
           if (!line.trim()) { y += baseSize * 0.25; continue }
+
+          if (i === firstContentIdx && briefLineIsRedundantTitle(line.trim())) continue
 
           // Horizontal rule  ---
           if (/^---+$/.test(line.trim())) {

@@ -12,6 +12,21 @@
 //   3. Email session sweep       — UPDATE sessions WHERE user_email = ? AND user_id IS NULL
 //   4. Bias library retro-link   — upgrades anonymous bias rows to user_id lane
 //   5. user_preferences upsert   — ensures Mirror can access the user's preferences
+//
+// Provider-lock / duplicate-account note (confirmed with product, 2026-08):
+// this route intentionally does NOT run a cross-provider duplicate-account check
+// (e.g. "does this email already have a user_preferences row under a different
+// user_id with a different signup_method, and if so delete the just-created
+// duplicate auth user"). That backstop was drafted at one point but never built,
+// and an earlier pass of this codebase's own documentation assumed it existed.
+// It doesn't need to: Supabase Auth's own identity linking already merges a
+// magic-link login and a Google login for the same email into a single auth
+// user — confirmed directly against this project's Supabase configuration, not
+// assumed. So `userId` here is already Supabase's one canonical user id for that
+// email regardless of which method the person used to sign in this time; there
+// is no second, orphaned auth user for this route to detect or clean up.
+// `authMethod` below is purely informational (used only to label
+// user_preferences.signup_method on that single row), not a decision input.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'

@@ -23,7 +23,7 @@
 import { createServiceClient } from '@/lib/supabase'
 import { createCompletion }    from '@/lib/ai-client'
 import { MIRROR_FINGERPRINT_NARRATIVE } from '@/lib/personas'
-import { BIAS_PARAMETERS, getPredominantSignal } from '@/lib/bias-scorer'
+import { BIAS_PARAMETERS, getPredominantSignal, CONFIRMED_BIAS_THRESHOLD } from '@/lib/bias-scorer'
 import { computePersonalBiasTriggers } from '@/lib/bias-trigger-engine'
 // Phase 2 (backend improvement roadmap): decision-speed + risk-tolerance
 // signals feeding the narrative prompt's new INPUT DATA fields.
@@ -227,7 +227,11 @@ Weave this in only where it adds color consistent with the bias/decision-type ev
 
   const prompt = basePrompt + formingGuidance + foundationalGuidance
 
-  const raw   = await createCompletion(prompt, 2000, { provider: 'deepseek' })
+  // Provider migration (2026-08): was `provider: 'deepseek'`, now
+  // `provider: 'openai'` (GPT-5-mini, unconditional direct target — see
+  // resolveProvider's doc comment in lib/ai-client.ts). No explicit
+  // temperature was set here before, so nothing changes there.
+  const raw   = await createCompletion(prompt, 2000, { provider: 'openai' })
   const clean = raw.replace(/```json|```/g, '').trim()
 
   try {
@@ -301,18 +305,22 @@ export async function buildFingerprint(userId: string): Promise<FingerprintData>
     .join(', ') || 'varied'
 
   // ── 4. Split into confirmed vs forming ────────────────────────────────────
-  // R9 fix: confirmed raised to >= 3 (was >= 2). Two detections is not enough
-  // to establish a reliable pattern — one unusual decision can produce two
-  // correlated signals. Three detections across distinct sessions is the minimum
-  // for a stable fingerprint. Forming = 1 or 2 detections.
+  // R9 fix: confirmed raised to CONFIRMED_BIAS_THRESHOLD (was 2). Two
+  // detections is not enough to establish a reliable pattern — one unusual
+  // decision can produce two correlated signals. Three detections across
+  // distinct sessions is the minimum for a stable fingerprint. Forming = 1 or
+  // 2 detections. This constant is shared (lib/bias-scorer.ts) with every
+  // other place that decides "confirmed" so this and the Mirror Summary
+  // card, the fallback alert lookup, etc. can never disagree with each other
+  // again — see that constant's own comment for the history here.
   // Sprint RET-5: detection_count can be 0 for a row whose only contributing
   // session(s) were deleted — kept in bias_library for backend analytics
   // (so a future detection builds back up from history instead of a fresh
   // row), but must stay invisible here. Without the >= 1 floor a 0-count row
-  // would fall into formingRows (0 < 3) and render as a phantom "forming"
-  // tile for a pattern with zero surviving evidence.
-  const confirmedRows = biasRows.filter(b => b.detection_count >= 3)
-  const formingRows   = biasRows.filter(b => b.detection_count >= 1 && b.detection_count < 3)
+  // would fall into formingRows (0 < threshold) and render as a phantom
+  // "forming" tile for a pattern with zero surviving evidence.
+  const confirmedRows = biasRows.filter(b => b.detection_count >= CONFIRMED_BIAS_THRESHOLD)
+  const formingRows   = biasRows.filter(b => b.detection_count >= 1 && b.detection_count < CONFIRMED_BIAS_THRESHOLD)
 
   // ── 4b. Phase 2: decision-speed + risk-tolerance signals ──────────────────
   // Computed unconditionally (not gated on bias data existing at all) since

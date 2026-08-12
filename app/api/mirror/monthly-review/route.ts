@@ -13,7 +13,7 @@
 //     loopsClosed:       number            // sessions in window with an outcome row
 //     loopsClosedPct:    number            // 0–100
 //     ruleRecallApplied: number            // sessions in window where rule_recall_choice = 'applied'
-//     confirmedPatterns: number            // bias_library rows with detection_count >= 3
+//     confirmedPatterns: number            // bias_library rows with detection_count >= CONFIRMED_BIAS_THRESHOLD
 //     openLoops:         OpenLoop[]        // past-due review dates + older decisions with no outcome
 //   }
 //
@@ -31,6 +31,7 @@ import { createServiceClient }  from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 import { decrypt }              from '@/lib/encryption'
+import { CONFIRMED_BIAS_THRESHOLD } from '@/lib/bias-scorer'
 
 const WINDOW_DAYS      = 30
 const FALLBACK_MIN     = 10   // use all-time when session count < this
@@ -139,7 +140,7 @@ export async function GET(req: Request) {
       .from('bias_library')
       .select('bias_parameter', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .gte('detection_count', 3),
+      .gte('detection_count', CONFIRMED_BIAS_THRESHOLD),
   ])
 
   const closedSessionIds = new Set(

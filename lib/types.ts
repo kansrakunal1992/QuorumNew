@@ -248,7 +248,7 @@ export interface FingerprintTile {
 
 export interface FingerprintData {
   narrative: string | null         // null if < 2 confirmed patterns
-  confirmedTiles: FingerprintTile[] // detection_count >= 2
+  confirmedTiles: FingerprintTile[] // detection_count >= CONFIRMED_BIAS_THRESHOLD (lib/bias-scorer.ts)
   formingTiles: FingerprintTile[]   // detection_count === 1 (teasers in unlocked view)
   sessionCount: number
   generatedAt: string

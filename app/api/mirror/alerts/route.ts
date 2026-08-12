@@ -33,7 +33,7 @@
 import { NextResponse }         from 'next/server'
 import { createServiceClient }   from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { BIAS_PARAMETERS }       from '@/lib/bias-scorer'
+import { BIAS_PARAMETERS, CONFIRMED_BIAS_THRESHOLD } from '@/lib/bias-scorer'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 import { decrypt } from '@/lib/encryption'
 
@@ -206,7 +206,14 @@ export async function GET(req: Request) {
       .from('bias_library')
       .select('bias_parameter, detection_count, activation_contexts')
       .eq('user_id', userId)
-      .gte('detection_count', 2)
+      // Bug fix (2026-08): was hardcoded >= 2, out of sync with the >= 3
+      // "confirmed" bar used everywhere else (mirror-fingerprint.ts, the
+      // Mirror Summary card). This route's own downstream consumers call
+      // this set "confirmed biases" (see alerts/fallback/route.ts), so it
+      // needs the same shared threshold or it can tell a user "you've been
+      // confirmed to exhibit X" for a bias the Fingerprint page would still
+      // call merely "forming."
+      .gte('detection_count', CONFIRMED_BIAS_THRESHOLD)
       .order('detection_count', { ascending: false })
       .limit(8),
     isTeaser

@@ -142,6 +142,14 @@ function CallbackHandler() {
         }
 
         // ── Step 4: Link all recovered sessions to the authenticated user ─────
+        // Response intentionally not inspected: link-sessions has no
+        // provider-mismatch / duplicate-account error path to react to.
+        // Supabase Auth's own identity linking already merges a magic-link
+        // login and a Google login for the same email into one auth user
+        // (confirmed against this project's config, 2026-08) — `user.id`
+        // above is already that single canonical id, so there's no
+        // "wrong account" case for this step to detect. See the matching
+        // note in app/api/auth/link-sessions/route.ts.
         await fetch('/api/auth/link-sessions', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },

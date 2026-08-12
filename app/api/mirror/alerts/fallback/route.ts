@@ -7,9 +7,13 @@
 //
 // Hard constraints (per sign-off):
 //   - PERSONALIZED ONLY. The model is only ever shown the bias keys this
-//     specific user already has in bias_library with detection_count >= 2 —
-//     the exact same set /api/mirror/alerts already returns. It can never
-//     introduce a bias label the user hasn't already confirmed via Examiner.
+//     specific user already has in bias_library with detection_count >=
+//     CONFIRMED_BIAS_THRESHOLD (lib/bias-scorer.ts) — the exact same set
+//     /api/mirror/alerts already returns. It can never introduce a bias
+//     label the user hasn't already confirmed via Examiner. (Bug fix,
+//     2026-08: both this route and /api/mirror/alerts used to hardcode a
+//     bare >= 2 here, out of sync with the >= 3 "confirmed" bar used
+//     everywhere else — now both import the same shared constant.)
 //   - Per-user daily cap (BIAS_FALLBACK_DAILY_CAP, default 12) to bound
 //     DeepSeek spend on a screen that's otherwise zero marginal cost.
 //   - Zero user-facing failure modes. Any error, timeout, or cap-hit returns
@@ -24,7 +28,7 @@ import { NextResponse }      from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createCompletion }  from '@/lib/ai-client'
-import { BIAS_PARAMETERS }   from '@/lib/bias-scorer'
+import { BIAS_PARAMETERS, CONFIRMED_BIAS_THRESHOLD } from '@/lib/bias-scorer'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 import { encrypt }           from '@/lib/encryption'
 
@@ -87,7 +91,7 @@ export async function POST(req: Request) {
       .from('bias_library')
       .select('bias_parameter, detection_count')
       .eq('user_id', userId)
-      .gte('detection_count', 2)
+      .gte('detection_count', CONFIRMED_BIAS_THRESHOLD)
       .order('detection_count', { ascending: false })
       .limit(8)
 
@@ -129,8 +133,30 @@ Does this draft show evidence of ANY of the biases listed above — and only tho
 
     let raw: string
     try {
+      // Provider migration (2026-08): was `provider: 'deepseek',
+      // temperature: 0.1`, now `provider: 'openai'` (GPT-5-mini,
+      // unconditional direct target — see resolveProvider's doc comment in
+      // lib/ai-client.ts).
+      //
+      // Real, known tradeoff for THIS call specifically (unlike the other
+      // deepseek→openai migrations in this codebase, which had no explicit
+      // temperature to begin with): GPT-5-family models silently ignore any
+      // `temperature` option passed to them (see completeOpenAICompatible's
+      // doc comment in lib/ai-client.ts — there's no equivalent knob to
+      // substitute it with). The 0.1 here was a deliberate choice to keep
+      // this specific call — a live, proactive alert shown to the user
+      // while they're still drafting their decision — conservative and
+      // low-variance, minimizing the odds of flagging a bias that isn't
+      // really there. That deliberate conservatism is not guaranteed at
+      // GPT-5-mini's default temperature. The `temperature: 0.1` argument
+      // is left in place below (rather than removed) so the intent stays
+      // documented in the code and so this call automatically regains real
+      // temperature control if OPENAI_FAST_MODEL is ever pointed at a
+      // non-reasoning model. Worth an explicit product check-in after this
+      // migration specifically, given the "only flag what's really there"
+      // requirement this route's own prompt states outright.
       raw = await withTimeout(
-        createCompletion(prompt, 200, { provider: 'deepseek', temperature: 0.1 }),
+        createCompletion(prompt, 200, { provider: 'openai', temperature: 0.1 }),
         TIMEOUT_MS,
       )
     } catch {

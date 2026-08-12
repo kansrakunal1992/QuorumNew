@@ -8,7 +8,7 @@
 //
 // Returns FingerprintData:
 //   narrative:      AI-generated personal decision profile (null if < 2 confirmed)
-//   confirmedTiles: detection_count >= 2 — full tiles with interpretation
+//   confirmedTiles: detection_count >= CONFIRMED_BIAS_THRESHOLD (lib/bias-scorer.ts) — full tiles with interpretation
 //   formingTiles:   detection_count == 1 — label + "forming" state, no interpretation
 //   sessionCount:   total sessions for this user
 //   generatedAt:    ISO timestamp

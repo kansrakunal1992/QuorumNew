@@ -573,9 +573,16 @@ export default function SessionView({ session: initialSession, initialMessages =
     if (councilTourDone) return
     if ((totalSessionCount ?? 0) > 1) return
     try {
-      const done    = localStorage.getItem('quorum_tour.council')
-      const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
-      if (!done && !skipped) {
+      const done = localStorage.getItem('quorum_tour.council')
+      // Product decision (2026-08): the three tours (home, council, record)
+      // are independent — dismissing one must not suppress the others.
+      // This used to also check `quorum_tour.home === 'skip'` and bail out
+      // if the home tour had been explicitly skipped, which meant a user
+      // who skipped the home tour would silently never see this one either,
+      // contradicting the intended "skip one, still see the others on their
+      // own first visit" behavior. Now this tour only ever looks at its own
+      // dismissal state (`quorum_tour.council`).
+      if (!done) {
         // Build step list: base steps + optional PWA install step
         const pwaStep = buildPWAInstallStep()
         setCouncilTourSteps(pwaStep ? [...COUNCIL_STEPS_BASE, pwaStep] : COUNCIL_STEPS_BASE)

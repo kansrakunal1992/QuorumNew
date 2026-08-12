@@ -521,6 +521,10 @@ type ResolvedTarget =
 // requestedRole is the literal value each call site passes today — kept as
 // the same 'anthropic' | 'deepseek' union so no call site needs to change.
 // Under tiered routing it's reinterpreted as premium/fast (see doc comment).
+// 'openai' (added 2026-08, see resolveProvider's own doc comment on the
+// dedicated branch for it) is NOT part of this premium/fast reinterpretation
+// — it's handled as an unconditional direct target before this function
+// even runs, so it never reaches here.
 function roleFromRequested(requested?: 'anthropic' | 'deepseek'): Role {
   return requested === 'anthropic' ? 'premium' : 'fast'
 }
@@ -637,8 +641,29 @@ interface ResolveResult {
  * there's no override. Falls back to 'free' if no tier-context was set (see
  * lib/tier-context.ts doc comment on why that's the safe default for an
  * un-wired call site).
+ *
+ * requested === 'openai' (added 2026-08, DeepSeek → GPT-5-mini migration):
+ * unconditional direct target, resolved BEFORE either path above and not
+ * subject to tiering, per-user overrides, or ROUTING_MODE at all. This is
+ * deliberately different from how 'deepseek' behaves — 'deepseek' still
+ * flows through the tiered/legacy split above and would become tier-subject
+ * if TIERED_ROUTING_ENABLED were ever turned on. The seven call sites this
+ * was built for (Examiner question generation, Decision Brief generation,
+ * Mirror Fingerprint narrative, the alerts fallback route, voice cleanup)
+ * are internal system/utility calls, not the tier-differentiated advisor-
+ * persona experience the fast-role A/B testing exists for — they should
+ * always resolve to the same model regardless of which tier's fast-role
+ * provider is currently being tested, or whether tiering is on at all.
+ * Uses the same client/model constants as the tier-based 'openai-fast'
+ * candidate (openaiFast client, OPENAI_FAST_MODEL) — there's genuinely only
+ * one OpenAI-fast target in this file, this is just a second, unconditional
+ * way to reach it.
  */
-async function resolveProvider(requested?: 'anthropic' | 'deepseek'): Promise<ResolveResult> {
+async function resolveProvider(requested?: 'anthropic' | 'deepseek' | 'openai'): Promise<ResolveResult> {
+  if (requested === 'openai') {
+    return { target: { kind: 'openai-fast' }, wasOverride: false }
+  }
+
   if (!TIERED_ROUTING_ENABLED) {
     if (ROUTING_MODE === 'deepseek_only') return { target: { kind: 'deepseek-legacy' }, wasOverride: false }
     const p = requested ?? GLOBAL_PROVIDER
@@ -681,7 +706,7 @@ async function resolveProvider(requested?: 'anthropic' | 'deepseek'): Promise<Re
 // site, immediately before building that call's systemPrompt.
 export type ModelFamily = 'anthropic' | 'deepseek' | 'mistral' | 'qwen' | 'openai' | 'gemini'
 
-export async function getModelFamily(requested?: 'anthropic' | 'deepseek'): Promise<ModelFamily> {
+export async function getModelFamily(requested?: 'anthropic' | 'deepseek' | 'openai'): Promise<ModelFamily> {
   const { target } = await resolveProvider(requested)
   switch (target.kind) {
     case 'anthropic-legacy':
@@ -788,8 +813,10 @@ interface StreamResult {
  * (legacy) or the 'fast' role (tiered).
  */
 export interface CompletionOptions {
-  /** Pin this call to a specific provider (legacy) / role (tiered). See file doc comment. */
-  provider?: 'anthropic' | 'deepseek'
+  /** Pin this call to a specific provider (legacy) / role (tiered). See file doc comment.
+   *  'openai' forces GPT-5-mini directly, unconditionally — see resolveProvider's
+   *  doc comment on that branch for why it's handled differently from the other two. */
+  provider?: 'anthropic' | 'deepseek' | 'openai'
   /**
    * System prompt.
    * Passed as Anthropic `system` param or prepended as an OpenAI `system` message.
@@ -918,7 +945,7 @@ async function completeOpenAICompatible(
 export async function createStream(
   systemPrompt: string,
   messages:     { role: 'user' | 'assistant'; content: string }[],
-  provider?:    'anthropic' | 'deepseek',
+  provider?:    'anthropic' | 'deepseek' | 'openai',
   maxTokens:    number = 1200,
 ): Promise<StreamResult> {
   const result = await resolveProvider(provider)

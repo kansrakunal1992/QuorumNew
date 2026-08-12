@@ -38,6 +38,18 @@
  * Sprint 12 patch:
  *   - Background HTTP call to /api/bias-score replaces inline scorer.
  *   - GET handler: contextual rule question personalisation.
+ *
+ * Provider migration (2026-08): every createCompletion call in this file
+ * used `provider: 'deepseek'`, now `provider: 'openai'` (GPT-5-mini,
+ * unconditional direct target — see resolveProvider's doc comment in
+ * lib/ai-client.ts). All three calls here use short, tightly-capped prompts
+ * (80 max tokens, "return ONLY the question" instructions) with no explicit
+ * temperature setting to begin with, so the one real behavioral note for
+ * this migration — GPT-5-family models silently ignore any `temperature`
+ * option passed to them (see lib/ai-client.ts's completeOpenAICompatible
+ * doc comment) — doesn't change anything here specifically, unlike the
+ * mirror/alerts/fallback route's migration, which did rely on an explicit
+ * low temperature.
  */
 
 import { NextResponse }          from 'next/server'
@@ -85,7 +97,7 @@ DECISION BRIEF: "${decision.slice(0, 450)}"
 QUESTION:`.trim()
 
   try {
-    const raw   = await createCompletion(prompt, 80, { provider: 'deepseek' })
+    const raw   = await createCompletion(prompt, 80, { provider: 'openai' })
     const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return FALLBACK
     return clean
@@ -210,7 +222,7 @@ DECISION BRIEF: "${decision.slice(0, 450)}"
 QUESTION:`
 
   try {
-    const raw   = await createCompletion(prompt.trim(), 80, { provider: 'deepseek' })
+    const raw   = await createCompletion(prompt.trim(), 80, { provider: 'openai' })
     const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return rule === 'R1' ? FALLBACK_R1 : FALLBACK_R7
     if (hasUngroundedSpecifics(clean, decision)) {
@@ -290,7 +302,7 @@ async function personaliseRuleQuestion(
   profileCtx?: string, // SB-2: profile context for C0 sharpening
 ): Promise<string> {
   try {
-    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision, biasHint, profileCtx), 80, { provider: 'deepseek' })
+    const raw   = await createCompletion(PERSONALISE_PROMPT(ruleId, template, decision, biasHint, profileCtx), 80, { provider: 'openai' })
     const clean = raw.trim().replace(/^["']|["']$/g, '').trim()
     if (!clean || clean.split(' ').length > 40) return template
     return clean

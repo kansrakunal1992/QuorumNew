@@ -53,7 +53,11 @@ ${raw}`
 
   let cleaned: string
   try {
-    cleaned = (await createCompletion(prompt, 600, { provider: 'deepseek' })).trim()
+    // Provider migration (2026-08): was `provider: 'deepseek'`, now
+    // `provider: 'openai'` (GPT-5-mini, unconditional direct target — see
+    // resolveProvider's doc comment in lib/ai-client.ts). No explicit
+    // temperature was set here before, so nothing changes there.
+    cleaned = (await createCompletion(prompt, 600, { provider: 'openai' })).trim()
   } catch (err) {
     console.error('[voice/cleanup] AI completion failed:', err)
     return NextResponse.json({ error: 'CLEANUP_FAILED' }, { status: 502 })

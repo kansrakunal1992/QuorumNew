@@ -90,9 +90,15 @@ export default function RecordTour({ totalSessionCount, tourDone = false }: Prop
     if (tourDone) return
     if ((totalSessionCount ?? 0) > 1) return
     try {
-      const done    = localStorage.getItem('quorum_tour.record')
-      const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
-      if (!done && !skipped) {
+      const done = localStorage.getItem('quorum_tour.record')
+      // Product decision (2026-08): the three tours (home, council, record)
+      // are independent — dismissing one must not suppress the others. This
+      // used to also check `quorum_tour.home === 'skip'` and bail out if the
+      // home tour had been explicitly skipped, which meant a user who
+      // skipped the home tour would silently never see this one either.
+      // Now this tour only ever looks at its own dismissal state
+      // (`quorum_tour.record`).
+      if (!done) {
         // ── Build dynamic step list ──────────────────────────────────────────
         const hasEmail = !!localStorage.getItem('quorum_user_email')
 
