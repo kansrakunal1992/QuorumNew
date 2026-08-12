@@ -510,6 +510,58 @@ textarea::placeholder { color: var(--text-4); }
   color: var(--gold);
 }
 
+/* ── Visitor counter ────────────────────────────────────────── */
+/* Fixed bottom-left, deliberately opposite corner from .theme-toggle
+   (top-right) and UnlockNotice (bottom-right, see UnlockNotice.tsx). z-index
+   500 keeps it above ordinary page content but below every modal/drawer in
+   the app (all >= 9000), and pointer-events:none means it can never block a
+   tap even if it visually sits near something else. Opacity is toggled by
+   VisitorCounter.tsx (not display:none) so the fade in/out near the footer
+   is smooth rather than an abrupt pop. */
+.visitor-counter {
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  left: 20px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 24px;
+  border: 1px solid var(--border-mid);
+  background: var(--bg-card);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow-card);
+  user-select: none;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.visitor-counter-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.18);
+  flex-shrink: 0;
+  animation: visitor-counter-pulse 2.4s ease-in-out infinite;
+}
+@keyframes visitor-counter-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (max-width: 480px) {
+  .visitor-counter {
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    padding: 6px 11px;
+    font-size: 10px;
+  }
+}
+
 /* Institution mode strip (Institutional Sprint 5) — this is now a normal
    in-flow element mounted at the very top of <body>, before {children}, so
    it structurally can't overlap any page's own content anymore (that was

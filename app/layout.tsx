@@ -6,6 +6,7 @@ import AppFooter from '@/components/AppFooter'
 import UpdateBanner from '@/components/UpdateBanner'
 import InstitutionModeBadge from '@/components/InstitutionModeBadge'   // Institutional Sprint 5
 import PlanBadge from '@/components/PlanBadge'                         // Free/Elite plan identifier
+import VisitorCounter from '@/components/VisitorCounter'               // "N people already here" social-proof pill
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
@@ -81,6 +82,9 @@ export default function RootLayout({
         {children}
         {/* S2-04 — legal footer on every page */}
         <AppFooter />
+        {/* "N people already here" social-proof pill — fixed bottom-left,
+            hides itself when the footer above scrolls into view */}
+        <VisitorCounter />
         {/* S2-01 — cookie consent banner; gated to client, no SSR flash */}
         <CookieConsent />
       </body>
