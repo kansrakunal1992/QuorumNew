@@ -8,9 +8,10 @@
 // localStorage is empty.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
+import { trackMetaEvent } from '@/lib/meta-pixel'
 
 interface Props {
   userEmail: string | null
@@ -25,6 +26,18 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
   const [email,     setEmail]     = useState('')
   const [authState, setAuthState] = useState<AuthState>('idle')
   const [errMsg,    setErrMsg]    = useState('')
+
+  // Meta Pixel: ViewContent — fires once when this panel mounts for a
+  // signed-out visitor, i.e. the moment someone actually reaches the
+  // free-tier signup UI (not on every render — empty dep array, mount only).
+  // Skipped entirely when userEmail is already set, since that branch below
+  // never shows the signup form at all.
+  useEffect(() => {
+    if (!userEmail) {
+      trackMetaEvent('ViewContent', { content_name: 'Quorum Free Tier' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Already authenticated — show compact identity pill
   if (userEmail) {

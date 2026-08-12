@@ -33,8 +33,10 @@ const ContentSecurityPolicy = [
   "default-src 'self'",
 
   // Scripts: Next.js requires 'unsafe-inline' for hydration scripts.
+  // connect.facebook.net serves the Meta Pixel base script (fbevents.js) —
+  // free-tier acquisition funnel tracking, see components/MetaPixel.tsx.
   // TODO S6+: replace with nonce-based CSP via middleware.ts
-  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com",
+  "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://connect.facebook.net",
 
   // Styles: Next.js injects inline styles; Google Fonts CSS is loaded in layout.tsx
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -42,13 +44,15 @@ const ContentSecurityPolicy = [
   // Fonts: Google Fonts static assets served from fonts.gstatic.com
   "font-src 'self' https://fonts.gstatic.com",
 
-  // Images: data: URIs used by Next.js Image and inline SVGs; blob: for canvas exports
-  "img-src 'self' data: blob: https://*.razorpay.com",
+  // Images: data: URIs used by Next.js Image and inline SVGs; blob: for canvas exports.
+  // www.facebook.com is the Meta Pixel <noscript> fallback beacon (1x1 img).
+  "img-src 'self' data: blob: https://*.razorpay.com https://www.facebook.com",
 
   // Connections from the browser:
   //   - Same origin (API routes, Next.js data fetching)
   //   - Supabase: REST API + Realtime WebSocket for auth and DB reads
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.razorpay.com https://checkout.razorpay.com",
+  //   - Meta Pixel: fbevents.js reports events to facebook.com/tr and connect.facebook.net
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.razorpay.com https://checkout.razorpay.com https://www.facebook.com https://connect.facebook.net",
 
   // Media: TTS audio is returned as blob: URLs from /api/voice/tts (same origin)
   "media-src 'self' blob:",

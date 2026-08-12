@@ -7,6 +7,7 @@ import UpdateBanner from '@/components/UpdateBanner'
 import InstitutionModeBadge from '@/components/InstitutionModeBadge'   // Institutional Sprint 5
 import PlanBadge from '@/components/PlanBadge'                         // Free/Elite plan identifier
 import VisitorCounter from '@/components/VisitorCounter'               // "N people already here" social-proof pill
+import MetaPixel from '@/components/MetaPixel'                         // Free-tier acquisition funnel tracking
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
@@ -71,6 +72,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <MetaPixel />
         <UpdateBanner />
         <ThemeToggle />
         {/* Institutional Sprint 5 — fixed top-right, renders null unless the

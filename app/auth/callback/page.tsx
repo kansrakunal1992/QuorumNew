@@ -23,6 +23,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getStoredSessionIds, storeUserEmail, getStoredDeviceId } from '@/lib/storage'
+import { trackMetaEvent } from '@/lib/meta-pixel'
 
 // ── Inner component — reads URL params (requires Suspense parent) ─────────────
 function CallbackHandler() {
@@ -103,6 +104,42 @@ function CallbackHandler() {
         // rather than trusting anything the client claimed beforehand.
         const authMethod: 'magic_link' | 'google' =
           user.app_metadata?.provider === 'google' ? 'google' : 'magic_link'
+
+        // ── Meta Pixel: CompleteRegistration (free-tier acquisition funnel) ───
+        // This app is passwordless (magic link + Google OAuth) — Supabase
+        // auto-creates the auth.users row on a person's very first successful
+        // sign-in, for EITHER provider. There's no separate "account created"
+        // step to hook into, so the reliable signal is comparing the user's
+        // created_at to last_sign_in_at: on a brand-new account both are
+        // stamped by the same auth event (milliseconds apart). On any later
+        // login, last_sign_in_at moves forward while created_at stays fixed.
+        // Same auth.users columns for both providers, so this covers magic
+        // link and Google identically without touching link-sessions or the
+        // DB schema.
+        const createdAtMs  = user.created_at ? new Date(user.created_at).getTime() : null
+        const lastSignInMs = user.last_sign_in_at ? new Date(user.last_sign_in_at).getTime() : null
+        const isNewRegistration =
+          createdAtMs !== null &&
+          lastSignInMs !== null &&
+          Math.abs(lastSignInMs - createdAtMs) < 60_000 // same auth event, not a later login
+
+        if (isNewRegistration) {
+          // Session-scoped dedupe (NOT localStorage/permanent) — survives this
+          // tab's re-renders/route changes/effect re-fires, but never blocks a
+          // genuinely new registration in a future tab or after this tab closes.
+          const dedupeKey = `quorum_meta_cr_${user.id}`
+          const alreadyFired = (() => {
+            try { return sessionStorage.getItem(dedupeKey) === '1' } catch { return false }
+          })()
+          if (!alreadyFired) {
+            try { sessionStorage.setItem(dedupeKey, '1') } catch {}
+            trackMetaEvent('CompleteRegistration', {
+              content_name: 'Quorum Free Tier',
+              status: 'completed',
+            })
+            console.log(`[AuthCallback] Meta Pixel: CompleteRegistration fired (${authMethod})`)
+          }
+        }
 
         // ── Step 4: Link all recovered sessions to the authenticated user ─────
         await fetch('/api/auth/link-sessions', {
