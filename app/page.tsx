@@ -765,7 +765,7 @@ export default function Home() {
           )}
 
           {/* ── Flip card wrapper ─────────────────────────── */}
-          <div style={{ position: 'relative', marginBottom: 0 }}>
+          <div style={{ position: 'relative', marginBottom: 'clamp(16px, 4vw, 56px)' }}>
 
             {/* ── Radial bloom behind card — dark mode only (hidden via .card-bloom in light) ── */}
             {!inputRevealed && (
@@ -1133,6 +1133,8 @@ export default function Home() {
 
             {/* ── FRONT FACE — Decision form ──────────────── */}
             <div style={{
+              position:      inputRevealed ? 'relative' : 'absolute',
+              top: 0, left: 0, right: 0,
               background:    'var(--bg-card)',
               border:        '1px solid var(--border-mid)',
               borderRadius:  20,

@@ -51,7 +51,7 @@ export default function TermsPage() {
             fontFamily: 'var(--font-mono)', fontSize: 11,
             color: 'var(--text-4)', letterSpacing: '0.06em', margin: 0,
           }}>
-            Effective 5 June 2026 · Version 1.0
+            Effective 14 August 2026 · Version 1.1
           </p>
         </div>
 
@@ -74,16 +74,16 @@ export default function TermsPage() {
               by Quorum ("we", "us", "our").
             </p>
             <p>
-              Access is via the web application at app.quorumvault.xyz and through any other interfaces
+              Access is via the web application at app.quorumvault.org and through any other interfaces
               we make available.
             </p>
           </S>
 
           <S title="2. Your account">
             <p>
-              Authentication uses passwordless magic links sent to your email address. You are
-              responsible for maintaining access to that email account and for all activity that occurs
-              under your Quorum account.
+              Authentication is passwordless — sign in with Google, or with a one-time link sent to
+              your email address. You are responsible for maintaining access to the account (Google
+              or email) you use to sign in, and for all activity that occurs under your Quorum account.
             </p>
             <p>
               You must provide accurate information and must not share access to your account with
@@ -210,11 +210,10 @@ export default function TermsPage() {
 
           <S title="13. Contact">
             <p>
-              Questions about these terms? Use the{' '}
-              <Link href="/settings/privacy" style={{ color: 'var(--gold)', textDecoration: 'none' }}>
-                Privacy Center
-              </Link>
-              {' '}in Settings, accessible from the footer of any page.
+              Questions about these terms? Email us at{' '}
+              <a href="mailto:support@quorumvault.org" style={{ color: 'var(--gold)', textDecoration: 'none' }}>
+                support@quorumvault.org
+              </a>.
             </p>
           </S>
 
