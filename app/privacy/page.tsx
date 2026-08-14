@@ -53,7 +53,7 @@ export default function PrivacyPolicyPage() {
             color: 'var(--text-4)', letterSpacing: '0.06em',
             margin: 0,
           }}>
-            Effective 5 June 2026 · Version 1.0
+            Effective 14 August 2026 · Version 1.1
           </p>
         </div>
 
@@ -70,10 +70,11 @@ export default function PrivacyPolicyPage() {
           <Section title="1. Data we collect">
             <p>We collect only what is necessary to provide the service:</p>
             <Table rows={[
-              ['Account data', 'Your email address, collected when you sign in via magic link.'],
+              ['Account data', 'Your email address, collected when you sign in with Google or via a magic link.'],
               ['Decision data', 'The decision text you submit and any register-mode answers you provide before Council analysis.'],
               ['Analysis data', 'AI-generated responses from persona analysis, synthesis, and the follow-up question diagnostic. These are stored so you can return to a session.'],
               ['Behavioural data', 'Bias scores, calibration records, decision patterns, and independence metrics derived from your decisions over time. This data compounds to form your decision profile in the Mirror module.'],
+              ['Context Ingestion data (Elite)', 'If you import context via Mirror — a pasted description or a ChatGPT/Claude export — the file or text is processed in memory to extract a handful of distilled insights, which you review and approve before anything is saved. The raw import is never stored.'],
               ['Technical data', 'An anonymous device identifier (generated on your device, gated behind functional cookie consent), session identifiers, and server-side request logs including IP address and user agent.'],
               ['Website enquiry data', 'If you request early access via our public website, your name, email, WhatsApp number, and the decision context you provide.'],
             ]} />
@@ -108,9 +109,15 @@ export default function PrivacyPolicyPage() {
             <Table rows={[
               ['Supabase', 'Database and authentication (PostgreSQL, magic link auth). Hosted in the United States. See supabase.com/privacy.'],
               ['Railway', 'Application hosting and deployment. Hosted in the United States. See railway.app/legal/privacy.'],
-              ['AI processing service', 'Generates Council analysis from your decision text. Hosted in the United States.'],
+              ['OpenAI', 'Generates fast-role Council analysis on the Free and Elite plans. Hosted in the United States. See openai.com/privacy.'],
+              ['Anthropic', "Generates Quorum's deepest analysis — Council Synthesis, Mirror, and long-term pattern-reading — on the Elite plan. Hosted in the United States. See anthropic.com/privacy."],
               ['Google Fonts', 'Loads typefaces used in the interface. No personal data is transmitted beyond standard browser request metadata. See policies.google.com/privacy.'],
             ]} />
+            <p style={{ marginTop: 10 }}>
+              No China-based AI provider is used on the Free or Elite plans. If you're on the
+              Private plan, your decisions are processed entirely on infrastructure you control —
+              no third-party AI processor receives your data at all.
+            </p>
           </Section>
 
           <Section title="5. Data retention">
@@ -118,6 +125,7 @@ export default function PrivacyPolicyPage() {
               ['Authenticated sessions', 'Retained until you delete your account or request erasure.'],
               ['Anonymous sessions', 'Retained for 90 days if not linked to an account. Linking a session to an account converts it to account-scoped retention.'],
               ['Bias and behavioural profiles', 'Retained while your account is active. Deleted on account erasure.'],
+              ['Context Ingestion imports', 'The raw imported file or text is never stored — it is discarded immediately after the distilled insights are extracted. Only the insights you approve are retained, as part of your behavioural profile.'],
               ['Authentication tokens', 'Expire per the Supabase session defaults. You may invalidate all sessions via Settings → Security Center.'],
               ['Server logs', 'Standard infrastructure logs retained for up to 30 days.'],
             ]} />
@@ -193,7 +201,7 @@ export default function PrivacyPolicyPage() {
               <Link href="/settings/privacy" style={{ color: 'var(--gold)', textDecoration: 'none' }}>
                 Privacy Center
               </Link>
-              {' '}accessible from Settings in the app footer.
+              {' '}in Settings.
               We aim to respond to all data rights requests within 30 days.
             </p>
           </Section>

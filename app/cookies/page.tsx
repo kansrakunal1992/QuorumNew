@@ -55,6 +55,95 @@ const STORAGE_REGISTRY = [
     duration: 'Session, or until Supabase token expiry',
     consent: false,
   },
+  {
+    key: 'quorum_onboarded',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers whether you\u2019ve completed the first-time home page walkthrough, so it doesn\u2019t show again.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_tour.home / quorum_tour.record / quorum_tour.council',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers which guided product tours (home, record, and Council pages) you\u2019ve already seen, so they don\u2019t repeat.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_tips_open',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers whether the "How to get the most out of Quorum" tips panel is expanded or collapsed.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_profile_overlay_shown',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers whether you\u2019ve already seen the profile-setup prompt, so it isn\u2019t shown again.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_style_calibration_dismissed',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers whether you\u2019ve dismissed the Council-style calibration prompt in Mirror.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_mirror_welcomed',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers whether you\u2019ve seen Mirror\u2019s first-time welcome message.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_mirror_collapsed',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers which cards or panels you\u2019ve collapsed on the Mirror page, so your layout persists between visits.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_mirror_desc_hidden',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers which explanatory description texts you\u2019ve hidden on the Mirror page.',
+    duration: 'Until manually cleared',
+    consent: false,
+  },
+  {
+    key: 'quorum_resubmit_alert',
+    category: 'Strictly Necessary',
+    purpose: 'A short-lived flag noting a session was just resubmitted, so the record page can show a one-time notice.',
+    duration: 'Removed automatically once the notice is shown',
+    consent: false,
+  },
+]
+
+// Session storage — cleared automatically when you close the tab or browser,
+// unlike the persistent keys above.
+const SESSION_STORAGE_REGISTRY = [
+  {
+    key: 'quorum_pending_strip_dismissed',
+    category: 'Strictly Necessary',
+    purpose: 'Remembers, for this browser tab, whether you\u2019ve dismissed the pending-decisions banner on the home page.',
+    duration: 'Cleared when you close the tab or browser',
+    consent: false,
+  },
+  {
+    key: 'quorum_brief_email_pending / quorum_brief_email_dismissed',
+    category: 'Functional',
+    purpose: 'Remembers, for this browser tab, whether you\u2019ve submitted or dismissed the prompt to email yourself a decision brief.',
+    duration: 'Cleared when you close the tab or browser',
+    consent: true,
+  },
+  {
+    key: 'quorum_admin_code',
+    category: 'Authentication',
+    purpose: 'Internal admin-panel access code. Only ever written on the /admin route \u2014 not set during normal use of Quorum.',
+    duration: 'Cleared when you close the tab or browser',
+    consent: false,
+  },
 ]
 
 const CATEGORY_COLOR: Record<string, string> = {
@@ -103,7 +192,7 @@ export default function CookiePolicyPage() {
             fontFamily: 'var(--font-mono)', fontSize: 11,
             color: 'var(--text-4)', letterSpacing: '0.06em', margin: 0,
           }}>
-            Effective 5 June 2026 · Version 1.0
+            Effective 14 August 2026 · Version 1.1
           </p>
         </div>
 
@@ -116,9 +205,11 @@ export default function CookiePolicyPage() {
             borderLeft: '2px solid var(--gold-dim)', paddingLeft: 16,
           }}>
             Quorum does not use traditional HTTP cookies. Instead, we use browser{' '}
-            <strong style={{ color: 'var(--text-1)' }}>local storage</strong> — a similar
-            technology that stores small pieces of data in your browser. This page lists every
-            key we store, what it contains, and how to manage it.
+            <strong style={{ color: 'var(--text-1)' }}>local storage</strong> and{' '}
+            <strong style={{ color: 'var(--text-1)' }}>session storage</strong> — similar
+            technologies that store small pieces of data in your browser. Local storage persists
+            until cleared; session storage clears automatically when you close the tab or browser.
+            This page lists every key we store, what it contains, and how to manage it.
           </p>
 
           {/* Category legend */}
@@ -158,56 +249,23 @@ export default function CookiePolicyPage() {
             }}>
               Local storage registry
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {STORAGE_REGISTRY.map((item) => {
-                const catColor = item.consent
-                  ? 'var(--gold)'
-                  : (CATEGORY_COLOR[item.category] ?? 'var(--text-4)')
-                return (
-                  <div key={item.key} style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-dim)',
-                    borderRadius: 10, overflow: 'hidden',
-                  }}>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 14px', gap: 12, flexWrap: 'wrap',
-                      background: 'var(--bg-card-alt)',
-                      borderBottom: '1px solid var(--border-dim)',
-                    }}>
-                      <code style={{
-                        fontFamily: 'var(--font-mono)', fontSize: 11.5,
-                        color: 'var(--text-1)', letterSpacing: '0.04em',
-                      }}>
-                        {item.key}
-                      </code>
-                      <span style={{
-                        padding: '3px 9px', borderRadius: 100,
-                        border: `1px solid ${catColor}44`,
-                        background: `${catColor === 'var(--gold)' ? 'rgba(201,168,76' : catColor.replace('#', 'rgba(').replace(')', ',')}0.14)`,
-                        fontSize: 10.5, fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-3)',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {item.consent ? 'Functional — consent required' : item.category}
-                      </span>
-                    </div>
-                    <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <p style={{ margin: 0, fontSize: 13, color: 'var(--text-3)', lineHeight: 1.65 }}>
-                        {item.purpose}
-                      </p>
-                      <p style={{
-                        margin: 0, fontSize: 11.5,
-                        fontFamily: 'var(--font-mono)', color: 'var(--text-4)',
-                        letterSpacing: '0.04em',
-                      }}>
-                        Duration: {item.duration}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            <StorageRegistryList items={STORAGE_REGISTRY} />
+          </section>
+
+          {/* Session storage registry */}
+          <section style={{ marginBottom: 44 }}>
+            <h2 style={{
+              fontSize: 13, fontWeight: 600, color: 'var(--text-1)',
+              fontFamily: 'var(--font-body)', margin: '0 0 14px', paddingBottom: 8,
+              borderBottom: '1px solid var(--border-dim)',
+            }}>
+              Session storage registry
+            </h2>
+            <p style={{ marginBottom: 14 }}>
+              These keys are cleared automatically when you close the tab or browser — they
+              don&apos;t persist across visits the way local storage does.
+            </p>
+            <StorageRegistryList items={SESSION_STORAGE_REGISTRY} />
           </section>
 
           {/* Analytics */}
@@ -254,5 +312,62 @@ export default function CookiePolicyPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+type StorageItem = { key: string; category: string; purpose: string; duration: string; consent: boolean }
+
+function StorageRegistryList({ items }: { items: StorageItem[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {items.map((item) => {
+        const catColor = item.consent
+          ? 'var(--gold)'
+          : (CATEGORY_COLOR[item.category] ?? 'var(--text-4)')
+        return (
+          <div key={item.key} style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-dim)',
+            borderRadius: 10, overflow: 'hidden',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px', gap: 12, flexWrap: 'wrap',
+              background: 'var(--bg-card-alt)',
+              borderBottom: '1px solid var(--border-dim)',
+            }}>
+              <code style={{
+                fontFamily: 'var(--font-mono)', fontSize: 11.5,
+                color: 'var(--text-1)', letterSpacing: '0.04em',
+              }}>
+                {item.key}
+              </code>
+              <span style={{
+                padding: '3px 9px', borderRadius: 100,
+                border: `1px solid ${catColor}44`,
+                background: `${catColor === 'var(--gold)' ? 'rgba(201,168,76' : catColor.replace('#', 'rgba(').replace(')', ',')}0.14)`,
+                fontSize: 10.5, fontFamily: 'var(--font-mono)',
+                color: 'var(--text-3)',
+                whiteSpace: 'nowrap',
+              }}>
+                {item.consent ? 'Functional — consent required' : item.category}
+              </span>
+            </div>
+            <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--text-3)', lineHeight: 1.65 }}>
+                {item.purpose}
+              </p>
+              <p style={{
+                margin: 0, fontSize: 11.5,
+                fontFamily: 'var(--font-mono)', color: 'var(--text-4)',
+                letterSpacing: '0.04em',
+              }}>
+                Duration: {item.duration}
+              </p>
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }

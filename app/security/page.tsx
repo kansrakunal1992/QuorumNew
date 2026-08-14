@@ -19,9 +19,9 @@ const IMPLEMENTED: { label: string; detail: string }[] = [
       'Decision text and AI analysis stored in the database are encrypted at the field level using AES-256-GCM before storage. Encrypted fields are decrypted only at read time within the application.',
   },
   {
-    label: 'Passwordless magic link authentication',
+    label: 'Passwordless authentication (Google or magic link)',
     detail:
-      'Quorum uses time-limited magic links sent to your email for authentication. No passwords are stored. Authentication is handled via Supabase Auth with PKCE flow.',
+      'Quorum lets you sign in with Google or with a time-limited magic link sent to your email. No passwords are stored either way. Both are handled via Supabase Auth (OAuth and PKCE flows).',
   },
   {
     label: 'HTTPS / TLS in transit',
@@ -34,19 +34,19 @@ const IMPLEMENTED: { label: string; detail: string }[] = [
       'Supabase PostgreSQL row-level security policies are enforced across all user-scoped tables. Authenticated users can only read and write rows associated with their own account.',
   },
   {
-    label: 'US-based hosting infrastructure',
+    label: 'US-based hosting infrastructure (Free and Elite)',
     detail:
-      'The Quorum application runs on Railway (US) and the database is hosted on Supabase (US). No user data is stored in jurisdictions with inadequate data protection standards.',
+      'On the Free and Elite plans, the Quorum application runs on Railway (US) and the database is hosted on Supabase (US). Private plan customers deploy on infrastructure of their own choosing (AWS, GCP, or Azure), so this does not apply to Private.',
   },
   {
     label: 'No advertising, no data selling',
     detail:
-      'Quorum does not serve advertising, does not sell user data, and does not share decision content with any third party except the AI processing service used to generate analysis.',
+      'Quorum does not serve advertising, does not sell user data, and does not share decision content with any third party except the AI providers (OpenAI and Anthropic) used to generate analysis. No China-based provider is used on the Free or Elite plans.',
   },
   {
     label: 'AI processing with no training use',
     detail:
-      'Your decision text is processed by an AI service solely to generate your Council analysis. The AI provider does not use your submissions to train its models.',
+      'Your decision text is processed by OpenAI and/or Anthropic solely to generate your Council analysis, depending on your plan. Neither provider uses your submissions to train its models. On the Private plan, analysis runs entirely on infrastructure you control instead.',
   },
   {
     label: 'Encryption key rotation tooling',
@@ -108,7 +108,7 @@ export default function SecurityPage() {
             fontFamily: 'var(--font-mono)', fontSize: 11,
             color: 'var(--text-4)', letterSpacing: '0.06em', margin: 0,
           }}>
-            Effective 5 June 2026 · Current state — no aspirational claims
+            Effective 14 August 2026 · Current state — no aspirational claims
           </p>
         </div>
 
@@ -217,11 +217,15 @@ export default function SecurityPage() {
               Reporting a security concern
             </h2>
             <p>
-              If you discover a potential security issue, please report it via the{' '}
-              <Link href="/settings/privacy" style={{ color: 'var(--gold)', textDecoration: 'none' }}>
-                Privacy Center
-              </Link>
-              {' '}in app Settings. We will acknowledge all valid reports within 5 business days
+              If you discover a potential security issue, please report it to{' '}
+              <a href="mailto:security@quorumvault.org" style={{ color: 'var(--gold)', textDecoration: 'none' }}>
+                security@quorumvault.org
+              </a>
+              {' '}(see our{' '}
+              <a href="/.well-known/security.txt" style={{ color: 'var(--gold)', textDecoration: 'none' }}>
+                security.txt
+              </a>
+              {' '}disclosure policy). We will acknowledge all valid reports within 5 business days
               and aim to remediate critical issues within 30 days.
             </p>
           </section>
