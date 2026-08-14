@@ -68,7 +68,7 @@ export default function InstallPage() {
           }}>
             Quorum is a web app you can add to your home screen like any other
             app. It opens full-screen, works from an icon like everything else
-            on your phone, and there\u2019s nothing to install from an app store.
+            on your phone, and there’s nothing to install from an app store.
           </p>
 
           <PlatformSteps
@@ -79,7 +79,7 @@ export default function InstallPage() {
               'Scroll down and tap "Add to Home Screen."',
               'Confirm the name (\u201cQuorum\u201d) and tap "Add."',
             ]}
-            note="Must be done in Safari \u2014 Chrome and other iPhone browsers can't add to the home screen due to Apple's restrictions."
+            note="Must be done in Safari — Chrome and other iPhone browsers can't add to the home screen due to Apple's restrictions."
           />
 
           <PlatformSteps
@@ -90,7 +90,7 @@ export default function InstallPage() {
               'Tap "Add to Home screen" (sometimes shown as "Install app").',
               'Confirm the name and tap "Add" or "Install."',
             ]}
-            note="On some Android phones, Chrome will show an install prompt automatically after your first visit \u2014 you can tap that instead of using the menu."
+            note="On some Android phones, Chrome will show an install prompt automatically after your first visit — you can tap that instead of using the menu."
           />
 
           <section style={{ marginTop: 8 }}>
@@ -104,9 +104,9 @@ export default function InstallPage() {
             </h2>
             <p>
               Once installed, Quorum opens in its own window without your
-              browser\u2019s address bar or tabs \u2014 it feels like a native app.
+              browser’s address bar or tabs — it feels like a native app.
               Your sessions, sign-in, and history are the same as the website;
-              installing doesn\u2019t create a separate copy of your data.
+              installing doesn’t create a separate copy of your data.
             </p>
           </section>
 
