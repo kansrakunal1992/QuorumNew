@@ -247,7 +247,7 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0' }}>
         <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
-        <span style={{ fontSize: 10, color: 'var(--text-5)' }}>or, skip Google</span>
+        <span style={{ fontSize: 10, color: 'var(--text-5)' }}>skip Google</span>
         <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
       </div>
 

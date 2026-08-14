@@ -120,7 +120,7 @@ const HOME_STEPS_BASE: TourStep[] = [
     id:             'home-context',
     targetSelector: '[data-tour-id="home-context"]',
     heading:        'Add context if you have it',
-    body:           'Paste relevant background — emails, term sheets, WhatsApp threads. The Council treats context as evidence, not decoration. Optional, but it sharpens the analysis significantly.',
+    body:           'This is where the details go — numbers, prior conversations, constraints, or documents like emails and term sheets. The Council treats context as evidence, not decoration. Optional, but it sharpens the analysis significantly.',
     preferredSide:  'bottom',
   },
   {
@@ -1211,12 +1211,12 @@ export default function Home() {
               <div style={{ marginTop: 12 }}>
                 {!showContext ? (
                   <button className="btn-ghost" onClick={() => setShowContext(true)} data-tour-id="home-context">
-                    + Add context · notes, emails, messages
+                    + Add context · details, background, documents
                   </button>
                 ) : (
                   <>
                     <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 8 }}>
-                      Paste relevant context — emails, WhatsApp, term sheets
+                      Add any relevant detail — numbers, background, prior conversations, or documents like emails and term sheets
                     </p>
                     <textarea
                       rows={3}
@@ -1549,7 +1549,7 @@ export default function Home() {
                     <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>Challenge the advisors</p>
                   </div>
                   <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
-                    After each advisor responds, you&apos;ll see a <span style={{ color: 'var(--gold)', fontWeight: 600 }}>&quot;Challenge this · add context&quot;</span> button. Disagree, add information they missed, or ask a follow-up — it&apos;s automatically shared with the rest of the council as new evidence, and each advisor reassesses independently. The Council synthesizes once, after everyone has weighed in.
+                    After each advisor responds, you&apos;ll see a <span style={{ color: 'var(--gold)', fontWeight: 600 }}>&quot;Disagree or ask a follow-up&quot;</span> button. Add information they missed or push back on their reasoning — it&apos;s automatically shared with the rest of the council as new evidence, and each advisor reassesses independently. The Council synthesizes once, after everyone has weighed in.
                   </p>
                 </div>
                 <div style={{ background: 'var(--green-soft)', border: '1px solid var(--green-border)', borderRadius: 12, padding: '14px 16px' }}>

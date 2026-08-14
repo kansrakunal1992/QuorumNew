@@ -351,7 +351,7 @@ export default function ProfileCaptureOverlay({ authToken, deviceId, onDone, ini
         </button>
         {isContextIngestionEnabled() && (
           <p style={{ fontSize: 11, color: 'var(--text-4)', textAlign: 'center', marginTop: 10, lineHeight: 1.5 }}>
-            Elite: skip months of rebuilding context — optionally import what another AI already knows about you, from Mirror.
+            Already have context built up elsewhere? On Elite (paid), you can import what another AI already knows about you from Mirror — skipping months of re-explaining yourself.
           </p>
         )}
       </div>
