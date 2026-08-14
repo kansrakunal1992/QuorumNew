@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
+import { parseExportFile, ACCEPTED_FILE_TYPES_LABEL, ACCEPTED_FILE_EXTENSIONS } from '@/lib/context-export-parser'
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import WatchlistSection from '@/components/WatchlistSection'
@@ -97,6 +98,22 @@ interface SessionSummary {
   outcome: { what_decided: string; council_helped: string } | null
 }
 
+interface ContextAttachment {
+  id: string
+  name: string
+  text: string
+  charCount: number
+  truncated: boolean
+}
+
+// Per-file cap for context-box attachments. Deliberately much smaller than
+// context-export-parser's own 400k-char cap (~100k tokens) — that ceiling
+// is sized for building a persistent Mirror profile from a full chat
+// export. This is supplementary context for one decision, so a file's
+// extracted text is capped further here to stay proportionate to what a
+// persona prompt can actually use.
+const CONTEXT_ATTACHMENT_CHAR_CAP = 8_000
+
 // ── Sprint TOUR-1: Home page tour steps ──────────────────────────────────────
 // Fires once after inputRevealed transitions to true on a first-time user.
 // A PWA install step is appended dynamically at runtime when the user is on
@@ -120,7 +137,7 @@ const HOME_STEPS_BASE: TourStep[] = [
     id:             'home-context',
     targetSelector: '[data-tour-id="home-context"]',
     heading:        'Add context if you have it',
-    body:           'This is where the details go — numbers, prior conversations, constraints, or documents like emails and term sheets. The Council treats context as evidence, not decoration. Optional, but it sharpens the analysis significantly.',
+    body:           'This is where the details go — type them, or attach a file (notes, term sheets, even a ChatGPT export) and Quorum pulls the text in for you. The Council treats context as evidence, not decoration. Optional, but it sharpens the analysis significantly.',
     preferredSide:  'bottom',
   },
   {
@@ -136,6 +153,7 @@ export default function Home() {
   const router      = useRouter()
   const historyRef  = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const contextFileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Form state ────────────────────────────────────────
   const [decision,    setDecision]    = useState('')
@@ -143,6 +161,9 @@ export default function Home() {
   const [formKey,     setFormKey]     = useState(0)
   const [loading,     setLoading]     = useState(false)
   const [showContext, setShowContext] = useState(false)
+  const [contextAttachments, setContextAttachments] = useState<ContextAttachment[]>([])
+  const [attaching,          setAttaching]          = useState(false)
+  const [attachError,        setAttachError]        = useState('')
   const [error,       setError]       = useState('')
   const [registerMode,          setRegisterMode]          = useState<'analytical'|'clarification'>('analytical')
   const [framingIntent,         setFramingIntent]         = useState<'challenge'|'clarify'|'right'>('challenge')
@@ -491,6 +512,52 @@ export default function Home() {
     setOnboardingPanel(p => (p === 0 ? 1 : p))
   }
 
+  // Item #10: attach a file to the context box. Reuses the same client-side
+  // parser Context Ingestion uses — the file never leaves the browser, only
+  // the extracted plain text does. Each attachment is capped independently
+  // at CONTEXT_ATTACHMENT_CHAR_CAP (see comment near the constant) so a
+  // large export can't dwarf the actual decision text in the persona prompt.
+  const handleAttachFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setAttachError('')
+    setAttaching(true)
+    try {
+      for (const file of Array.from(files)) {
+        try {
+          const parsed = await parseExportFile(file)
+          const capped = parsed.text.length > CONTEXT_ATTACHMENT_CHAR_CAP
+          const text = capped ? parsed.text.slice(0, CONTEXT_ATTACHMENT_CHAR_CAP) : parsed.text
+          setContextAttachments(prev => [...prev, {
+            id:        `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name:      file.name,
+            text,
+            charCount: text.length,
+            truncated: capped || !!parsed.truncated,
+          }])
+        } catch (err) {
+          setAttachError(err instanceof Error ? err.message : `Couldn't read ${file.name}.`)
+        }
+      }
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  const removeAttachment = (id: string) => {
+    setContextAttachments(prev => prev.filter(a => a.id !== id))
+  }
+
+  // Combines the pasted-text context box with every attachment's extracted
+  // text into the single context_text string the API expects.
+  const buildContextPayload = () => {
+    const parts: string[] = []
+    if (context.trim()) parts.push(context.trim())
+    for (const a of contextAttachments) {
+      parts.push(`— From attached file: ${a.name}${a.truncated ? ' (truncated)' : ''} —\n${a.text}`)
+    }
+    return parts.join('\n\n') || null
+  }
+
   const handleSubmit = async () => {
     if (!decision.trim() || decision.trim().length < 20) {
       setError('Please describe your decision in at least a sentence.')
@@ -516,7 +583,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           decision_text:           decision.trim(),
-          context_text:            context.trim() || null,
+          context_text:            buildContextPayload(),
           register_mode:           framingIntent === 'clarify' ? 'clarification' : 'analytical',
           framing_intent:          framingIntent,
           pre_decision_confidence: preDecisionConfidence,
@@ -1227,6 +1294,70 @@ export default function Home() {
                       value={context}
                       onChange={e => setContext(e.target.value)}
                     />
+
+                    <input
+                      ref={contextFileInputRef}
+                      type="file"
+                      accept={ACCEPTED_FILE_EXTENSIONS}
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        handleAttachFiles(e.target.files)
+                        e.target.value = '' // allow re-selecting the same file
+                      }}
+                    />
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={attaching}
+                        onClick={() => contextFileInputRef.current?.click()}
+                        style={{ fontSize: 11.5, padding: '6px 12px' }}
+                      >
+                        {attaching ? 'Reading file…' : 'Attach a file'}
+                      </button>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-5)' }}>
+                        {ACCEPTED_FILE_TYPES_LABEL}
+                      </span>
+                    </div>
+
+                    {attachError && (
+                      <p style={{ fontSize: 11, color: 'var(--error)', marginTop: 6 }}>
+                        {attachError}
+                      </p>
+                    )}
+
+                    {contextAttachments.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                        {contextAttachments.map(a => (
+                          <div key={a.id} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            gap: 10, padding: '6px 10px',
+                            background: 'var(--bg-card-alt)', border: '1px solid var(--border-dim)',
+                            borderRadius: 8,
+                          }}>
+                            <span style={{ fontSize: 11.5, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {a.name}
+                              <span style={{ color: 'var(--text-5)' }}>
+                                {' '}· {a.charCount.toLocaleString()} chars{a.truncated ? ' · truncated' : ''}
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeAttachment(a.id)}
+                              aria-label={`Remove ${a.name}`}
+                              style={{
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                color: 'var(--text-4)', fontSize: 14, lineHeight: 1, padding: 4,
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

@@ -1,15 +1,17 @@
 // components/AppFooter.tsx
-// ── Sprint 2 (S2-04) — App-wide Legal Footer ─────────────────────────────────
+// ── Sprint 2 (S2-04) — App-wide Footer ───────────────────────────────────────
 //
 // Server component — no interactivity needed.
 // Rendered in layout.tsx so it appears on every page.
-// Links are stubs until Sprint 3 creates the actual pages.
+// Legal pages plus other standalone info/help pages (e.g. the install
+// guide) that are worth surfacing everywhere.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Link from 'next/link'
 
-const LEGAL_LINKS = [
+const FOOTER_LINKS = [
   { href: '/methodology', label: 'How Quorum Works' },
+  { href: '/install',  label: 'Install on your phone' },
   { href: '/privacy',  label: 'Privacy Policy' },
   { href: '/cookies',  label: 'Cookie Policy'  },
   { href: '/terms',    label: 'Terms'          },
@@ -30,7 +32,7 @@ export default function AppFooter() {
     }}>
       {/* Legal navigation — using div not nav to avoid any accidental position conflicts */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {LEGAL_LINKS.map((link, i) => (
+        {FOOTER_LINKS.map((link, i) => (
           <span key={link.href} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {i > 0 && (
               <span style={{
