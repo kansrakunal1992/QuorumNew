@@ -64,7 +64,7 @@ const MIRROR_ITEMS: { label: string; detail: string }[] = [
   {
     label: 'You don\u2019t have to start from zero',
     detail:
-      'On Elite, you can import context you\u2019ve already built elsewhere — a description of yourself, or a ChatGPT/Claude export — and Quorum extracts a handful of distilled insights for you to review before anything is saved. Raw content is never stored.',
+      'On Elite, you can import context you\u2019ve already built elsewhere — a description of yourself, a ChatGPT/Claude export, or a Markdown, HTML, or Word file — and Quorum extracts a handful of distilled insights for you to review before anything is saved. Raw content is never stored, and older insights get a "still true?" check rather than sitting untouched.',
   },
 ]
 

@@ -16,10 +16,12 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 
 interface FAQItem {
   q: string
   a: string
+  link?: { href: string; label: string }
 }
 
 const FAQS: FAQItem[] = [
@@ -86,6 +88,7 @@ const FAQS: FAQItem[] = [
   {
     q: 'Can I use Quorum on my phone?',
     a: "Yes — it's a web app you can install to your home screen directly from your browser. No app-store download needed.",
+    link: { href: '/install', label: 'See Android / iPhone steps' },
   },
 ]
 
@@ -111,6 +114,14 @@ function FAQRow({ item }: { item: FAQItem }) {
       {open && (
         <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, paddingRight: 26 }}>
           {item.a}
+          {item.link && (
+            <>
+              {' '}
+              <Link href={item.link.href} style={{ color: 'var(--gold)', textDecoration: 'none' }}>
+                {item.link.label} →
+              </Link>
+            </>
+          )}
         </p>
       )}
     </div>
