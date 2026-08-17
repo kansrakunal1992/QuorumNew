@@ -73,6 +73,9 @@ function stripHeaderTags(raw: string): string {
     // "hidden assumption" sentences), not a machine value or a citation
     // meant to live elsewhere. Strip only the tag markers, keep the text.
     .replace(/<\/?assumption>/g, '')
+    // Reversal Test <reversal> tag (all six personas) — same content-preserving
+    // treatment as <assumption> just above.
+    .replace(/<\/?reversal>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean/pushback_classification
@@ -213,6 +216,7 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     // no leading "<", but WITH the closing tag attached — e.g. "mixed</lean>".
     .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     .replace(/<\/?assumption>/g, '')
+    .replace(/<\/?reversal>/g, '')
     .trimStart()
   return { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest }
 }

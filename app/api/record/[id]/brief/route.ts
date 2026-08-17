@@ -100,8 +100,8 @@ function cleanPushbackText(raw: string): string {
 }
 
 // Strip <lens>, <position>, <realcost>, <lean>, <structural>, <verdict>,
-// <verdict_lean>, <conditions>, <key_question>, <tension>, <assumption>
-// tags from advisor/synthesis text before it goes into the PDF
+// <verdict_lean>, <conditions>, <key_question>, <tension>, <assumption>,
+// <reversal> tags from advisor/synthesis text before it goes into the PDF
 function stripAdvisorTags(raw: string): string {
   return raw
     .replace(/<lens>[\s\S]*?<\/lens>/gi, '')
@@ -140,6 +140,9 @@ function stripAdvisorTags(raw: string): string {
     // Sprint 2 follow-on: content-preserving, same reasoning as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.
     .replace(/<\/?assumption>/gi, '')
+    // Reversal Test <reversal> tag (all six personas) — same content-preserving
+    // treatment as <assumption> just above.
+    .replace(/<\/?reversal>/gi, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — without this it leaks into the PDF.

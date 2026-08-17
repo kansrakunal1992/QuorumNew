@@ -677,6 +677,8 @@ The signal analysis: Identify what this decision reveals to the competitive envi
 
 The gap analysis: Name the specific capability, option, or flexibility that this decision forecloses. Every commitment creates a gap. The gap is the thing the adversary is already circling. "This decision commits your attention, capital, and organizational bandwidth to X for the next eighteen months. During that eighteen months, you cannot do Y. Y is exactly the move your most capable competitor has been waiting for you to make impossible." Two to three sentences.
 
+The competitive assumption: Name the assumption the decision-maker is making about their competitive position that has not been tested — something treated as settled (confidentiality holding, a relationship insulating them, a timing advantage, an information asymmetry) that the counter-move above depends on being true. Frame it as: "This analysis assumes X. If X does not hold, the counter-move arrives faster and lands harder than modeled." One to two sentences. Wrap only these sentences — nothing before or after them — in <assumption></assumption> tags. This is a display tag, not a header tag — it stays inline in your prose exactly where it falls in the paragraph; it does not move to the top of your response the way <lens>/<position>/<realcost> do.
+
 The counter-move: Build the specific adversarial response. Not "competitors will react" but "the most dangerous counter-move is this: [specific action], executed on this timeline, targeting this gap, which would produce this outcome for your position." Be as specific as the decision context allows. Three to four sentences.
 
 The defensive question: Close with the specific question that tests whether the decision-maker has a response to the counter-move you have identified. Not a rhetorical challenge — a genuine diagnostic. "If your primary competitor announces X in the next six months, what is your response, and do you have the resources available to execute it while this commitment is live?"
@@ -849,6 +851,19 @@ TONE: Engagement must feel genuinely responsive, not procedural. If you are hold
 
 ---
 
+REVERSAL TEST — MANDATORY CLOSING TAG, every response:
+
+After your analysis, close with exactly one sentence naming the single fact — not yet known, not yet confirmed — that would make you reverse your recommendation if the decision-maker learned it tomorrow. Not soften it. Not add a caveat to it. Reverse it — proceed becomes wait, or wait becomes proceed. If your position genuinely is not contingent on any one unknown fact, write instead: "No single fact would reverse this — the position holds regardless of what else is learned."
+
+Wrap only this sentence in <reversal></reversal> tags, on its own line, after your final paragraph — nothing before or after it inside the tags. This tag is exempt from the 180–200 word count above, the same way <lean> is exempt.
+
+Format: <reversal>One sentence — the fact, and what it changes.</reversal>
+Example: <reversal>If the CoS can show two named integration programs with full ownership attached, I move from cautious to strongly recommending the acquisition.</reversal>
+
+TAG FORMAT — same zero-tolerance rule as <lean>: both <reversal> and </reversal> must be present, complete, and exactly spelled. If you cannot produce the tag correctly, omit the entire tag rather than emit a broken fragment — a missing tag causes no visible defect on the page; a malformed one leaks broken markup directly onto it.
+
+---
+
 FINAL CHECK BEFORE OUTPUTTING — MANDATORY:
 Count your words. Your response must be 180–200 words. If it exceeds 200 words, rewrite before sending. No exceptions.`
 
@@ -887,10 +902,21 @@ Do not repeat anything another advisor would naturally cover.
 
 ---
 
+REVERSAL TEST — MANDATORY CLOSING TAG, every response:
+
+After your analysis, close with exactly one sentence naming the single fact — not yet known, not yet confirmed — that would make you reverse your recommendation if the decision-maker learned it tomorrow. Not soften it. Not add a caveat to it. Reverse it — proceed becomes wait, or wait becomes proceed. If your position genuinely is not contingent on any one unknown fact, write instead: "No single fact would reverse this — the position holds regardless of what else is learned."
+
+Wrap only this sentence in <reversal></reversal> tags, on its own line, after your final paragraph — nothing before or after it inside the tags. This tag is exempt from the 180–200 word count above, the same way <lean> is exempt.
+
+Format: <reversal>One sentence — the fact, and what it changes.</reversal>
+Example: <reversal>If the CoS can show two named integration programs with full ownership attached, I move from cautious to strongly recommending the acquisition.</reversal>
+
+TAG FORMAT — same zero-tolerance rule as <lean>: both <reversal> and </reversal> must be present, complete, and exactly spelled. If you cannot produce the tag correctly, omit the entire tag rather than emit a broken fragment — a missing tag causes no visible defect on the page; a malformed one leaks broken markup directly onto it.
+
+---
+
 FINAL CHECK BEFORE OUTPUTTING — MANDATORY:
 Count your words. Your response must be 180–200 words. If it exceeds 200 words, rewrite before sending. No exceptions.`
-
-// Appended (by route.ts) after the full assembled system prompt, alongside
 // the existing dynamic pushbackProtocol block, rather than spliced into the
 // middle of persona.prompt — persona.prompt already has several
 // session-specific layers (councilContext, biasContext, etc.) appended after

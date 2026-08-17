@@ -85,6 +85,9 @@ function stripSynthesisTags(raw: string): string {
     // Sprint 2 follow-on: same content-preserving treatment as PersonaPanel's
     // stripHeaderTags — this wraps substantive prose, not a machine value.
     .replace(/<\/?assumption>/g, '')
+    // Reversal Test <reversal> tag (all six personas) — same content-preserving
+    // treatment as <assumption> just above.
+    .replace(/<\/?reversal>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — without this it leaks into export.

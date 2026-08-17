@@ -385,6 +385,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       // just strips the tag markers and keeps the sentences in place, same as
       // stray-tag guards elsewhere in this file.
       .replace(/<\/?assumption>/g, '')
+      // Reversal Test (all six personas' <reversal> closing tag) — same
+      // content-preserving treatment as <assumption> just above, and same
+      // reasoning: it's instructed as part of the initial-response structure,
+      // not the pushback protocol, so it shouldn't appear here in practice —
+      // this is a defensive strip in case it does.
+      .replace(/<\/?reversal>/g, '')
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       // Third bug fix (GPT-5-mini, Aug 2026) — same leaked-lean shapes as
       // extractHeaderTags above; see that function's comment for the full explanation.
@@ -407,37 +413,72 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // elsewhere; it stays exactly where it falls in the paragraph, so
   // `response` naturally still contains it start to finish.
   //
+  // Reversal Test addition: all six personas now also close with a
+  // <reversal> tag (lib/personas.ts) — the single fact that would flip
+  // that advisor's own recommendation. Same content-preserving, stays-
+  // in-place treatment as <assumption>, just a different highlight colour
+  // (--reversal-highlight-*, a new violet register — see globals.css) and
+  // a different position (end of the response, not mid-paragraph). Both
+  // can appear in the same response, so this finds both spans and renders
+  // them in one pass rather than composing two separate render calls.
+  //
   // Same two-track approach SynthesisCard's renderProse uses for
-  // <tension>: while streaming, any assumption markup (including a
+  // <tension>: while streaming, any highlight markup (including a
   // still-open tag mid-stream) is stripped from what's shown, so raw tag
-  // text never flashes on screen; once done, the now-guaranteed-closed tag
-  // is used to slice out that exact span and wrap it in a highlight.
+  // text never flashes on screen; once done, the now-guaranteed-closed
+  // tags are used to slice out their exact spans and wrap each in its own
+  // highlight.
+  const stripHighlightMarkup = (text: string): string => {
+    return text
+      .replace(/<\/?assumption>/g, '').replace(/<assumption>[\s\S]*$/, '')
+      .replace(/<\/?reversal>/g, '').replace(/<reversal>[\s\S]*$/, '')
+  }
+
   const renderAssumption = (text: string, isDone: boolean): React.ReactNode => {
     if (!isDone) {
-      return <>{text.replace(/<\/?assumption>/g, '').replace(/<assumption>[\s\S]*$/, '')}</>
+      return <>{stripHighlightMarkup(text)}</>
     }
-    const start = text.indexOf('<assumption>')
-    const end   = text.indexOf('</assumption>')
-    if (start === -1 || end === -1 || end <= start) {
-      // No tag found (the other four personas, or a rare miss) — render as-is,
-      // still guarding against any stray/unclosed tag rather than assuming none exists.
-      return <>{text.replace(/<\/?assumption>/g, '').replace(/<assumption>[\s\S]*$/, '')}</>
+    const assumptionStart = text.indexOf('<assumption>')
+    const assumptionEnd   = text.indexOf('</assumption>')
+    const hasAssumption   = assumptionStart !== -1 && assumptionEnd !== -1 && assumptionEnd > assumptionStart
+
+    const reversalStart = text.indexOf('<reversal>')
+    const reversalEnd   = text.indexOf('</reversal>')
+    const hasReversal    = reversalStart !== -1 && reversalEnd !== -1 && reversalEnd > reversalStart
+
+    if (!hasAssumption && !hasReversal) {
+      // No tag found (a rare miss, or a persona/response with neither) —
+      // render as-is, still guarding against any stray/unclosed tag.
+      return <>{stripHighlightMarkup(text)}</>
     }
-    const before  = text.slice(0, start)
-    const content = text.slice(start + '<assumption>'.length, end)
-    const after   = text.slice(end + '</assumption>'.length)
-    return (
-      <>
-        {before}
-        <span style={{
-          background:    'var(--assumption-highlight-bg)',
-          borderBottom:  '1px solid var(--assumption-highlight-border)',
+
+    // <assumption> falls mid-paragraph; <reversal> is instructed to close
+    // the response, after it — so in practice assumptionStart < reversalStart
+    // whenever both are present. Handle both orders anyway rather than
+    // assume it, since nothing prevents a model from writing them the other
+    // way round.
+    const spans = [
+      hasAssumption && { start: assumptionStart, end: assumptionEnd + '</assumption>'.length, tagLen: '<assumption>'.length, closeLen: '</assumption>'.length, bgVar: '--assumption-highlight-bg', borderVar: '--assumption-highlight-border' },
+      hasReversal    && { start: reversalStart,   end: reversalEnd   + '</reversal>'.length,   tagLen: '<reversal>'.length,   closeLen: '</reversal>'.length,   bgVar: '--reversal-highlight-bg',   borderVar: '--reversal-highlight-border' },
+    ].filter((s): s is { start: number; end: number; tagLen: number; closeLen: number; bgVar: string; borderVar: string } => !!s)
+      .sort((a, b) => a.start - b.start)
+
+    const nodes: React.ReactNode[] = []
+    let cursor = 0
+    spans.forEach((s, i) => {
+      nodes.push(text.slice(cursor, s.start))
+      nodes.push(
+        <span key={i} style={{
+          background:    `var(${s.bgVar})`,
+          borderBottom:  `1px solid var(${s.borderVar})`,
           paddingBottom: 1,
           borderRadius:  2,
-        }}>{content}</span>
-        {after}
-      </>
-    )
+        }}>{text.slice(s.start + s.tagLen, s.end - s.closeLen)}</span>
+      )
+      cursor = s.end
+    })
+    nodes.push(text.slice(cursor))
+    return <>{nodes}</>
   }
 
   // ── TTS ────────────────────────────────────────────────────────────────────────────────

@@ -46,6 +46,10 @@ function stripHeaderTags(raw: string): string {
     // Sprint 2 follow-on: content-preserving — this wraps substantive prose
     // the observation model should actually read, not a machine value.
     .replace(/<\/?assumption>/g, '')
+    // Reversal Test <reversal> tag (all six personas) — same content-preserving
+    // treatment as <assumption> just above; the reversal condition is useful
+    // context for the observation model too.
+    .replace(/<\/?reversal>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — leaked tags are noise to the model.

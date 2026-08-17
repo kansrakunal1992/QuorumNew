@@ -68,6 +68,16 @@
      of guessing low. */
   --assumption-highlight-bg:     rgba(214,158,110,0.18);
   --assumption-highlight-border: rgba(214,158,110,0.50);
+  /* Council/persona Reversal Test — the single fact that would flip an
+     advisor's own recommendation (lib/personas.ts's <reversal> tag, all
+     six personas). Violet, a genuinely new hue not already claimed by
+     tension (coral-red), assumption (peachy-orange), verdict (gold), or
+     worth-confirming (blue) — this is a distinct register (a conditional,
+     forward-looking commitment), not a variant of any existing one. Alpha
+     matched to assumption's dark-theme values since both are inline
+     highlights over the same near-black card background. */
+  --reversal-highlight-bg:     rgba(158,122,214,0.18);
+  --reversal-highlight-border: rgba(158,122,214,0.50);
   /* Sprint 1 — "worth confirming" line (merged Highest-Value-Unknown +
      Decision-Sensitivity features). Blue/informational register — reuses
      the same hue family as --graph-edge-type above for consistency ("this
@@ -183,6 +193,11 @@
      not near-black, so it needs real saturation to read at all. */
   --assumption-highlight-bg:     rgba(168,100,40,0.11);
   --assumption-highlight-border: rgba(168,100,40,0.34);
+  /* Council/persona Reversal Test, light theme. Same violet register as
+     dark theme, deepened for a white background — same reasoning as
+     assumption's light-theme comment above. */
+  --reversal-highlight-bg:     rgba(122,86,178,0.11);
+  --reversal-highlight-border: rgba(122,86,178,0.34);
   /* Sprint 1 — worth-confirming highlight, light theme. Same blue register
      as dark theme, deepened for a light background; still meaningfully
      lower alpha than tension's light-theme values on purpose (secondary,
