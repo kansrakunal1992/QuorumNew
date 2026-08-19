@@ -15,6 +15,7 @@ import {
 import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
+import { computeReadiness } from '@/lib/readiness'   // PR3/PR4 — readiness gate
 import RecordReceipt from './RecordReceipt'
 import ContradictionBanner from './ContradictionBanner'
 import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
@@ -25,6 +26,7 @@ import { buildPWAInstallStep } from './OnboardingTour'
 import ValidationCard from './ValidationCard'             // SB-1
 import BiasNoteCard from './BiasNoteCard'                 // SB-3: shown above personas on live session
 import OntologyRevealCard   from './OntologyRevealCard'   // S1-01: Decision X-Ray (sessions 1–3)
+import QuorumReadCard       from './QuorumReadCard'        // PR7: pre-Council structural summary (sessions 1–3)
 import DecisionGraph        from './DecisionGraph'        // S1-07: Graph teaser (sessions 1–3)
 import GraphNudgeLine       from './GraphNudgeLine'        // QW-3: Graph nudge (sessions 6+)
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
@@ -280,6 +282,17 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [ruleMode,          setRuleMode]          = useState<RuleMode>(null)
   const [redirectBlocked,   setRedirectBlocked]   = useState(false)
   const [redirectQuestion,  setRedirectQuestion]  = useState<string | undefined>(undefined)
+
+  // PR4 — readiness gate: distinct from redirectBlocked (R1/R7 REDIRECT).
+  // This covers the gap the audit found — a 'critical' GATE question (R2/R3)
+  // that the user skipped previously produced a full verdict anyway. Unlike
+  // REDIRECT (which still streams provisional advisor opinions — see
+  // ceremonyApplicable's comment below), notReadyBlocked stops the Council
+  // entirely: R2/R3 firing means there isn't yet enough grounding for six
+  // perspectives to be worth showing, not just enough for a final verdict.
+  const [notReadyBlocked,        setNotReadyBlocked]        = useState(false)
+  const [unresolvedCriticalQs,   setUnresolvedCriticalQs]   = useState<string[]>([])
+  const [unresolvedImportantCount, setUnresolvedImportantCount] = useState(0)
   const [examinerDismissed, setExaminerDismissed] = useState(false)
 
   // Sprint 5: structural context
@@ -351,6 +364,7 @@ export default function SessionView({ session: initialSession, initialMessages =
   >(null)
   // S2-07: Opening Ceremony dismiss flag — gates persona streaming for 3s on sessions 1-3
   const [ceremonyDismissed, setCeremonyDismissed] = useState(false)
+  const [quorumReadDismissed, setQuorumReadDismissed] = useState(false)   // PR7
   // S3-01: per-persona lean classification (proceed/wait/mixed), parsed from each
   // persona's raw <lean> header tag in handlePersonaComplete.
   const [personaLeans, setPersonaLeans] = useState<Record<string, Lean>>({})
@@ -799,9 +813,17 @@ export default function SessionView({ session: initialSession, initialMessages =
   // S2-07: Opening Ceremony gating — only applies on sessions 1–3, and never during
   // a REDIRECT (R1 upstream block), where provisional advisor perspectives should
   // appear immediately rather than be delayed by a 3s ritual beat.
-  const ceremonyApplicable = (totalSessionCount ?? 0) <= 3 && !redirectBlocked
+  const ceremonyApplicable = (totalSessionCount ?? 0) <= 3 && !redirectBlocked && !notReadyBlocked
   const ceremonyGateOpen   = !ceremonyApplicable || ceremonyDismissed
   const ceremonyActive     = examinerSubmitted && ceremonyApplicable && !ceremonyDismissed
+
+  // PR7 — "Quorum's Read" gate. Shares ceremonyApplicable (sessions <=3,
+  // and already excludes notReadyBlocked — see that variable's definition
+  // above) rather than its own separate applicability check, so this and
+  // the Opening Ceremony are always in sync about which sessions get the
+  // first-few-sessions orientation treatment.
+  const quorumReadGateOpen = !ceremonyApplicable || quorumReadDismissed
+  const quorumReadActive   = examinerSubmitted && ceremonyApplicable && !quorumReadDismissed
 
   // Cosmetic reveal: ticks streamUnlockedUpTo forward on a fixed timer once
   // personas are eligible to stream. This ONLY controls the fade-in stagger
@@ -825,7 +847,7 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   const handleExaminerComplete = useCallback(
     (
-      responses:       Array<{ question_text: string; response_text: string | null; gap: string }>,
+      responses:       Array<{ question_text: string; response_text: string | null; gap: string; criticality?: 'critical' | 'important' | 'optional' }>,
       mode:            RuleMode,
       redirectQuestion?: string
     ) => {
@@ -839,6 +861,24 @@ export default function SessionView({ session: initialSession, initialMessages =
         examinerSubmittedRef.current = true
         return
       }
+
+      // PR4: the actual readiness gate. Pure, synchronous — see lib/readiness.ts.
+      // Only R2/R3-tagged ('critical') questions can produce NOT_READY; S0/C0/E0/R10
+      // ('important') never block, they carry forward into synthesis instead
+      // (see lib/rule-engine.ts buildCouncilContext's unresolvedImportant param,
+      // wired server-side in app/api/persona/route.ts).
+      const { readiness, unresolvedCritical, unresolvedImportant } = computeReadiness(responses)
+
+      if (readiness === 'NOT_READY') {
+        setNotReadyBlocked(true)
+        setUnresolvedCriticalQs(unresolvedCritical.map(q => q.question_text))
+        setExaminerReady(false)
+        setExaminerSubmitted(true)
+        examinerSubmittedRef.current = true
+        return
+      }
+
+      setUnresolvedImportantCount(unresolvedImportant.length)
 
       examinerSubmittedRef.current = true
       setExaminerSubmitted(true)
@@ -1020,6 +1060,18 @@ export default function SessionView({ session: initialSession, initialMessages =
       }
     }
   }, [session.id])
+
+  // PR4: override for notReadyBlocked, mirroring handleOverrideRedirect above.
+  // A hard gate with no escape hatch is exactly the "endless questioning"
+  // failure mode the audit's risk-check flagged — the user can always choose
+  // to proceed anyway; this makes that choice explicit and visible rather
+  // than silent, unlike the pre-PR4 behavior where skipping WAS silently
+  // proceeding with no visible choice being made at all.
+  const handleOverrideReadiness = useCallback(() => {
+    setNotReadyBlocked(false)
+    setUnresolvedCriticalQs([])
+    setExaminerReady(true)
+  }, [])
 
   const [drawerOpen,     setDrawerOpen]     = useState(false)
   const [reDecision,     setReDecision]     = useState(initialSession.decision_text)
@@ -1737,6 +1789,10 @@ export default function SessionView({ session: initialSession, initialMessages =
                   redirectBlocked={redirectBlocked}
                   redirectQuestion={redirectQuestion}
                   onOverrideRedirect={handleOverrideRedirect}
+                  notReadyBlocked={notReadyBlocked}
+                  unresolvedCriticalQs={unresolvedCriticalQs}
+                  onOverrideReadiness={handleOverrideReadiness}
+                  unresolvedImportantCount={unresolvedImportantCount}
                   onSynthesisStart={() => setSynthesisStreaming(true)}
                   onSynthesisComplete={() => {
                     setSynthesisStreaming(false)
@@ -1871,13 +1927,20 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
+              {/* ── PR7: Quorum's Read — sessions 1–3, shown once Examiner completes ── */}
+              {/* and readiness allows the Council to run. Sits before the Opening    */}
+              {/* Ceremony in sequence — see QuorumReadCard.tsx's header comment.      */}
+              {quorumReadActive && (
+                <QuorumReadCard sessionId={session.id} onContinue={() => setQuorumReadDismissed(true)} />
+              )}
+
               {/* ── S2-07: Opening Ceremony — sessions 1–3, gates persona streaming for 3s ── */}
               {ceremonyActive && (
                 <OpeningCeremonyCard onDismiss={() => setCeremonyDismissed(true)} />
               )}
 
               {/* ── 3. Relevance label ── */}
-              {gridReordered && !redirectBlocked && (
+              {gridReordered && !redirectBlocked && !notReadyBlocked && (
                 <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0 12px' }}>
                   <span className="relevance-label">
                     {labelText}
@@ -1904,8 +1967,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                 data-tour-id="council-personas"
                 style={{
                   paddingTop:    12,
-                  opacity:       redirectBlocked ? 0.55 : 1,
-                  pointerEvents: redirectBlocked ? 'none' : 'auto',
+                  opacity:       (redirectBlocked || notReadyBlocked) ? 0.55 : 1,
+                  pointerEvents: (redirectBlocked || notReadyBlocked) ? 'none' : 'auto',
                 }}
               >
                 {orderedPersonaKeys.map((key, personaIndex) => {
@@ -1963,7 +2026,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       // brand-new session id) would still see the PRIOR session's
                       // persona text here, rendering stale cached content instead of
                       // running the six advisors fresh against the new decision text.
-                      canStream={isHydrated || (examinerSubmitted && ceremonyGateOpen)}
+                      canStream={isHydrated || (examinerSubmitted && ceremonyGateOpen && quorumReadGateOpen && !notReadyBlocked)}
                       initialExaminerContext={examinerInitialContext[key]}
                       // R6: match date/session id are session-wide (which past decision
                       // matched) and passed to every persona unconditionally — harmless

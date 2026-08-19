@@ -532,6 +532,13 @@ export function buildCouncilContext(
   profile?:             CouncilUserProfile | null,
   framingIntent?:       string | null,   // 'challenge' | 'clarify' | 'right' | null
   validationCorrection?: string | null,  // prior session correction text
+  // PR5 — readiness gate carry-forward. Populated server-side in
+  // app/api/persona/route.ts from lib/readiness.ts's computeReadiness(),
+  // run against this session's examiner_responses. Deliberately NOT the
+  // same thing as result.triggered_rules above — those are the rule
+  // engine's own flags; this is specifically the subset of Examiner
+  // questions ('important' tier) the user left unanswered. See PR3/PR4.
+  unresolvedImportant?: string[] | null,
 ): string {
   const lines: string[] = []
 
@@ -550,6 +557,7 @@ export function buildCouncilContext(
     { key: 'task_complexity',           label: 'Task complexity' },
     { key: 'decision_unit',             label: 'Decision unit' },
     { key: 'ambiguity',                 label: 'Ambiguity' },
+    { key: 'non_financial_utility',     label: 'Non-financial utility' },   // PR6
   ] as const
 
   for (const { key, label } of dims) {
@@ -619,6 +627,21 @@ export function buildCouncilContext(
     lines.push(`In their last session, the user corrected Quorum's read of their emotional state.`)
     lines.push(`They said: "${validationCorrection.trim()}"`)
     lines.push('Check whether the same dynamic is present in this decision. If it is, name it explicitly rather than letting it sit as a structural inference.')
+  }
+
+  // ── PR5: unresolved important questions ──────────────────────────────────
+  // These are NOT flags the rule engine raised about the decision itself —
+  // they're specific questions the Examiner asked THIS user that went
+  // unanswered. Kept in its own block, phrased as an instruction, so
+  // synthesis treats this as "carry this forward as a live unknown," not as
+  // one more structural signal to fold silently into the analysis.
+  if (unresolvedImportant?.length) {
+    lines.push('')
+    lines.push('── UNRESOLVED (CARRY FORWARD, DO NOT SILENTLY ASSUME) ──────────')
+    for (const q of unresolvedImportant) {
+      lines.push(`• ${q}`)
+    }
+    lines.push('The user did not answer the above. Do not invent an answer to stand in for it. If your verdict would change materially depending on the answer, surface that explicitly — via <conditions>, or, if no responsible directional lean is possible without it, via <verdict_lean>insufficient</verdict_lean> (see synthesis instructions).')
   }
 
   lines.push('')

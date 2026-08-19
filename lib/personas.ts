@@ -967,6 +967,8 @@ Your job is not to summarise each advisor. Your job is to read across all six an
 
 CRITICAL STRUCTURE RULE: Lead with the conclusion. The first sentence of your synthesis must state the directional lean — where the council lands — before any reasoning is given. High-agency users need fast orientation. They will read the supporting logic once they know where the system is pointing. A buried conclusion reduces trust even when the reasoning is strong.
 
+EXCEPTION — INSUFFICIENT BASIS (PR5): if the council context below contains an "UNRESOLVED (CARRY FORWARD, DO NOT SILENTLY ASSUME)" block, this exception may apply — but only if, having read all six advisors, no responsible directional lean is possible without that answer. Not "would sharpen it" — genuinely can't be given honestly. This is a high bar, the same discipline used elsewhere in this system for flagging a decision as truly blocked: default to answering; reserve this for when answering would mean guessing. If it applies: open with one sentence naming what's missing and why it's load-bearing for this specific decision, not a generic hedge. Tag it <verdict_lean>insufficient</verdict_lean> instead of proceed/wait/mixed, and write what follows as "here is what the council can and cannot tell you without that answer" rather than a normal debrief. This exception must never be invoked by an advisor's own uncertainty or hedging alone — only by that specific unresolved-question block being present.
+
 If SESSION MODE is CLARIFICATION: the person is facing a values or identity question as much as a practical one. Adjust accordingly — open with a clear values-framing lean (e.g. "The council reads this as a question about X more than Y") before addressing tensions. Still lead with orientation, not exploration.
 
 If SESSION MODE is ANALYTICAL (default): run the full synthesis below.
@@ -1042,10 +1044,11 @@ VERDICT TAG — rules, no exceptions:
 • Close the tag immediately after the first period: <verdict>One sentence here.</verdict>
 
 VERDICT_LEAN TAG — rules, no exceptions:
-• Immediately after the <verdict> tag, add a <verdict_lean> tag classifying that same verdict as exactly one of: proceed, wait, mixed
+• Immediately after the <verdict> tag, add a <verdict_lean> tag classifying that same verdict as exactly one of: proceed, wait, mixed, insufficient
 • "proceed" = the council is recommending moving forward with the decision as framed
 • "wait" = the council is recommending against it, or recommending holding off
 • "mixed" = the council is genuinely split or the verdict is conditional enough that neither proceed nor wait fairly describes it
+• "insufficient" = the INSUFFICIENT BASIS exception above applies — use only under those specific conditions, never as a generic hedge
 • This is a structured classification, not prose — lowercase, one word, nothing else inside the tag
 • Example: <verdict_lean>proceed</verdict_lean>
 • This must match the directional lean actually stated in <verdict> — never classify against what you just wrote

@@ -49,6 +49,19 @@ export interface ScoredVector {
   decision_unit:                DimensionScore  // 1=self only → 5=large group (family/org/third parties)
   emotional_intensity:          DimensionScore  // 1=calm/analytical → 5=highly emotionally charged
 
+  // ── PR6 (Seejo's "peace of mind" feedback, code audit Aug 2026) ──
+  // Distinct from identity_alignment (constitutive-vs-instrumental — does
+  // this touch who you are) and emotional_intensity (how charged the
+  // decision feels). This measures something else: does the RIGHT ANSWER
+  // depend meaningfully on non-monetary payoff (peace of mind, reduced
+  // complexity, family harmony, simplicity, freedom) that a purely
+  // financial model of the decision would miss. Evidence-gated the same
+  // way decision_discriminating_info is below — score high only when the
+  // brief concretely supports it, never inferred from decision category
+  // alone (a property sale isn't automatically high just for being a
+  // property sale).
+  non_financial_utility:        DimensionScore  // 1=purely financial calculus → 5=non-monetary payoff could reasonably outweigh the financial one
+
   vector_version: 'v2.0'
 }
 
@@ -239,6 +252,12 @@ emotional_intensity
   3 = noticeable emotional engagement; not overwhelming
   5 = decision is highly emotionally charged; emotion is the dominant register
 
+non_financial_utility
+  1 = the right answer here is essentially a financial/practical calculus; non-monetary factors are minor or absent
+  3 = non-monetary factors (peace of mind, complexity reduction, family harmony, freedom, simplicity) are present and worth naming, but wouldn't override a clear financial case
+  5 = a purely financial analysis would materially misread this decision — the non-monetary payoff (or cost) is large enough that it could reasonably outweigh the financial one
+  NOTE: Score 4–5 ONLY when the brief gives concrete textual support — the decision-maker naming relief, burden, family complexity, legacy, or similar in their own words or clearly implied by the situation (e.g. "it would be a huge weight off," "my family has fought over this for years," "I just want it to be simple again"). Do NOT score high just because the decision CATEGORY often has emotional stakes (e.g. selling a family property, a career change) — score the actual evidence in front of you, not the category's base rate. This is distinct from emotional_intensity (how charged the decision feels to discuss) and identity_alignment (whether the decision is constitutive of who the person is) — a decision can be calm and non-identity-defining while still having real non-financial utility (e.g. "less time managing this frees me up for things I actually want to do").
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT — COMPLETE JSON STRUCTURE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -284,6 +303,7 @@ Return exactly this structure:
     "time_pressure":                { "score": 2, "confidence": 0.85, "rationale": "..." },
     "decision_unit":                { "score": 1, "confidence": 0.90, "rationale": "..." },
     "emotional_intensity":          { "score": 3, "confidence": 0.80, "rationale": "..." },
+    "non_financial_utility":        { "score": 2, "confidence": 0.70, "rationale": "..." },
     "vector_version": "v2.0"
   }
 }`
@@ -360,6 +380,7 @@ function parseTag(raw: string): OntologyTag | null {
       'value_conflict', 'identity_alignment', 'regret_asymmetry', 'upstream_dependency',
       'ambiguity', 'task_complexity', 'decision_discriminating_info',
       'time_pressure', 'decision_unit', 'emotional_intensity',
+      'non_financial_utility',   // PR6 — added alongside its TAGGER_SYSTEM prompt entry, same PR
     ]
     for (const dim of required) {
       const dimVal = (sv as Record<string, { score?: number }>)[dim]

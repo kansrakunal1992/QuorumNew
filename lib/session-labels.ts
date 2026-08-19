@@ -19,6 +19,7 @@ export const DIMENSION_LABELS: Record<string, string> = {
   time_pressure:                'Urgent',
   decision_unit:                'Many people affected',
   emotional_intensity:          'Emotionally charged',
+  non_financial_utility:        'More than a money question',   // PR6
 }
 
 // ── Decision type → plain English ─────────────────────────────────────────────

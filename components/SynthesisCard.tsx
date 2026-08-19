@@ -30,6 +30,18 @@ interface Props {
   redirectBlocked?:  boolean
   redirectQuestion?: string
   onOverrideRedirect?: () => void
+  /** PR4 — readiness gate: distinct from redirectBlocked, see SessionView.tsx
+   *  doc comment on notReadyBlocked for why this is a separate, stricter
+   *  state (blocks the Council from running at all, not just synthesis). */
+  notReadyBlocked?:      boolean
+  unresolvedCriticalQs?: string[]
+  onOverrideReadiness?:  () => void
+  /** PR5 — count of unanswered 'important'-tier questions carried forward
+   *  into synthesis as open conditions rather than blocking anything. Shown
+   *  as a small, honest "proceeding with N open questions" line rather than
+   *  silently dropped — the demonstration IS the differentiation; see the
+   *  product discussion this shipped alongside. */
+  unresolvedImportantCount?: number
   onSynthesisStart?: () => void
   onSynthesisComplete?: () => void
   examinerContext?: string
@@ -81,6 +93,10 @@ export default function SynthesisCard({
   redirectBlocked,
   redirectQuestion,
   onOverrideRedirect,
+  notReadyBlocked,
+  unresolvedCriticalQs = [],
+  onOverrideReadiness,
+  unresolvedImportantCount = 0,
   onSynthesisStart,
   onSynthesisComplete,
   examinerContext,
@@ -721,6 +737,106 @@ export default function SynthesisCard({
     }
   }
 
+  // ── PR4: NOT_READY blocked card — early return ────────────────────────────
+  // Distinct copy from redirectBlocked below: personas never ran here (see
+  // SessionView's canStream gate), so there's nothing "provisional" to point
+  // to yet — this is genuinely earlier in the pipeline than a REDIRECT block.
+  if (notReadyBlocked) {
+    return (
+      <div style={{
+        gridColumn: '1 / -1',
+        background: 'var(--bg-card)',
+        border: '1px solid rgba(201,168,76,0.35)',
+        borderRadius: 14,
+        marginBottom: 4,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          padding: '14px 20px 12px',
+          borderBottom: '1px solid var(--border-dim)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          background: 'rgba(201,168,76,0.07)',
+          borderRadius: '13px 13px 0 0',
+        }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <div>
+            <p style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--gold)', lineHeight: 1.2, letterSpacing: '0.01em', margin: 0 }}>
+              Not ready to call
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--synthesis-text-sub)', marginTop: 1 }}>
+              The Council hasn't started yet
+            </p>
+          </div>
+        </div>
+        <div style={{ padding: '22px 24px 26px' }}>
+          <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-2)', lineHeight: 1.8, margin: '0 0 14px' }}>
+            This reads as more than a data question — the Council would be guessing at something you actually know.
+          </p>
+
+          {unresolvedCriticalQs.length > 0 && (
+            <>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-4)', letterSpacing: '0.07em', textTransform: 'uppercase', margin: '0 0 10px' }}>
+                {unresolvedCriticalQs.length === 1 ? 'Answer this first' : 'Answer these first'}
+              </p>
+              {unresolvedCriticalQs.map((qText, i) => (
+                <div key={i} style={{
+                  padding: '16px 20px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(201,168,76,0.35)',
+                  background: 'rgba(201,168,76,0.07)',
+                  margin: '0 0 10px',
+                }}>
+                  <p style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-1)', lineHeight: 1.75, margin: 0 }}>
+                    {qText}
+                  </p>
+                </div>
+              ))}
+            </>
+          )}
+
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', lineHeight: 1.7, margin: '18px 0 0' }}>
+            Use <strong style={{ color: 'var(--text-3)' }}>Reanalyze</strong> once you can answer this, and the Council will run in full.
+          </p>
+
+          {onOverrideReadiness && (
+            <div style={{ borderTop: '1px solid var(--border-dim)', paddingTop: 16, marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={onOverrideReadiness}
+                style={{
+                  padding: '8px 18px', borderRadius: 8,
+                  border: '1px solid var(--border-mid)',
+                  background: 'var(--overlay-bg)',
+                  color: 'var(--text-3)', fontSize: 12, fontWeight: 500,
+                  cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.01em',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'var(--overlay-bg-hover)'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'var(--overlay-bg)'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-3)'
+                }}
+              >
+                I don't have that — ask the Council anyway
+              </button>
+              <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
+                The Council will proceed, but this gap won't be resolved for it.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // ── Sprint 11b: REDIRECT blocked card — early return ─────────────────────
   if (redirectBlocked) {
     return (
@@ -902,6 +1018,28 @@ export default function SynthesisCard({
                   background: 'var(--gold)', display: 'inline-block', flexShrink: 0,
                 }} />
                 Your correction from your last session was shared with this Council.
+              </p>
+            )}
+            {/* PR5: passive signal — proceeding despite an unresolved 'important'
+                question, carried into synthesis as an open condition rather than
+                silently dropped. Shown only once synthesis has actually finished,
+                so it reads as a fact about the verdict just given, not a caveat
+                before anything has happened. */}
+            {state === 'done' && unresolvedImportantCount > 0 && (
+              <p style={{
+                fontSize:   10.5,
+                color:      'var(--text-4)',
+                marginTop:  3,
+                display:    'flex',
+                alignItems: 'center',
+                gap:        5,
+                lineHeight: 1.3,
+              }}>
+                <span style={{
+                  width: 5, height: 5, borderRadius: '50%',
+                  background: 'var(--text-4)', display: 'inline-block', flexShrink: 0,
+                }} />
+                Proceeded with {unresolvedImportantCount === 1 ? 'one open question' : `${unresolvedImportantCount} open questions`} the Council couldn't resolve — carried forward, not dropped.
               </p>
             )}
           </div>

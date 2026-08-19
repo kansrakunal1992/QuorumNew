@@ -1168,6 +1168,89 @@ export async function createCompletion(
   }
 }
 
+// ── Web-search-enabled completion (PR2 — local/regulatory/market context) ──────
+//
+// Deliberately separate from createCompletion()/resolveProvider() above: this
+// is the ONE call site in the app that needs live tool use (web_search), and
+// only the Anthropic Messages API branch supports it here. Bypassing the
+// provider-routing abstraction is intentional — tiered/hybrid routing exists
+// to pick a cost/quality tradeoff between text-completion providers, and none
+// of the DeepSeek/Mistral/Gemini/self-hosted branches have a web_search tool
+// to route to regardless of tier.
+//
+// Fail-open by design, same convention as lib/examiner-resolvability-check.ts:
+// this enriches a decision with sourced context, it never gates anything —
+// an infra failure here should degrade to "no external context available",
+// never block or delay the Council.
+export interface WebSearchCitation {
+  url:   string
+  title: string | null
+}
+
+export interface WebSearchCompletionResult {
+  text:       string
+  citations:  WebSearchCitation[]
+  usedSearch: boolean   // false if the model answered without ever calling the tool
+                         // (e.g. it judged no search was needed) — surfaced so callers
+                         // can distinguish "looked, found nothing worth citing" from
+                         // "didn't look at all"
+}
+
+export async function createWebSearchCompletion(
+  prompt: string,
+  maxTokens = 1000,
+  options: { systemPrompt?: string; maxUses?: number } = {},
+): Promise<WebSearchCompletionResult> {
+  const { systemPrompt, maxUses = 3 } = options
+  try {
+    // Type assertions below: the installed @anthropic-ai/sdk (0.39.0) predates
+    // this SDK's TypeScript definitions for the web_search_20250305 server
+    // tool — both the request-side `tools` entry shape and the response-side
+    // `server_tool_use` content block are valid, documented parts of the
+    // Messages API today, just not yet reflected in this package version's
+    // .d.ts files. The raw HTTP API accepts/returns them regardless of SDK
+    // type coverage. Follow-up: this whole cast can be deleted once
+    // @anthropic-ai/sdk is bumped past the version that adds native types
+    // for this tool (check the SDK's CHANGELOG for "web_search").
+    const res = await anthropic.messages.create({
+      model:      ANTHROPIC_MODEL,
+      max_tokens: maxTokens,
+      ...(systemPrompt ? { system: systemPrompt } : {}),
+      messages: [{ role: 'user', content: prompt }],
+      tools: [{
+        type:     'web_search_20250305',
+        name:     'web_search',
+        max_uses: maxUses,
+      }] as unknown as Anthropic.Messages.Tool[],
+    })
+
+    const textParts: string[] = []
+    const citations: WebSearchCitation[] = []
+    let usedSearch = false
+
+    for (const block of res.content as Array<{ type: string; text?: string; name?: string; citations?: Array<{ url?: string; title?: string }> }>) {
+      if (block.type === 'text' && typeof block.text === 'string') {
+        textParts.push(block.text)
+        // Citations attach to text blocks when the model's claim is grounded
+        // in a specific search result — see Anthropic web_search docs.
+        if (Array.isArray(block.citations)) {
+          for (const c of block.citations) {
+            if (c.url) citations.push({ url: c.url, title: c.title ?? null })
+          }
+        }
+      }
+      if (block.type === 'server_tool_use' && block.name === 'web_search') {
+        usedSearch = true
+      }
+    }
+
+    return { text: textParts.join('\n').trim(), citations, usedSearch }
+  } catch (err) {
+    console.error('[AIClient] createWebSearchCompletion failed — degrading to no external context:', err)
+    return { text: '', citations: [], usedSearch: false }
+  }
+}
+
 // ── Provider info ──────────────────────────────────────────────────────────────
 
 export function getProviderInfo() {

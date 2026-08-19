@@ -60,6 +60,34 @@ import { fetchExaminerBiasHint } from '@/lib/bias-scorer'  // Sprint R_JC
 import { encrypt, decrypt }      from '@/lib/encryption'
 import { checkR7Resolvable }     from '@/lib/examiner-resolvability-check'  // Audit fix #3
 import { forwardTierHeaders }    from '@/lib/tier-forward'
+import { runLocalContextLookup } from '@/lib/web-context-lookup'  // PR2 — local/regulatory/market context
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PR1/PR2 (readiness gate foundation): criticality tiers
+//
+// Only R2 (Identity-First) and R3 (No-Information) are 'critical' — the two
+// GATE rules whose own doc comments in lib/rule-engine.ts describe them as
+// P0 gates, but which the audit found had zero enforcement downstream. R1/R7
+// are NOT listed here: they're REDIRECT rules that already hard-block via
+// the existing mode==='REDIRECT' path (SessionView.tsx) — unchanged by this.
+//
+// R10 and the always-on S0/C0/E0 pool are 'important': PR4's gate carries
+// these forward as open conditions in synthesis (via buildCouncilContext's
+// new unresolvedImportant param) rather than blocking — deliberately, to
+// avoid repeating the exact over-blocking mistake the team already found
+// and fixed once for R7 (see checkR7Resolvable's doc comment). FLAG rules
+// (R4/R5/R6/R8/R9/R12) and v1.0 gap-fallback questions are 'optional' —
+// consistent with their existing "enrichment only, does not block" design.
+// ─────────────────────────────────────────────────────────────────────────────
+const CRITICAL_RULE_IDS  = new Set(['R2', 'R3'])
+const IMPORTANT_RULE_IDS = new Set(['R10', 'S0', 'C0', 'E0'])
+
+function getCriticality(ruleId: string | null): 'critical' | 'important' | 'optional' {
+  if (!ruleId) return 'optional'
+  if (CRITICAL_RULE_IDS.has(ruleId))  return 'critical'
+  if (IMPORTANT_RULE_IDS.has(ruleId)) return 'important'
+  return 'optional'
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Template banks — deterministic per session, varied across sessions
@@ -500,7 +528,11 @@ export async function GET(req: Request) {
         upstreamRationale ?? undefined,
       )
       return NextResponse.json({
-        questions:          [{ order: 1, text: redirectQ, gap: `${redirectRule} — REDIRECT`, rule_id: redirectRule }],
+        // criticality is moot here — REDIRECT already hard-blocks via the
+        // existing mode==='REDIRECT' path (SessionView.tsx), independent of
+        // PR4's critical/important gate. Included only so the client-side
+        // ExaminerQuestion type stays uniform across all response shapes.
+        questions:          [{ order: 1, text: redirectQ, gap: `${redirectRule} — REDIRECT`, rule_id: redirectRule, criticality: 'critical' as const }],
         rule_mode:          'REDIRECT',
         redirect_rule:      redirectRule,
         upstream_rationale: upstreamRationale,
@@ -537,7 +569,7 @@ export async function GET(req: Request) {
     //   E0 first  — inward/emotional question sets reflective tone before analysis
     //   S0/rule   — domain grounding (S0) or structural flag (rule)
     //   C0 last   — reflective close: what does success look like here?
-    const questions: Array<{ order: number; text: string; gap: string; rule_id: string | null }> = []
+    const questions: Array<{ order: number; text: string; gap: string; rule_id: string | null; criticality: 'critical' | 'important' | 'optional' }> = []
 
     // E0 — slot 1, always
     questions.push({
@@ -545,6 +577,7 @@ export async function GET(req: Request) {
       text:    e0Text,
       gap:     'E0 — EMOTIONAL',
       rule_id: 'E0',
+      criticality: getCriticality('E0'),
     })
 
     // S0 or rule — slot 2, conditional
@@ -554,6 +587,7 @@ export async function GET(req: Request) {
         text:    s0OrRuleTexts[0],
         gap:     'S0 — ORIENTATION',
         rule_id: 'S0',
+        criticality: getCriticality('S0'),
       })
     } else if (ruleForSlot2.length > 0 && s0OrRuleTexts.length > 0) {
       // r7Downgraded: ruleForSlot2[0].mode still reads 'REDIRECT' here because it
@@ -565,6 +599,7 @@ export async function GET(req: Request) {
         text:    s0OrRuleTexts[0],
         gap:     `${ruleForSlot2[0].rule_id} — ${displayMode}`,
         rule_id: ruleForSlot2[0].rule_id,
+        criticality: getCriticality(ruleForSlot2[0].rule_id),
       })
     }
 
@@ -575,6 +610,7 @@ export async function GET(req: Request) {
         text:    c0Text,
         gap:     'C0 — CONTEXT',
         rule_id: 'C0',
+        criticality: getCriticality('C0'),
       })
     }
 
@@ -607,6 +643,7 @@ export async function GET(req: Request) {
     text,
     gap:     gaps[i] ?? '',
     rule_id: null,
+    criticality: 'optional' as const,  // v1.0 legacy fallback path — enrichment only
   }))
 
   return NextResponse.json({ questions, rule_mode: null, status: 'ready' })
@@ -622,6 +659,7 @@ type ExaminerResponseRow = {
   question_order:      number
   unknown_unknown_gap: string
   rule_id:             string | null
+  criticality?:        'critical' | 'important' | 'optional' | null   // PR1/PR2
 }
 
 export async function POST(req: Request) {
@@ -632,10 +670,11 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
 
-    const { sessionId, responses, skipped } = body as {
-      sessionId:  string
-      responses?: ExaminerResponseRow[]
-      skipped?:   boolean
+    const { sessionId, responses, skipped, localContext } = body as {
+      sessionId:     string
+      responses?:    ExaminerResponseRow[]
+      skipped?:      boolean
+      localContext?: string | null   // PR2 — optional, independent of the 3-question budget
     }
 
     if (!sessionId) {
@@ -644,19 +683,60 @@ export async function POST(req: Request) {
 
     const supabase = createServiceClient()
 
-    // ── Skipped path ──────────────────────────────────────────────────────────
-    if (skipped) {
+    // PR2: local/regulatory/market context — independent of the skip/submit
+    // branch below (a user can decline all 3 Examiner questions but still
+    // leave local context, or vice versa). Fire-and-forget; never blocks
+    // the response.
+    //
+    // MODEL ROUTING: the web-search-enabled lookup call is Elite/Private
+    // only (see lib/web-context-lookup.ts header comment) — it's an
+    // Anthropic-only call (no fast/premium role split available for this
+    // specific tool), so running it for Free tier would mean every Free
+    // session that fills in this field silently costs far more than the
+    // rest of that session combined. Free-tier users still get
+    // user_stated_text captured and shown to Council context as-is — they
+    // just don't get the web-retrieved enrichment layer on top.
+    if (localContext?.trim()) {
+      const decisionRes = await supabase.from('sessions').select('decision_text').eq('id', sessionId).single()
+      const decisionText = decrypt(decisionRes.data?.decision_text) ?? ''
+
+      const tier = req.headers.get('x-product-tier')   // set by middleware.ts on every request
+      const lookupEligible = tier === 'elite' || tier === 'private'
+
+      await supabase.from('examiner_local_context').upsert({
+        session_id:       sessionId,
+        user_stated_text: encrypt(localContext.trim()),
+        lookup_status:    lookupEligible ? 'pending' : 'not_requested',
+        updated_at:       new Date().toISOString(),
+      }, { onConflict: 'session_id' })
+
+      if (lookupEligible) {
+        runLocalContextLookup(sessionId, decisionText, localContext.trim()).catch(err =>
+          console.error('[Examiner POST] Local context lookup error:', err)
+        )
+      }
+    }
+
+    // PR1/PR4 unification: "skipped" and "submitted" used to be two separate
+    // code paths, and the skip path wrote NO examiner_responses rows at all —
+    // which is exactly why the database couldn't distinguish "answered" from
+    // "waved off" (see audit finding, Examiner Failure §3). Both paths now
+    // flow through the same insert below: a fully-skipped session sends its
+    // full `responses` array with response_text left null per question
+    // (ExaminerPanel.tsx handleSkip, PR4), so every question the user SAW
+    // gets a row with resolution_state='skipped' and its criticality intact
+    // — which is what lib/readiness.ts (PR3) needs to work at all.
+    // `skipped` boolean is kept only as a legacy fallback for any older
+    // client build still in flight during rollout.
+    if (skipped && !responses?.length) {
       await supabase
         .from('sessions_ontology')
         .update({ examiner_status: 'submitted' })
         .eq('session_id', sessionId)
 
-      // Sprint D1: stamp last_action_at — user engaged (even via skip)
       stampLastActionAt(sessionId, supabase).catch(err =>
         console.error('[Examiner POST] last_action_at stamp (skip) error:', err)
       )
-
-      // Still trigger bias scoring on skip — personas + ontology are enough
       fireBiasScore(sessionId, req).catch(err =>
         console.error('[Examiner POST] Bias trigger (skip) error:', err)
       )
@@ -679,14 +759,22 @@ export async function POST(req: Request) {
     // questions and C0 for any future longitudinal use (e.g. domain context
     // accumulation across sessions). question_text + response_text encrypted
     // at rest per the Security Sprint (June 2, 2026).
+    //
+    // PR1: resolution_state is computed here, not trusted from the client —
+    // an empty/whitespace-only response_text is 'skipped' regardless of what
+    // the client thinks it sent. criticality IS trusted from the client
+    // (echoed back from what GET originally served, same existing pattern
+    // as rule_id) since it's descriptive metadata, not a security boundary.
     const rows = responses.map(r => ({
-      session_id:           sessionId,
-      question_text:        encrypt(r.question_text),
-      response_text:        encrypt(r.response_text),
-      question_order:       r.question_order,
-      unknown_unknown_gap:  r.unknown_unknown_gap,
+      session_id:            sessionId,
+      question_text:         encrypt(r.question_text),
+      response_text:         encrypt(r.response_text),
+      question_order:        r.question_order,
+      unknown_unknown_gap:   r.unknown_unknown_gap,
       bias_parameter_probed: null,
-      rule_id:              r.rule_id ?? null,
+      rule_id:               r.rule_id ?? null,
+      resolution_state:      r.response_text?.trim() ? 'answered' : 'skipped',
+      criticality:           r.criticality ?? null,
     }))
 
     const { error: insertError } = await supabase.from('examiner_responses').insert(rows)

@@ -46,6 +46,7 @@ function baseVector(overrides: Partial<ScoredVector> = {}): ScoredVector {
     time_pressure:                d(2),
     decision_unit:                d(1),
     emotional_intensity:          d(2),
+    non_financial_utility:        d(1),   // PR6 — added alongside its ontology-tagger.ts entry
     vector_version:               'v2.0',
     ...overrides,
   }

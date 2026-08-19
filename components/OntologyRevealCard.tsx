@@ -3,6 +3,13 @@
 // Appears after ontologyReady fires, auto-dismisses after 5 seconds.
 // Shows the 3 highest-scoring dimensions of the decision in plain English.
 // Gate: totalSessionCount <= 3. Never shows session 4+.
+//
+// PR7 note: the tension prediction (lib/quorum-read.ts's predictTension)
+// deliberately does NOT live here — it lives once, in QuorumReadCard, which
+// shows next in the sequence. Putting it here too would mean the same claim
+// appears twice within about ten seconds, which reads as padding rather
+// than confidence. See QuorumReadCard.tsx's header comment for the full
+// sequencing rationale.
 
 import { useState, useEffect, useRef } from 'react'
 import { getTopDimensions } from '@/lib/session-labels'

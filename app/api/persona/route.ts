@@ -152,6 +152,7 @@ import {
   getPersonaStructuralDirective,             // Sprint R1
 }                                            from '@/lib/structural-retrieval'
 import { buildCouncilContext }               from '@/lib/rule-engine'
+import { computeReadiness, formatUnresolvedForCouncil } from '@/lib/readiness'  // PR5
 import { fetchUserBiasContext, EMPTY_USER_BIAS_CONTEXT } from '@/lib/bias-scorer'
 import { computePersonaRelevance, buildRelevanceBlock, pickMostRelevantDimension, buildInstitutionalContextBlock, explainPersonaWeights, type BoostEvent } from '@/lib/persona-relevance'  // Sprint R3 + Institutional Sprint 5 + Sprint 1 follow-on + boost logging
 import { getWorthConfirmingText } from '@/lib/worth-confirming'  // Sprint 1 follow-on (merged Features #1 + #6)
@@ -233,7 +234,7 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
   try {
     const supabase = createServiceClient()
 
-    const [ontologyResult, sessionResult, structuralMatchResult] = await Promise.all([
+    const [ontologyResult, sessionResult, structuralMatchResult, examinerResponsesResult] = await Promise.all([
       supabase
         .from('sessions_ontology')
         // Sprint BT Phase 2b: +decision_type_primary, +dominant_emotion — the
@@ -274,6 +275,17 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
         .select('matches_json')
         .eq('session_id', sessionId)
         .maybeSingle(),
+      // PR5 — readiness gate carry-forward: fetch this session's examiner
+      // responses so computeReadiness() (lib/readiness.ts) can identify any
+      // 'important'-tier question the user left unanswered. Deliberately
+      // re-derived server-side from sessionId, same convention as every
+      // other field in this function, rather than trusted from the client —
+      // see lib/readiness.ts header comment on why this needs to run
+      // identically wherever it's called.
+      supabase
+        .from('examiner_responses')
+        .select('question_text, response_text, criticality')
+        .eq('session_id', sessionId),
     ])
 
     const userId             = sessionResult.data?.user_id ?? null
@@ -331,6 +343,26 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
 
     const ruleEngineResult = data.rule_engine_result as RuleEngineResult
 
+    // PR5: decrypt + compute readiness from this session's examiner_responses.
+    // Errors here must never break the persona/synthesis call itself — this
+    // is enrichment, same fail-open convention as maxStructuralScore above.
+    let unresolvedImportant: string[] = []
+    try {
+      const rows = (examinerResponsesResult.data ?? []) as Array<{
+        question_text: string | null
+        response_text: string | null
+        criticality:   'critical' | 'important' | 'optional' | null
+      }>
+      const decrypted = rows.map(r => ({
+        question_text: decrypt(r.question_text) ?? '',
+        response_text: decrypt(r.response_text) ?? null,
+        criticality:   r.criticality,
+      }))
+      unresolvedImportant = formatUnresolvedForCouncil(computeReadiness(decrypted).unresolvedImportant)
+    } catch (err) {
+      console.warn('[fetchCouncilContext] readiness computation failed (non-fatal):', err)
+    }
+
     return {
       councilContextStr: buildCouncilContext(
         data.ontology_vector as ScoredVector,
@@ -338,6 +370,7 @@ async function fetchCouncilContext(sessionId: string): Promise<CouncilContext> {
         userProfile,          // SB-3: profile block
         framingIntent,        // SB-3: framing intent directive
         validationCorrection, // SB-3: prior session correction
+        unresolvedImportant,  // PR5: carry-forward block
       ),
       ontologyVector:     data.ontology_vector as OntologyScoreMap,
       userId,

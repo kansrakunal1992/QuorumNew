@@ -7,6 +7,7 @@ interface ExaminerQuestion {
   text:    string
   gap:     string
   rule_id: string | null   // Sprint 11a: R1–R12 for rule-engine questions, null for v1.0 gap questions
+  criticality: 'critical' | 'important' | 'optional'   // PR1/PR2 — readiness gate tier
 }
 
 type RuleMode = 'REDIRECT' | 'GATE' | 'OPEN' | null
@@ -37,7 +38,7 @@ interface Props {
   sessionId: string
   visible:   boolean    // true once all 6 personas are done
   onComplete: (
-    responses:       Array<{ question_text: string; response_text: string | null; gap: string }>,
+    responses:       Array<{ question_text: string; response_text: string | null; gap: string; criticality?: 'critical' | 'important' | 'optional' }>,
     ruleMode:        RuleMode,  // Sprint 11b: passed upstream so SessionView can gate synthesis
     redirectQuestion?: string   // Sprint 16b: R1 question text — shown in SynthesisCard REDIRECT banner
   ) => void
@@ -193,8 +194,30 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
     }
   }
 
+  // ── Local/regulatory/market context (PR2) — optional, independent of the
+  // 3-question Examiner budget on purpose. Separate state, separate submit
+  // field. Never blocks anything; see readiness.ts doc comment.
+  const [localContext, setLocalContext] = useState('')
+
+  // PR1/PR4: skip no longer sends `skipped:true` with an empty responses
+  // array. It now sends the SAME shape as a real submission — one row per
+  // question the user actually saw, each with response_text left null and
+  // its criticality intact — so lib/readiness.ts has something to gate on.
+  // Previously this was the exact gap the audit found: a skipped GATE
+  // question and an answered one were indistinguishable in the database.
+  const buildSkippedResponses = () =>
+    questions.map(q => ({
+      question_text:       q.text,
+      response_text:       null,
+      question_order:      q.order,
+      unknown_unknown_gap: q.gap,
+      rule_id:             q.rule_id ?? null,
+      criticality:         q.criticality,
+    }))
+
   // Internal skip — used by fetch fallbacks (passes ruleMode from closure)
   const handleSkipInternal = async (mode: RuleMode) => {
+    const responses = buildSkippedResponses()
     try {
       await fetch('/api/examiner', {
         method:  'POST',
@@ -202,15 +225,19 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body:    JSON.stringify({ sessionId, skipped: true }),
+        body:    JSON.stringify({ sessionId, responses, skipped: true }),
       })
     } catch { /* non-blocking */ }
     setSubmitStatus('done')
-    onComplete([], mode)
+    onComplete(
+      responses.map(r => ({ question_text: r.question_text, response_text: r.response_text, gap: r.unknown_unknown_gap, criticality: r.criticality })),
+      mode,
+    )
   }
 
   // User-triggered skip
   const handleSkip = async () => {
+    const responses = buildSkippedResponses()
     try {
       await fetch('/api/examiner', {
         method:  'POST',
@@ -218,11 +245,14 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body:    JSON.stringify({ sessionId, skipped: true }),
+        body:    JSON.stringify({ sessionId, responses, skipped: true, localContext: localContext.trim() || undefined }),
       })
     } catch { /* non-blocking */ }
     setSubmitStatus('done')
-    onComplete([], ruleMode)
+    onComplete(
+      responses.map(r => ({ question_text: r.question_text, response_text: r.response_text, gap: r.unknown_unknown_gap, criticality: r.criticality })),
+      ruleMode,
+    )
   }
 
   const handleSubmit = async () => {
@@ -233,6 +263,7 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
       question_order:      q.order,
       unknown_unknown_gap: q.gap,
       rule_id:             q.rule_id ?? null,   // Sprint 11a: persist rule_id
+      criticality:         q.criticality,       // PR1/PR2: readiness gate tier
     }))
     try {
       await fetch('/api/examiner', {
@@ -241,12 +272,12 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body:    JSON.stringify({ sessionId, responses }),
+        body:    JSON.stringify({ sessionId, responses, localContext: localContext.trim() || undefined }),
       })
     } catch { /* non-blocking */ }
     setSubmitStatus('done')
     onComplete(
-      responses.map(r => ({ question_text: r.question_text, response_text: r.response_text, gap: r.unknown_unknown_gap })),
+      responses.map(r => ({ question_text: r.question_text, response_text: r.response_text, gap: r.unknown_unknown_gap, criticality: r.criticality })),
       ruleMode   // Sprint 11b: pass rule_mode to SessionView
     )
   }
@@ -545,6 +576,35 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
                 </div>
               )
             })()}
+
+            {/* ── PR2: optional local/regulatory/market context — shown only on the ──
+                final step, separate from the 3-question budget above (see this
+                file's ExaminerQuestion criticality doc + lib/web-context-lookup.ts).
+                Seejo's actual complaint wasn't "no web browsing" — it was "Quorum
+                didn't understand a crucial part of my context." This captures that
+                directly, in the user's own words, before anything gets looked up. */}
+            {stepIndex >= questions.length - 1 && (
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--border-dim)' }}>
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-2)', marginBottom: 4 }}>
+                  Anything local, regulatory, market, or geopolitical the Council should know?
+                </label>
+                <p style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic', margin: '0 0 8px', lineHeight: 1.5 }}>
+                  Optional — the Council can't see conditions on the ground where you are. Quorum will look for current, sourced information on this, but treat it as a lead, not a verified fact.
+                </p>
+                <textarea
+                  rows={2}
+                  value={localContext}
+                  onChange={e => setLocalContext(e.target.value)}
+                  placeholder="e.g. a pending zoning change, a regulatory shift, a local market condition…"
+                  style={{
+                    fontSize: 13,
+                    background: 'var(--bg-inset)',
+                    border: localContext.trim() ? '1px solid rgba(201,168,76,0.4)' : '1px solid var(--border-dim)',
+                    transition: 'border-color 0.15s',
+                  }}
+                />
+              </div>
+            )}
 
             <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
