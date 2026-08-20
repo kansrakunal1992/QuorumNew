@@ -27,8 +27,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { PERSONAS } from '@/lib/personas'
-import { readinessLabel } from '@/lib/quorum-read'
-import type { TensionPrediction } from '@/lib/quorum-read'
+import { readinessLabel } from '@/lib/quorum-read-shared'
+import type { TensionPrediction } from '@/lib/quorum-read-shared'
 
 interface QuorumReadData {
   available: boolean

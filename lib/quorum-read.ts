@@ -1,6 +1,14 @@
 /**
  * QUORUM — "Quorum's Read" pre-Council structural summary (PR7)
  *
+ * SERVER-ONLY. This file imports lib/ai-client.ts (createCompletion), which
+ * carries a build-time `import 'server-only'` guard — Next.js will fail the
+ * build if ANY client component ends up importing this module, even
+ * transitively. Only app/api/session/[id]/quorum-read/route.ts should ever
+ * import from here. Client components needing TensionPrediction or
+ * readinessLabel must import from lib/quorum-read-shared.ts instead — see
+ * that file's header comment for the exact deploy failure this split fixes.
+ *
  * Product context (see the code audit + the follow-up product discussion
  * on how to signal differentiation without narrating it): telling a
  * sophisticated user "we structurally analyze your decision" doesn't land
@@ -45,33 +53,23 @@
 import { createCompletion } from '@/lib/ai-client'
 import type { ScoredVector } from '@/lib/ontology-tagger'
 import type { RuleEngineResult } from '@/lib/rule-engine'
-import type { Readiness } from '@/lib/readiness'
-import { PERSONAS } from '@/lib/personas'
-import type { PersonaKey } from '@/lib/types'
+import type { TensionPrediction } from '@/lib/quorum-read-shared'
+
+export type { TensionPrediction }   // re-exported for callers that only import from here (e.g. this route's own callers before this split)
 
 // ── Deterministic tension prediction ────────────────────────────────────────
 // Takes the full ScoredVector directly — this only ever runs server-side
 // (app/api/session/[id]/quorum-read/route.ts), against the same ontology_vector
-// row the ontology tagger wrote, never against the client's trimmed
-// Record<string,{score,confidence}> state (that shape doesn't carry
-// rationale, which this doesn't need, but keeping one canonical input type
-// avoids a second parallel type to keep in sync — see git history for the
-// earlier client-composable version this replaced).
+// row the ontology tagger wrote.
 //
 // Threshold (score >= 4) matches buildCouncilContext's existing "high-signal
 // dimensions only" filter in lib/rule-engine.ts — deliberately the same bar,
 // so a prediction only fires when the same signal is strong enough that the
 // advisor prompts themselves will actually be responding to it.
-export interface TensionPrediction {
-  advisorA: PersonaKey
-  advisorB: PersonaKey
-  axis:     string   // short phrase, e.g. "reversibility vs. upside"
-}
-
 const RULES: Array<{
   test: (sv: ScoredVector) => boolean
-  advisorA: PersonaKey
-  advisorB: PersonaKey
+  advisorA: TensionPrediction['advisorA']
+  advisorB: TensionPrediction['advisorB']
   axis: string
 }> = [
   {
@@ -115,12 +113,6 @@ export function predictTension(sv: ScoredVector): TensionPrediction | null {
   const match = RULES.find(r => r.test(sv))
   if (!match) return null
   return { advisorA: match.advisorA, advisorB: match.advisorB, axis: match.axis }
-}
-
-export function formatTensionPrediction(p: TensionPrediction): string {
-  const a = PERSONAS[p.advisorA].label
-  const b = PERSONAS[p.advisorB].label
-  return `Watch for real disagreement between ${a} and ${b} — on ${p.axis}. If they end up saying the same thing, that itself is a signal worth noticing.`
 }
 
 // ── Structural summary (fast-role AI call) ──────────────────────────────────
@@ -191,13 +183,5 @@ export async function buildStructuralSummary(
   } catch (err) {
     console.warn('[QuorumRead] structural summary generation failed (non-fatal):', err)
     return null
-  }
-}
-
-export function readinessLabel(readiness: Readiness): { emoji: string; text: string } {
-  switch (readiness) {
-    case 'READY':              return { emoji: '🟢', text: 'Ready' }
-    case 'READY_WITH_CAVEATS': return { emoji: '🟡', text: 'Ready, with one open question' }
-    case 'NOT_READY':          return { emoji: '🔴', text: 'Not ready yet' }
   }
 }
