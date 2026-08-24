@@ -639,6 +639,27 @@ textarea::placeholder { color: var(--text-4); }
   min-width: 6ch;   /* prevents pill collapsing to nothing during typewriter */
   font-family: inherit;
 }
+/* ── Numeric Provenance — <estimate> inline marker ─────────
+   Trailing label after every highlighted <estimate> span (see
+   renderAssumption in components/PersonaPanel.tsx). Exists because color
+   alone doesn't tell a first-time user what a highlight means, and unlike
+   <assumption>/<reversal> — which read fine from their surrounding
+   sentence — an isolated highlighted number has no other cue. Uses the
+   same --estimate-highlight-border var as the highlight itself (already
+   defined per-theme above), so this one rule works in both themes without
+   a separate dark/light block, unlike .relevance-label just above. */
+.estimate-marker {
+  display:        inline-block;
+  font-size:      8.5px;
+  font-weight:    700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color:          var(--estimate-highlight-border);
+  margin-left:    3px;
+  line-height:    1;
+  cursor:         help;
+  opacity:        0.9;
+}
 [data-theme="dark"] .relevance-label {
   background: rgba(201, 168, 76, 0.18);
   color: #e8c96a;

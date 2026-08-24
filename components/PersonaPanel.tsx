@@ -461,7 +461,11 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
     // <estimate> can appear multiple times per response (one per suggested
     // numeric threshold) — find every closed occurrence, unlike the single
-    // indexOf pair used for <assumption>/<reversal> above.
+    // indexOf pair used for <assumption>/<reversal> above. isEstimate flags
+    // these for the trailing "estimate" marker below — color alone doesn't
+    // tell a user what a highlight means, so <estimate> spans get an
+    // explicit inline label, unlike the other two tags which read fine
+    // from their surrounding sentence.
     const estimateSpans = [...text.matchAll(/<estimate>([\s\S]*?)<\/estimate>/g)].map(m => ({
       start: m.index!,
       end:   m.index! + m[0].length,
@@ -469,6 +473,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       closeLen: '</estimate>'.length,
       bgVar: '--estimate-highlight-bg',
       borderVar: '--estimate-highlight-border',
+      isEstimate: true,
     }))
 
     if (!hasAssumption && !hasReversal && estimateSpans.length === 0) {
@@ -484,10 +489,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     // way round. <estimate> spans can fall anywhere relative to both —
     // sorting by start below handles all orderings.
     const spans = [
-      hasAssumption && { start: assumptionStart, end: assumptionEnd + '</assumption>'.length, tagLen: '<assumption>'.length, closeLen: '</assumption>'.length, bgVar: '--assumption-highlight-bg', borderVar: '--assumption-highlight-border' },
-      hasReversal    && { start: reversalStart,   end: reversalEnd   + '</reversal>'.length,   tagLen: '<reversal>'.length,   closeLen: '</reversal>'.length,   bgVar: '--reversal-highlight-bg',   borderVar: '--reversal-highlight-border' },
+      hasAssumption && { start: assumptionStart, end: assumptionEnd + '</assumption>'.length, tagLen: '<assumption>'.length, closeLen: '</assumption>'.length, bgVar: '--assumption-highlight-bg', borderVar: '--assumption-highlight-border', isEstimate: false },
+      hasReversal    && { start: reversalStart,   end: reversalEnd   + '</reversal>'.length,   tagLen: '<reversal>'.length,   closeLen: '</reversal>'.length,   bgVar: '--reversal-highlight-bg',   borderVar: '--reversal-highlight-border',   isEstimate: false },
       ...estimateSpans,
-    ].filter((s): s is { start: number; end: number; tagLen: number; closeLen: number; bgVar: string; borderVar: string } => !!s)
+    ].filter((s): s is { start: number; end: number; tagLen: number; closeLen: number; bgVar: string; borderVar: string; isEstimate: boolean } => !!s)
       .sort((a, b) => a.start - b.start)
 
     const nodes: React.ReactNode[] = []
@@ -495,13 +500,33 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     spans.forEach((s, i) => {
       nodes.push(text.slice(cursor, s.start))
       nodes.push(
-        <span key={i} style={{
-          background:    `var(${s.bgVar})`,
-          borderBottom:  `1px solid var(${s.borderVar})`,
-          paddingBottom: 1,
-          borderRadius:  2,
-        }}>{text.slice(s.start + s.tagLen, s.end - s.closeLen)}</span>
+        <span
+          key={i}
+          title={s.isEstimate ? 'Council-suggested estimate — not a fact you stated' : undefined}
+          style={{
+            background:    `var(${s.bgVar})`,
+            borderBottom:  `1px solid var(${s.borderVar})`,
+            paddingBottom: 1,
+            borderRadius:  2,
+            cursor:        s.isEstimate ? 'help' : undefined,
+          }}
+        >{text.slice(s.start + s.tagLen, s.end - s.closeLen)}</span>
       )
+      // <estimate> gets an explicit trailing label — the highlight color
+      // alone doesn't tell a first-time user what it means, and unlike
+      // <assumption>/<reversal>, this needs to work without a hover (most
+      // usage here is mobile). "estimate" is spelled out rather than
+      // abbreviated for the same reason the color-only approach wasn't
+      // enough on its own: don't trade one unexplained signal for another.
+      if (s.isEstimate) {
+        nodes.push(
+          <sup
+            key={`${i}-marker`}
+            className="estimate-marker"
+            title="Council-suggested estimate — not a fact you stated"
+          >estimate</sup>
+        )
+      }
       cursor = s.end
     })
     nodes.push(text.slice(cursor))
