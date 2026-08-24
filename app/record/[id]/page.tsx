@@ -76,6 +76,11 @@ function stripHeaderTags(raw: string): string {
     // Reversal Test <reversal> tag (all six personas) — same content-preserving
     // treatment as <assumption> just above.
     .replace(/<\/?reversal>/g, '')
+    // Numeric Provenance <estimate> tag (WORD_LIMIT_PREFIX #6, all six
+    // personas) — same content-preserving treatment as <assumption>/<reversal>
+    // above; the record page has no highlight styling here, so the tag
+    // markers are removed and the number stays in place.
+    .replace(/<\/?estimate>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean/pushback_classification
@@ -217,6 +222,10 @@ function parseVerdictTension(raw: string): { verdict: string | null; conditions:
     .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
     .replace(/<\/?assumption>/g, '')
     .replace(/<\/?reversal>/g, '')
+    // Numeric Provenance <estimate> tag — same content-preserving treatment,
+    // synthesis-specific path (see the persona-view path above for the
+    // fuller comment).
+    .replace(/<\/?estimate>/g, '')
     .trimStart()
   return { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest }
 }

@@ -88,6 +88,11 @@ function stripSynthesisTags(raw: string): string {
     // Reversal Test <reversal> tag (all six personas) — same content-preserving
     // treatment as <assumption> just above.
     .replace(/<\/?reversal>/g, '')
+    // Numeric Provenance <estimate> tag (WORD_LIMIT_PREFIX #6, all six
+    // personas) — same content-preserving treatment; this is a static PDF
+    // export with no highlight styling, so the number just stays in place
+    // with the tag markers removed, same as <assumption>/<reversal> above.
+    .replace(/<\/?estimate>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — without this it leaks into export.

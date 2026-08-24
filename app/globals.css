@@ -87,6 +87,18 @@
      attention in the same card. */
   --worth-confirming-highlight-bg:     rgba(120,175,220,0.13);
   --worth-confirming-highlight-border: rgba(120,175,220,0.38);
+  /* Numeric Provenance — <estimate> tag (lib/personas.ts WORD_LIMIT_PREFIX
+     #6): marks a number a persona is supplying as its own suggested
+     benchmark, not a fact the decision-maker stated. Rose/pink, a
+     genuinely new hue not already claimed by tension (coral-red),
+     assumption (peachy-orange), reversal (violet), verdict (gold),
+     worth-confirming (blue), or action-plan/confidence-to-act (teal) —
+     deliberately reads as neutral/data-flavoured rather than alarming,
+     since this is a "here's the provenance" marker, not a warning. Alpha
+     matched to assumption's dark-theme values, same near-black card
+     background reasoning as reversal's comment above. */
+  --estimate-highlight-bg:     rgba(196,110,158,0.16);
+  --estimate-highlight-border: rgba(196,110,158,0.48);
   /* Decision Action Plan — new register, distinct hue from every existing
      tag: gold=verdict, coral=tension, peach=assumption, blue=worth-
      confirming, green=success/pattern-analyst, violet=stakeholder. Teal
@@ -204,6 +216,11 @@
      not competing for attention). */
   --worth-confirming-highlight-bg:     rgba(40,95,150,0.08);
   --worth-confirming-highlight-border: rgba(40,95,150,0.26);
+  /* Numeric Provenance — <estimate> tag, light theme. Same rose/pink
+     register as dark theme, deepened for a white background — same
+     reasoning as assumption's light-theme comment above. */
+  --estimate-highlight-bg:     rgba(160,60,120,0.10);
+  --estimate-highlight-border: rgba(160,60,120,0.32);
   /* Decision Action Plan — light theme. Same teal register as dark theme,
      deepened/desaturated for contrast against --bg-card #ffffff, same
      reasoning as every other highlight pair in this file. */

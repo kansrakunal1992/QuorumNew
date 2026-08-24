@@ -391,6 +391,11 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       // not the pushback protocol, so it shouldn't appear here in practice —
       // this is a defensive strip in case it does.
       .replace(/<\/?reversal>/g, '')
+      // <estimate> (Numeric Provenance, WORD_LIMIT_PREFIX #6) — same
+      // content-preserving defensive strip; not part of the pushback
+      // protocol's own instructions, but a pushback reply can still restate
+      // a numeric threshold, so this guards against the tag leaking raw.
+      .replace(/<\/?estimate>/g, '')
       .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
       // Third bug fix (GPT-5-mini, Aug 2026) — same leaked-lean shapes as
       // extractHeaderTags above; see that function's comment for the full explanation.
@@ -432,6 +437,14 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     return text
       .replace(/<\/?assumption>/g, '').replace(/<assumption>[\s\S]*$/, '')
       .replace(/<\/?reversal>/g, '').replace(/<reversal>[\s\S]*$/, '')
+      // <estimate> (Numeric Provenance constraint, lib/personas.ts
+      // WORD_LIMIT_PREFIX #6) — same content-preserving, stays-in-place
+      // treatment as <assumption>/<reversal>. Unlike those two, a response
+      // can contain several <estimate> spans (one per suggested numeric
+      // threshold), so it's handled separately below in renderAssumption
+      // rather than as a single indexOf pair — this strip is only the
+      // streaming-safe fallback shown before the response is done.
+      .replace(/<\/?estimate>/g, '').replace(/<estimate>[\s\S]*$/, '')
   }
 
   const renderAssumption = (text: string, isDone: boolean): React.ReactNode => {
@@ -446,8 +459,20 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     const reversalEnd   = text.indexOf('</reversal>')
     const hasReversal    = reversalStart !== -1 && reversalEnd !== -1 && reversalEnd > reversalStart
 
-    if (!hasAssumption && !hasReversal) {
-      // No tag found (a rare miss, or a persona/response with neither) —
+    // <estimate> can appear multiple times per response (one per suggested
+    // numeric threshold) — find every closed occurrence, unlike the single
+    // indexOf pair used for <assumption>/<reversal> above.
+    const estimateSpans = [...text.matchAll(/<estimate>([\s\S]*?)<\/estimate>/g)].map(m => ({
+      start: m.index!,
+      end:   m.index! + m[0].length,
+      tagLen: '<estimate>'.length,
+      closeLen: '</estimate>'.length,
+      bgVar: '--estimate-highlight-bg',
+      borderVar: '--estimate-highlight-border',
+    }))
+
+    if (!hasAssumption && !hasReversal && estimateSpans.length === 0) {
+      // No tag found (a rare miss, or a persona/response with none) —
       // render as-is, still guarding against any stray/unclosed tag.
       return <>{stripHighlightMarkup(text)}</>
     }
@@ -456,10 +481,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     // the response, after it — so in practice assumptionStart < reversalStart
     // whenever both are present. Handle both orders anyway rather than
     // assume it, since nothing prevents a model from writing them the other
-    // way round.
+    // way round. <estimate> spans can fall anywhere relative to both —
+    // sorting by start below handles all orderings.
     const spans = [
       hasAssumption && { start: assumptionStart, end: assumptionEnd + '</assumption>'.length, tagLen: '<assumption>'.length, closeLen: '</assumption>'.length, bgVar: '--assumption-highlight-bg', borderVar: '--assumption-highlight-border' },
       hasReversal    && { start: reversalStart,   end: reversalEnd   + '</reversal>'.length,   tagLen: '<reversal>'.length,   closeLen: '</reversal>'.length,   bgVar: '--reversal-highlight-bg',   borderVar: '--reversal-highlight-border' },
+      ...estimateSpans,
     ].filter((s): s is { start: number; end: number; tagLen: number; closeLen: number; bgVar: string; borderVar: string } => !!s)
       .sort((a, b) => a.start - b.start)
 

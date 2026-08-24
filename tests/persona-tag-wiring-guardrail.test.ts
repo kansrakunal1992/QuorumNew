@@ -151,6 +151,8 @@ describe('Persona-tag-wiring guardrail — every persona-level tag reaches every
     expect(instructedTags).toContain('lean')
     expect(instructedTags).toContain('assumption')
     expect(instructedTags).toContain('pushback_classification')
+    // Numeric Provenance addition — see lib/personas.ts WORD_LIMIT_PREFIX #6.
+    expect(instructedTags).toContain('estimate')
     expect(instructedTags).toContain('structural')
   })
 

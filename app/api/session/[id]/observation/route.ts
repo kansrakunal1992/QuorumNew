@@ -50,6 +50,10 @@ function stripHeaderTags(raw: string): string {
     // treatment as <assumption> just above; the reversal condition is useful
     // context for the observation model too.
     .replace(/<\/?reversal>/g, '')
+    // Numeric Provenance <estimate> tag (WORD_LIMIT_PREFIX #6, all six
+    // personas) — same content-preserving treatment; the observation model
+    // should still read the number, just without the raw tag markup.
+    .replace(/<\/?estimate>/g, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — leaked tags are noise to the model.

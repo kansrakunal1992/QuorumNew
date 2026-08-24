@@ -101,7 +101,7 @@ function cleanPushbackText(raw: string): string {
 
 // Strip <lens>, <position>, <realcost>, <lean>, <structural>, <verdict>,
 // <verdict_lean>, <conditions>, <key_question>, <tension>, <assumption>,
-// <reversal> tags from advisor/synthesis text before it goes into the PDF
+// <reversal>, <estimate> tags from advisor/synthesis text before it goes into the PDF
 function stripAdvisorTags(raw: string): string {
   return raw
     .replace(/<lens>[\s\S]*?<\/lens>/gi, '')
@@ -143,6 +143,14 @@ function stripAdvisorTags(raw: string): string {
     // Reversal Test <reversal> tag (all six personas) — same content-preserving
     // treatment as <assumption> just above.
     .replace(/<\/?reversal>/gi, '')
+    // Numeric Provenance <estimate> tag (WORD_LIMIT_PREFIX #6, all six
+    // personas) — same content-preserving treatment as <assumption>/
+    // <reversal> above. Before this line existed, this file's substring
+    // check happened to pass by accident (an unrelated comment two screens
+    // up contains the word "estimated"), which is exactly the silent-gap
+    // failure mode this whole stripping function exists to prevent — see
+    // tests/persona-tag-wiring-guardrail.test.ts.
+    .replace(/<\/?estimate>/gi, '')
     // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
     // Tolerant close: model sometimes closes with </pushback> instead of the
     // full tag name (same drift as verdict_lean) — without this it leaks into the PDF.
