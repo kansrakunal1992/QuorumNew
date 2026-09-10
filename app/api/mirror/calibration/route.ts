@@ -39,6 +39,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getMirrorAccessState } from '@/lib/mirror-access'
 import { decrypt } from '@/lib/encryption'
 import { computeDimensionalCalibration, type DimensionalCalibrationZone } from '@/lib/calibration-engine'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 
 export interface CalibrationPoint {
   session_id:               string
@@ -116,7 +117,38 @@ function derivePattern(avgDelta: number | null, trend: CalibrationSummary['trend
   return 'Slight overconfidence pattern — entering decisions with marginally more certainty than warranted'
 }
 
-// ── Route handler ─────────────────────────────────────────────────────────────
+// ── Personal-insight phrasing (Unified Session, Tier 3) ────────────────────────
+// Same inputs as derivePattern() above, reworded per the product doc's
+// principle 12: Mirror should read like "here's what Quorum has learned
+// about how you make decisions," not an analytics dashboard. This is one
+// representative reframing, not a rewrite of every Mirror string in the
+// app — extending the same voice to the other Mirror cards (Bias
+// Fingerprint, Independence Score, etc.) is a content pass on each of
+// those components individually, not an architecture change, and isn't
+// done here.
+function derivePersonalPattern(avgDelta: number | null, trend: CalibrationSummary['trend']): string | null {
+  if (avgDelta === null) return null
+
+  if (avgDelta > 1.5) {
+    return trend === 'improving'
+      ? 'You\u2019re trusting your own read more than you used to \u2014 and it\u2019s earning that trust.'
+      : 'You call it a coin flip going in. Looking back, you almost always knew.'
+  }
+  if (avgDelta < -1.5) {
+    return trend === 'improving'
+      ? 'You walk in more certain than you should \u2014 but less so than a few sessions ago.'
+      : 'You consistently feel sure right before you\u2019re wrong. That gap hasn\u2019t moved yet.'
+  }
+  if (Math.abs(avgDelta) <= 0.5) {
+    return 'When you say you\u2019re sure, you usually are. Your gut and your record agree.'
+  }
+  if (avgDelta > 0) {
+    return 'You second-guess yourself a little going in, then turn out to have been right.'
+  }
+  return 'You walk in slightly more confident than the outcomes tend to justify \u2014 not by much.'
+}
+
+
 export async function GET(req: Request) {
   const supabase = createServiceClient()
 
@@ -142,9 +174,14 @@ export async function GET(req: Request) {
   }
 
   // ── 2. Mirror access gate ─────────────────────────────────────────────────
-  const accessState = await getMirrorAccessState(userId, supabase)
-  if (accessState !== 'unlocked') {
-    return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
+  // Bypassed under the unified session flag: calibration is meant to be the
+  // free-tier hook in that experience, not an Elite/3-session unlock. When
+  // the flag is off, this behaves exactly as before.
+  if (!isUnifiedSessionEnabled()) {
+    const accessState = await getMirrorAccessState(userId, supabase)
+    if (accessState !== 'unlocked') {
+      return NextResponse.json({ error: 'Mirror access required' }, { status: 403 })
+    }
   }
 
   // ── 3. Fetch sessions with pre_decision_confidence ─────────────────────────
@@ -217,7 +254,9 @@ export async function GET(req: Request) {
     avg_pre   = Math.round(pres.reduce((s, d) => s + d, 0)   / paired.length * 10) / 10
     const slope = computeTrendSlope(deltas)
     trend   = deriveTrend(slope)
-    pattern = derivePattern(avg_delta, trend)
+    pattern = isUnifiedSessionEnabled()
+      ? derivePersonalPattern(avg_delta, trend)
+      : derivePattern(avg_delta, trend)
   } else if (withRetro.length >= 3) {
     // retro-only: can still show a trend of retrospective confidence over time
     const retros = withRetro.map(p => p.retrospective_confidence!)

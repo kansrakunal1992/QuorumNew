@@ -65,3 +65,28 @@ export function isContextIngestionEnabled(): boolean {
 export function contextIngestionCanOverrideProfile(): boolean {
   return process.env.CONTEXT_INGESTION_ALLOW_PROFILE_OVERRIDE === 'true'
 }
+
+// Unified session experience — same pattern as the three flags above: one
+// NEXT_PUBLIC_ var, default OFF when unset, checked identically client and
+// server, baked in at build time (redeploy required after changing it).
+//
+// This is a presentation-layer flag, not a reasoning-layer one. When ON:
+//   - Examiner renders at the top of the session, before Council/Synthesis,
+//     instead of after Synthesis/Validation/EarlyEcho/MirrorEcho/RuleRecall
+//     (see SessionView.tsx — the old position is suppressed, not duplicated).
+//   - The six-persona grid ("Council") is still generated exactly as today —
+//     nothing changes in app/api/persona/route.ts — but it renders collapsed
+//     behind a "See how Quorum got here" disclosure instead of always-open.
+//     Hidden by default, never removed: a user who wants to inspect the
+//     six perspectives still can, one click away.
+//   - The Mirror calibration gate (getMirrorAccessState) is bypassed in
+//     app/api/mirror/calibration/route.ts so free-tier sessions can see
+//     their own pre/retro confidence delta from session one, not only
+//     after 3 sessions on Elite.
+//
+// To enable in Railway: set NEXT_PUBLIC_UNIFIED_SESSION_ENABLED=true on the
+// service, then redeploy.
+
+export function isUnifiedSessionEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_UNIFIED_SESSION_ENABLED === 'true'
+}

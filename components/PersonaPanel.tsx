@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import RateLimitBanner, { parseRateLimit, type RateLimitInfo } from '@/components/RateLimitBanner'
 import { useTTSContext } from '@/context/TTSContext'
 import type { PersonaMeta, Message } from '@/lib/types'
@@ -16,6 +17,20 @@ const LEAN_LABELS: Record<Lean, string> = {
   wait:    'Wait',
   mixed:   'Mixed',
 }
+
+// Unified session, Tier 3 — "Challenge Quorum" structured reasons. Purely a
+// prefill helper for the free-form pushback textarea below (see product doc
+// item 7: "provide structured disagreement... then allow free-form
+// explanation"). Never sent as-is without the user reviewing/editing the
+// textarea, so this needs no backend changes — handlePushback's submission
+// path is untouched.
+const CHALLENGE_REASONS: { value: string; label: string; prefill: string }[] = [
+  { value: 'priorities', label: 'Misread my priorities',      prefill: 'You misunderstood what actually matters to me here: ' },
+  { value: 'risk',       label: 'Missed a risk',              prefill: 'You missed a risk that matters: ' },
+  { value: 'situation',  label: 'Misread the situation',      prefill: 'You misunderstood the actual situation: ' },
+  { value: 'disagree',   label: 'I disagree with the take',   prefill: 'I disagree with this because: ' },
+  { value: 'missing',    label: 'You\u2019re missing information', prefill: 'There\u2019s information you don\u2019t have: ' },
+]
 
 const ICONS: Record<string, React.ReactNode> = {
   contrarian: (
@@ -141,6 +156,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const [messages, setMessages]           = useState<Message[]>([])
   const [pushback, setPushback]           = useState('')
   const [showPushback, setShowPushback]   = useState(false)
+  // Unified session, Tier 3: structured challenge reason. Purely a text-
+  // prefill helper — handlePushback still just sends whatever's in
+  // `pushback`, so this needs no change to the submission path below.
+  const [challengeReason, setChallengeReason] = useState<string | null>(null)
   const [isPushingBack, setIsPushingBack] = useState(false)
   const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
 
@@ -1319,6 +1338,33 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
               Disagree, add new information, or ask a follow-up
             </p>
+            {isUnifiedSessionEnabled() && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                {CHALLENGE_REASONS.map(r => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => {
+                      setChallengeReason(r.value)
+                      // Prefill only — never overwrites something the user
+                      // already started typing.
+                      if (!pushback.trim()) setPushback(r.prefill)
+                    }}
+                    style={{
+                      padding:      '4px 10px',
+                      fontSize:     11.5,
+                      borderRadius: 999,
+                      border:       `1px solid ${challengeReason === r.value ? 'var(--gold)' : 'var(--border-dim)'}`,
+                      background:   challengeReason === r.value ? 'rgba(201,168,76,0.12)' : 'transparent',
+                      color:        challengeReason === r.value ? 'var(--gold)' : 'var(--text-4)',
+                      cursor:       'pointer',
+                    }}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               rows={2}
               style={{ fontSize: 13, padding: '8px 12px' }}
@@ -1332,7 +1378,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
               <button className="btn-primary" style={{ padding: '7px 18px', fontSize: 12 }} onClick={handlePushback}>
                 Send ↵
               </button>
-              <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback('') }}>Cancel</button>
+              <button className="btn-ghost" onClick={() => { setShowPushback(false); setPushback(''); setChallengeReason(null) }}>Cancel</button>
             </div>
           </div>
         </div>

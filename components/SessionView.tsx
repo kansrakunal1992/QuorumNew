@@ -16,6 +16,10 @@ import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
 import { computeReadiness } from '@/lib/readiness'   // PR3/PR4 — readiness gate
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import InitialInstinctCapture from '@/components/InitialInstinctCapture'
+import QuorumPrediction       from '@/components/QuorumPrediction'
+import PredictionReveal       from '@/components/PredictionReveal'
 import RecordReceipt from './RecordReceipt'
 import ContradictionBanner from './ContradictionBanner'
 import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
@@ -275,6 +279,16 @@ export default function SessionView({ session: initialSession, initialMessages =
   // starting false — otherwise a reload (e.g. after a network error mid-Council)
   // re-asks Examiner questions that were already answered or explicitly skipped.
   const [examinerSubmitted,      setExaminerSubmitted]      = useState(examinerAlreadySubmitted)
+  // Unified session, Tier 2: instinct lock gate + prediction. Starts true
+  // when the flag is off, so the gate below never activates and behavior is
+  // unchanged. Deliberately local-only (not hydrated from a prior page
+  // load) for this first pass — the parent page's session fetch query would
+  // need to select the new initial_instinct/optimization_priority columns
+  // for that to be reliable, which is a one-line follow-up, not done here
+  // to avoid guessing at a query I haven't verified.
+  const [instinctLocked,   setInstinctLocked]   = useState(!isUnifiedSessionEnabled())
+  const [lockedPriority,   setLockedPriority]   = useState<string | null>(null)
+  const [predictedChoiceForReveal, setPredictedChoiceForReveal] = useState<string | null>(null)
   const [examinerInitialContext, setExaminerInitialContext] = useState<Record<string, string>>({})
   const [synthExaminerContext,   setSynthExaminerContext]   = useState<string | undefined>(undefined)
 
@@ -306,6 +320,10 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [biasNote,            setBiasNote]            = useState<{ label: string; reasoning: string } | null>(null)
   // Sprint TOUR-1: council tour
   const [showCouncilTour,     setShowCouncilTour]     = useState(false)
+  // Unified session flag: six-persona grid renders collapsed behind a
+  // disclosure instead of always-open. Irrelevant when the flag is off —
+  // the grid ignores this and always renders as before.
+  const [councilExpanded,     setCouncilExpanded]     = useState(false)
   const [councilTourSteps,    setCouncilTourSteps]    = useState<TourStep[]>(COUNCIL_STEPS_BASE)
   const [contradiction,       setContradiction]       = useState<{
     id: string
@@ -1252,6 +1270,30 @@ export default function SessionView({ session: initialSession, initialMessages =
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // ── Unified session, Tier 2: instinct-lock gate ──────────────────────────
+  // Hard early return, not a conditional inside the JSX below — this is the
+  // "critical bias protection" requirement from the product doc: nothing
+  // else in the session (Examiner, Council, prediction, Synthesis) mounts
+  // until this resolves, so none of it can influence the answer it's
+  // supposed to be measured against. Safe here because every hook in this
+  // component is declared above this line — an early return this late never
+  // violates rules-of-hooks. Flag off → isUnifiedSessionEnabled() is false,
+  // this block never triggers, and the component behaves exactly as before.
+  if (isUnifiedSessionEnabled() && !instinctLocked) {
+    return (
+      <div style={{ maxWidth: 640, margin: '48px auto', padding: '0 20px' }}>
+        <InitialInstinctCapture
+          sessionId={session.id}
+          authToken={authTokenSV}
+          onComplete={(_instinct, priority) => {
+            setLockedPriority(priority)
+            setInstinctLocked(true)
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <>
       {/* ── Entrance animation keyframes (CSS-only, no logic) ── */}
@@ -1682,6 +1724,38 @@ export default function SessionView({ session: initialSession, initialMessages =
             </div>
 
             <TTSProvider>
+              {/* ── Unified session flag: Examiner moved to the front ──
+                  Renders here instead of its old position (further below,
+                  after Synthesis/Validation/EarlyEcho/MirrorEcho/RuleRecall)
+                  when NEXT_PUBLIC_UNIFIED_SESSION_ENABLED=true. The old
+                  render site further down is suppressed by the same flag
+                  check, so it never mounts twice. Flag off → this block
+                  renders nothing, and behavior is unchanged from before. */}
+              {isUnifiedSessionEnabled() && !examinerSubmitted && (
+                <div className="sv-fade sv-fade-1">
+                  <ExaminerPanel
+                    key={`examiner-top-${sessionKey}`}
+                    sessionId={session.id}
+                    visible={true}
+                    onComplete={handleExaminerComplete}
+                    forceDismissed={examinerDismissed}
+                    authToken={authTokenSV}
+                  />
+                </div>
+              )}
+
+              {/* Unified session, Tier 2: fires once instinct is locked
+                  (guaranteed true here — the early return above blocks
+                  render otherwise). Runs alongside Council/Synthesis
+                  generating underneath, not blocking on them. */}
+              {isUnifiedSessionEnabled() && (
+                <QuorumPrediction
+                  sessionId={session.id}
+                  authToken={authTokenSV}
+                  onPredicted={setPredictedChoiceForReveal}
+                />
+              )}
+
               {/* ── Council Status Bar ── */}
               <div className="sv-fade sv-fade-1">
                 <CouncilStatusBar
@@ -1914,7 +1988,10 @@ export default function SessionView({ session: initialSession, initialMessages =
                   from sessions.examiner_status server-side). Without this guard,
                   a reload — e.g. after a network error mid-Council — always
                   re-asked the same questions from scratch. */}
-              {!examinerSubmitted && (
+              {/* Suppressed under the unified session flag — Examiner already
+                  rendered at the top of the flow above (see block near
+                  CouncilStatusBar). Unchanged when the flag is off. */}
+              {!isUnifiedSessionEnabled() && !examinerSubmitted && (
                 <div className="sv-fade sv-fade-2">
                   <ExaminerPanel
                     key={`examiner-${sessionKey}`}
@@ -1961,6 +2038,49 @@ export default function SessionView({ session: initialSession, initialMessages =
                 <TensionInterstitial leans={personaLeans} onDismiss={() => setInterstitialDismissed(true)} />
               )}
 
+              {/* Unified session, Tier 2: make-your-decision + reveal. Same
+                  synthesisDone gate as the Council disclosure toggle below —
+                  by the time synthesis is ready, there's enough on screen
+                  for the user to actually decide. */}
+              {isUnifiedSessionEnabled() && synthesisDone && (
+                <PredictionReveal
+                  sessionId={session.id}
+                  authToken={authTokenSV}
+                  predictedChoice={predictedChoiceForReveal}
+                />
+              )}
+
+              {/* ── Unified session flag: Council disclosure toggle ──
+                  "Hidden by default, never removed" — the six personas below
+                  still generate exactly as before (nothing changed in
+                  app/api/persona/route.ts); this only controls whether the
+                  grid is visible. Flag off → this renders nothing and the
+                  grid below is always visible, same as today. */}
+              {isUnifiedSessionEnabled() && synthesisDone && (
+                <button
+                  type="button"
+                  onClick={() => setCouncilExpanded(v => !v)}
+                  data-tour-id="council-disclosure-toggle"
+                  style={{
+                    display:       'flex',
+                    alignItems:    'center',
+                    gap:           6,
+                    margin:        '4px 0 12px',
+                    padding:       '8px 12px',
+                    background:    'transparent',
+                    border:        '1px solid var(--border-mid)',
+                    borderRadius:  10,
+                    color:         'var(--text-3)',
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    letterSpacing: '0.04em',
+                    cursor:        'pointer',
+                  }}
+                >
+                  {councilExpanded ? 'Hide internal deliberation' : 'See how Quorum got here'}
+                </button>
+              )}
+
               {/* ── 4. Six persona panels ── */}
               <div
                 className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sv-fade sv-fade-3"
@@ -1969,6 +2089,13 @@ export default function SessionView({ session: initialSession, initialMessages =
                   paddingTop:    12,
                   opacity:       (redirectBlocked || notReadyBlocked) ? 0.55 : 1,
                   pointerEvents: (redirectBlocked || notReadyBlocked) ? 'none' : 'auto',
+                  // Unified session flag: collapsed by default, expandable via
+                  // the disclosure toggle above. The cards still mount and
+                  // fetch/stream in the background either way — this only
+                  // hides them visually, so nothing about the underlying
+                  // Council generation changes. Flag off → always visible,
+                  // identical to the pre-flag behavior.
+                  display: (isUnifiedSessionEnabled() && !councilExpanded) ? 'none' : undefined,
                 }}
               >
                 {orderedPersonaKeys.map((key, personaIndex) => {

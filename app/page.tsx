@@ -7,7 +7,8 @@ import { parseExportFile, ACCEPTED_FILE_TYPES_LABEL, ACCEPTED_FILE_EXTENSIONS } 
 import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import WatchlistSection from '@/components/WatchlistSection'
-import { isWatchlistEnabled } from '@/lib/feature-flags'
+import { isWatchlistEnabled, isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import QuorumLearnedSomething from '@/components/QuorumLearnedSomething'
 import AuthPanel from '@/components/AuthPanel'
 import BehaviorAlerts from '@/components/BehaviorAlerts'
 import dynamic from 'next/dynamic'
@@ -1212,6 +1213,8 @@ export default function Home() {
               transition:    'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
               pointerEvents: inputRevealed ? 'auto' : 'none',
             }}>
+              {isUnifiedSessionEnabled() && <QuorumLearnedSomething authToken={authToken} />}
+
               <h1 style={{
                 fontSize:      22,
                 fontWeight:    400,
