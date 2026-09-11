@@ -62,7 +62,7 @@ export default function InitialInstinctCapture({ sessionId, authToken, onComplet
         borderRadius: 14,
         padding:      '20px 20px 18px',
         marginBottom: 16,
-        background:   'var(--surface-1)',
+        background:   'var(--bg-card)',
       }}
     >
       <p style={{

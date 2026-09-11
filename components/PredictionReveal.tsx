@@ -5,15 +5,30 @@
 // surprised Quorum" plus a pattern callback. Framed per the product doc as
 // "does Quorum actually understand you" rather than "beat the AI" — no
 // score, no streak, no points.
+//
+// Point 4: compulsory, not optional — there is deliberately no skip/dismiss
+// button here (never was), and SessionView now withholds RecordReceipt
+// (the session's "you're done" signal) until onDecided fires, so nothing
+// in the UI suggests the session is finished before this is.
+//
+// Point 6: this is deliberately NOT the same moment as InitialInstinctCapture
+// — that locked a gut lean before Quorum said anything; this locks what you
+// are actually going to do, after seeing the hypothesis and the full read.
+// initialInstinctLabel makes that relationship explicit instead of leaving
+// the user to infer why they're being asked for "a decision" twice.
 
 'use client'
 
 import { useState } from 'react'
 
 interface Props {
-  sessionId:       string
-  authToken:       string | null
-  predictedChoice: string | null
+  sessionId:            string
+  authToken:            string | null
+  predictedChoice:      string | null
+  initialInstinctLabel?: string | null   // e.g. "leaning yes" — see SessionView
+  onDecided?:           () => void
+  alreadyDecided?:      boolean
+  initialMatched?:      boolean | null
 }
 
 interface RevealState {
@@ -21,11 +36,15 @@ interface RevealState {
   patternCount:      number
 }
 
-export default function PredictionReveal({ sessionId, authToken, predictedChoice }: Props) {
+export default function PredictionReveal({
+  sessionId, authToken, predictedChoice, initialInstinctLabel, onDecided, alreadyDecided, initialMatched,
+}: Props) {
   const [finalDecision, setFinalDecision] = useState('')
   const [submitting, setSubmitting]       = useState(false)
   const [error, setError]                 = useState<string | null>(null)
-  const [reveal, setReveal]               = useState<RevealState | null>(null)
+  const [reveal, setReveal]               = useState<RevealState | null>(
+    alreadyDecided ? { predictionMatched: !!initialMatched, patternCount: 0 } : null
+  )
 
   async function handleSubmit() {
     const trimmed = finalDecision.trim()
@@ -47,6 +66,7 @@ export default function PredictionReveal({ sessionId, authToken, predictedChoice
       }
       const data = await res.json()
       setReveal({ predictionMatched: data.predictionMatched, patternCount: data.patternCount })
+      onDecided?.()
     } catch (e) {
       setError(e instanceof Error && e.message === 'Final decision already recorded for this session'
         ? 'You already locked a decision for this session.'
@@ -84,13 +104,19 @@ export default function PredictionReveal({ sessionId, authToken, predictedChoice
   }
 
   return (
-    <div style={revealBoxStyle}>
+    <div style={{ ...revealBoxStyle, borderLeft: '3px solid var(--gold)' }}>
       <p style={{
         fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em',
         color: 'var(--text-4)', textTransform: 'uppercase', margin: '0 0 10px',
       }}>
-        Make your decision
+        Make your decision \u2014 required to close this record
       </p>
+      {initialInstinctLabel && (
+        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px', lineHeight: 1.5 }}>
+          You started out {initialInstinctLabel}. Now that you've seen Quorum's hypothesis and full
+          read, what are you actually going to do?
+        </p>
+      )}
       <textarea
         rows={2}
         placeholder="What are you actually going to do?"
@@ -118,5 +144,5 @@ const revealBoxStyle: React.CSSProperties = {
   padding:      '20px',
   marginTop:    16,
   marginBottom: 16,
-  background:   'var(--surface-1)',
+  background:   'var(--bg-card)',
 }

@@ -48,7 +48,7 @@ export default function QuorumLearnedSomething({ authToken }: Props) {
         marginBottom: 14,
         borderRadius: 10,
         border:       '1px solid var(--border-dim)',
-        background:   'var(--surface-1)',
+        background:   'var(--bg-card)',
       }}
     >
       <span style={{

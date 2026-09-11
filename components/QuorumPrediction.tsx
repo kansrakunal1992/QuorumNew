@@ -5,15 +5,29 @@
 // underneath. This is a hypothesis about the person ("we think you'll
 // choose X"), never a recommendation — see lib/prediction-engine.ts's
 // system prompt for the same rule enforced server-side.
+//
+// If a prediction was already generated in an earlier page load (passed in
+// via initialPredictedChoice, read from the session row — see SessionView.tsx),
+// this renders it immediately and never calls /api/persona/predict at all.
+//
+// Point 5 fix: requires an explicit "Continue" click (onContinue) before
+// Synthesis reveals, instead of both appearing at once — this card is a
+// quick hypothesis to react to, not something to read alongside a full
+// analysis competing for the same attention.
 
 'use client'
 
 import { useEffect, useState } from 'react'
 
 interface Props {
-  sessionId:    string
-  authToken:    string | null
-  onPredicted?: (predictedChoice: string) => void
+  sessionId:               string
+  authToken:               string | null
+  onPredicted?:            (predictedChoice: string) => void
+  onContinue?:             () => void
+  alreadyAcknowledged?:    boolean
+  initialPredictedChoice?: string | null
+  initialReasoning?:       string | null
+  initialUsedSearch?:      boolean | null
 }
 
 interface PredictionState {
@@ -24,10 +38,19 @@ interface PredictionState {
   historyCount?:    number
 }
 
-export default function QuorumPrediction({ sessionId, authToken, onPredicted }: Props) {
-  const [state, setState] = useState<PredictionState>({ status: 'loading' })
+export default function QuorumPrediction({
+  sessionId, authToken, onPredicted, onContinue, alreadyAcknowledged,
+  initialPredictedChoice, initialReasoning, initialUsedSearch,
+}: Props) {
+  const hydrated = !!initialPredictedChoice
+  const [state, setState] = useState<PredictionState>(
+    hydrated
+      ? { status: 'done', predictedChoice: initialPredictedChoice!, reasoning: initialReasoning ?? '', usedSearch: !!initialUsedSearch }
+      : { status: 'loading' }
+  )
 
   useEffect(() => {
+    if (hydrated) return // already have it from the session row — no fetch needed
     let cancelled = false
     async function run() {
       try {
@@ -58,9 +81,16 @@ export default function QuorumPrediction({ sessionId, authToken, onPredicted }: 
     run()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId])
+  }, [sessionId, hydrated])
 
-  if (state.status === 'error') return null // degrade silently — Council/Synthesis don't depend on this
+  // Degrade gracefully — a failed prediction should never trap the user
+  // behind the progressive-reveal gate with nothing to click.
+  useEffect(() => {
+    if (state.status === 'error') onContinue?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.status])
+
+  if (state.status === 'error') return null
 
   return (
     <div
@@ -70,7 +100,7 @@ export default function QuorumPrediction({ sessionId, authToken, onPredicted }: 
         borderRadius: 14,
         padding:      '18px 20px',
         marginBottom: 16,
-        background:   'var(--surface-1)',
+        background:   'var(--bg-card)',
       }}
     >
       <p style={{
@@ -97,13 +127,23 @@ export default function QuorumPrediction({ sessionId, authToken, onPredicted }: 
           <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '0 0 8px', lineHeight: 1.5 }}>
             {state.reasoning}
           </p>
-          <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: 0 }}>
+          <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 14px' }}>
             {(state.historyCount ?? 0) > 0
               ? `Based partly on ${state.historyCount} of your past decisions${state.usedSearch ? ' and general patterns' : ''}.`
               : state.usedSearch
                 ? 'We don\u2019t know you well yet, so this leans on general patterns rather than your own history.'
                 : null}
           </p>
+          {!alreadyAcknowledged && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={onContinue}
+              style={{ padding: '8px 18px', fontSize: 13 }}
+            >
+              See Quorum's full read \u2192
+            </button>
+          )}
         </>
       )}
     </div>

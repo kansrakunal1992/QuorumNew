@@ -112,6 +112,18 @@ export interface Session {
   post_decision_confidence?:     number | null
   // O3: cached Decision-Maker Observation line, Mirror subscribers only
   decision_observation?:         string | null
+  // ── Unified Session, Tier 2: prediction layer (sprint_prediction_layer.sql) ──
+  // All nullable — absent on any session created before the migration ran,
+  // or with the flag off. Fetched automatically since app/session/[id]/page.tsx
+  // uses select('*'); typed here so SessionView can read them without a cast.
+  initial_instinct?:               'accept' | 'reject' | 'unsure' | null
+  optimization_priority?:          string | null
+  quorum_predicted_choice?:        string | null
+  quorum_prediction_reasoning?:    string | null
+  quorum_prediction_used_search?:  boolean | null
+  final_decision?:                 string | null   // encrypted at rest — decrypt() before display
+  final_decision_locked_at?:       string | null
+  prediction_matched_final?:       boolean | null
 }
 
 export interface DecisionRecord {

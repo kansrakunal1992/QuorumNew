@@ -20,6 +20,7 @@ import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import InitialInstinctCapture from '@/components/InitialInstinctCapture'
 import QuorumPrediction       from '@/components/QuorumPrediction'
 import PredictionReveal       from '@/components/PredictionReveal'
+import SynthesisChallenge     from '@/components/SynthesisChallenge'
 import RecordReceipt from './RecordReceipt'
 import ContradictionBanner from './ContradictionBanner'
 import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
@@ -286,9 +287,27 @@ export default function SessionView({ session: initialSession, initialMessages =
   // need to select the new initial_instinct/optimization_priority columns
   // for that to be reliable, which is a one-line follow-up, not done here
   // to avoid guessing at a query I haven't verified.
-  const [instinctLocked,   setInstinctLocked]   = useState(!isUnifiedSessionEnabled())
-  const [lockedPriority,   setLockedPriority]   = useState<string | null>(null)
-  const [predictedChoiceForReveal, setPredictedChoiceForReveal] = useState<string | null>(null)
+  // Unified session, Tier 2: instinct lock gate + prediction. Starts true
+  // when the flag is off, so the gate below never activates and behavior is
+  // unchanged. Hydrated from initialSession — app/session/[id]/page.tsx
+  // fetches with select('*'), so these are already present on the object
+  // whenever the migration has run and this session already locked them;
+  // a page refresh now correctly skips straight past the gate instead of
+  // re-asking (previously local-state-only — see prior delivery's README).
+  const [instinctLocked,   setInstinctLocked]   = useState(!isUnifiedSessionEnabled() || !!initialSession.initial_instinct)
+  const [lockedPriority,   setLockedPriority]   = useState<string | null>(initialSession.optimization_priority ?? null)
+  const [lockedInstinct,   setLockedInstinct]   = useState<'accept' | 'reject' | 'unsure' | null>(initialSession.initial_instinct ?? null)
+  // Point 4: tracks whether the final decision has been locked, so
+  // RecordReceipt (the "you're done" signal) can be withheld until it has.
+  const [decisionLocked,   setDecisionLocked]   = useState(!!initialSession.final_decision_locked_at)
+  const [predictedChoiceForReveal, setPredictedChoiceForReveal] = useState<string | null>(initialSession.quorum_predicted_choice ?? null)
+  // Unified session, point 5: progressive reveal. Synthesis (and everything
+  // gated on synthesisDone below it) stays visually hidden — still
+  // generating in the background, same "hidden not unmounted" pattern as
+  // the six-persona grid — until the user has actually looked at Quorum's
+  // hypothesis and chosen to continue. Fixes "too many inputs at once":
+  // previously Synthesis and the hypothesis both appeared together.
+  const [predictionAcknowledged, setPredictionAcknowledged] = useState(!isUnifiedSessionEnabled() || !!initialSession.quorum_predicted_choice)
   const [examinerInitialContext, setExaminerInitialContext] = useState<Record<string, string>>({})
   const [synthExaminerContext,   setSynthExaminerContext]   = useState<string | undefined>(undefined)
 
@@ -381,8 +400,20 @@ export default function SessionView({ session: initialSession, initialMessages =
     | null
   >(null)
   // S2-07: Opening Ceremony dismiss flag — gates persona streaming for 3s on sessions 1-3
-  const [ceremonyDismissed, setCeremonyDismissed] = useState(false)
-  const [quorumReadDismissed, setQuorumReadDismissed] = useState(false)   // PR7
+  // Unified session, point 2 cleanup: initialized already-dismissed under the flag
+  // rather than gating the JSX render below — this card's whole purpose is
+  // building anticipation for watching six advisors stream in one by one,
+  // which no longer happens by default in this experience (Council is
+  // collapsed). Initializing the state directly (not just hiding the card)
+  // matters because downstream persona-streaming logic waits on this
+  // becoming true — skipping only the render would leave it stuck forever.
+  const [ceremonyDismissed, setCeremonyDismissed] = useState(isUnifiedSessionEnabled())
+  // Unified session, point 2 cleanup: same reasoning — QuorumReadCard is a
+  // sessions-1-3 orientation aid explaining how the Council/Synthesis flow
+  // works under the OLD mental model (six-persona reveal). Under the new
+  // flow (instinct → prediction → synthesis) its content is actively wrong,
+  // not just redundant, so it's skipped the same way as Opening Ceremony.
+  const [quorumReadDismissed, setQuorumReadDismissed] = useState(isUnifiedSessionEnabled())   // PR7
   // S3-01: per-persona lean classification (proceed/wait/mixed), parsed from each
   // persona's raw <lean> header tag in handlePersonaComplete.
   const [personaLeans, setPersonaLeans] = useState<Record<string, Lean>>({})
@@ -395,7 +426,11 @@ export default function SessionView({ session: initialSession, initialMessages =
     setPersonaLeans(prev => (prev[personaKey] === lean ? prev : { ...prev, [personaKey]: lean }))
   }, [])
   // S3-01: gates synthesis start for a brief tension-interstitial beat
-  const [interstitialDismissed, setInterstitialDismissed] = useState(false)
+  // Unified session, point 2 cleanup: this surfaces a proceed/wait/mixed
+  // breakdown ACROSS the six personas — exactly the mechanic being
+  // de-emphasized in this experience — so it's skipped the same
+  // already-dismissed way as the two cards above.
+  const [interstitialDismissed, setInterstitialDismissed] = useState(isUnifiedSessionEnabled())
 
   // S1-07: Structural echo banner — pattern_analyst card
   const [structuralContextActive, setStructuralContextActive] = useState(false)
@@ -1285,7 +1320,8 @@ export default function SessionView({ session: initialSession, initialMessages =
         <InitialInstinctCapture
           sessionId={session.id}
           authToken={authTokenSV}
-          onComplete={(_instinct, priority) => {
+          onComplete={(instinct, priority) => {
+            setLockedInstinct(instinct)
             setLockedPriority(priority)
             setInstinctLocked(true)
           }}
@@ -1753,6 +1789,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                   sessionId={session.id}
                   authToken={authTokenSV}
                   onPredicted={setPredictedChoiceForReveal}
+                  onContinue={() => setPredictionAcknowledged(true)}
+                  alreadyAcknowledged={predictionAcknowledged}
+                  initialPredictedChoice={initialSession.quorum_predicted_choice}
+                  initialReasoning={initialSession.quorum_prediction_reasoning}
+                  initialUsedSearch={initialSession.quorum_prediction_used_search}
                 />
               )}
 
@@ -1846,7 +1887,14 @@ export default function SessionView({ session: initialSession, initialMessages =
               )}
 
               {/* ── 1. Council Synthesis ── */}
-              <div className="sv-fade sv-fade-2" data-tour-id="council-synthesis">
+              {/* Unified session, point 5: hidden (not unmounted — synthesis keeps
+                  generating underneath) until predictionAcknowledged, so the
+                  hypothesis and the full read don't compete for attention at once. */}
+              <div
+                className="sv-fade sv-fade-2"
+                data-tour-id="council-synthesis"
+                style={{ display: (isUnifiedSessionEnabled() && !predictionAcknowledged) ? 'none' : undefined }}
+              >
                 <SynthesisCard
                   key={`synthesis-${sessionKey}`}
                   sessionId={session.id}
@@ -1890,10 +1938,18 @@ export default function SessionView({ session: initialSession, initialMessages =
                   personaLeans={personaLeans}
                   initialSynthesisVersions={initialSynthesisVersionsForThisSession}
                 />
+                {/* Unified session, point 1: challenge/disagree lives here now, not only
+                    inside an individual persona panel behind the Council disclosure. */}
+                {isUnifiedSessionEnabled() && synthesisDone && (
+                  <SynthesisChallenge onSubmit={(text) => handleShareContext('synthesis', text)} />
+                )}
               </div>
 
               {/* ── 1b. Record Receipt (appears after synthesis completes) ── */}
-              {synthesisDone && (
+              {/* Point 4: under the flag, also requires decisionLocked — this card reads
+                  as a "you're done" signal, and nothing should say that before the
+                  compulsory final-decision step actually happened. */}
+              {synthesisDone && (!isUnifiedSessionEnabled() || decisionLocked) && (
                 <div className="sv-fade sv-fade-2" style={{ marginTop: 0 }}>
                   <RecordReceipt
                     sessionCount={totalSessionCount ?? getStoredSessionIds().length}
@@ -1933,7 +1989,11 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* ── Validation Card — fires after synthesis (not gated on all personas) ── */}
               {/* Quorum's emotional/archetype read of this decision. Confirming sharpens    */}
               {/* the next session's council. Correcting is even more valuable.              */}
-              {synthesisDone && (
+              {/* Unified session, point 2 cleanup: skipped under the flag. This card's job — */}
+              {/* "here's Quorum's read, and here's a cross-session accumulation signal" —    */}
+              {/* is now the job of QuorumPrediction (the read) and PredictionReveal's pattern */}
+              {/* callback (the accumulation signal), shown earlier and more directly.        */}
+              {!isUnifiedSessionEnabled() && synthesisDone && (
                 <div className="sv-fade sv-fade-2" data-tour-id="council-validation">
                   <ValidationCard
                     sessionId={session.id}
@@ -1948,7 +2008,9 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Self-gates internally (count<2 or >=5 renders nothing, dismiss via  */}
               {/* sessionStorage) — no additional session-count logic needed here.    */}
               {/* Fires post-synthesis, same beat as ValidationCard above it.         */}
-              {synthesisDone && (
+              {/* Unified session, point 2 cleanup: skipped — PredictionReveal's pattern  */}
+              {/* callback now proves accumulation more substantively, from session one. */}
+              {!isUnifiedSessionEnabled() && synthesisDone && (
                 <div className="sv-fade sv-fade-2">
                   <EarlyEchoCard sessionId={session.id} authToken={authTokenSV} />
                 </div>
@@ -1958,7 +2020,9 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Picks up exactly where EarlyEchoCard hands off. Self-gates      */}
               {/* internally (< 5 sessions, no auth, or no signal yet renders     */}
               {/* nothing) — no additional session-count logic needed here.       */}
-              {synthesisDone && (
+              {/* Unified session, point 2 cleanup: skipped — same reasoning as EarlyEchoCard  */}
+              {/* above; QuorumPrediction/PredictionReveal are now the in-session Mirror door. */}
+              {!isUnifiedSessionEnabled() && synthesisDone && (
                 <MirrorEchoCard
                   sessionId={session.id}
                   authToken={authTokenSV}
@@ -2042,11 +2106,19 @@ export default function SessionView({ session: initialSession, initialMessages =
                   synthesisDone gate as the Council disclosure toggle below —
                   by the time synthesis is ready, there's enough on screen
                   for the user to actually decide. */}
-              {isUnifiedSessionEnabled() && synthesisDone && (
+              {isUnifiedSessionEnabled() && synthesisDone && predictionAcknowledged && (
                 <PredictionReveal
                   sessionId={session.id}
                   authToken={authTokenSV}
                   predictedChoice={predictedChoiceForReveal}
+                  initialInstinctLabel={
+                    lockedInstinct === 'accept' ? 'leaning yes' :
+                    lockedInstinct === 'reject' ? 'leaning no'  :
+                    lockedInstinct === 'unsure' ? 'genuinely unsure' : null
+                  }
+                  onDecided={() => setDecisionLocked(true)}
+                  alreadyDecided={decisionLocked}
+                  initialMatched={initialSession.prediction_matched_final}
                 />
               )}
 
@@ -2056,7 +2128,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                   app/api/persona/route.ts); this only controls whether the
                   grid is visible. Flag off → this renders nothing and the
                   grid below is always visible, same as today. */}
-              {isUnifiedSessionEnabled() && synthesisDone && (
+              {isUnifiedSessionEnabled() && synthesisDone && predictionAcknowledged && (
                 <button
                   type="button"
                   onClick={() => setCouncilExpanded(v => !v)}
