@@ -59,6 +59,11 @@ const FAQS: FAQItem[] = [
     q: 'Is Quorum just a chatbot?',
     a: "No. Before any advisor responds, your decision is read at a structural level — what kind of decision this actually is, not just what you typed. A chatbot routes your text straight to a model; Quorum doesn't.",
   },
+  // Point 1: moved to position 2, right after the core positioning question —
+  // this is the highest-visibility slot in the list besides the first entry,
+  // and prediction is the thing this experience most wants a new visitor to
+  // notice early rather than discover mid-list.
+  ...(isUnifiedSessionEnabled() ? UNIFIED_SESSION_FAQS : CLASSIC_MODEL_FAQS),
   {
     q: 'How private is my data?',
     a: 'Your raw inputs are encrypted at the field level. You can export or delete your full data on request at any time. Nothing about your decisions is used in a case study or shared externally without your explicit, opt-in consent.',
@@ -107,7 +112,6 @@ const FAQS: FAQItem[] = [
     q: 'What happens to my data if I stop using Quorum?',
     a: 'You can export everything tied to your account or request full deletion at any time from account settings.',
   },
-  ...(isUnifiedSessionEnabled() ? UNIFIED_SESSION_FAQS : CLASSIC_MODEL_FAQS),
   {
     q: 'Can I use Quorum on my phone?',
     a: "Yes — it's a web app you can install to your home screen directly from your browser. No app-store download needed.",

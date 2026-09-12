@@ -1089,7 +1089,16 @@ export default async function RecordPage({ params }: Props) {
           {/* the validation-nudge email) can actually answer this. Lives    */}
           {/* right after the decision itself, before any secondary asks.    */}
           {/* Self-hides via its own fetch if already confirmed/corrected.   */}
-          {session.validation_state === 'pending' && (
+          {/* Unified session, point 7: skipped under the flag, same as its  */}
+          {/* SessionView counterpart — this is "Quorum's Read" from the     */}
+          {/* screenshot. Its job (a read of the decision, checked against   */}
+          {/* cross-session bias patterns) is now covered by the "How this   */}
+          {/* decision moved" prediction-arc summary further down instead.  */}
+          {/* Known tradeoff: a validation-nudge email link landing here for */}
+          {/* a still-pending validation will no longer find a card to      */}
+          {/* answer it under the flag — flagging this explicitly rather    */}
+          {/* than leaving it as a silent side effect. */}
+          {!isUnifiedSessionEnabled() && session.validation_state === 'pending' && (
             <div className="rec-fade rec-fade-2" style={{ marginBottom: 4 }}>
               <ValidationCard
                 sessionId={session.id}

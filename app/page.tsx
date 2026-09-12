@@ -1241,7 +1241,6 @@ export default function Home() {
               transition:    'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
               pointerEvents: inputRevealed ? 'auto' : 'none',
             }}>
-              
 
               <h1 style={{
                 fontSize:      22,
@@ -1602,30 +1601,59 @@ export default function Home() {
                   ? 'Every decision is read at a structural level, stress-tested from multiple independent angles, and locked against your own starting instinct \u2014 so Quorum can tell you whether it actually understood you, not just what it thinks you should do.'
                   : 'Every decision is read at a structural level, then stress-tested from six independent angles — and remembered, so it can hold you to it next time. Built for founders, operators, and principals making decisions where being wrong is expensive.'}
               </p>
-              <div style={{
-                maxWidth: 420, margin: '0 auto',
-                borderLeft: '2px solid var(--gold-dim)', paddingLeft: 16,
-              }}>
-                <p style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 9.5,
-                  letterSpacing: '0.14em', textTransform: 'uppercase',
-                  color: 'var(--text-4)', margin: '0 0 8px',
+              {isUnifiedSessionEnabled() ? (
+                // Point 2: full card treatment, not a quiet left-border indent —
+                // the acquiring mechanism of prediction was under-selling itself
+                // sharing the same visual weight as a supporting example.
+                <div style={{
+                  maxWidth: 460, margin: '0 auto',
+                  border: '1px solid var(--gold-dim, var(--border-mid))',
+                  borderRadius: 14, padding: '18px 22px',
+                  background: 'var(--bg-card)',
                 }}>
-                  Example
-                </p>
-                <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 6px', fontStyle: 'italic' }}>
-                  &quot;Considering selling my 40% stake to a PE firm at 8× EBITDA. Offer expires in 3 weeks.&quot;
-                </p>
-                {isUnifiedSessionEnabled() ? (
-                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
-                    <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Quorum&apos;s hypothesis</span> — &quot;We think you&apos;ll take the offer&quot; — stated before the full read, checked against what you actually decide.
+                  <p style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 9.5,
+                    letterSpacing: '0.14em', textTransform: 'uppercase',
+                    color: 'var(--text-4)', margin: '0 0 10px',
+                  }}>
+                    Example
                   </p>
-                ) : (
+                  <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 12px', fontStyle: 'italic' }}>
+                    &quot;Considering selling my 40% stake to a PE firm at 8× EBITDA. Offer expires in 3 weeks.&quot;
+                  </p>
+                  <p style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em',
+                    textTransform: 'uppercase', color: 'var(--gold)', margin: '0 0 6px',
+                  }}>
+                    Quorum&apos;s hypothesis
+                  </p>
+                  <p style={{ fontSize: 16, color: 'var(--text-1)', lineHeight: 1.5, margin: '0 0 8px', fontWeight: 500 }}>
+                    &quot;We think you&apos;ll take the offer.&quot;
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.6, margin: 0 }}>
+                    Stated before the full read — checked against what you actually decide.
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  maxWidth: 420, margin: '0 auto',
+                  borderLeft: '2px solid var(--gold-dim)', paddingLeft: 16,
+                }}>
+                  <p style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 9.5,
+                    letterSpacing: '0.14em', textTransform: 'uppercase',
+                    color: 'var(--text-4)', margin: '0 0 8px',
+                  }}>
+                    Example
+                  </p>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 6px', fontStyle: 'italic' }}>
+                    &quot;Considering selling my 40% stake to a PE firm at 8× EBITDA. Offer expires in 3 weeks.&quot;
+                  </p>
                   <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
                     <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Risk Architect</span> — runs a pre-mortem before you commit: where this fails, in what order, and which failure you&apos;re least prepared for.
                   </p>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Vet-fix (d): the only other place this exists is a footer
                   link the same size/weight as Privacy Policy and Terms. */}
