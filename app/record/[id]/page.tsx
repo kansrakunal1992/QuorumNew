@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { formatDateTime, formatDate } from '@/lib/dates'
 import { createServiceClient } from '@/lib/supabase'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
 import EmailCaptureCard from '@/components/EmailCaptureCard'
@@ -623,6 +624,13 @@ export default async function RecordPage({ params }: Props) {
       ...sessionResult.data,
       decision_text: decryptText(sessionResult.data.decision_text),
       context_text: decrypt(sessionResult.data.context_text),
+      // Unified session, point 7: final_decision is encrypted the same way
+      // decision_text is (see supabase/sprint_prediction_layer.sql) — raw
+      // user input, not AI-derived. commitment_leaning predates this flag
+      // (components/DecisionStateCard.tsx) but is shown in the same new
+      // section for continuity on older records that used that card.
+      final_decision: sessionResult.data.final_decision ? decryptText(sessionResult.data.final_decision) : null,
+      commitment_leaning: sessionResult.data.commitment_leaning ? decryptText(sessionResult.data.commitment_leaning) : null,
     }
   
     const messages = (messagesResult.data ?? []).map(msg => ({
@@ -1118,6 +1126,59 @@ export default async function RecordPage({ params }: Props) {
 
           {/* ── Persona Sections ───────────────────────────────── */}
           <div className="rec-fade rec-fade-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Unified session, point 7: replaces the six persona cards below (hidden
+                under the flag) with a compact record of the actual new-experience
+                arc — initial lean, Quorum's prediction, what was finally decided,
+                and the review date. Only renders fields that exist, so an older
+                session (pre-migration, or created with the flag off) just shows
+                nothing here rather than a row of blanks. */}
+            {isUnifiedSessionEnabled() && (session.initial_instinct || session.quorum_predicted_choice || session.final_decision) && (
+              <div style={{
+                border: '1px solid var(--border-mid)', borderRadius: 12,
+                padding: '18px 20px', marginBottom: 20, background: 'var(--bg-card)',
+              }}>
+                <p style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
+                  textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 14px',
+                }}>
+                  How this decision moved
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
+                  {session.initial_instinct && (
+                    <div>
+                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Initial lean</p>
+                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>
+                        {session.initial_instinct === 'accept' ? 'Leaning yes' : session.initial_instinct === 'reject' ? 'Leaning no' : 'Genuinely unsure'}
+                      </p>
+                    </div>
+                  )}
+                  {session.quorum_predicted_choice && (
+                    <div>
+                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quorum predicted</p>
+                      <p style={{ fontSize: 14, color: 'var(--gold)', margin: 0 }}>{session.quorum_predicted_choice}</p>
+                    </div>
+                  )}
+                  {session.final_decision && (
+                    <div>
+                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Finally chose</p>
+                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>{session.final_decision}</p>
+                      {session.prediction_matched_final !== null && session.prediction_matched_final !== undefined && (
+                        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '3px 0 0' }}>
+                          {session.prediction_matched_final ? 'Quorum predicted this' : 'This surprised Quorum'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {session.commitment_review_date && (
+                    <div>
+                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Review date</p>
+                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>{formatDate(session.commitment_review_date)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {PERSONA_ORDER.map(key => {
               const msgs = byPersona[key]
               if (!msgs || msgs.length === 0) return null
@@ -1125,6 +1186,15 @@ export default async function RecordPage({ params }: Props) {
               const isSynthesis = key === 'synthesis'
               const isBrief     = key === 'decision_brief'
               const isElevated  = isSynthesis || isBrief
+
+              // Unified session, points 6/7: the six individual advisor
+              // sections are hidden here the same way they're collapsed on
+              // the live session page — Synthesis ("Quorum's read") and the
+              // Decision Brief stay, since those weren't removed there
+              // either. Kept as a skip inside the existing map rather than
+              // filtering PERSONA_ORDER itself, so nothing about ordering
+              // or the byPersona lookup above needs to change.
+              if (isUnifiedSessionEnabled() && !isElevated) return null
 
               // Bug fix: see extractTag/LEAN_LABELS above — realcost/lean
               // were being discarded with nothing shown in their place.

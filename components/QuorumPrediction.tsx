@@ -117,7 +117,7 @@ export default function QuorumPrediction({
       {state.status === 'loading' ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', animation: 'blink 1.2s ease-in-out infinite' }} />
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Forming a hypothesis\u2026</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Forming a hypothesis…</p>
         </div>
       ) : (
         <>
@@ -141,7 +141,7 @@ export default function QuorumPrediction({
               onClick={onContinue}
               style={{ padding: '8px 18px', fontSize: 13 }}
             >
-              See Quorum's full read \u2192
+              See Quorum's full read →
             </button>
           )}
         </>

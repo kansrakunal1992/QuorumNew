@@ -17,6 +17,7 @@
 
 import { useState, useEffect } from 'react'
 import type { CalibrationSummary } from '@/app/api/mirror/calibration/route'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 
 interface Props {
   authToken:      string | null
@@ -66,20 +67,36 @@ function DeltaBadge({ delta }: { delta: number | null }) {
 }
 
 export default function CalibrationRevealCard({ authToken, mirrorUnlocked }: Props) {
+  // Unified session, overlap resolution: this card and the short-lived
+  // components/QuorumLearnedSomething.tsx were doing the same job — both
+  // fetched /api/mirror/calibration and surfaced summary.pattern on the
+  // home screen. This one is the richer, already-correct implementation
+  // (trend badge, delta number, avg entry/hindsight, a link to the full
+  // record), so it's the one that stays; QuorumLearnedSomething has been
+  // removed rather than kept as a second, thinner surface.
+  //
+  // The only real gap was access: this card's gate is mirrorUnlocked (paid
+  // tier), but under the unified session flag calibration is meant to be a
+  // free-tier hook from session one — app/api/mirror/calibration/route.ts
+  // already skips its own tier check the same way. isUnifiedSessionEnabled()
+  // here mirrors that same bypass on the client side, so a free-tier user
+  // under the flag isn't blocked by this component even though the API
+  // would now let them through.
+  const unlockedForThisView = mirrorUnlocked || isUnifiedSessionEnabled()
   const [summary, setSummary] = useState<CalibrationSummary | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!mirrorUnlocked || !authToken) return
+    if (!unlockedForThisView || !authToken) return
     setLoading(true)
     fetch('/api/mirror/calibration', { headers: { Authorization: `Bearer ${authToken}` } })
       .then(r => r.json())
       .then(d => { if (d?.summary) setSummary(d.summary) })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [mirrorUnlocked, authToken])
+  }, [unlockedForThisView, authToken])
 
-  if (!mirrorUnlocked || loading || !summary?.dataReady) return null
+  if (!unlockedForThisView || loading || !summary?.dataReady) return null
 
   return (
     <>

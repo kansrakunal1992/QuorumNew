@@ -17,12 +17,42 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 
 interface FAQItem {
   q: string
   a: string
   link?: { href: string; label: string }
 }
+
+// Unified session, point 1: the two FAQ entries below describe the six-
+// named-advisor mechanic directly ("each of the six advisors," "reaches all
+// six") — accurate to what's shown by default when the flag is off, but
+// actively confusing under the collapsed-Council experience, where a first-
+// time reader has no six named advisors in front of them to make sense of
+// the answer. Swapped for two entries describing what a reader actually
+// sees under the flag instead of deleting the space they occupied.
+const CLASSIC_MODEL_FAQS: FAQItem[] = [
+  {
+    q: 'How does the Council actually decide what each advisor says?',
+    a: 'Your decision is first tagged structurally — the kind of decision it is, what it structurally resembles from your own history — and each of the six advisors responds from that read, not from a single generic model pass.',
+  },
+  {
+    q: 'If I push back on one advisor, do the others find out?',
+    a: "Yes, automatically. A challenge is treated as new information for the whole council, not a private exchange with one advisor — so it reaches all six. Each advisor still reassesses it independently through its own lens and may keep, strengthen, weaken, or reverse its position; sharing the information never means they share a conclusion. The Council synthesizes once, after every advisor has had a chance to weigh in.",
+  },
+]
+
+const UNIFIED_SESSION_FAQS: FAQItem[] = [
+  {
+    q: 'Can Quorum actually predict what I\u2019ll choose?',
+    a: 'Try it and find out. Before Quorum shows you anything, it locks in your own gut call \u2014 then makes its own guess about where you\u2019ll actually land, and tells you why. Most people check the reveal before they read anything else. It gets sharper the more decisions you bring it, because it starts reading your own patterns instead of guessing cold.',
+  },
+  {
+    q: 'Do I still get all six advisors, or just Quorum\u2019s guess?',
+    a: 'Both. The six advisors are doing the real work the moment you bring a decision \u2014 you just don\u2019t have to read six separate takes to get the benefit anymore. Want their receipts? \u201cSee how Quorum got here\u201d is one tap away, any time.',
+  },
+]
 
 const FAQS: FAQItem[] = [
   {
@@ -77,14 +107,7 @@ const FAQS: FAQItem[] = [
     q: 'What happens to my data if I stop using Quorum?',
     a: 'You can export everything tied to your account or request full deletion at any time from account settings.',
   },
-  {
-    q: 'How does the Council actually decide what each advisor says?',
-    a: 'Your decision is first tagged structurally — the kind of decision it is, what it structurally resembles from your own history — and each of the six advisors responds from that read, not from a single generic model pass.',
-  },
-  {
-    q: 'If I push back on one advisor, do the others find out?',
-    a: "Yes, automatically. A challenge is treated as new information for the whole council, not a private exchange with one advisor — so it reaches all six. Each advisor still reassesses it independently through its own lens and may keep, strengthen, weaken, or reverse its position; sharing the information never means they share a conclusion. The Council synthesizes once, after every advisor has had a chance to weigh in.",
-  },
+  ...(isUnifiedSessionEnabled() ? UNIFIED_SESSION_FAQS : CLASSIC_MODEL_FAQS),
   {
     q: 'Can I use Quorum on my phone?',
     a: "Yes — it's a web app you can install to your home screen directly from your browser. No app-store download needed.",

@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation'
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'
 import WatchlistSection from '@/components/WatchlistSection'
 import { isWatchlistEnabled, isUnifiedSessionEnabled } from '@/lib/feature-flags'
-import QuorumLearnedSomething from '@/components/QuorumLearnedSomething'
 import AuthPanel from '@/components/AuthPanel'
 import BehaviorAlerts from '@/components/BehaviorAlerts'
 import dynamic from 'next/dynamic'
@@ -18,6 +17,7 @@ import RecurringConditionCard from '@/components/RecurringConditionCard'
 import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'
 const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })
 import CalibrationRevealCard from '@/components/CalibrationRevealCard'
+import DecisionStarters from '@/components/DecisionStarters'
 import OnboardingTour from '@/components/OnboardingTour'
 import type { TourStep } from '@/components/OnboardingTour'
 import { buildPWAInstallStep, buildWatchlistTourStep } from '@/components/OnboardingTour'
@@ -289,11 +289,25 @@ export default function Home() {
     setShowContext(false)
     setPreDecisionConfidence(5)
     setFormKey(k => k + 1)
-    // Onboarding: show panels only for genuinely new users
+    // Onboarding: show panels only for genuinely new users.
+    // Unified session, deferred onboarding: under the flag, a brand-new
+    // user skips the Council/Mirror/Privacy panel sequence entirely and
+    // lands straight on the decision input — matching the "use first,
+    // understand the machinery once it's already proven itself" principle.
+    // The explanation isn't lost, just moved: the methodology intro block
+    // further down (already deferred to sessions 1-2 under this same flag)
+    // is where that education now happens, after there's something to
+    // explain the value of. Flag off: unchanged, exactly as before.
     try {
       const alreadyOnboarded = localStorage.getItem('quorum_onboarded') === 'true'
       const hasDecisions     = getStoredSessionIds().length > 0
-      if (!alreadyOnboarded && !hasDecisions) setIsOnboarding(true)
+      if (!alreadyOnboarded && !hasDecisions) {
+        if (isUnifiedSessionEnabled()) {
+          localStorage.setItem('quorum_onboarded', 'true')
+        } else {
+          setIsOnboarding(true)
+        }
+      }
     } catch {}
   }, [])
 
@@ -606,12 +620,17 @@ export default function Home() {
   // ── SB-1: Show profile capture overlay once for users without a profile ──────
   // Fires for new users AND existing users who haven't filled in a profile.
   // 'quorum_profile_overlay_shown' prevents it from re-showing after dismiss.
+  // Unified session, point 4: under the flag, skipped entirely until a user
+  // has completed at least one session — every screen before first value
+  // counts against the "no concierge" test, including optional/skippable
+  // ones. Flag off: unchanged, fires exactly as before.
   useEffect(() => {
     try {
       if (localStorage.getItem('quorum_profile_overlay_shown') === 'true') return
     } catch {}
     // Don't show during onboarding panels 0 or 1
     if (isOnboarding) return
+    if (isUnifiedSessionEnabled() && sessions.length === 0) return
     const checkProfile = async () => {
       if (!authToken) {
         // Not authed — show after a brief delay so the page is settled
@@ -653,11 +672,20 @@ export default function Home() {
   // count of already-completed decisions, so < 3 covers exactly those three.
   // From the 4th session on (sessions.length >= 3) this is false and the
   // methodology positioning block below no longer renders.
-  const showMethodologyIntro = sessions.length < 3 && !loadingHist
+  const showMethodologyIntro = isUnifiedSessionEnabled()
+    // Unified session, point 1 + deferred onboarding: shown from session 2
+    // onward instead of from session 0 — a brand-new user sees this only
+    // after they've already gotten value once, not before.
+    ? sessions.length >= 1 && sessions.length < 3 && !loadingHist
+    : sessions.length < 3 && !loadingHist
   const pending      = sessions.filter(s => !s.outcome)
   const decided      = sessions.filter(s =>  s.outcome)
   const filtered     = activeTab === 'all' ? sessions : activeTab === 'pending' ? pending : decided
-  const showControls = decision.trim().length > 0
+  // Unified session, point 2: mode selector hidden for a brand-new user's
+  // first session — Quorum uses the existing default (challenge/analytical)
+  // silently. Resurfaces from session 2 onward, exactly as before (appears
+  // as soon as there's decision text). Flag off: unchanged, always as before.
+  const showControls = decision.trim().length > 0 && (!isUnifiedSessionEnabled() || sessions.length >= 1)
 
   const helpedColor: Record<string, string> = {
     yes:       'var(--outcome-yes)',
@@ -1280,6 +1308,13 @@ export default function Home() {
                 <VoiceInput onTranscript={(text) => setDecision(text)} />
               </div>
 
+              {/* Strategy doc: decision starters — solves the blank-page problem.
+                  Only shown while the box is empty; disappears once real text
+                  or a starter has been picked, so it never competes with typing. */}
+              {isUnifiedSessionEnabled() && decision.trim().length === 0 && (
+                <DecisionStarters onPick={(text) => setDecision(text)} />
+              )}
+
               <div style={{ marginTop: 12 }}>
                 {!showContext ? (
                   <button className="btn-ghost" onClick={() => setShowContext(true)} data-tour-id="home-context">
@@ -1555,13 +1590,17 @@ export default function Home() {
                 letterSpacing: '-0.01em',
                 textAlign:     'center',
               }}>
-                Not a chatbot. Quorum reads the structure of a decision before it answers.
+                {isUnifiedSessionEnabled()
+                  ? 'Not a chatbot. Quorum makes a call on you \u2014 then tells you if it was right.'
+                  : 'Not a chatbot. Quorum reads the structure of a decision before it answers.'}
               </p>
               <p style={{
                 fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.75,
                 margin: '0 auto 24px', maxWidth: 460, textAlign: 'center',
               }}>
-                Every decision is read at a structural level, then stress-tested from six independent angles — and remembered, so it can hold you to it next time. Built for founders, operators, and principals making decisions where being wrong is expensive.
+                {isUnifiedSessionEnabled()
+                  ? 'Every decision is read at a structural level, stress-tested from multiple independent angles, and locked against your own starting instinct \u2014 so Quorum can tell you whether it actually understood you, not just what it thinks you should do.'
+                  : 'Every decision is read at a structural level, then stress-tested from six independent angles — and remembered, so it can hold you to it next time. Built for founders, operators, and principals making decisions where being wrong is expensive.'}
               </p>
               <div style={{
                 maxWidth: 420, margin: '0 auto',
@@ -1577,9 +1616,15 @@ export default function Home() {
                 <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 6px', fontStyle: 'italic' }}>
                   &quot;Considering selling my 40% stake to a PE firm at 8× EBITDA. Offer expires in 3 weeks.&quot;
                 </p>
-                <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
-                  <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Risk Architect</span> — runs a pre-mortem before you commit: where this fails, in what order, and which failure you&apos;re least prepared for.
-                </p>
+                {isUnifiedSessionEnabled() ? (
+                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+                    <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Quorum&apos;s hypothesis</span> — &quot;We think you&apos;ll take the offer&quot; \u2014 stated before the full read, checked against what you actually decide.
+                  </p>
+                ) : (
+                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+                    <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Risk Architect</span> — runs a pre-mortem before you commit: where this fails, in what order, and which failure you&apos;re least prepared for.
+                  </p>
+                )}
               </div>
 
               {/* Vet-fix (d): the only other place this exists is a footer
@@ -1807,7 +1852,10 @@ export default function Home() {
           {/* ── Chunk 4b — Calibration Reveal Card ────────── */}
           {/* Shows avg delta + pattern label for unlocked users */}
           {/* who have ≥3 logged outcomes. Gate is inside component. */}
-          {mirrorUnlocked && (
+          {/* Unified session flag also unlocks this for free tier — see the */}
+          {/* component's own doc comment for why (overlap resolution with   */}
+          {/* the now-removed QuorumLearnedSomething).                       */}
+          {(mirrorUnlocked || isUnifiedSessionEnabled()) && (
             <CalibrationRevealCard
               authToken={authToken}
               mirrorUnlocked={mirrorUnlocked}
@@ -1860,8 +1908,11 @@ export default function Home() {
 
           {/* Item #4 — quiet, collapsed-by-default reference section, moved to sit
               directly before the Judgment Record; still deliberately kept off the
-              live synthesis path per the working decision on this item */}
-          <MeetTheCouncil />
+              live synthesis path per the working decision on this item.
+              Unified session, point 1: skipped under the flag — this section's
+              whole purpose is introducing the six named advisors by name, which
+              doesn't match a home page that no longer leads with that framing. */}
+          {!isUnifiedSessionEnabled() && <MeetTheCouncil />}
 
           {/* ── Decision history (returning users only) ────── */}
           {(sessions.length > 0 || loadingHist) && (

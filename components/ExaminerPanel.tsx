@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import ExaminerReflectionLine from '@/components/ExaminerReflectionLine'
 
 interface ExaminerQuestion {
   order:   number
@@ -315,6 +317,12 @@ export default function ExaminerPanel({ sessionId, visible, onComplete, forceDis
         ? '0 0 0 2px rgba(201,168,76,0.18), 0 0 22px 6px rgba(201,168,76,0.12)'
         : 'none',
     }}>
+      {/* Unified session, point 3: one-line paraphrase-back, shown only once,
+          above everything else — proves comprehension before the question
+          itself. Self-contained component; renders nothing if the fetch
+          fails or the flag is off. */}
+      {isUnifiedSessionEnabled() && <ExaminerReflectionLine sessionId={sessionId} />}
+
       {/* Header */}
       <div style={{
         padding: '14px 20px 12px',

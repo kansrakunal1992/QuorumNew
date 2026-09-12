@@ -86,7 +86,7 @@ export async function POST(req: Request, { params }: Params) {
   const finalLower = finalDecision.toLowerCase()
   const predictionMatched = predicted.length > 0 && (
     finalLower.includes(predicted) ||
-    predicted.split(/\s+/).filter((w: string) => w.length > 3).some((word: string) => finalLower.includes(word))
+    predicted.split(/\s+/).filter(w => w.length > 3).some(word => finalLower.includes(word))
   )
 
   // ── Pattern callback ──

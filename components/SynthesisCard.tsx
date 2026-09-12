@@ -19,6 +19,15 @@ interface Props {
   totalPersonas:     number
   version:           number
   registerMode?:     'analytical' | 'clarification'
+  /** Unified session, point 5: the "Disagree / ask a follow-up" affordance
+   *  needs to render INSIDE this card, before CouncilWeightingStrip — it
+   *  was previously rendered by the caller right after this component
+   *  closed, which put it after "How the Council was weighted" instead of
+   *  before. Passed in as a rendered element (not a component reference)
+   *  since SessionView already owns the onSubmit wiring
+   *  (handleShareContext) and there's no reason for this card to know
+   *  about that. undefined → nothing renders, same as today. */
+  challengeSlot?:    React.ReactNode
   /** Bug fix (Aug 2026): both /api/persona fetches below (synthesis +
    *  decision_brief) omitted this entirely, so middleware.ts never saw a
    *  Bearer token and every synthesis call — the most expensive, most
@@ -89,6 +98,7 @@ export default function SynthesisCard({
   sessionId, decisionText, contextText,
   personaResponses, totalPersonas, version,
   registerMode, authToken,
+  challengeSlot,
   examinerReady,
   redirectBlocked,
   redirectQuestion,
@@ -1543,6 +1553,10 @@ export default function SynthesisCard({
         {/* Mirror nudge — shown once synthesis completes (Sprint 19) */}
         {state === 'done' && synthesis && (
           <>
+            {/* Unified session, point 5: rendered here — before "How the Council
+                was weighted" — per explicit placement request. */}
+            {challengeSlot}
+
             {/* S2-02: Council Weighting Strip — shows advisor weighting for this decision.
                 Same for all tiers (locked, teaser, unlocked) — explains the synthesis they
                 already received. Only renders when at least one advisor is elevated above baseline. */}

@@ -36,22 +36,36 @@ export default function SynthesisChallenge({ onSubmit, disabled }: Props) {
   if (sent) {
     return (
       <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: '10px 0 0' }}>
-        Sent to the full council for reassessment \u2014 the read above will update.
+        Sent to the full council for reassessment — the read above will update.
       </p>
     )
   }
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        disabled={disabled}
-        className="btn-ghost"
-        style={{ fontSize: 12.5, padding: '6px 12px', marginTop: 10, opacity: disabled ? 0.5 : 1 }}
-      >
-        Disagree / ask a follow-up
-      </button>
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0' }}>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          style={{
+            display:      'flex',
+            alignItems:   'center',
+            gap:          6,
+            padding:      '10px 22px',
+            fontSize:     13,
+            fontWeight:   600,
+            borderRadius: 999,
+            border:       '1px solid var(--gold-dim, var(--border-mid))',
+            background:   'var(--bg-card)',
+            color:        'var(--gold)',
+            cursor:       disabled ? 'default' : 'pointer',
+            opacity:      disabled ? 0.5 : 1,
+          }}
+        >
+          Disagree / ask a follow-up
+        </button>
+      </div>
     )
   }
 
@@ -79,10 +93,10 @@ export default function SynthesisChallenge({ onSubmit, disabled }: Props) {
       </div>
       <textarea
         rows={2}
-        placeholder="Say what you actually think Quorum got wrong\u2026"
+        placeholder="Say what you actually think Quorum got wrong…"
         value={text}
         onChange={e => setText(e.target.value)}
-        style={{ width: '100%', fontSize: 13, padding: '8px 10px', marginBottom: 8 }}
+        style={{ width: '100%', fontSize: 16, padding: '8px 10px', marginBottom: 8 }}
         autoFocus
       />
       <div style={{ display: 'flex', gap: 8 }}>

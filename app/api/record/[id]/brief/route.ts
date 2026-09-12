@@ -306,7 +306,17 @@ const PERSONA_ACCENT_LIGHT: Record<string, [number, number, number]> = {
 interface ExaminerQA { question_text: string; response_text: string | null; question_order: number }
 
 async function buildPdf(
-  session: { decision_text: string; context_text?: string | null; created_at: string; id: string },
+  session: {
+    decision_text: string; context_text?: string | null; created_at: string; id: string
+    // Unified session, point 7 — all optional so a pre-migration or flag-off
+    // session (all null/undefined) renders exactly as before, no new page.
+    initial_instinct?:            'accept' | 'reject' | 'unsure' | null
+    optimization_priority?:       string | null
+    quorum_predicted_choice?:     string | null
+    quorum_prediction_reasoning?: string | null
+    final_decision?:              string | null
+    prediction_matched_final?:    boolean | null
+  },
   messages: { persona: string; role: string; content: string }[],
   examinerQAs: ExaminerQA[] = [],
   theme: 'dark' | 'light' = 'dark',
@@ -1300,6 +1310,104 @@ async function buildPdf(
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // Unified session, point 7 — Prediction Arc page. Only renders when at least
+  // one of the new fields exists, so a pre-migration session or one created
+  // with the flag off gets no new page and no visible change at all.
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const hasPredictionArc = !!(
+    session.initial_instinct || session.quorum_predicted_choice || session.final_decision
+  )
+
+  if (hasPredictionArc) {
+    doc.addPage()
+    fillPage()
+    page++
+    Y = 52
+    drawFooter()
+
+    doc.setFont('Helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...C.mutedText)
+    doc.setCharSpace(1.5)
+    doc.text('THE PREDICTION ARC', ML, Y)
+    doc.setCharSpace(0)
+    Y += 10
+    doc.setFont('Helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...C.mutedText)
+    doc.text('What you started with, what Quorum guessed, and what you actually chose', ML, Y)
+    Y += 26
+
+    const INSTINCT_LABEL: Record<string, string> = {
+      accept: 'Leaning yes', reject: 'Leaning no', unsure: 'Genuinely unsure',
+    }
+    const PRIORITY_LABEL: Record<string, string> = {
+      career_growth: 'Career growth', security: 'Security', money: 'Money',
+      time_freedom: 'Time / freedom', family: 'Family', other: 'Something else',
+    }
+
+    // Same eyebrow-label + accent-box pattern as THE DECISION block above,
+    // repeated per field so each stage of the arc reads as its own beat
+    // rather than one run-on paragraph.
+    const arcField = (label: string, value: string, accentColor = C.gold) => {
+      ensure(40)
+      doc.setFont('Helvetica', 'bold')
+      doc.setFontSize(7.5)
+      doc.setTextColor(...C.mutedText)
+      doc.setCharSpace(0.8)
+      doc.text(label, ML, Y)
+      doc.setCharSpace(0)
+      Y += 12
+
+      const size = 11, lh = size * 1.5, padTop = 9, padBottom = 9, padX = 14
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(size)
+      const lines = doc.splitTextToSize(sanitise(value), TW - padX * 2) as string[]
+      const boxH = padTop + lines.length * lh + padBottom
+      ensure(boxH + 10)
+
+      const boxTop = Y
+      doc.setFillColor(...C.decisionBg)
+      doc.rect(ML, boxTop, TW, boxH, 'F')
+      doc.setFillColor(...accentColor)
+      doc.rect(ML, boxTop, 3, boxH, 'F')
+
+      let ty = boxTop + padTop + size * 0.75
+      doc.setFont('Helvetica', 'normal')
+      doc.setFontSize(size)
+      doc.setTextColor(...C.bodyText)
+      for (const l of lines) { doc.text(l, ML + padX, ty); ty += lh }
+      Y = boxTop + boxH + 16
+    }
+
+    if (session.initial_instinct) {
+      arcField('INITIAL LEAN — LOCKED BEFORE QUORUM SAID ANYTHING', INSTINCT_LABEL[session.initial_instinct] ?? session.initial_instinct)
+    }
+    if (session.optimization_priority) {
+      arcField('WHAT MATTERED MOST', PRIORITY_LABEL[session.optimization_priority] ?? session.optimization_priority)
+    }
+    if (session.quorum_predicted_choice) {
+      const reasoningSuffix = session.quorum_prediction_reasoning ? ` — ${session.quorum_prediction_reasoning}` : ''
+      arcField('QUORUM\u2019S HYPOTHESIS', `${session.quorum_predicted_choice}${reasoningSuffix}`)
+    }
+    if (session.final_decision) {
+      arcField('WHAT YOU ACTUALLY CHOSE', session.final_decision, C.gold)
+      if (session.prediction_matched_final !== null && session.prediction_matched_final !== undefined) {
+        ensure(16)
+        doc.setFont('Helvetica', 'normal')
+        doc.setFontSize(9.5)
+        doc.setTextColor(...C.mutedText)
+        doc.text(
+          session.prediction_matched_final ? 'Quorum predicted this outcome.' : 'This decision surprised Quorum.',
+          ML, Y,
+        )
+        Y += 20
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // SECTION 1 — Decision Brief
   // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1607,6 +1715,9 @@ export async function GET(req: Request, { params }: Params) {
     ...sessionResult.data,
     decision_text: decrypt(sessionResult.data.decision_text) ?? '',
     context_text:  decrypt(sessionResult.data.context_text)  ?? null,
+    // Unified session, point 7: final_decision is encrypted the same way
+    // decision_text is (raw user input) — see sprint_prediction_layer.sql.
+    final_decision: sessionResult.data.final_decision ? (decrypt(sessionResult.data.final_decision) ?? null) : null,
   }
   let messages = (messagesResult.data ?? []).map(m => ({
     ...m,

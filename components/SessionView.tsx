@@ -1784,7 +1784,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                   (guaranteed true here — the early return above blocks
                   render otherwise). Runs alongside Council/Synthesis
                   generating underneath, not blocking on them. */}
-              {isUnifiedSessionEnabled() && (
+              {/* Point 2 fix: only fires once Examiner is actually answered —
+                  previously rendered in parallel with Examiner, which meant
+                  Quorum's hypothesis could appear before the user had
+                  answered the clarifying question(s). */}
+              {isUnifiedSessionEnabled() && examinerSubmitted && (
                 <QuorumPrediction
                   sessionId={session.id}
                   authToken={authTokenSV}
@@ -1937,12 +1941,12 @@ export default function SessionView({ session: initialSession, initialMessages =
                   // version history (for reload resilience).
                   personaLeans={personaLeans}
                   initialSynthesisVersions={initialSynthesisVersionsForThisSession}
+                  challengeSlot={
+                    isUnifiedSessionEnabled() && synthesisDone ? (
+                      <SynthesisChallenge onSubmit={(text) => handleShareContext('synthesis', text)} />
+                    ) : undefined
+                  }
                 />
-                {/* Unified session, point 1: challenge/disagree lives here now, not only
-                    inside an individual persona panel behind the Council disclosure. */}
-                {isUnifiedSessionEnabled() && synthesisDone && (
-                  <SynthesisChallenge onSubmit={(text) => handleShareContext('synthesis', text)} />
-                )}
               </div>
 
               {/* ── 1b. Record Receipt (appears after synthesis completes) ── */}
@@ -2243,7 +2247,13 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* ── Capture Position — after personas, giving time to read all six advisors ── */}
               {/* Originally between synthesis and personas; moved here so the user records   */}
               {/* their stance after absorbing the full Council, not just the synthesis.      */}
-              {synthesisDone && (
+              {/* Unified session, point 4: skipped under the flag — it visually overlapped   */}
+              {/* with PredictionReveal's "Make your decision" (both capture a position), so  */}
+              {/* its review-date field (the actual retention hook — see the file's own doc   */}
+              {/* comment on commitment_review_date) was folded into PredictionReveal instead */}
+              {/* of keeping both. Same /api/session/commitment endpoint, so the existing     */}
+              {/* review-date nudge cron jobs are unaffected either way.                      */}
+              {!isUnifiedSessionEnabled() && synthesisDone && (
                 <div className="sv-fade sv-fade-3" data-tour-id="council-capture" style={{ marginTop: 8 }}>
                   <DecisionStateCard sessionId={session.id} authToken={authTokenSV} />
                 </div>

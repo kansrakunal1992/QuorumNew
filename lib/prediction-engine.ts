@@ -167,6 +167,32 @@ function parsePredictionJSON(raw: string): { predictedChoice: string; reasoning:
  * first pass; swapping in sessions_ontology's structural classification
  * for better matching is a reasonable follow-up, not required for v1.
  */
+// ── Reflection line (natural-language front door, point 3) ─────────────────
+// A one-line, plain-language paraphrase of what the user just typed —
+// "Sounds like you're weighing X against Y" — used as a lead-in to
+// Examiner's first question instead of a new confirm-gate screen (see the
+// product discussion: this replaces a shelved idea for a whole new "is this
+// right?" screen, since one wasn't needed once the reflection just opens
+// Examiner's existing first question instead). Deliberately tiny and
+// separate from persona/route.ts for the same reason generatePrediction is:
+// a bad reflection should never be able to break Examiner, Council, or
+// Synthesis, which don't depend on this succeeding.
+export async function generateReflectionLine(decisionText: string): Promise<string | null> {
+  const prompt =
+    `Decision, in the person's own words: "${decisionText}"\n\n` +
+    `Write ONE short sentence reflecting back what they're actually deciding — ` +
+    `plain language, no advice, no analysis, just proof you understood them. ` +
+    `Start with "Sounds like" or "So you're weighing" or similar. Under 20 words. ` +
+    `Respond with only the sentence, nothing else.`
+  try {
+    const raw = await createCompletion(prompt, 60, { provider: 'openai', temperature: 0.3 })
+    const cleaned = raw.trim().replace(/^["']|["']$/g, '')
+    return cleaned.length > 0 && cleaned.length < 200 ? cleaned : null
+  } catch {
+    return null // degrade silently — Examiner's question renders with or without this
+  }
+}
+
 export function countMatchingPastPattern(
   history: PastDecisionSummary[],
   currentOptimization: string,
