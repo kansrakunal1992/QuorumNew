@@ -1241,7 +1241,7 @@ export default function Home() {
               transition:    'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
               pointerEvents: inputRevealed ? 'auto' : 'none',
             }}>
-              {isUnifiedSessionEnabled() && <QuorumLearnedSomething authToken={authToken} />}
+              
 
               <h1 style={{
                 fontSize:      22,
