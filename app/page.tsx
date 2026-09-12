@@ -1241,6 +1241,7 @@ export default function Home() {
               transition:    'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
               pointerEvents: inputRevealed ? 'auto' : 'none',
             }}>
+              {isUnifiedSessionEnabled() && <QuorumLearnedSomething authToken={authToken} />}
 
               <h1 style={{
                 fontSize:      22,
@@ -1617,7 +1618,7 @@ export default function Home() {
                 </p>
                 {isUnifiedSessionEnabled() ? (
                   <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
-                    <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Quorum&apos;s hypothesis</span> — &quot;We think you&apos;ll take the offer&quot; \u2014 stated before the full read, checked against what you actually decide.
+                    <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Quorum&apos;s hypothesis</span> — &quot;We think you&apos;ll take the offer&quot; — stated before the full read, checked against what you actually decide.
                   </p>
                 ) : (
                   <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
@@ -1661,7 +1662,9 @@ export default function Home() {
             transition: 'max-height 0.5s ease 0.35s, opacity 0.5s ease 0.35s, margin-top 0.4s ease 0.35s',
           }}>
             <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 10, padding: '0 2px', fontStyle: 'italic' }}>
-              Six advisors · stress-test assumptions, surface hidden gaps, and challenge the frame of every decision
+              {isUnifiedSessionEnabled()
+                ? 'Six advisors run in the background on every decision — stress-testing assumptions, surfacing hidden gaps, challenging the frame. \u201cSee how Quorum got here\u201d in any session reveals each one\u2019s take.'
+                : 'Six advisors · stress-test assumptions, surface hidden gaps, and challenge the frame of every decision'}
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '0 2px' }}>
               {PERSONAS_GRID.map(p => (

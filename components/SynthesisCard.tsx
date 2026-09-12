@@ -28,6 +28,12 @@ interface Props {
    *  (handleShareContext) and there's no reason for this card to know
    *  about that. undefined → nothing renders, same as today. */
   challengeSlot?:    React.ReactNode
+  /** Unified session, point 6: gates Generate Decision Brief the same way
+   *  SessionView's Save to Record button is gated — undefined/false means
+   *  "not required" (flag off), so nothing changes unless SessionView
+   *  explicitly passes true/false based on its own decisionLocked state. */
+  decisionRequired?: boolean
+  decisionLocked?:   boolean
   /** Bug fix (Aug 2026): both /api/persona fetches below (synthesis +
    *  decision_brief) omitted this entirely, so middleware.ts never saw a
    *  Bearer token and every synthesis call — the most expensive, most
@@ -99,6 +105,8 @@ export default function SynthesisCard({
   personaResponses, totalPersonas, version,
   registerMode, authToken,
   challengeSlot,
+  decisionRequired,
+  decisionLocked,
   examinerReady,
   redirectBlocked,
   redirectQuestion,
@@ -1210,12 +1218,15 @@ export default function SynthesisCard({
             </button>
           )}
 
-          {/* Decision Brief — free, no gate */}
+          {/* Decision Brief — free, no gate (except the compulsory decision+
+              review-date step under the unified session flag — see point 6) */}
           {state === 'done' && briefState === 'idle' && (
             <button
               onClick={handleGenerateBrief}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--gold-dim)', background: 'rgba(201,168,76,0.1)', color: 'var(--gold)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.03em', transition: 'all 0.2s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.2)' }}
+              disabled={decisionRequired && !decisionLocked}
+              title={decisionRequired && !decisionLocked ? 'Lock in your decision and review date first — that step is required before generating the brief.' : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--gold-dim)', background: 'rgba(201,168,76,0.1)', color: 'var(--gold)', fontSize: 11.5, fontWeight: 600, cursor: (decisionRequired && !decisionLocked) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', letterSpacing: '0.03em', transition: 'all 0.2s', opacity: (decisionRequired && !decisionLocked) ? 0.5 : 1 }}
+              onMouseEnter={e => { if (!(decisionRequired && !decisionLocked)) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.2)' }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(201,168,76,0.1)' }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -1946,6 +1946,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                       <SynthesisChallenge onSubmit={(text) => handleShareContext('synthesis', text)} />
                     ) : undefined
                   }
+                  decisionRequired={isUnifiedSessionEnabled()}
+                  decisionLocked={decisionLocked}
                 />
               </div>
 
@@ -2292,8 +2294,13 @@ export default function SessionView({ session: initialSession, initialMessages =
                   className="btn-primary"
                   style={{ fontSize: 13, padding: '12px 28px', minHeight: 44 }}
                   onClick={handleSaveRecord}
-                  disabled={saving || councilSettling}
-                  title={councilSettling ? 'Council is still working — one moment.' : undefined}
+                  disabled={saving || councilSettling || (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)}
+                  title={
+                    councilSettling ? 'Council is still working — one moment.'
+                    : (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)
+                      ? 'Lock in your decision and review date above first — that step is required before saving.'
+                      : undefined
+                  }
                 >
                   {saving ? 'Saving…' : councilSettling ? 'Council updating…' : 'Save to Record'}
                 </button>
