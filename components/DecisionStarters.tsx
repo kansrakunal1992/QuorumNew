@@ -42,7 +42,7 @@ export default function DecisionStarters({ onPick }: Props) {
               type="button"
               onClick={() => setOpen(o => (o === cat.label ? null : cat.label))}
               style={{
-                padding: '6px 13px', fontSize: 12.5, borderRadius: 999,
+                padding: '9px 14px', fontSize: 13, borderRadius: 999,
                 border: `1px solid ${open === cat.label ? 'var(--gold)' : 'var(--border-dim)'}`,
                 background: open === cat.label ? 'rgba(201,168,76,0.1)' : 'var(--bg-card)',
                 color: open === cat.label ? 'var(--gold)' : 'var(--text-3)',
@@ -66,7 +66,7 @@ export default function DecisionStarters({ onPick }: Props) {
                     onClick={() => { onPick(item); setOpen(null) }}
                     style={{
                       display: 'block', width: '100%', textAlign: 'left',
-                      padding: '8px 10px', fontSize: 13, color: 'var(--text-2)',
+                      padding: '10px 10px', fontSize: 13, color: 'var(--text-2)',
                       background: 'transparent', border: 'none', borderRadius: 6,
                       cursor: 'pointer',
                     }}

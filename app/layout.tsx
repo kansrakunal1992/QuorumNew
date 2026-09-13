@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import ThemeToggle from '@/components/ThemeToggle'
 import CookieConsent from '@/components/CookieConsent'
 import AppFooter from '@/components/AppFooter'
@@ -20,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" data-unified-session={isUnifiedSessionEnabled() ? 'true' : undefined} suppressHydrationWarning>
       <head>
         {/* ── Prevent theme flash ── */}
         <script

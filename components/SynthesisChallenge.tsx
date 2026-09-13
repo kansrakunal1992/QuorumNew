@@ -78,7 +78,7 @@ export default function SynthesisChallenge({ onSubmit, disabled }: Props) {
             type="button"
             onClick={() => { setReason(r.value); if (!text.trim()) setText(r.prefill) }}
             style={{
-              padding:      '4px 10px',
+              padding:      '7px 12px',
               fontSize:     11.5,
               borderRadius: 999,
               border:       `1px solid ${reason === r.value ? 'var(--gold)' : 'var(--border-dim)'}`,

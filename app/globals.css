@@ -443,6 +443,24 @@ textarea:focus {
   border-color: var(--border-hi);
   box-shadow: 0 0 0 3px rgba(122, 162, 216, 0.14);
 }
+
+/* ── Mobile audit: iOS Safari zooms the whole page on focus for any form
+   field under 16px. The app's base font-size is 15px (a deliberate type-
+   scale choice, not touched here), and .decision-input/textarea inherit
+   that. Scoped to the unified session flag via [data-unified-session] on
+   <html> (see app/layout.tsx) rather than changed globally — this is a
+   real, universal bug affecting the current experience too, but the
+   standing instruction throughout this work has been "everything behind
+   the flag," so it's applied that way here rather than decided
+   unilaterally. Worth considering removing the [data-unified-session]
+   scope and shipping this rule unconditionally, independent of the flag
+   going out to everyone — it's not specific to the new experience. */
+[data-unified-session="true"] .decision-input,
+[data-unified-session="true"] textarea,
+[data-unified-session="true"] input,
+[data-unified-session="true"] select {
+  font-size: 16px;
+}
 [data-theme="light"] .decision-input:focus,
 [data-theme="light"] textarea:focus {
   box-shadow: 0 0 0 3px rgba(122,144,176,0.18);

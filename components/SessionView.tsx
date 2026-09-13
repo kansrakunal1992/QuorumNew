@@ -59,6 +59,17 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     body:           'After all six advisors weigh in, Quorum synthesises their positions into one strategic brief. Dissenting views are preserved, not averaged away. Read this first — it surfaces the sharpest tensions.',
     preferredSide:  'bottom',
   },
+  // Unified session: new step, recapping the hypothesis card above the
+  // synthesis — by the time this tour fires the user has already seen and
+  // acted on it (the tour waits for predictionAcknowledged), so this is
+  // a "here's what that was" reinforcement, not a first introduction.
+  ...(isUnifiedSessionEnabled() ? [{
+    id:             'council-prediction',
+    targetSelector: '[data-tour-id="council-prediction"]',
+    heading:        'Quorum\'s hypothesis, made before this',
+    body:           'Before any of this, Quorum locked in its own guess about what you\'d choose — stated plainly, with reasoning, before the full read. You\'ll find out later whether it was right.',
+    preferredSide:  'bottom',
+  } as TourStep] : []),
   {
     id:             'council-bias',
     targetSelector: '[data-tour-id="council-bias"]',
@@ -91,10 +102,26 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     targetSelector: '[data-tour-id="council-personas"]',
     heading:        isUnifiedSessionEnabled() ? 'One read by default, six advisors on demand' : 'Six advisors, six different lenses',
     body: isUnifiedSessionEnabled()
-      ? 'Quorum leads with one synthesized read so you\'re not parsing six opinions to get the point. Want the full breakdown? "See how Quorum got here" reveals all six, individually — and "Disagree / ask a follow-up" next to the read sends your pushback to the whole council at once.'
+      ? 'Quorum leads with one synthesized read so you\'re not parsing six separate opinions to get the point. The six advisors are still doing the work — just collapsed here by default.'
       : 'Tap any card to read the full analysis. At the bottom of a finished card you\'ll find "Disagree or ask a follow-up" — use it to push back, and that advisor responds directly. Challenge one, and the same option appears highlighted on the others. Once you have, the verdict below updates to reflect it.',
     preferredSide:  'top',
   },
+  ...(isUnifiedSessionEnabled() ? [
+    {
+      id:             'council-disclosure-toggle',
+      targetSelector: '[data-tour-id="council-disclosure-toggle"]',
+      heading:        'See how Quorum got here',
+      body:           'Want the full breakdown behind the read above? This reveals all six advisors individually — hidden by default, never removed.',
+      preferredSide:  'top',
+    } as TourStep,
+    {
+      id:             'council-challenge-new',
+      targetSelector: '[data-tour-id="council-challenge-new"]',
+      heading:        'Disagree with the read',
+      body:           'Push back here and it goes to the whole council at once, not just one advisor — every one of them reassesses independently, and the read above updates to reflect it.',
+      preferredSide:  'top',
+    } as TourStep,
+  ] : []),
   {
     id:             'council-capture',
     targetSelector: '[data-tour-id="council-capture"]',
@@ -103,6 +130,13 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     preferredSide:  'bottom',
     unifiedSessionSkip: true,
   } as TourStep & { unifiedSessionSkip?: boolean },
+  ...(isUnifiedSessionEnabled() ? [{
+    id:             'council-make-decision',
+    targetSelector: '[data-tour-id="council-make-decision"]',
+    heading:        'Make your decision — required to close this record',
+    body:           'Record what you\'re actually going to do and when Quorum should bring this back to you. Both are required before you can save — this is what lets Quorum tell you later whether it predicted you correctly.',
+    preferredSide:  'top',
+  } as TourStep] : []),
   {
     id:             'council-save',
     targetSelector: '[data-tour-id="council-save"]',
@@ -676,12 +710,26 @@ export default function SessionView({ session: initialSession, initialMessages =
         // Build step list: base steps + optional PWA install step
         const pwaStep = buildPWAInstallStep()
         setCouncilTourSteps(pwaStep ? [...COUNCIL_STEPS_BASE, pwaStep] : COUNCIL_STEPS_BASE)
+        // Race condition fix: the old fixed 800ms delay fired as soon as
+        // synthesisDone flipped true, but under the unified session flag,
+        // council-synthesis's wrapper (see the progressive-reveal div around
+        // SynthesisCard further down) stays display:none until the user has
+        // also clicked past Quorum's hypothesis card — synthesisDone can be
+        // true while that wrapper is still invisible, which is exactly what
+        // "has run but the tour doesn't focus on it" looks like. Fixed by
+        // adding predictionAcknowledged to this effect's own dependency
+        // array below, so under the flag the tour only fires once BOTH are
+        // true — the effect re-runs correctly when either changes, no
+        // polling or interval needed. Flag off: unchanged, same 800ms.
+        if (isUnifiedSessionEnabled() && !predictionAcknowledged) {
+          return // re-runs automatically once predictionAcknowledged flips — see deps array
+        }
         const t = setTimeout(() => setShowCouncilTour(true), 800)
         return () => clearTimeout(t)
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [synthesisDone, councilTourDone, totalSessionCount])
+  }, [synthesisDone, councilTourDone, totalSessionCount, predictionAcknowledged])
 
   useEffect(() => {
     let attempt = 0
@@ -1579,8 +1627,13 @@ export default function SessionView({ session: initialSession, initialMessages =
             <button
               className="btn-primary"
               onClick={handleSaveRecord}
-              disabled={saving || councilSettling}
-              title={councilSettling ? 'Council is still working — one moment.' : undefined}
+              disabled={saving || councilSettling || (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)}
+              title={
+                councilSettling ? 'Council is still working — one moment.'
+                : (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)
+                  ? 'Lock in your decision and review date first — that step is required before saving.'
+                  : undefined
+              }
               data-tour-id="council-save"
             >
               {saving
@@ -1812,16 +1865,18 @@ export default function SessionView({ session: initialSession, initialMessages =
                   Quorum's hypothesis could appear before the user had
                   answered the clarifying question(s). */}
               {isUnifiedSessionEnabled() && examinerSubmitted && (
-                <QuorumPrediction
-                  sessionId={session.id}
-                  authToken={authTokenSV}
-                  onPredicted={setPredictedChoiceForReveal}
-                  onContinue={() => setPredictionAcknowledged(true)}
-                  alreadyAcknowledged={predictionAcknowledged}
-                  initialPredictedChoice={initialSession.quorum_predicted_choice}
-                  initialReasoning={initialSession.quorum_prediction_reasoning}
-                  initialUsedSearch={initialSession.quorum_prediction_used_search}
-                />
+                <div data-tour-id="council-prediction">
+                  <QuorumPrediction
+                    sessionId={session.id}
+                    authToken={authTokenSV}
+                    onPredicted={setPredictedChoiceForReveal}
+                    onContinue={() => setPredictionAcknowledged(true)}
+                    alreadyAcknowledged={predictionAcknowledged}
+                    initialPredictedChoice={initialSession.quorum_predicted_choice}
+                    initialReasoning={initialSession.quorum_prediction_reasoning}
+                    initialUsedSearch={initialSession.quorum_prediction_used_search}
+                  />
+                </div>
               )}
 
               {/* ── Council Status Bar ── */}
@@ -1966,7 +2021,9 @@ export default function SessionView({ session: initialSession, initialMessages =
                   initialSynthesisVersions={initialSynthesisVersionsForThisSession}
                   challengeSlot={
                     isUnifiedSessionEnabled() && synthesisDone ? (
-                      <SynthesisChallenge onSubmit={(text) => handleShareContext('synthesis', text)} />
+                      <div data-tour-id="council-challenge-new">
+                        <SynthesisChallenge onSubmit={(text) => handleShareContext('synthesis', text)} />
+                      </div>
                     ) : undefined
                   }
                   decisionRequired={isUnifiedSessionEnabled()}
@@ -2136,19 +2193,21 @@ export default function SessionView({ session: initialSession, initialMessages =
                   by the time synthesis is ready, there's enough on screen
                   for the user to actually decide. */}
               {isUnifiedSessionEnabled() && synthesisDone && predictionAcknowledged && (
-                <PredictionReveal
-                  sessionId={session.id}
-                  authToken={authTokenSV}
-                  predictedChoice={predictedChoiceForReveal}
-                  initialInstinctLabel={
-                    lockedInstinct === 'accept' ? 'leaning yes' :
-                    lockedInstinct === 'reject' ? 'leaning no'  :
-                    lockedInstinct === 'unsure' ? 'genuinely unsure' : null
-                  }
-                  onDecided={() => setDecisionLocked(true)}
-                  alreadyDecided={decisionLocked}
-                  initialMatched={initialSession.prediction_matched_final}
-                />
+                <div data-tour-id="council-make-decision">
+                  <PredictionReveal
+                    sessionId={session.id}
+                    authToken={authTokenSV}
+                    predictedChoice={predictedChoiceForReveal}
+                    initialInstinctLabel={
+                      lockedInstinct === 'accept' ? 'leaning yes' :
+                      lockedInstinct === 'reject' ? 'leaning no'  :
+                      lockedInstinct === 'unsure' ? 'genuinely unsure' : null
+                    }
+                    onDecided={() => setDecisionLocked(true)}
+                    alreadyDecided={decisionLocked}
+                    initialMatched={initialSession.prediction_matched_final}
+                  />
+                </div>
               )}
 
               {/* ── Unified session flag: Council disclosure toggle ──
@@ -2331,7 +2390,9 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Standalone line, not a tray flex child — so it can't change the
                   button's width/stretch behavior on the 480px column layout above. */}
               <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '6px 0 0', textAlign: 'right' }}>
-                Unlocks your six-advisor Decision PDF
+                {isUnifiedSessionEnabled()
+                  ? 'Unlocks your Decision PDF — synthesis, prediction, and outcome'
+                  : 'Unlocks your six-advisor Decision PDF'}
               </p>
             </div>
 

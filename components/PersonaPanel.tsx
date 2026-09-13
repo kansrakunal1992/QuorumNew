@@ -1351,7 +1351,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
                       if (!pushback.trim()) setPushback(r.prefill)
                     }}
                     style={{
-                      padding:      '4px 10px',
+                      padding:      '7px 12px',
                       fontSize:     11.5,
                       borderRadius: 999,
                       border:       `1px solid ${challengeReason === r.value ? 'var(--gold)' : 'var(--border-dim)'}`,
