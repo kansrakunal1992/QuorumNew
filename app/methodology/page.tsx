@@ -16,6 +16,7 @@
 
 import Link from 'next/link'
 import MethodologyExplainerVideo from '@/components/MethodologyExplainerVideo'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 
 export const metadata = {
   title: 'How Quorum Works — Quorum',
@@ -29,9 +30,10 @@ const SESSION_STEPS: { label: string; detail: string }[] = [
       "Before any advisor responds, your decision is read for what kind of decision it actually is — not just the words you used. A financing decision and a co-founder split can share the same underlying structure even though nothing about the topics overlaps. This structural read is what everything after it is built on.",
   },
   {
-    label: 'Six advisors respond from that read',
-    detail:
-      'The Contrarian, the Risk Architect, the Pattern Analyst, the Stakeholder Mirror, the Elder, and the Competitor each respond from their own angle on the same structural read — not six calls to the same generic model with different personas bolted on.',
+    label: isUnifiedSessionEnabled() ? 'Six advisors respond from that read, in the background' : 'Six advisors respond from that read',
+    detail: isUnifiedSessionEnabled()
+      ? 'The Contrarian, the Risk Architect, the Pattern Analyst, the Stakeholder Mirror, the Elder, and the Competitor each respond from their own angle on the same structural read — not six calls to the same generic model with different personas bolted on. You see one synthesized read by default; "See how Quorum got here" in any session reveals all six individually.'
+      : 'The Contrarian, the Risk Architect, the Pattern Analyst, the Stakeholder Mirror, the Elder, and the Competitor each respond from their own angle on the same structural read — not six calls to the same generic model with different personas bolted on.',
   },
   {
     label: 'The Council synthesizes, it doesn\u2019t vote',

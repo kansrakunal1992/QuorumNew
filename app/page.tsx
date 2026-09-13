@@ -1021,7 +1021,9 @@ export default function Home() {
                     margin:        0,
                     maxWidth:      340,
                   }}>
-                    Six advisors analyse every decision you bring
+                    {isUnifiedSessionEnabled()
+                      ? 'Quorum makes a call on you — then checks if it was right'
+                      : 'Six advisors analyse every decision you bring'}
                   </p>
                   <p style={{
                     fontFamily:    'var(--font-mono)',
@@ -1033,7 +1035,9 @@ export default function Home() {
                     maxWidth:      320,
                     letterSpacing: '0.02em',
                   }}>
-                    Each from a structurally distinct angle — stress-testing, risk mapping, pattern matching, and more.
+                    {isUnifiedSessionEnabled()
+                      ? 'Six advisors run in the background on every decision — stress-testing, risk mapping, pattern matching, and more.'
+                      : 'Each from a structurally distinct angle — stress-testing, risk mapping, pattern matching, and more.'}
                   </p>
                 </>
               )}

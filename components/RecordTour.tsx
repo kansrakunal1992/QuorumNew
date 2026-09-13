@@ -15,6 +15,7 @@
 //      it on a future tour after they've clicked the email link.
 
 import { useState, useEffect } from 'react'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import OnboardingTour, { buildPWAInstallStep } from './OnboardingTour'
 import type { TourStep } from './OnboardingTour'
 
@@ -50,7 +51,9 @@ const RECORD_STEPS_BASE: TourStep[] = [
     id:               'record-decision-brief',
     targetSelector:   '[data-tour-id="record-decision-brief"]',
     heading:          'Take the full analysis with you',
-    body:             'Download this decision as a formatted PDF — every advisor\'s position, the synthesis, and any pushbacks you raised. Useful for sharing with a partner or co-founder, or just for your own records outside Quorum.',
+    body:             isUnifiedSessionEnabled()
+      ? 'Download this decision as a formatted PDF — the synthesis, your initial lean, Quorum\'s hypothesis and reasoning, what you actually chose, and any pushbacks you raised. Useful for sharing with a partner or co-founder, or just for your own records outside Quorum.'
+      : 'Download this decision as a formatted PDF — every advisor\'s position, the synthesis, and any pushbacks you raised. Useful for sharing with a partner or co-founder, or just for your own records outside Quorum.',
     preferredSide:    'bottom',
   },
   {

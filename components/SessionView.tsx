@@ -66,18 +66,33 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     body:           'When Quorum detects a bias pattern in how this decision was framed, it surfaces here — above the persona cards, while the analysis is still fresh. Not every session triggers this. When it does, it\'s a signal about a reasoning tendency in your framing — not a judgment on the decision itself.',
     preferredSide:  'bottom',
   },
+  // Unified session: council-validation's target (ValidationCard) and
+  // council-capture's target (DecisionStateCard) are both skipped under
+  // the flag — see SessionView's own render logic and the round 6/7 notes
+  // on why. Pointing a tour step at a hidden element doesn't crash
+  // (OnboardingTour degrades to no spotlight), but it does show
+  // instructions for something the user can't see, which is its own kind
+  // of broken. Filtered out below rather than left in as dead steps.
   {
     id:             'council-validation',
     targetSelector: '[data-tour-id="council-validation"]',
     heading:        'Confirm or correct Quorum\'s read',
     body:           'After synthesis, Quorum surfaces the emotional and identity shape it inferred for this decision. Confirming it trains your Council. Correcting it is even more valuable — a correction feeds directly into how the next session\'s council is framed for you.',
     preferredSide:  'top',
-  },
+    unifiedSessionSkip: true,
+  } as TourStep & { unifiedSessionSkip?: boolean },
   {
     id:             'council-personas',
-    targetSelector: '[data-tour-id="council-challenge"]',
-    heading:        'Six advisors, six different lenses',
-    body:           'Tap any card to read the full analysis. At the bottom of a finished card you\'ll find "Disagree or ask a follow-up" — use it to push back, and that advisor responds directly. Challenge one, and the same option appears highlighted on the others. Once you have, the verdict below updates to reflect it.',
+    // Fix: this previously pointed at [data-tour-id="council-challenge"],
+    // which no element in this file actually carries — a pre-existing
+    // mismatch, unrelated to the unified session flag, found while fixing
+    // the items below. The six-persona grid's real attribute is
+    // "council-personas" (see the disclosure-toggle grid further down).
+    targetSelector: '[data-tour-id="council-personas"]',
+    heading:        isUnifiedSessionEnabled() ? 'One read by default, six advisors on demand' : 'Six advisors, six different lenses',
+    body: isUnifiedSessionEnabled()
+      ? 'Quorum leads with one synthesized read so you\'re not parsing six opinions to get the point. Want the full breakdown? "See how Quorum got here" reveals all six, individually — and "Disagree / ask a follow-up" next to the read sends your pushback to the whole council at once.'
+      : 'Tap any card to read the full analysis. At the bottom of a finished card you\'ll find "Disagree or ask a follow-up" — use it to push back, and that advisor responds directly. Challenge one, and the same option appears highlighted on the others. Once you have, the verdict below updates to reflect it.',
     preferredSide:  'top',
   },
   {
@@ -86,15 +101,23 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     heading:        'Capture your position before you decide',
     body:           'After reading the Council, record where you stand — your current lean, what would change your mind, and when you\'ll review this. This is not just a note. Quorum uses it to track how your thinking shifts between decision and outcome.',
     preferredSide:  'bottom',
-  },
+    unifiedSessionSkip: true,
+  } as TourStep & { unifiedSessionSkip?: boolean },
   {
     id:             'council-save',
     targetSelector: '[data-tour-id="council-save"]',
     heading:        'Save this as a permanent record',
-    body:           'Once you\'ve absorbed the Council\'s analysis, save this decision. It becomes a permanent entry in your judgment record — synthesis, every advisor\'s position, and your confidence rating. This is how your Judgment OS compounds over time. From the record page you can also download it as a formatted Decision Brief PDF.',
+    body: isUnifiedSessionEnabled()
+      ? 'Once you\'ve locked in your decision above, save it. It becomes a permanent entry in your judgment record — synthesis, your initial lean, Quorum\'s hypothesis, and what you actually chose. This is how your Judgment OS compounds over time. From the record page you can also download it as a formatted Decision Brief PDF.'
+      : 'Once you\'ve absorbed the Council\'s analysis, save this decision. It becomes a permanent entry in your judgment record — synthesis, every advisor\'s position, and your confidence rating. This is how your Judgment OS compounds over time. From the record page you can also download it as a formatted Decision Brief PDF.',
     preferredSide:  'bottom',
   },
-]
+// Unified session: drop the two steps above marked unifiedSessionSkip —
+// their targets don't exist under the flag. Done as a filter at the end
+// rather than an inline conditional per-step, so the array above stays
+// readable as "all the steps," with the flag's effect on which ones
+// actually run kept in one visible place.
+].filter((s: any) => !(isUnifiedSessionEnabled() && s.unifiedSessionSkip)) as TourStep[]
 
 interface Props {
   session: Session
