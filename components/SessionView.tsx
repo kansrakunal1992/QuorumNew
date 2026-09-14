@@ -2225,7 +2225,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                     display:       'flex',
                     alignItems:    'center',
                     gap:           6,
-                    margin:        '4px 0 12px',
+                    margin:        '24px 0 12px',
                     padding:       '8px 12px',
                     background:    'transparent',
                     border:        '1px solid var(--border-mid)',

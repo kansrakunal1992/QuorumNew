@@ -1,5 +1,5 @@
 // components/SynthesisChallenge.tsx
-// ── Unified Session, point 1 ────────────────────────────────────────────────
+// ── Unified Session, point 1 + "worth stealing" pass ────────────────────────
 // "Challenge Quorum" needs to live where the user is actually looking in
 // this experience — next to Synthesis — not require expanding the Council
 // and finding a specific persona's own pushback box first. Same structured-
@@ -9,10 +9,16 @@
 // broadcast-to-all-six-advisors-then-resynthesize pipeline PersonaPanel's
 // own challenge already uses. No new backend behavior, just a better front
 // door onto the one that exists.
+//
+// Text input now goes through SessionComposer, the same box used in
+// PredictionReveal — same look, same placement logic, same button
+// language, so this doesn't feel like a different kind of input each time
+// it shows up in a session.
 
 'use client'
 
 import { useState } from 'react'
+import SessionComposer from '@/components/SessionComposer'
 
 interface Props {
   onSubmit:  (text: string) => void
@@ -28,10 +34,10 @@ const REASONS: { value: string; label: string; prefill: string }[] = [
 ]
 
 export default function SynthesisChallenge({ onSubmit, disabled }: Props) {
-  const [open, setOpen]         = useState(false)
-  const [reason, setReason]     = useState<string | null>(null)
-  const [text, setText]         = useState('')
-  const [sent, setSent]         = useState(false)
+  const [open, setOpen]     = useState(false)
+  const [reason, setReason] = useState<string | null>(null)
+  const [prefill, setPrefill] = useState('')
+  const [sent, setSent]     = useState(false)
 
   if (sent) {
     return (
@@ -71,12 +77,12 @@ export default function SynthesisChallenge({ onSubmit, disabled }: Props) {
 
   return (
     <div style={{ marginTop: 12, padding: '12px 14px', border: '1px solid var(--border-dim)', borderRadius: 12, background: 'var(--bg-card-alt)' }}>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
         {REASONS.map(r => (
           <button
             key={r.value}
             type="button"
-            onClick={() => { setReason(r.value); if (!text.trim()) setText(r.prefill) }}
+            onClick={() => { setReason(r.value); setPrefill(r.prefill) }}
             style={{
               padding:      '7px 12px',
               fontSize:     11.5,
@@ -91,28 +97,20 @@ export default function SynthesisChallenge({ onSubmit, disabled }: Props) {
           </button>
         ))}
       </div>
-      <textarea
-        rows={2}
+      {/* key remounts the composer with the new prefill when a reason chip
+          is picked — SessionComposer owns its own text state internally
+          (same as every other place it's used), so this is the simplest
+          way to seed it without giving the composer a controlled-value API
+          it doesn't need anywhere else it's used. */}
+      <SessionComposer
+        key={reason ?? 'blank'}
         placeholder="Say what you actually think Quorum got wrong…"
-        value={text}
-        onChange={e => setText(e.target.value)}
-        style={{ width: '100%', fontSize: 16, padding: '8px 10px', marginBottom: 8 }}
-        autoFocus
+        initialValue={prefill}
+        submitLabel="Send to the council"
+        submittingLabel="Sending…"
+        onSubmit={(text) => { onSubmit(text); setSent(true) }}
+        secondaryAction={{ label: 'Cancel', onClick: () => { setOpen(false); setReason(null); setPrefill('') } }}
       />
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={!text.trim()}
-          onClick={() => { onSubmit(text.trim()); setSent(true) }}
-          style={{ padding: '6px 16px', fontSize: 12.5, opacity: text.trim() ? 1 : 0.45 }}
-        >
-          Send to the council
-        </button>
-        <button type="button" className="btn-ghost" onClick={() => { setOpen(false); setText(''); setReason(null) }}>
-          Cancel
-        </button>
-      </div>
     </div>
   )
 }

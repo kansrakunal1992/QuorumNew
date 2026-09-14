@@ -1,5 +1,5 @@
 // components/QuorumPrediction.tsx
-// ── Unified Session, Tier 2 ────────────────────────────────────────────────
+// ── Unified Session, Tier 2 + "worth stealing" pass ─────────────────────────
 // Fires once, right after InitialInstinctCapture resolves, and shows
 // Quorum's hypothesis while Council/Synthesis continue generating
 // underneath. This is a hypothesis about the person ("we think you'll
@@ -10,14 +10,18 @@
 // via initialPredictedChoice, read from the session row — see SessionView.tsx),
 // this renders it immediately and never calls /api/persona/predict at all.
 //
+// Reasoning text now reveals via useTypewriter instead of popping in whole —
+// not real token streaming (the network wait is unchanged), but it removes
+// the jarring spinner-then-instant-block transition. See lib/useTypewriter.ts
+// for why this is a client-side reveal, not a backend streaming change.
+//
 // Point 5 fix: requires an explicit "Continue" click (onContinue) before
-// Synthesis reveals, instead of both appearing at once — this card is a
-// quick hypothesis to react to, not something to read alongside a full
-// analysis competing for the same attention.
+// Synthesis reveals, instead of both appearing at once.
 
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTypewriter } from '@/lib/useTypewriter'
 
 interface Props {
   sessionId:               string
@@ -48,9 +52,14 @@ export default function QuorumPrediction({
       ? { status: 'done', predictedChoice: initialPredictedChoice!, reasoning: initialReasoning ?? '', usedSearch: !!initialUsedSearch }
       : { status: 'loading' }
   )
+  // Hydrated (page-refresh) case reveals instantly — the typewriter effect
+  // is for the felt-latency moment right after a live call resolves, not
+  // something that should replay every time this component remounts.
+  const revealedReasoning = useTypewriter(state.status === 'done' ? (state.reasoning ?? '') : null, hydrated ? 0 : 28)
+  const displayReasoning = hydrated ? (state.reasoning ?? '') : revealedReasoning
 
   useEffect(() => {
-    if (hydrated) return // already have it from the session row — no fetch needed
+    if (hydrated) return
     let cancelled = false
     async function run() {
       try {
@@ -83,8 +92,6 @@ export default function QuorumPrediction({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, hydrated])
 
-  // Degrade gracefully — a failed prediction should never trap the user
-  // behind the progressive-reveal gate with nothing to click.
   useEffect(() => {
     if (state.status === 'error') onContinue?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,8 +131,8 @@ export default function QuorumPrediction({
           <p style={{ fontSize: 17, color: 'var(--text-1)', margin: '0 0 8px', fontWeight: 600 }}>
             We think you'll choose: {state.predictedChoice}
           </p>
-          <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '0 0 8px', lineHeight: 1.5 }}>
-            {state.reasoning}
+          <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '0 0 8px', lineHeight: 1.5, minHeight: '1.5em' }}>
+            {displayReasoning}
           </p>
           <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 14px' }}>
             {(state.historyCount ?? 0) > 0
@@ -139,7 +146,7 @@ export default function QuorumPrediction({
               type="button"
               className="btn-primary"
               onClick={onContinue}
-              style={{ padding: '8px 18px', fontSize: 13 }}
+              style={{ padding: '8px 18px', fontSize: 13, minHeight: 44 }}
             >
               See Quorum's full read →
             </button>
