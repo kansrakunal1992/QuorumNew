@@ -65,14 +65,9 @@ const ICONS: Record<string, React.ReactNode> = {
   ),
 }
 
-const ACCENT_COLORS: Record<string, string> = {
-  contrarian:        '#b03535',
-  risk_architect:    '#3268b0',
-  pattern_analyst:   '#2e8a58',
-  stakeholder_mirror:'#7230a8',
-  elder:             '#a86a20',
-  competitor:        '#5e6830',
-}
+// ACCENT_COLORS consolidated into PersonaMeta.accentColor (lib/types.ts /
+// lib/personas.ts) — was one of three independent copies of the same six
+// values; see accentColor's doc comment for the other two.
 
 interface Props {
   persona: PersonaMeta
@@ -331,7 +326,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     if (panelState === 'done') onPersonaCompleteRef.current?.()
   }, [panelState])
 
-  const accentColor = ACCENT_COLORS[persona.key] ?? '#1c2b4a'
+  const accentColor = persona.accentColor ?? '#1c2b4a'
   const icon = ICONS[persona.key]
 
   // ── Header tag extractor ───────────────────────────────────────────────────
@@ -1049,51 +1044,58 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
 
       {/* Header */}
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--border-dim)', background: 'var(--bg-card-alt)', borderRadius: '14px 14px 0 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: `${accentColor}22`, border: `1px solid ${accentColor}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accentColor, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <div style={{ width: 24, height: 24, borderRadius: 6, background: `${accentColor}22`, border: `1px solid ${accentColor}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accentColor, flexShrink: 0 }}>
               {icon}
             </div>
-            <div>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.2 }}>{persona.label}</p>
+            <div style={{ minWidth: 0 }}>
+              {/* Fix (2-col mobile grid): was 12.5/11px in a row that also had
+                  to fit StatusBadge + the "Read full analysis" toggle at
+                  half phone-screen width — the longer persona names
+                  ("The Stakeholder Mirror") left the toggle's label with
+                  nowhere to go but overflow/clip past the card edge.
+                  Trimmed a notch here, and moved the toggle to its own row
+                  below (see after this closing div) so it no longer
+                  competes with this row for width at all — the font size
+                  alone couldn't have fixed that regardless of how small. */}
+              <p style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.25 }}>{persona.label}</p>
               {/* Show lens caption when available (replaces static tagline) — keeps header compact */}
-              <p style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.35, marginTop: 2, maxWidth: 220 }}>
+              <p style={{ fontSize: 10.5, color: 'var(--text-3)', lineHeight: 1.3, marginTop: 2, maxWidth: 220 }}>
                 {lensText || persona.tagline}
               </p>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <StatusBadge />
-          {/* Item #9 (revised), then Council redesign (Sprint 2): was
-              mobile-only + done-only + icon-only, on the reasoning that this
-              was a minor nicety, not the primary way anyone reached the
-              analysis. It's now the primary interaction under the unified-
-              session flag (see the [data-unified-session="true"] rules in
-              globals.css making it visible at every width), so: available
-              once streaming starts (not just once done — someone can peek at
-              a card that's still in progress), and given a visible label
-              rather than a bare chevron. */}
-          {(panelState === 'streaming' || panelState === 'done') && (
-            <button
-              className="persona-mobile-toggle"
-              onClick={() => setMobileCollapsed(c => !c)}
-              aria-expanded={!mobileCollapsed}
-              aria-label={mobileCollapsed ? 'Read full analysis' : 'Show less'}
-              style={{
-                background: 'transparent', border: 'none', cursor: 'pointer',
-                color: 'var(--text-4)', padding: '2px 4px', display: 'none',
-                alignItems: 'center', gap: 4, font: 'inherit', fontSize: 11, fontWeight: 500,
-              }}
-            >
-              <span>{mobileCollapsed ? 'Read full analysis' : 'Show less'}</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                style={{ transform: mobileCollapsed ? 'none' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-          )}
-          </div>  {/* close buttons row */}
+          <div style={{ flexShrink: 0 }}>
+            <StatusBadge />
+          </div>
         </div>  {/* close justify-between */}
+        {/* Item #9 (revised), then Council redesign (Sprint 2 and round 2):
+            was mobile-only + done-only + icon-only, then given a visible
+            label but left in the icon+label+StatusBadge row above — fine at
+            3-column desktop width, broke at the new 2-column mobile width
+            (see fix note above). Its own row now, full width, so the label
+            always has the whole card to lay out in regardless of persona
+            name length. */}
+        {(panelState === 'streaming' || panelState === 'done') && (
+          <button
+            className="persona-mobile-toggle"
+            onClick={() => setMobileCollapsed(c => !c)}
+            aria-expanded={!mobileCollapsed}
+            aria-label={mobileCollapsed ? 'Read full analysis' : 'Show less'}
+            style={{
+              width: '100%', marginTop: 8, background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--text-4)', padding: '2px 0', display: 'none',
+              alignItems: 'center', justifyContent: 'center', gap: 4, font: 'inherit', fontSize: 11, fontWeight: 500,
+            }}
+          >
+            <span>{mobileCollapsed ? 'Read full analysis' : 'Show less'}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: mobileCollapsed ? 'none' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Body — Item #33/#34 §2.2: split into an always-visible summary

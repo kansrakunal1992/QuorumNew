@@ -1695,7 +1695,7 @@ export default function Home() {
           }}>
             <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 10, padding: '0 2px', fontStyle: 'italic' }}>
               {isUnifiedSessionEnabled()
-                ? 'Six advisors run in the background on every decision — stress-testing assumptions, surfacing hidden gaps, challenging the frame. \u201cSee how Quorum got here\u201d in any session reveals each one\u2019s take.'
+                ? 'Six advisors run in the background on every decision — stress-testing assumptions, surfacing hidden gaps, challenging the frame. Each one\u2019s verdict is visible the moment the read is ready \u2014 tap a card for the full reasoning.'
                 : 'Six advisors · stress-test assumptions, surface hidden gaps, and challenge the frame of every decision'}
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '0 2px' }}>

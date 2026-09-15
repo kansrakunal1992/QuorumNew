@@ -50,7 +50,7 @@ const UNIFIED_SESSION_FAQS: FAQItem[] = [
   },
   {
     q: 'Do I still get all six advisors, or just Quorum\u2019s guess?',
-    a: 'Both. The six advisors are doing the real work the moment you bring a decision \u2014 you just don\u2019t have to read six separate takes to get the benefit anymore. Want their receipts? \u201cSee how Quorum got here\u201d is one tap away, any time.',
+    a: 'Both. The six advisors are doing the real work the moment you bring a decision \u2014 you\u2019ll see each one\u2019s verdict and lean right there, no extra tap needed. Want the full reasoning behind any of them? Tap that card.',
   },
 ]
 

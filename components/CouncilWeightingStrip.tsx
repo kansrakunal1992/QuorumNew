@@ -1,5 +1,6 @@
 'use client'
 // components/CouncilWeightingStrip.tsx
+import { PERSONAS } from '@/lib/personas'
 // S2-02: Reveals which advisors were weighted most heavily for this specific decision,
 // and why. Shows immediately after synthesis completes — same experience for all tiers
 // (< 3 sessions, teaser, and unlocked). It explains the synthesis they already received
@@ -38,14 +39,11 @@ const LABELS: Record<string, string> = {
   competitor:         'Competitor',
 }
 
-const ACCENTS: Record<string, string> = {
-  contrarian:         '#b03535',
-  risk_architect:     '#3268b0',
-  pattern_analyst:    '#2e8a58',
-  stakeholder_mirror: '#7230a8',
-  elder:              '#a86a20',
-  competitor:         '#5e6830',
-}
+// ACCENTS consolidated into PersonaMeta.accentColor (lib/types.ts /
+// lib/personas.ts) — was one of three independent copies of the same six
+// values; see accentColor's doc comment for the other two. LABELS above is
+// a separate, pre-existing duplicate of PERSONAS[key].label — left as-is,
+// out of scope for this pass (colors only).
 
 // Sprint 1 follow-on: an advisor outside the top 3 by raw weight can still
 // have moved a lot since the last version (e.g. Elder dropping 8pts while
@@ -112,7 +110,7 @@ export default function CouncilWeightingStrip({ weights, previousWeights = null,
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {sorted.map(([key, score]) => {
           const barWidth = Math.round((score / maxScore) * 100)
-          const accent   = ACCENTS[key] ?? 'var(--text-4)'
+          const accent   = PERSONAS[key as keyof typeof PERSONAS]?.accentColor ?? 'var(--text-4)'
           const pct      = Math.round(score * 100)
           // P1: delta vs previous synthesis version, if supplied.
           const prevPct  = previousWeights ? Math.round((previousWeights[key] ?? score) * 100) : null

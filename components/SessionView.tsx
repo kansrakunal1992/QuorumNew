@@ -99,29 +99,23 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     // which no element in this file actually carries — a pre-existing
     // mismatch, unrelated to the unified session flag, found while fixing
     // the items below. The six-persona grid's real attribute is
-    // "council-personas" (see the disclosure-toggle grid further down).
+    // "council-personas".
     targetSelector: '[data-tour-id="council-personas"]',
     heading:        isUnifiedSessionEnabled() ? 'One read by default, six advisors on demand' : 'Six advisors, six different lenses',
+    // Copy audit, round 2: was "...just collapsed here by default" — that
+    // described the six-card section as invisible until a separate
+    // disclosure click, which was true when this was written but no longer
+    // is now that the disclosure toggle itself is gone (see the removed
+    // council-disclosure-toggle step below, and councilExpanded's removal
+    // further down this file) — the glance strip + six cards are visible
+    // the moment synthesis is ready, no click required. Each card still
+    // opens collapsed to a summary, which is what this now describes.
     body: isUnifiedSessionEnabled()
-      ? 'Quorum leads with one synthesized read so you\'re not parsing six separate opinions to get the point. The six advisors are still doing the work — just collapsed here by default.'
+      ? 'Quorum leads with one synthesized read so you\'re not parsing six separate opinions to get the point. Each advisor\'s verdict and lean are right below, visible at a glance — tap any card for the full reasoning.'
       : 'Tap any card to read the full analysis. At the bottom of a finished card you\'ll find "Disagree or ask a follow-up" — use it to push back, and that advisor responds directly. Challenge one, and the same option appears highlighted on the others. Once you have, the verdict below updates to reflect it.',
     preferredSide:  'top',
   },
   ...(isUnifiedSessionEnabled() ? [
-    {
-      id:             'council-disclosure-toggle',
-      targetSelector: '[data-tour-id="council-disclosure-toggle"]',
-      heading:        'See how Quorum got here',
-      // Copy audit (Sprint 4): was "the full breakdown behind the read
-      // above... This reveals all six advisors individually" — accurate
-      // before the tiered reveal (Sprint 2), when this click landed you on
-      // full text for all six. Now the first thing this reveals is a
-      // glanceable, color-coded summary per advisor — the full reasoning
-      // for any one of them is a further, per-card tap. Tightened so this
-      // doesn't promise the full breakdown at the tap this step points to.
-      body:           'Want to see where each advisor landed? This reveals all six, at a glance — a verdict and a color for each. Tap any one for the full reasoning. Hidden by default, never removed.',
-      preferredSide:  'top',
-    } as TourStep,
     {
       id:             'council-challenge-new',
       targetSelector: '[data-tour-id="council-challenge-new"]',
@@ -365,6 +359,10 @@ export default function SessionView({ session: initialSession, initialMessages =
   // Point 4: tracks whether the final decision has been locked, so
   // RecordReceipt (the "you're done" signal) can be withheld until it has.
   const [decisionLocked,   setDecisionLocked]   = useState(!!initialSession.final_decision_locked_at)
+  // D2 fix: brief highlight on the lock-decision section when Save Record
+  // is clicked before locking — scrollIntoView alone can be easy to miss on
+  // a phone if the section was already partly in view.
+  const [lockSectionPulse, setLockSectionPulse] = useState(false)
   const [predictedChoiceForReveal, setPredictedChoiceForReveal] = useState<string | null>(initialSession.quorum_predicted_choice ?? null)
   // Unified session, point 5: progressive reveal. Synthesis (and everything
   // gated on synthesisDone below it) stays visually hidden — still
@@ -404,10 +402,6 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [biasNote,            setBiasNote]            = useState<{ label: string; reasoning: string } | null>(null)
   // Sprint TOUR-1: council tour
   const [showCouncilTour,     setShowCouncilTour]     = useState(false)
-  // Unified session flag: six-persona grid renders collapsed behind a
-  // disclosure instead of always-open. Irrelevant when the flag is off —
-  // the grid ignores this and always renders as before.
-  const [councilExpanded,     setCouncilExpanded]     = useState(false)
   const [councilTourSteps,    setCouncilTourSteps]    = useState<TourStep[]>(COUNCIL_STEPS_BASE)
   const [contradiction,       setContradiction]       = useState<{
     id: string
@@ -1289,6 +1283,21 @@ export default function SessionView({ session: initialSession, initialMessages =
     // true, but guard the handler itself too in case it's ever wired up
     // elsewhere without that disabled state.
     if (councilSettling) return
+    // Was: the two Save Record buttons stayed `disabled` outright while
+    // synthesisDone && !decisionLocked, which is correct in principle (you
+    // shouldn't be able to save before locking) but gives someone tapping a
+    // disabled button on a phone zero feedback about *why*, or where to go
+    // fix it — disabled buttons don't even fire onClick. Buttons are
+    // clickable now regardless of lock state (see their disabled props
+    // below); this guard is what replaces the old disabled-state gate,
+    // and actually tells the user where to go instead of just refusing.
+    if (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked) {
+      document.querySelector('[data-tour-id="council-make-decision"]')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setLockSectionPulse(true)
+      window.setTimeout(() => setLockSectionPulse(false), 1600)
+      return
+    }
     setSaving(true)
     try {
       const res = await fetch('/api/record', {
@@ -1654,11 +1663,11 @@ export default function SessionView({ session: initialSession, initialMessages =
             <button
               className="btn-primary"
               onClick={handleSaveRecord}
-              disabled={saving || councilSettling || (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)}
+              disabled={saving || councilSettling}
               title={
                 councilSettling ? 'Council is still working — one moment.'
                 : (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)
-                  ? 'Lock in your decision and review date first — that step is required before saving.'
+                  ? 'Lock in your decision and review date first — takes you there now.'
                   : undefined
               }
               data-tour-id="council-save"
@@ -2220,7 +2229,14 @@ export default function SessionView({ session: initialSession, initialMessages =
                   by the time synthesis is ready, there's enough on screen
                   for the user to actually decide. */}
               {isUnifiedSessionEnabled() && synthesisDone && predictionAcknowledged && (
-                <div data-tour-id="council-make-decision">
+                <div
+                  data-tour-id="council-make-decision"
+                  style={{
+                    borderRadius:   14,
+                    boxShadow:      lockSectionPulse ? '0 0 0 3px var(--gold)' : '0 0 0 0px transparent',
+                    transition:     'box-shadow 0.3s ease',
+                  }}
+                >
                   <PredictionReveal
                     sessionId={session.id}
                     authToken={authTokenSV}
@@ -2237,45 +2253,19 @@ export default function SessionView({ session: initialSession, initialMessages =
                 </div>
               )}
 
-              {/* ── Unified session flag: Council disclosure toggle ──
-                  "Hidden by default, never removed" — the six personas below
-                  still generate exactly as before (nothing changed in
-                  app/api/persona/route.ts); this only controls whether the
-                  grid is visible. Flag off → this renders nothing and the
-                  grid below is always visible, same as today. */}
-              {isUnifiedSessionEnabled() && synthesisDone && predictionAcknowledged && (
-                <button
-                  type="button"
-                  onClick={() => setCouncilExpanded(v => !v)}
-                  data-tour-id="council-disclosure-toggle"
-                  style={{
-                    display:       'flex',
-                    alignItems:    'center',
-                    gap:           6,
-                    margin:        '24px 0 12px',
-                    padding:       '8px 12px',
-                    background:    'transparent',
-                    border:        '1px solid var(--border-mid)',
-                    borderRadius:  10,
-                    color:         'var(--text-3)',
-                    fontFamily:    'var(--font-mono)',
-                    fontSize:      11,
-                    letterSpacing: '0.04em',
-                    cursor:        'pointer',
-                  }}
-                >
-                  {councilExpanded ? 'Hide internal deliberation' : 'See how Quorum got here'}
-                </button>
-              )}
-
               {/* ── 4. Six persona panels ── */}
-              {/* Council redesign (Sprint 2): the display:none toggle below now
-                  lives on this outer wrapper rather than the grid directly, so
-                  it covers the glance strip too — both appear/disappear
-                  together with the disclosure toggle above. */}
+              {/* Council redesign, round 2: the disclosure toggle that used to
+                  sit here ("See how Quorum got here" / setCouncilExpanded) is
+                  removed — the glance strip + card grid below now become
+                  visible automatically, no click required, the moment the
+                  same condition the toggle itself used to wait on before it
+                  would even render is met (synthesisDone && predictionAcknowledged).
+                  Nothing about the underlying Council generation changes —
+                  this only ever controlled visibility. Flag off → unchanged,
+                  always visible, identical to before. */}
               <div
                 style={{
-                  display: (isUnifiedSessionEnabled() && !councilExpanded) ? 'none' : undefined,
+                  display: (isUnifiedSessionEnabled() && !(synthesisDone && predictionAcknowledged)) ? 'none' : undefined,
                 }}
               >
                 {isUnifiedSessionEnabled() && (
@@ -2423,11 +2413,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                   className="btn-primary"
                   style={{ fontSize: 13, padding: '12px 28px', minHeight: 44 }}
                   onClick={handleSaveRecord}
-                  disabled={saving || councilSettling || (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)}
+                  disabled={saving || councilSettling}
                   title={
                     councilSettling ? 'Council is still working — one moment.'
                     : (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)
-                      ? 'Lock in your decision and review date above first — that step is required before saving.'
+                      ? 'Lock in your decision and review date above first — takes you there now.'
                       : undefined
                   }
                 >

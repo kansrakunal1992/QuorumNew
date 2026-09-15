@@ -11,26 +11,17 @@
 // mixing the two would make an already-overloaded "colored dot" visual
 // vocabulary mean two different things depending on where it appears.
 //
-// personaAccent below is a local copy of PersonaPanel.tsx's ACCENT_COLORS,
-// matching the existing precedent of an independent copy in
-// CouncilWeightingStrip.tsx rather than introducing a third import path
-// today — consolidating persona accent colors into one shared module is a
-// known, separately-tracked cleanup item, not part of this change.
+// Consolidation (round 2): the personaAccent local copy this comment used
+// to describe is gone — accentColor now lives once, on PersonaMeta
+// (lib/types.ts / lib/personas.ts), and PersonaPanel.tsx /
+// CouncilWeightingStrip.tsx read it from there too instead of each keeping
+// an independent copy of the same six values.
 
 import type { PersonaKey } from '@/lib/types'
 import { PERSONAS } from '@/lib/personas'
 import type { Lean } from './TensionInterstitial'
 import PersonaIcon from './PersonaIcon'
 import { LEAN_COLORS } from './LeanBadge'
-
-const personaAccent: Record<string, string> = {
-  contrarian:         '#b03535',
-  risk_architect:     '#3268b0',
-  pattern_analyst:    '#2e8a58',
-  stakeholder_mirror: '#7230a8',
-  elder:              '#a86a20',
-  competitor:         '#5e6830',
-}
 
 interface Props {
   orderedKeys: PersonaKey[]
@@ -60,7 +51,7 @@ export default function CouncilGlanceStrip({ orderedKeys, leans, expandedKeys, o
         const persona = PERSONAS[key]
         if (!persona) return null
         const lean = leans[key]
-        const accent = personaAccent[key] || 'var(--text-3)'
+        const accent = persona.accentColor || 'var(--text-3)'
         const isExpanded = expandedKeys?.has(key) ?? false
         const shortLabel = persona.label.replace(/^The\s+/, '')
 

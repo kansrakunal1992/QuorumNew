@@ -32,7 +32,7 @@ const SESSION_STEPS: { label: string; detail: string }[] = [
   {
     label: isUnifiedSessionEnabled() ? 'Six advisors respond from that read, in the background' : 'Six advisors respond from that read',
     detail: isUnifiedSessionEnabled()
-      ? 'The Contrarian, the Risk Architect, the Pattern Analyst, the Stakeholder Mirror, the Elder, and the Competitor each respond from their own angle on the same structural read — not six calls to the same generic model with different personas bolted on. You see one synthesized read by default; "See how Quorum got here" in any session reveals all six individually.'
+      ? 'The Contrarian, the Risk Architect, the Pattern Analyst, the Stakeholder Mirror, the Elder, and the Competitor each respond from their own angle on the same structural read — not six calls to the same generic model with different personas bolted on. You see one synthesized read by default, with each advisor\u2019s own verdict visible right below it \u2014 tap into any one for their full reasoning.'
       : 'The Contrarian, the Risk Architect, the Pattern Analyst, the Stakeholder Mirror, the Elder, and the Competitor each respond from their own angle on the same structural read — not six calls to the same generic model with different personas bolted on.',
   },
   {

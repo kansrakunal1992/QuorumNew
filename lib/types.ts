@@ -13,6 +13,15 @@ export interface PersonaMeta {
   label: string
   tagline: string
   prompt: string
+  /** Consolidation (round 2): was three independently-maintained copies —
+   *  ACCENT_COLORS in PersonaPanel.tsx, ACCENTS in CouncilWeightingStrip.tsx,
+   *  personaAccent in CouncilGlanceStrip.tsx — all holding the same six
+   *  values. One home now; all three read persona.accentColor instead.
+   *  Optional because synthesis/decision_brief (the two non-advisor entries
+   *  in PERSONAS) never had one in any of the three original maps — each
+   *  consuming file already falls back to its own neutral default when this
+   *  is absent, same as before. */
+  accentColor?: string
 }
 
 export interface Message {
