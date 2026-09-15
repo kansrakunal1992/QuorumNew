@@ -112,7 +112,14 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
       id:             'council-disclosure-toggle',
       targetSelector: '[data-tour-id="council-disclosure-toggle"]',
       heading:        'See how Quorum got here',
-      body:           'Want the full breakdown behind the read above? This reveals all six advisors individually — hidden by default, never removed.',
+      // Copy audit (Sprint 4): was "the full breakdown behind the read
+      // above... This reveals all six advisors individually" — accurate
+      // before the tiered reveal (Sprint 2), when this click landed you on
+      // full text for all six. Now the first thing this reveals is a
+      // glanceable, color-coded summary per advisor — the full reasoning
+      // for any one of them is a further, per-card tap. Tightened so this
+      // doesn't promise the full breakdown at the tap this step points to.
+      body:           'Want to see where each advisor landed? This reveals all six, at a glance — a verdict and a color for each. Tap any one for the full reasoning. Hidden by default, never removed.',
       preferredSide:  'top',
     } as TourStep,
     {
