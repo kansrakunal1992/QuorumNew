@@ -192,10 +192,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // to read. Under isUnifiedSessionEnabled(), that reasoning flips: the
   // position/realcost header (which survives collapse below, unaffected by
   // this state) now carries the "core value read" job, at every viewport —
-  // so the default becomes collapsed there, same as the disclosure toggle
-  // that already gates the whole six-card grid one level up. Flag OFF:
-  // unchanged — default open, still only visually enforced under 600px (see
-  // the plain .persona-body-mobile rule in globals.css; the new
+  // so the default becomes collapsed there. (The six-card grid one level up
+  // used to also be collapsed behind its own disclosure toggle — that's
+  // since been removed; the grid is visible automatically now, and this
+  // per-card collapse is the only remaining tier.) Flag OFF: unchanged —
+  // default open, still only visually enforced under 600px (see the plain
+  // .persona-body-mobile rule in globals.css; the new
   // [data-unified-session="true"] rules next to it are what make this class
   // apply at every width, only when the flag is on).
   const [mobileCollapsed, setMobileCollapsed] = useState(isUnifiedSessionEnabled())

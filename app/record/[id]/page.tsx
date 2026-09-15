@@ -1188,34 +1188,15 @@ export default async function RecordPage({ params }: Props) {
               </div>
             )}
 
-            {/* Unified session, point 5: CSS-only disclosure for the six standard
-                advisor cards below — no JavaScript, so this works on this
-                server component without converting it to client-side. The
-                checkbox is visually hidden; the label is the visible toggle.
-                Only affects elements with the .rec-persona-standard class
-                (Synthesis and the Decision Brief use different classes and
-                are never hidden by this). Flag off: the style rule below
-                targets a class that's simply not used differently, so this
-                whole block is inert — added but harmless either way; kept
-                simple by not conditionally omitting it. */}
-            {isUnifiedSessionEnabled() && (
-              <>
-                <style>{`
-                  #rec-council-reveal { position: absolute; opacity: 0; pointer-events: none; }
-                  #rec-council-reveal ~ .rec-persona-standard { display: none; }
-                  #rec-council-reveal:checked ~ .rec-persona-standard { display: block; }
-                  label[for="rec-council-reveal"] {
-                    display: inline-flex; align-items: center; gap: 6px;
-                    padding: 10px 22px; margin: 4px 0 16px; border-radius: 999px;
-                    border: 1px solid var(--gold-dim, var(--border-mid));
-                    background: var(--bg-card); color: var(--gold);
-                    font-size: 13px; font-weight: 600; cursor: pointer;
-                  }
-                `}</style>
-                <input type="checkbox" id="rec-council-reveal" />
-                <label htmlFor="rec-council-reveal">See how Quorum got here — all six advisors</label>
-              </>
-            )}
+            {/* Consistency pass: this CSS-only disclosure ("See how Quorum
+                got here — all six advisors") was built explicitly to mirror
+                the live session page's old Council disclosure toggle — see
+                the removed-toggle note in SessionView.tsx. That toggle is
+                gone (the six cards there are visible automatically now), so
+                this one is removed too rather than left as the one place
+                still hiding them behind a click. The six standard advisor
+                cards below render unconditionally now, same as everywhere
+                else in the product. */}
 
             {PERSONA_ORDER.map(key => {
               const msgs = byPersona[key]
@@ -1224,15 +1205,6 @@ export default async function RecordPage({ params }: Props) {
               const isSynthesis = key === 'synthesis'
               const isBrief     = key === 'decision_brief'
               const isElevated  = isSynthesis || isBrief
-
-              // Unified session, point 5 (revised): six standard cards below
-              // are collapsed via pure CSS (see the checkbox toggle inserted
-              // just before this map, and the accompanying <style> rule) —
-              // "hidden by default, one click to expand," matching the live
-              // session page, achieved without converting this server
-              // component to client-side and without touching the card
-              // markup below at all. Synthesis and the Decision Brief are
-              // unaffected — the CSS rule only targets .rec-persona-standard.
 
               // Bug fix: see extractTag/LEAN_LABELS above — realcost/lean
               // were being discarded with nothing shown in their place.

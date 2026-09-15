@@ -462,10 +462,11 @@ export default function SessionView({ session: initialSession, initialMessages =
   // Unified session, point 2 cleanup: initialized already-dismissed under the flag
   // rather than gating the JSX render below — this card's whole purpose is
   // building anticipation for watching six advisors stream in one by one,
-  // which no longer happens by default in this experience (Council is
-  // collapsed). Initializing the state directly (not just hiding the card)
-  // matters because downstream persona-streaming logic waits on this
-  // becoming true — skipping only the render would leave it stuck forever.
+  // which no longer happens by default in this experience (each card opens
+  // collapsed to a compact summary instead). Initializing the state directly
+  // (not just hiding the card) matters because downstream persona-streaming
+  // logic waits on this becoming true — skipping only the render would leave
+  // it stuck forever.
   const [ceremonyDismissed, setCeremonyDismissed] = useState(isUnifiedSessionEnabled())
   // Unified session, point 2 cleanup: same reasoning — QuorumReadCard is a
   // sessions-1-3 orientation aid explaining how the Council/Synthesis flow
@@ -2225,9 +2226,9 @@ export default function SessionView({ session: initialSession, initialMessages =
               )}
 
               {/* Unified session, Tier 2: make-your-decision + reveal. Same
-                  synthesisDone gate as the Council disclosure toggle below —
-                  by the time synthesis is ready, there's enough on screen
-                  for the user to actually decide. */}
+                  synthesisDone gate the Council section below uses to
+                  become visible — by the time synthesis is ready, there's
+                  enough on screen for the user to actually decide. */}
               {isUnifiedSessionEnabled() && synthesisDone && predictionAcknowledged && (
                 <div
                   data-tour-id="council-make-decision"
