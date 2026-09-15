@@ -1,1460 +1,2190 @@
-import { notFound } from 'next/navigation'
-import { formatDateTime, formatDate } from '@/lib/dates'
-import { createServiceClient } from '@/lib/supabase'
-import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
-import OutcomeTracker from '@/components/OutcomeTracker'
-import BriefCTA from '@/components/BriefCTA'
-import EmailCaptureCard from '@/components/EmailCaptureCard'
-import EarlyEchoCard from '@/components/EarlyEchoCard'
-import ValidationCard from '@/components/ValidationCard'
+'use client'
+
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
+import { getStoredSessionIds, pushSessionId, removeSessionId, getOrCreateDeviceId, storeUserEmail } from '@/lib/storage'
+import { parseExportFile, ACCEPTED_FILE_TYPES_LABEL, ACCEPTED_FILE_EXTENSIONS } from '@/lib/context-export-parser'
+import { useRouter } from 'next/navigation'
+import MemoryEngineStatus from '@/components/MemoryEngineStatus'
+import WatchlistSection from '@/components/WatchlistSection'
+import { isWatchlistEnabled, isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import AuthPanel from '@/components/AuthPanel'
+import BehaviorAlerts from '@/components/BehaviorAlerts'
+import dynamic from 'next/dynamic'
+const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
+import PatternSurfaceCard from '@/components/PatternSurfaceCard'
+import RecurringConditionCard from '@/components/RecurringConditionCard'
+import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'
+const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })
+import CalibrationRevealCard from '@/components/CalibrationRevealCard'
+import DecisionStarters from '@/components/DecisionStarters'
+import OnboardingTour from '@/components/OnboardingTour'
+import type { TourStep } from '@/components/OnboardingTour'
+import { buildPWAInstallStep, buildWatchlistTourStep } from '@/components/OnboardingTour'
+import ProfileCaptureOverlay from '@/components/ProfileCaptureOverlay' // SB-1
+import MeetTheCouncil from '@/components/MeetTheCouncil' // Item #4
+import FAQSection from '@/components/FAQSection' // Item #10
+import TrustBadgeStrip from '@/components/TrustBadgeStrip' // Trust Audit P0-3: pre-input trust strip
+import ReferralLink from '@/components/ReferralLink' // Item #17
 import ShareRecordButton from '@/components/ShareRecordButton'
-import BackButton from '@/components/BackButton'
-import { PERSONAS } from '@/lib/personas'
-import type { PersonaKey } from '@/lib/types'
-import { decrypt } from '@/lib/encryption'
-import TrustBadgeStrip from '@/components/TrustBadgeStrip'
-import DecisionTimeline from '@/components/DecisionTimeline'  // RET-5 Sprint 3
-import type { TimelineEntry } from '@/components/DecisionTimeline'
-import { getMirrorAccessState } from '@/lib/mirror-access'    // RET-5 Sprint 3
-import { isFoundingAvailable }  from '@/lib/founding'
-import RecordTour from '@/components/RecordTour'              // Sprint TOUR-1
-import RecordDecisionHero from '@/components/RecordDecisionHero'
-import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent, briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 
-// Bug fix: <realcost> and <lean> were being deleted by stripHeaderTags below
-// with nothing rendered in their place. <realcost> is substantive advisor
-// content (same category as <assumption>, which the code already treats as
-// content-preserving) — PersonaPanel.tsx shows it as its own "Real Cost"
-// section, but the record page had no equivalent, so it just vanished here.
-// <lean> is genuinely machine-only (per PersonaPanel's own design, never
-// shown as raw text) but PersonaPanel does translate it into a visible
-// "Leaning: X" / "Shifted after pushback → now leaning X" indicator — the
-// record page had no equivalent for that either, so the leaning signal was
-// silently lost, not just the raw tag. Same label wording as
-// PersonaPanel.tsx/WhatChangedDrawer.tsx's LEAN_LABELS.
-const LEAN_LABELS: Record<string, string> = {
-  proceed: 'Proceed',
-  wait:    'Wait',
-  mixed:   'Mixed',
-}
+// ── Icons ────────────────────────────────────────────────
+const IconScale = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v18M3 9l9-6 9 6M5 12l-2 5h4L5 12zM19 12l-2 5h4l-2-5zM3 21h18"/>
+  </svg>
+)
+const IconClock = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </svg>
+)
+const IconCheck = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+)
+const IconDot = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="12" r="6"/>
+  </svg>
+)
+const IconTrash = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+    <path d="M10 11v6M14 11v6"/>
+    <path d="M9 6V4h6v2"/>
+  </svg>
+)
+const IconChevron = ({ open }: { open: boolean }) => (
+  <svg
+    width="11" height="11" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+    style={{ transition: 'transform 0.25s ease', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}
+  >
+    <polyline points="9 18 15 12 9 6"/>
+  </svg>
+)
+// Item #33/#34 (audit §0): replaces the ⚔ emoji on the "Challenge my thinking"
+// framing option — same mark as the Contrarian persona icon in PersonaPanel.tsx,
+// so the two "challenge" affordances in the product read as the same idea.
+const IconChallenge = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+  </svg>
+)
+// Item #33/#34 (audit §0): replaces the 🪞 emoji on "Help me understand what I
+// want" — concentric circles read as "look inward" without borrowing a literal
+// mirror glyph that renders inconsistently across OS emoji sets.
+const IconMirror = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>
+  </svg>
+)
 
-function extractTag(raw: string, tag: string): string {
-  const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
-  return m ? m[1].trim() : ''
-}
-
-// Strip <lens>, <position>, <realcost>, <lean> tags stored in DB — rendered separately
-// in PersonaPanel (lean is never rendered, only used for the S3-01 tension interstitial)
-// but never cleaned before persistence, so record page must strip them before display
-function stripHeaderTags(raw: string): string {
-  return raw
-    .replace(/<lens>[\s\S]*?<\/lens>/g, '')
-    .replace(/<position>[\s\S]*?<\/position>/g, '')
-    .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
-    .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-    // Bug fix: <structural> was never stripped here at all — every persona
-    // response that includes a structural-echo citation (R6) was leaking
-    // the raw <structural>...</structural> tag straight onto this page.
-    .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
-    .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag (see PersonaPanel.tsx)
-    // Third bug fix (GPT-5-mini, Aug 2026) — see PersonaPanel.tsx's extractHeaderTags
-    // for the full explanation. Two leaked-lean shapes gpt-5-mini produces that the
-    // guard above doesn't catch: a bare enum word glued to the next capitalized
-    // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
-    .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
-    .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
-    // Shape 3 (seen leaking specifically in pushback replies, Aug 2026): bare value,
-    // no leading "<", but WITH the closing tag attached — e.g. "mixed</lean>".
-    .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
-    // Sprint 2 follow-on: <assumption> is content-preserving, unlike the
-    // tags above — it wraps substantive prose (Contrarian/Risk Architect's
-    // "hidden assumption" sentences), not a machine value or a citation
-    // meant to live elsewhere. Strip only the tag markers, keep the text.
-    .replace(/<\/?assumption>/g, '')
-    // Reversal Test <reversal> tag (all six personas) — same content-preserving
-    // treatment as <assumption> just above.
-    .replace(/<\/?reversal>/g, '')
-    // Numeric Provenance <estimate> tag (WORD_LIMIT_PREFIX #6, all six
-    // personas) — same content-preserving treatment as <assumption>/<reversal>
-    // above; the record page has no highlight styling here, so the tag
-    // markers are removed and the number stays in place.
-    .replace(/<\/?estimate>/g, '')
-    // New machine-only tag (mind-change tracking) — full removal, same as <lean>.
-    // Tolerant close: model sometimes closes with </pushback> instead of the
-    // full tag name (same drift as verdict_lean/pushback_classification
-    // elsewhere) — this was the one sink file still missing the tolerance,
-    // so a drifted close leaked raw markup onto the permanent record page.
-    .replace(/<pushback_classification>[\s\S]*?<\/(?:pushback_classification|pushback)>/g, '')
-    // Root-cause fix: this guard was previously combined into the early
-    // lens/position/realcost/lean/structural guard ABOVE the proper strip
-    // (see git history) — since that guard has no closing-tag requirement,
-    // it matched the FIRST <pushback_classification> it found (whether
-    // closed or not) and deleted everything from there to the end of the
-    // string, including the tag's own valid close and every word of the
-    // actual reply that followed it. That's what was silently wiping out
-    // assistant replies to a challenge on this page. Sequencing this guard
-    // AFTER the real strip (matching PersonaPanel.tsx's already-correct
-    // order) means it only ever fires on a genuinely unclosed tag.
-    .replace(/<pushback_classification>[\s\S]*$/, '') // guard: open tag without close
-    // Strip synthesis verdict block entirely (shown via SynthesisCard on session page)
-    .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
-    .replace(/<verdict>[\s\S]*/g, '')          // guard: open tag without close
-    // P2 fix: this file has its own independent tag-stripping copy (not shared
-    // with SynthesisCard.tsx or synthesis-summary/route.ts) — it never learned
-    // about the two tags added for forced-verdict-with-conditions, so they were
-    // leaking through raw as visible text on this page.
-    .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
-    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
-    // Counterfactual Analysis (new tag) — same defensive handling as
-    // conditions/key_question above.
-    .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
-    // Sprint 1 follow-on: same leak risk as verdict_lean/conditions above —
-    // this file never learned about key_question either.
-    .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
-    .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close
-    // Strip tension wrapper tags but keep the sentence text inline
-    .replace(/<\/?tension>/g, '')
-    .replace(/^\s+/, '')
-}
-
-// Truncates to the first complete sentence — same rule as SynthesisCard.tsx (S1-03),
-// guards against the model writing more than one sentence inside <verdict>.
-function firstSentence(text: string): string {
-  const m = text.match(/^[^.!?]*[.!?]/)
-  return m ? m[0].trim() : text.trim()
-}
-
-// Decision Action Plan / Confidence to Act: 3–4 items (resp. at most 1), each
-// "**lead phrase** — clause", pipe-separated (same wire format as <conditions>).
-// Mirrors components/SynthesisCard.tsx's parseActionPlan exactly, so the
-// static record page can render the same "What to do next" / "Before you
-// act" sections the live session view shows. Falls back to { lead: '', rest: raw }
-// if the model ever omits the ** markers — still renders as a plain line
-// rather than disappearing.
-function parseActionPlan(raw: string): { lead: string; rest: string }[] {
-  return raw.split('|').map(s => s.trim()).filter(Boolean).map(item => {
-    const m = item.match(/^\*\*(.+?)\*\*\s*[—-]\s*(.*)$/)
-    return m ? { lead: m[1].trim(), rest: m[2].trim() } : { lead: '', rest: item }
-  })
-}
-
-// Synthesis-only: pulls the <verdict> sentence, <conditions> list, <action_plan>
-// items and <confidence_to_act> note out separately (rendered in dedicated
-// callouts) and returns the remaining prose with all header tags removed but
-// <tension> tags still in place, so renderSynthesisProse can locate and
-// highlight the tension sentence inline — mirrors SynthesisCard.tsx exactly,
-// so the static record page matches what was shown live on the session page.
-function parseVerdictTension(raw: string): { verdict: string | null; conditions: string[]; counterfactual: string | null; keyQuestion: string | null; actionPlan: { lead: string; rest: string }[]; confidenceToAct: { lead: string; rest: string } | null; rest: string } {
-  const vMatch  = raw.match(/<verdict>([\s\S]*?)<\/verdict>/)
-  const verdict = vMatch?.[1]?.trim() ? firstSentence(vMatch[1].trim()) : null
-  const cMatch  = raw.match(/<conditions>([\s\S]*?)<\/conditions>/)
-  const conditions = cMatch?.[1] ? cMatch[1].split('|').map(s => s.trim()).filter(Boolean) : []
-  // Counterfactual Analysis (new tag) — same extraction shape as keyQuestion
-  // below: optional, at most one, no pipe-split (never a list).
-  const cfMatch = raw.match(/<counterfactual>([\s\S]*?)<\/counterfactual>/)
-  const counterfactual = cfMatch?.[1]?.trim() ?? null
-  // Sprint 1 follow-on: same primary source as the live session page
-  // (components/SynthesisCard.tsx) — see that file for the full rationale.
-  const kqMatch    = raw.match(/<key_question>([\s\S]*?)<\/key_question>/)
-  const keyQuestion = kqMatch?.[1]?.trim() ?? null
-  // Bug fix (tag-wiring guardrail gap): this file keeps its own independent copy
-  // of tag-handling logic, separate from SynthesisCard.tsx, RecordExport.tsx and
-  // the observation route — and it never learned about <action_plan> or
-  // <confidence_to_act> at all. Since those two tags were absent from every
-  // replace() below, they were never removed from "rest" (the flowing prose),
-  // so they rendered as raw, visible <action_plan>/<confidence_to_act> markup
-  // on this page instead of the styled sections SessionView shows. Extracting
-  // them here — same shape/parser as SynthesisCard.tsx — fixes both the raw-tag
-  // leak and the missing content in one pass.
-  const apMatch = raw.match(/<action_plan>([\s\S]*?)<\/action_plan>/)
-  const actionPlan = apMatch?.[1] ? parseActionPlan(apMatch[1]) : []
-  const caMatch = raw.match(/<confidence_to_act>([\s\S]*?)<\/confidence_to_act>/)
-  const confidenceToAct = caMatch?.[1] ? (parseActionPlan(caMatch[1])[0] ?? null) : null
-  const rest = raw
-    .replace(/<verdict>[\s\S]*?<\/verdict>\n*/g, '')
-    .replace(/<verdict>[\s\S]*/g, '')   // guard: open tag without close
-    // P2 fix: these two were never stripped here — the actual source of the
-    // raw-tag leak the user saw, since "rest" is what gets rendered as body prose.
-    .replace(/<verdict_lean>[\s\S]*?<\/verdict(?:_lean)?>\n*/g, '')
-    .replace(/<conditions>[\s\S]*?<\/conditions>\n*/g, '')
-    // Same fix as conditions above: extracted into its own line, must not
-    // also remain in the flowing prose.
-    .replace(/<counterfactual>[\s\S]*?<\/counterfactual>\n*/g, '')
-    // Sprint 1 follow-on: extracted above into its own callout, same as
-    // verdict/conditions — must not also remain in the flowing prose.
-    .replace(/<key_question>[\s\S]*?<\/key_question>\n*/g, '')
-    // Guardrail follow-up: conditions/key_question never had a fallback for a
-    // truncated run (only verdict/action_plan/confidence_to_act did) — a cut-off
-    // mid-<conditions> or mid-<key_question> generation left raw markup in
-    // "rest" here, same failure mode already fixed for the other tags below.
-    .replace(/<(?:verdict_lean|conditions|counterfactual|key_question)>[\s\S]*$/, '') // guard: open tag without close
-    // Same fix as above: extracted into their own callouts, must not also
-    // remain in the flowing prose. Includes a guard for the unclosed-tag case
-    // (a synthesis run that got cut short before </action_plan>/</confidence_to_act>
-    // arrived — see lib/ai-client.ts max_tokens note) so a truncated run degrades
-    // to "missing section" rather than "raw tag markup visible on the page".
-    .replace(/<action_plan>[\s\S]*?<\/action_plan>\n*/g, '')
-    .replace(/<action_plan>[\s\S]*$/, '')          // guard: open tag without close
-    .replace(/<confidence_to_act>[\s\S]*?<\/confidence_to_act>\n*/g, '')
-    .replace(/<confidence_to_act>[\s\S]*$/, '')     // guard: open tag without close
-    .replace(/<lens>[\s\S]*?<\/lens>/g, '')
-    .replace(/<position>[\s\S]*?<\/position>/g, '')
-    .replace(/<realcost>[\s\S]*?<\/realcost>/g, '')
-    .replace(/<lean>[\s\S]*?<\/lean>/g, '')
-    // Bug fix: <structural> and <assumption> were never stripped in this
-    // synthesis-specific path either — same leak, different function.
-    // <structural> is a citation meant to live elsewhere (full removal,
-    // matching lens/position/realcost above); <assumption> wraps
-    // substantive prose, so only the tag markers are removed, not the text.
-    .replace(/<structural>[\s\S]*?<\/structural>/g, '')
-    .replace(/<(?:lens|position|realcost|lean|structural)>[\s\S]*$/, '') // guard: open tag without close
-    .replace(/<\/?(?:proceed|wait|mixed)>\s*/gi, '')          // guard: stray malformed lean-value tag
-    // Third bug fix (GPT-5-mini, Aug 2026) — see PersonaPanel.tsx's extractHeaderTags
-    // for the full explanation. Two leaked-lean shapes gpt-5-mini produces that the
-    // guard above doesn't catch: a bare enum word glued to the next capitalized
-    // sentence ("mixedThis is..."), and a truncated open tag ("<mixed</lean>").
-    .replace(/^(?:proceed|wait|mixed)\s*(?=[A-Z])/, '')
-    .replace(/^<(?:proceed|wait|mixed)<\/lean>\s*/i, '')
-    // Shape 3 (seen leaking specifically in pushback replies, Aug 2026): bare value,
-    // no leading "<", but WITH the closing tag attached — e.g. "mixed</lean>".
-    .replace(/^(?:proceed|wait|mixed)<\/lean>\s*/i, '')
-    .replace(/<\/?assumption>/g, '')
-    .replace(/<\/?reversal>/g, '')
-    // Numeric Provenance <estimate> tag — same content-preserving treatment,
-    // synthesis-specific path (see the persona-view path above for the
-    // fuller comment).
-    .replace(/<\/?estimate>/g, '')
-    .trimStart()
-  return { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest }
-}
-
-// ── Decision Brief renderer (record page presentation) ──────────────────────
-// The Decision Brief persona (lib/personas.ts DECISION_BRIEF) writes "Key
-// insights / Risks / Contradictions / Recommended direction / Open questions"
-// as plain markdown — **bold** spans, section titles, "- " bullets — but
-// nothing on this page ever parsed it. stripHeaderTags only removes machine
-// tags (<lens>, <verdict>, etc.), so brief content fell through to the same
-// plain whiteSpace:pre-wrap <p> used for ordinary advisor prose, leaving
-// literal asterisks/hashes/dashes visible instead of headers/bold/bullets.
-// Parsing itself now lives in lib/brief-markdown.ts, shared with the live
-// "Generate Decision Brief" renderer in components/SynthesisCard.tsx, so the
-// two can only drift in styling from here on, not in what counts as a
-// header/bold span — that per-file drift is exactly what let one of them
-// (SynthesisCard's, which only ever recognized plain ALL-CAPS lines) fail to
-// recognize the "## Header" / "**Header**" conventions the model also uses.
-function renderBriefInline(line: string): React.ReactNode {
-  return parseBriefInline(line).map((s, i) => s.bold
-    ? <strong key={i} style={{ color: 'var(--text-1)', fontWeight: 600 }}>{s.text}</strong>
-    : <span key={i}>{s.text}</span>)
-}
-
-function renderBriefBody(raw: string): React.ReactNode {
-  const lines = stripHeaderTags(raw).split('\n')
-  // First non-blank line only — see briefLineIsRedundantTitle's definition
-  // in lib/brief-markdown.ts for why this specific line sometimes needs
-  // skipping rather than rendering as a(nother) heading.
-  const firstContentIdx = lines.findIndex(l => l.trim().length > 0)
-  return (
-    <>
-      {lines.map((line, i) => {
-        const trimmed = line.trim()
-        if (!trimmed) return null
-        if (i === firstContentIdx && briefLineIsRedundantTitle(trimmed)) return null
-        const header = briefLineHeader(trimmed)
-        if (header) {
-          return (
-            <p key={i} style={{
-              fontFamily:    'var(--font-mono)',
-              fontSize:      10.5,
-              fontWeight:    700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color:         'var(--gold)',
-              margin:        i === 0 ? '0 0 8px' : '16px 0 8px',
-            }}>
-              {header}
-            </p>
-          )
-        }
-        const isBullet = briefLineIsBullet(trimmed)
-        const content  = isBullet ? briefBulletContent(trimmed) : trimmed
-        return (
-          <p key={i} style={{
-            fontSize:    13.5,
-            lineHeight:  1.75,
-            color:       'var(--text-2)',
-            margin:      '0 0 6px',
-            paddingLeft: isBullet ? 14 : 0,
-            position:    'relative',
-          }}>
-            {isBullet && <span style={{ position: 'absolute', left: 0 }}>–</span>}
-            {renderBriefInline(content)}
-          </p>
-        )
-      })}
-    </>
-  )
-}
-
-// Renders synthesis prose with the <tension> sentence highlighted inline —
-// same visual treatment (background + underline) as SynthesisCard.tsx.
-function renderSynthesisProse(rest: string): React.ReactNode {
-  const tStart = rest.indexOf('<tension>')
-  const tEnd   = rest.indexOf('</tension>')
-  if (tStart === -1 || tEnd === -1 || tEnd <= tStart) {
-    return <>{rest.replace(/<\/?tension>/g, '')}</>
-  }
-  const before  = rest.slice(0, tStart)
-  const content = rest.slice(tStart + '<tension>'.length, tEnd)
-  const after   = rest.slice(tEnd + '</tension>'.length)
-  return (
-    <>
-      {before}
-      <span style={{
-        background:    'var(--tension-highlight-bg)',
-        borderBottom:  '1px solid var(--tension-highlight-border)',
-        paddingBottom: 1,
-        borderRadius:  2,
-      }}>{content}</span>
-      {after}
-    </>
-  )
-}
-
-// Full synthesis message: verdict in a gold box (if present) + prose below
-// with the tension sentence highlighted inline. Used for both the initial
-// synthesis message and any reanalysis/pushback synthesis responses.
-function renderSynthesisMessage(raw: string): React.ReactNode {
-  const { verdict, conditions, counterfactual, keyQuestion, actionPlan, confidenceToAct, rest } = parseVerdictTension(raw)
-  return (
-    <>
-      {verdict && (
-        <div style={{
-          borderLeft:   '5px solid var(--verdict-accent)',
-          background:   'var(--verdict-bg)',
-          borderRadius: '0 10px 10px 0',
-          padding:      '14px 20px',
-          marginBottom: 16,
-          boxShadow:    'var(--verdict-shadow)',
-        }}>
-          <p style={{
-            fontFamily:    'var(--font-mono)',
-            fontSize:      9,
-            fontWeight:    700,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color:         'var(--verdict-accent)',
-            margin:        '0 0 8px',
-          }}>
-            Council verdict
-          </p>
-          <p style={{
-            fontFamily:    'var(--font-display)',
-            fontSize:      17,
-            fontWeight:    500,
-            color:         'var(--text-1)',
-            lineHeight:    1.65,
-            letterSpacing: '-0.01em',
-            margin:        0,
-          }}>
-            {verdict}
-          </p>
-          {/* P2 parity fix: same "Conditional on" treatment as the live
-              session view (components/SynthesisCard.tsx) — only rendered
-              when conditions were actually supplied. */}
-          {conditions.length > 0 && (
-            <>
-              <p style={{
-                fontFamily:    'var(--font-mono)',
-                fontSize:      9,
-                fontWeight:    700,
-                letterSpacing: '0.10em',
-                textTransform: 'uppercase',
-                color:         'var(--text-4)',
-                margin:        '12px 0 6px',
-              }}>
-                Conditional on
-              </p>
-              <ul style={{
-                margin:        0,
-                paddingLeft:   16,
-                display:       'flex',
-                flexDirection: 'column',
-                gap:           3,
-              }}>
-                {conditions.map((c, i) => (
-                  <li key={i} style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
-                    {c}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {/* Counterfactual Analysis — same mono-label treatment as
-              Conditional On above, matching SynthesisCard.tsx's main card
-              (both in the "verdict sensitivity" family per the
-              point-ownership hierarchy in lib/personas.ts). */}
-          {counterfactual && (
-            <>
-              <p style={{
-                fontFamily:    'var(--font-mono)',
-                fontSize:      9,
-                fontWeight:    700,
-                letterSpacing: '0.10em',
-                textTransform: 'uppercase',
-                color:         'var(--text-4)',
-                margin:        '12px 0 6px',
-              }}>
-                If different
-              </p>
-              <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, margin: 0 }}>
-                {counterfactual}
-              </p>
-            </>
-          )}
-          {/* Sprint 1 follow-on parity fix: same Worth Confirming treatment
-              as the live session view — this file's own header comment says
-              it should match what was shown live, and dropping this content
-              silently on the permanent record would be a real loss, not
-              just a cosmetic gap. */}
-          {keyQuestion && (
-            <div style={{
-              background:   'var(--worth-confirming-highlight-bg)',
-              borderLeft:   '2px solid var(--worth-confirming-highlight-border)',
-              borderRadius: 4,
-              padding:      '9px 11px',
-              margin:       '12px 0 0',
-            }}>
-              <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55, margin: 0 }}>
-                <strong style={{ color: 'var(--text-1)' }}>Worth confirming</strong> — {keyQuestion}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-      <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap', margin: 0 }}>
-        {renderSynthesisProse(rest)}
-      </p>
-      {/* Parity fix: same "What to do next" / "Before you act" treatment as the
-          live session view (components/SynthesisCard.tsx) — this content was
-          previously extracted nowhere on this page, so it either leaked as raw
-          <action_plan>/<confidence_to_act> markup or (when the tag opened but
-          never closed, e.g. a truncated run) got silently swallowed by the
-          unclosed-tag guard above. Rendering it here keeps the permanent record
-          matching what was shown live. */}
-      {actionPlan.length > 0 && (
-        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-dim)' }}>
-          <div style={{
-            borderLeft:   '3px solid var(--action-accent)',
-            background:   'var(--action-bg)',
-            borderRadius: '0 10px 10px 0',
-            padding:      '14px 20px',
-          }}>
-            <p style={{
-              fontFamily:    'var(--font-mono)',
-              fontSize:      9,
-              fontWeight:    700,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color:         'var(--action-accent)',
-              margin:        '0 0 2px',
-            }}>
-              What to do next
-            </p>
-            <p style={{ fontSize: 10, color: 'var(--text-4)', fontStyle: 'italic', margin: '0 0 12px' }}>
-              in order of impact
-            </p>
-            {actionPlan.map((item, i) => (
-              <p key={i} style={{
-                fontSize:   13,
-                color:      'var(--text-2)',
-                lineHeight: 1.7,
-                margin:     i === actionPlan.length - 1 ? 0 : '0 0 10px',
-              }}>
-                {item.lead && (
-                  <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
-                )}
-                {item.lead && ' — '}
-                {item.rest}
-              </p>
-            ))}
-            {confidenceToAct && (
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--action-note-border)' }}>
-                <p style={{
-                  fontFamily:    'var(--font-mono)',
-                  fontSize:      9,
-                  fontWeight:    700,
-                  letterSpacing: '0.10em',
-                  textTransform: 'uppercase',
-                  color:         'var(--text-4)',
-                  margin:        '0 0 6px',
-                }}>
-                  Before you act
-                </p>
-                <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
-                  {confidenceToAct.lead && (
-                    <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
-                  )}
-                  {confidenceToAct.lead && ' — '}
-                  {confidenceToAct.rest}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
-
-// Strip the examiner-style wrapper that automatic advisor-to-advisor context
-// sharing prepends to pushback messages before they are saved to the DB —
-// mirrors the same function in the brief PDF route so both surfaces show
-// only the raw pushback text.
-function cleanPushbackText(raw: string): string {
-  return raw
-    .replace(/^[^"\n]*[:\n]+\s*/i, '')
-    // Bug fix: this required the closing quote to sit at (or right near) the
-    // end of the string. That was true for the directly-challenged advisor
-    // (PersonaPanel.tsx stores the raw challenge text with no wrapper at all),
-    // but the five auto-shared advisors receive the full examinerMsg template
-    // (components/SessionView.tsx, handleShareContext) — which appends
-    // "Reassess it independently through your own lens..." and "Provide a
-    // concise update..." AFTER the closing quote. Since nothing used to
-    // follow the quote, that instructional tail was left in place and
-    // rendered as if it were part of the pushback. Matching the FIRST quoted
-    // segment (non-greedy, no end anchor) instead of "everything to the end
-    // is one big quote" fixes this regardless of what trails it.
-    .replace(/^"([\s\S]*?)"[\s\S]*$/, '$1')
-    // Belt-and-suspenders for the same wrapper's instruction lines, in case a
-    // stored message ever lacks the quote marks.
-    .replace(/\s*Reassess it independently through your own lens[\s\S]*$/i, '')
-    .replace(/\s*Provide a concise update[\s\S]*$/i, '')
-    .trim()
-}
-
-interface Props {
-  params: Promise<{ id: string }>
-}
-
-const PERSONA_ORDER: PersonaKey[] = [
-  'decision_brief',
-  'synthesis',
-  'contrarian',
-  'risk_architect',
-  'pattern_analyst',
-  'stakeholder_mirror',
-  'elder',
-  'competitor',
+const PERSONAS_GRID = [
+  { label: 'The Contrarian',    hint: 'Argues your instinct away', col: '#c04040' },
+  { label: 'Risk Architect',    hint: 'Pre-mortems all failures',  col: '#3a78c4' },
+  { label: 'Pattern Analyst',   hint: 'Finds your past analogues', col: '#38a468' },
+  { label: 'Stakeholder Mirror',hint: 'Who else is affected',      col: '#8840c4' },
+  { label: 'The Elder',         hint: 'Decade-level wisdom',       col: '#c08030' },
+  { label: 'The Competitor',    hint: 'Bets against your choice',  col: '#788040' },
 ]
 
-function decryptText(value: string | null | undefined): string {
-  return decrypt(value) ?? ''
+interface SessionSummary {
+  id: string
+  decision_text: string
+  created_at: string
+  outcome: { what_decided: string; council_helped: string } | null
 }
 
-// TSD §2.7.3 / handover PENDING fix: the Decision Arc timeline used to be
-// built from `childSessions` alone — direct children of the root only
-// (single hop). Correct for a decision reanalyzed once (root ← revisit),
-// but a decision reanalyzed twice or more (root ← B ← C) has a grandchild
-// (C) that never satisfies `parent_session_id = root.id`, so it silently
-// never appeared in the timeline when viewed from the root — even though
-// each individual link (root←B, B←C) was itself perfectly correct.
-//
-// Walks the chain outward one level at a time, breadth-first, starting
-// from the root's already-fetched direct children, until a level returns
-// nothing new. An application-level loop rather than a recursive SQL CTE
-// on purpose: reanalyze chains are expected to stay short in practice (a
-// handful of revisits at most), so a few extra sequential round trips for
-// the rare long chain is simpler to reason about, debug, and test than a
-// WITH RECURSIVE query for a case this uncommon.
-async function walkDescendantChain(
-  rootId: string,
-  directChildren: { id: string; created_at: string }[],
-  supabase: ReturnType<typeof createServiceClient>,
-): Promise<{ id: string; created_at: string }[]> {
-  const all: { id: string; created_at: string }[] = [...directChildren]
-  let frontier = directChildren.map(c => c.id)
-  const seen = new Set<string>([rootId, ...frontier])
-
-  // Hard cap, not just a loop-terminator: bounds the worst case if a data
-  // integrity bug ever produced a cycle, so one page load can't turn into
-  // an unbounded number of queries. 25 hops is far beyond any realistic
-  // reanalyze chain — this is a safety rail, not an expected depth.
-  const MAX_HOPS = 25
-  for (let hop = 0; hop < MAX_HOPS && frontier.length > 0; hop++) {
-    const { data: nextLevel } = await supabase
-      .from('sessions')
-      .select('id, created_at')
-      .in('parent_session_id', frontier)
-
-    const fresh = (nextLevel ?? []).filter(c => !seen.has(c.id))
-    if (fresh.length === 0) break
-
-    for (const c of fresh) seen.add(c.id)
-    all.push(...fresh)
-    frontier = fresh.map(c => c.id)
-  }
-
-  return all
+interface ContextAttachment {
+  id: string
+  name: string
+  text: string
+  charCount: number
+  truncated: boolean
 }
 
-export default async function RecordPage({ params }: Props) {
-  const { id } = await params
-  const supabase = createServiceClient()
+// Per-file cap for context-box attachments. Deliberately much smaller than
+// context-export-parser's own 400k-char cap (~100k tokens) — that ceiling
+// is sized for building a persistent Mirror profile from a full chat
+// export. This is supplementary context for one decision, so a file's
+// extracted text is capped further here to stay proportionate to what a
+// persona prompt can actually use.
+const CONTEXT_ATTACHMENT_CHAR_CAP = 8_000
 
-  const [sessionResult, messagesResult, outcomeResult, childSessionsResult, graphEdgeCountResult] = await Promise.all([
-    supabase.from('sessions').select('*').eq('id', id).single(),
-    supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
-    supabase.from('outcomes').select('*').eq('session_id', id).single(),
-    // RET-5 Sprint 1: any sessions that revisit THIS one (forward link)
-    supabase.from('sessions').select('id, created_at').eq('parent_session_id', id).order('created_at', { ascending: false }),
-    // Sprint G4 breadcrumb: count graph edges touching this session (Mirror-gated, shown only when > 0)
-    supabase.from('graph_edges')
-      .select('*', { count: 'exact', head: true })
-      .or(`session_id_a.eq.${id},session_id_b.eq.${id}`)
-      .is('dismissed_at', null),
-  ])
+// ── Sprint TOUR-1: Home page tour steps ──────────────────────────────────────
+// Fires once after inputRevealed transitions to true on a first-time user.
+// A PWA install step is appended dynamically at runtime when the user is on
+// a mobile browser and has already linked their email.
+const HOME_STEPS_BASE: TourStep[] = [
+  {
+    id:             'home-textarea',
+    targetSelector: '[data-tour-id="home-textarea"]',
+    heading:        'Describe your decision here',
+    body:           'Be specific — not "should I hire someone" but the actual decision with names, numbers, and stakes. The Council reads specificity as signal.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'home-voice',
+    targetSelector: '[data-tour-id="home-voice"]',
+    heading:        'Or speak it out loud',
+    body:           'Tap the microphone and say your decision aloud. Articulating it verbally surfaces things you haven\'t fully formed yet — most users find it sharpens the framing before they even hear the Council.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'home-context',
+    targetSelector: '[data-tour-id="home-context"]',
+    heading:        'Add context if you have it',
+    body:           'This is where the details go — type them, or attach a file (notes, term sheets, even a ChatGPT export) and Quorum pulls the text in for you. The Council treats context as evidence, not decoration. Optional, but it sharpens the analysis significantly.',
+    preferredSide:  'bottom',
+  },
+  {
+    id:             'home-submit',
+    targetSelector: '[data-tour-id="home-submit"]',
+    heading:        'Convene the Council',
+    body:           'When ready, bring your decision to the table. Before submitting, rate your current clarity with the confidence slider that appears as you type — Quorum tracks how it compares to the actual outcome over time.',
+    preferredSide:  'top',
+  },
+]
 
-  if (sessionResult.error || !sessionResult.data) notFound()
+export default function Home() {
+  const router      = useRouter()
+  const historyRef  = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const contextFileInputRef = useRef<HTMLInputElement>(null)
 
-  const session = {
-      ...sessionResult.data,
-      decision_text: decryptText(sessionResult.data.decision_text),
-      context_text: decrypt(sessionResult.data.context_text),
-      // Unified session, point 7: final_decision is encrypted the same way
-      // decision_text is (see supabase/sprint_prediction_layer.sql) — raw
-      // user input, not AI-derived. commitment_leaning predates this flag
-      // (components/DecisionStateCard.tsx) but is shown in the same new
-      // section for continuity on older records that used that card.
-      final_decision: sessionResult.data.final_decision ? decryptText(sessionResult.data.final_decision) : null,
-      commitment_leaning: sessionResult.data.commitment_leaning ? decryptText(sessionResult.data.commitment_leaning) : null,
-    }
-  
-    const messages = (messagesResult.data ?? []).map(msg => ({
-      ...msg,
-      content: decryptText(msg.content),
-    }))
+  // ── Form state ────────────────────────────────────────
+  const [decision,    setDecision]    = useState('')
+  const [context,     setContext]     = useState('')
+  const [formKey,     setFormKey]     = useState(0)
+  const [loading,     setLoading]     = useState(false)
+  const [showContext, setShowContext] = useState(false)
+  const [contextAttachments, setContextAttachments] = useState<ContextAttachment[]>([])
+  const [attaching,          setAttaching]          = useState(false)
+  const [attachError,        setAttachError]        = useState('')
+  const [error,       setError]       = useState('')
+  const [registerMode,          setRegisterMode]          = useState<'analytical'|'clarification'>('analytical')
+  const [framingIntent,         setFramingIntent]         = useState<'challenge'|'clarify'|'right'>('challenge')
+  const [showProfileCapture,    setShowProfileCapture]    = useState(false)
+  const [preDecisionConfidence, setPreDecisionConfidence] = useState<number>(5)
 
-  const outcome  = outcomeResult.data
-    ? { ...outcomeResult.data, what_decided: decryptText(outcomeResult.data.what_decided) }
-    : null
-
-  // P0 fix: RecordTour previously had no awareness of the user's real decision
-  // count or of prior tour completion — it was gated on localStorage alone, so
-  // an established user (e.g. 5 decisions already on record) opening the app on
-  // a fresh device/PWA install would see a "first decision" tour here too, the
-  // same bug already found and fixed on the Session View / Council tour. Both
-  // queries depend on session.user_id, which isn't known until sessionResult
-  // above has resolved, so this is a second, smaller Promise.all rather than
-  // folded into the first one.
-  const [totalSessionCountResult, tourProfileResult] = await Promise.all([
-    session.user_id
-      ? supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('user_id', session.user_id)
-      : Promise.resolve({ count: null }),
-    session.user_id
-      ? supabase.from('user_profiles').select('record_tour_completed_at').eq('user_id', session.user_id).single()
-      : Promise.resolve({ data: null }),
-  ])
-  const totalSessionCount = totalSessionCountResult.count ?? undefined
-  const recordTourDone    = !!tourProfileResult?.data?.record_tour_completed_at
-
-  // Note: per-session bias note moved to the live SessionView page (SB-3) —
-  // it now surfaces right after synthesis completes, when the user is most
-  // engaged, instead of on the static record page after the fact.
-
-  const dateStr = formatDateTime(session.created_at)
-
-  // ── RET-5 Sprint 1: revisit breadcrumbs (linked re-ask, no AI behavior change) ──
-  // Backward: this session originated from a Reanalyze on an earlier one.
-  // Forward: this session has since been revisited (one or more times).
-  let parentLink: { id: string; decisionPreview: string; createdAt: string } | null = null
-  if (session.parent_session_id) {
-    const { data: parentRow } = await supabase
-      .from('sessions')
-      .select('id, decision_text, created_at')
-      .eq('id', session.parent_session_id)
-      .single()
-    if (parentRow) {
-      const preview = decryptText(parentRow.decision_text)
-      parentLink = {
-        id: parentRow.id,
-        decisionPreview: preview.length > 70 ? preview.slice(0, 70).replace(/\s+\S*$/, '') + '…' : preview,
-        createdAt: parentRow.created_at,
+  // Sprint 6b: read ?em= param written by auth callback
+  // Sprint D3: also read ?decision= param written by AvoidanceAlertCard "Bring it back →"
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const em = params.get('em')
+      if (em && em.includes('@')) {
+        storeUserEmail(em)
+        setUserEmail(em)
       }
-    }
-  }
-
-  const childSessions = childSessionsResult.data ?? []
-
-  // Same underlying gap as the root timeline below, fixed the same way:
-  // childLink's count used to be childSessions.length (direct children of
-  // THIS session only) — correct for one revisit, wrong for a chain that
-  // continues past this session's own immediate child (e.g. viewing B in
-  // A ← B ← C ← D would only ever count C, never D). Walk once here,
-  // unconditionally (not just when this session is a chain root), so both
-  // the breadcrumb and the root timeline below draw from the same correct
-  // full-chain data.
-  const fullDescendants = childSessions.length > 0
-    ? await walkDescendantChain(session.id, childSessions, supabase)
-    : []
-
-  const childLink = childSessions[0]
-    ? { id: childSessions[0].id, createdAt: childSessions[0].created_at, count: fullDescendants.length }
-    : null
-
-  // ── RET-5 Sprint 3: Decision Arc timeline — only on root sessions with ≥1 revisit ──
-  // Breadcrumbs on revisit pages already link back to root; timeline lives here.
-  // Adds at most 3 DB queries, only when this page is a chain root.
-  let timelineEntries:     TimelineEntry[] | null = null
-  let hasMirrorAccess      = false
-  let foundingAvailable    = false
-  let avgCalibrationDelta: number | null = null
-
-  const isChainRoot = !session.parent_session_id && childSessions.length > 0
-
-  if (isChainRoot) {
-    // Reuses fullDescendants computed above (for the breadcrumb) — a root
-    // session's full descendant chain is exactly what the timeline needs
-    // too, no reason to walk it twice. Was `childSessions.map(...)`
-    // (direct children only) before this fix; see walkDescendantChain's
-    // own comment for why that silently dropped anything past the first
-    // revisit.
-    const childIds = fullDescendants.map((c: { id: string }) => c.id)
-    const allIds   = [session.id, ...childIds]
-
-    const [childDetailsResult, allOutcomesResult] = await Promise.all([
-      supabase
-        .from('sessions')
-        .select('id, decision_text, created_at')
-        .in('id', childIds),
-      supabase
-        .from('outcomes')
-        .select('session_id, what_decided, council_helped, calibration_delta')
-        .in('session_id', allIds),
-    ])
-
-    // Mirror access — only checked when there's a chain worth showing the tile for
-    if (session.user_id) {
-      const accessState = await getMirrorAccessState(session.user_id, supabase)
-      hasMirrorAccess = accessState === 'unlocked'
-      // Founding Elite cohort offer (see lib/founding.ts) — only meaningful
-      // for the non-Mirror teaser tile below, skip the query otherwise.
-      if (!hasMirrorAccess) foundingAvailable = await isFoundingAvailable(supabase)
-    }
-
-    // Build outcome map — what_decided is encrypted
-    const outcomeMap: Record<string, {
-      whatDecided:      string
-      councilHelped:    string
-      calibrationDelta: number | null
-    }> = {}
-    for (const o of allOutcomesResult.data ?? []) {
-      outcomeMap[o.session_id] = {
-        whatDecided:      decryptText(o.what_decided),
-        councilHelped:    o.council_helped,
-        calibrationDelta: o.calibration_delta ?? null,
+      // Bugfix: URLSearchParams.get() already URI-decodes the value — decoding
+      // it a second time threw ("URI malformed") for any decision text with a
+      // raw '%' in it (e.g. "cut prices by 20%"), silently caught below,
+      // aborting this whole effect before setDecision ever ran.
+      const prefill = params.get('decision')
+      if (prefill) {
+        setDecision(prefill)
+        // Bugfix: setting the decision text alone left the card closed — the
+        // person landed on what still looked like the empty "tap to add"
+        // entry screen with no visible sign their decision came through.
+        // handleReveal() is the same call the card's own onClick makes; a
+        // short delay lets the mount-time flip-card transition settle first.
+        setTimeout(() => handleReveal(), 50)
       }
+      if (em || prefill) {
+        window.history.replaceState({}, '', '/')
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [userEmail, setUserEmail] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    try { return localStorage.getItem('quorum_user_email') } catch { return null }
+  })
+
+  // ── History + auth state ──────────────────────────────
+  const [sessions,       setSessions]       = useState<SessionSummary[]>([])
+  const [loadingHist,    setLoadingHist]    = useState(false)
+  const [activeTab,      setActiveTab]      = useState<'all'|'pending'|'decided'>('all')
+  const [authToken,      setAuthToken]      = useState<string | null>(null)
+  const [userId,         setUserId]         = useState<string | null>(null) // Item #17 — referral link
+  const [mirrorUnlocked, setMirrorUnlocked] = useState(false)
+  const [mirrorStatusLoaded, setMirrorStatusLoaded] = useState(false)
+  // Founding Elite cohort offer (see lib/founding.ts) — read from the same
+  // /api/mirror/status response already fetched below, no extra request.
+  const [foundingAvailable, setFoundingAvailable] = useState(false)
+  const [patternDimensions, setPatternDimensions] = useState<Array<{dim:string;label:string;avg_score:number;high_count:number}> >([])
+
+  // ── UI state ──────────────────────────────────────────
+  const [inputRevealed,  setInputRevealed]  = useState(false)
+  const [cardHovered,    setCardHovered]    = useState(false)
+  const [onboardingPanel, setOnboardingPanel] = useState(0)   // 0 = intro video, 1 = Council, 2 = Mirror, 3 = Privacy (Trust Audit P1-1), 4 = QUORUM face
+  const [isOnboarding,    setIsOnboarding]    = useState(false)
+  // Video 1 (intro/self-help) — shown once, only to genuinely new users, as
+  // onboarding panel 0, before Council/Mirror/input. If the file 404s (not
+  // yet uploaded to /videos/ in this app's public/ dir), we skip straight to
+  // the Council panel so the flow behaves exactly as it does today.
+  const [introVideoFailed, setIntroVideoFailed] = useState(false)
+  const [tipsOpen,       setTipsOpen]       = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      const v = localStorage.getItem('quorum_tips_open')
+      return v === null ? false : v === 'true'
+    } catch { return false }
+  })
+  const [navScrolled,    setNavScrolled]    = useState(false)
+  const [historyShowAll, setHistoryShowAll] = useState(false)
+  const HISTORY_PREVIEW = 5
+  // Bug fix: pending-outcome nudge strip — dismissable per visit, same
+  // convention as EmailCaptureCard's own dismiss flag (sessionStorage, not
+  // localStorage) so it's quiet for the rest of this session but comes back
+  // next time if the outcome is still unrecorded.
+  const [pendingStripDismissed, setPendingStripDismissed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try { return sessionStorage.getItem('quorum_pending_strip_dismissed') === '1' } catch { return false }
+  })
+  // Sprint TOUR-1: home tour
+  const [showHomeTour,   setShowHomeTour]   = useState(false)
+  const [homeTourSteps,  setHomeTourSteps]  = useState<TourStep[]>(HOME_STEPS_BASE)
+  // Item #3 fix: server-side completion check, so a returning user on a
+  // *different* device/browser (where localStorage never persisted) doesn't
+  // see the tour again. `serverCheckDone` gates the tour effect below so we
+  // never flash the tour before we've heard back from the server for a
+  // signed-in user — undefined/anonymous resolves this to true immediately.
+  const [serverTourDone, setServerTourDone] = useState(false)
+  const [serverCheckDone, setServerCheckDone] = useState(false)
+
+  // Bug fix: extracted so it can run both on mount and again whenever the
+  // Mirror page broadcasts that gate status changed (activation via code or
+  // Razorpay) — previously this only ever ran once on mount, so this page
+  // kept showing mirrorUnlocked=false / stale mirror preview state until a
+  // full reload, even though the user had already activated Elite elsewhere.
+  const refreshMirrorStatus = useCallback((token: string) => {
+    fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        setMirrorUnlocked(d?.gateState === 'unlocked')
+        setMirrorStatusLoaded(true)
+        if (d?.gateState === 'unlocked') {
+          // Also fetch pattern dimensions for 4c (RecurringConditionCard)
+          fetch('/api/mirror/patterns', { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(pd => { if (pd?.top_dimensions) setPatternDimensions(pd.top_dimensions) })
+            .catch(() => {})
+        }
+        if (typeof d?.foundingAvailable === 'boolean') setFoundingAvailable(d.foundingAvailable)
+      })
+      .catch(() => {})
+  }, [])
+
+  // ── Effects ───────────────────────────────────────────
+  useEffect(() => {
+    setDecision('')
+    setContext('')
+    setShowContext(false)
+    setPreDecisionConfidence(5)
+    setFormKey(k => k + 1)
+    // Onboarding: show panels only for genuinely new users.
+    // Unified session, deferred onboarding: under the flag, a brand-new
+    // user skips the Council/Mirror/Privacy panel sequence entirely and
+    // lands straight on the decision input — matching the "use first,
+    // understand the machinery once it's already proven itself" principle.
+    // The explanation isn't lost, just moved: the methodology intro block
+    // further down (already deferred to sessions 1-2 under this same flag)
+    // is where that education now happens, after there's something to
+    // explain the value of. Flag off: unchanged, exactly as before.
+    try {
+      const alreadyOnboarded = localStorage.getItem('quorum_onboarded') === 'true'
+      const hasDecisions     = getStoredSessionIds().length > 0
+      if (!alreadyOnboarded && !hasDecisions) {
+        if (isUnifiedSessionEnabled()) {
+          localStorage.setItem('quorum_onboarded', 'true')
+        } else {
+          setIsOnboarding(true)
+        }
+      }
+    } catch {}
+  }, [])
+
+  // Onboarding fix: correct for the cross-device case — localStorage on
+  // THIS device may say "not onboarded" even though the signed-in user
+  // already completed/skipped it elsewhere. serverTourDone is set once the
+  // /api/profile check resolves (see the auth-token effect above); if it
+  // comes back true while the carousel is still showing, close it and sync
+  // localStorage so this device is consistent going forward.
+  useEffect(() => {
+    if (serverTourDone && isOnboarding) {
+      setIsOnboarding(false)
+      try { localStorage.setItem('quorum_onboarded', 'true') } catch {}
     }
+  }, [serverTourDone, isOnboarding])
 
-    // calibration_delta average — only from sittings that have it
-    const deltas = (allOutcomesResult.data ?? [])
-      .map(o => o.calibration_delta)
-      .filter((d): d is number => typeof d === 'number')
-    avgCalibrationDelta = deltas.length > 0
-      ? parseFloat((deltas.reduce((a, b) => a + b, 0) / deltas.length).toFixed(1))
-      : null
+  useEffect(() => {
+    const onScroll = () => setNavScrolled(window.scrollY > 24)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
-    // Root entry first, then children in ascending date order
-    const SNIPPET_LEN = 80
-    const snippet = (text: string) =>
-      text.length > SNIPPET_LEN ? text.slice(0, SNIPPET_LEN).replace(/\s+\S*$/, '') + '…' : text
+  // Sprint TOUR-1: fire home tour once after the input form is revealed
+  useEffect(() => {
+    if (!inputRevealed) return
+    if (!serverCheckDone) return // Item #3: wait for the server check before deciding
+    try {
+      const done    = localStorage.getItem('quorum_tour.home')
+      const skipped = localStorage.getItem('quorum_tour.home') === 'skip'
+      if (!done && !skipped && !serverTourDone) {
+        // Build steps: base + optional Watchlist step + optional PWA install step.
+        // Watchlist ordered first — it relates to page content just walked
+        // through; PWA install is a final "before you go" meta step, kept last.
+        const watchlistStep = buildWatchlistTourStep()
+        const pwaStep       = buildPWAInstallStep()
+        const extraSteps    = [watchlistStep, pwaStep].filter((s): s is TourStep => s !== null)
+        setHomeTourSteps([...HOME_STEPS_BASE, ...extraSteps])
+        const t = setTimeout(() => setShowHomeTour(true), 600)
+        return () => clearTimeout(t)
+      }
+    } catch {}
+  }, [inputRevealed, serverCheckDone, serverTourDone])
 
-    const rootEntry: TimelineEntry = {
-      id:              session.id,
-      createdAt:       session.created_at,
-      decisionSnippet: snippet(session.decision_text),
-      isCurrent:       session.id === id,
-      outcome:         outcomeMap[session.id] ?? null,
+  // Sprint TOUR-1: auto-advance panel 4 (QUORUM card) → input reveal after 1800ms
+  // User can still click to fast-forward. This removes the "dead end" on the QUORUM card.
+  // Renumbered from panel 3 → panel 4 when the Privacy panel (Trust Audit
+  // P1-1) was inserted at index 3, between Mirror and the QUORUM face.
+  useEffect(() => {
+    if (!isOnboarding || onboardingPanel !== 4) return
+    const t = setTimeout(() => {
+      markOnboarded()
+      handleReveal()
+    }, 1800)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnboarding, onboardingPanel])
+
+  useEffect(() => {
+    const ids = getStoredSessionIds()
+    setLoadingHist(true)
+    const loadHistory = async () => {
+      try {
+        const { createClient } = await import('@/lib/supabase')
+        const supabase = createClient()
+        const { data: { session: authSession } } = await supabase.auth.getSession()
+        const token = authSession?.access_token ?? null
+        setAuthToken(token)
+        setUserId(authSession?.user?.id ?? null)
+        if (token) {
+          // Items #16/#17 — capture ?invite= and ?ref= from the URL once the
+          // user is signed in. Fire-and-forget; both endpoints are safe to
+          // call repeatedly (idempotent no-ops on repeat/self-referral).
+          try {
+            const params    = new URLSearchParams(window.location.search)
+            const inviteCode = params.get('invite')
+            const referrerId = params.get('ref')
+            if (inviteCode) {
+              fetch('/api/invite/redeem', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body:    JSON.stringify({ code: inviteCode }),
+              }).catch(() => {})
+            }
+            if (referrerId) {
+              fetch('/api/referral/track', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body:    JSON.stringify({ referrerId }),
+              }).catch(() => {})
+            }
+          } catch {}
+
+          // Item #3 fix: check server-side tour completion for signed-in users.
+          // Anonymous/unauthenticated sessions have no server record to check,
+          // so they fall through to serverCheckDone=true below and rely on
+          // localStorage alone, same as before this fix.
+          fetch('/api/profile', { headers: { Authorization: `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(d => {
+              if (d?.profile?.onboarding_tour_completed_at) setServerTourDone(true)
+            })
+            .catch(() => {})
+            .finally(() => setServerCheckDone(true))
+        } else {
+          setServerCheckDone(true) // no session to check — localStorage is authoritative
+        }
+        if (token) {
+          refreshMirrorStatus(token)
+        }
+        if (authSession?.user?.email) {
+          setUserEmail(authSession.user.email)
+          try { localStorage.setItem('user_email', authSession.user.email) } catch {}
+        }
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        const res  = await fetch('/api/history', { method: 'POST', headers, body: JSON.stringify({ ids }) })
+        const data = await res.json()
+        setSessions(data.sessions ?? [])
+      } catch {}
+      finally { setLoadingHist(false) }
     }
+    loadHistory()
+  }, [])
 
-    const childEntries: TimelineEntry[] = [...(childDetailsResult.data ?? [])]
-      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-      .map(c => ({
-        id:              c.id,
-        createdAt:       c.created_at,
-        decisionSnippet: snippet(decryptText(c.decision_text)),
-        isCurrent:       c.id === id,
-        outcome:         outcomeMap[c.id] ?? null,
-      }))
+  // Bug fix: the mount-time fetch above only ever runs once. On mobile,
+  // reopening the app after some time away very often *resumes* this page
+  // from the browser's back-forward cache instead of doing a fresh load —
+  // so a decision recorded elsewhere (e.g. via an email link) could still
+  // show as "pending" here even though the server is already up to date.
+  // Re-sync session/outcome state whenever the tab becomes visible again or
+  // is restored from bfcache (pageshow's persisted flag), without re-running
+  // the rest of the mount effect (invite/referral capture, onboarding check,
+  // etc.) — this only refreshes the data that can actually go stale.
+  const refetchSessions = useCallback(async () => {
+    try {
+      const ids = getStoredSessionIds()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+      const res  = await fetch('/api/history', { method: 'POST', headers, body: JSON.stringify({ ids }) })
+      const data = await res.json()
+      setSessions(data.sessions ?? [])
+    } catch {}
+  }, [authToken])
 
-    timelineEntries = [rootEntry, ...childEntries]
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refetchSessions()
+    }
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) refetchSessions()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [refetchSessions])
+
+  // Bug fix: re-fetch mirror status if the user activates Elite (code or
+  // Razorpay payment) on /mirror and navigates back here without a hard
+  // reload — see refreshMirrorStatus above.
+  useEffect(() => {
+    if (!authToken) return
+    const onChanged = () => refreshMirrorStatus(authToken)
+    window.addEventListener('quorum:mirror-status-changed', onChanged)
+    return () => window.removeEventListener('quorum:mirror-status-changed', onChanged)
+  }, [authToken, refreshMirrorStatus])
+
+  // ── Handlers ──────────────────────────────────────────
+  const markOnboarded = () => {
+    try { localStorage.setItem('quorum_onboarded', 'true') } catch {}
+    setIsOnboarding(false)
+    // Onboarding fix: also persist server-side for signed-in users, using
+    // the same flag/endpoint as the Sprint TOUR-1 walkthrough (item #3) —
+    // from the product's perspective this is one continuous first-time
+    // flow (intro carousel → input reveal → walkthrough tooltip), so it
+    // shares one durability mechanism. Without this, a signed-in user
+    // skipping on one device would still see the full intro (including the
+    // video) again on a different device, since quorum_onboarded is
+    // otherwise localStorage-only.
+    if (authToken) {
+      fetch('/api/onboarding/complete', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      }).catch(() => {})
+    }
   }
 
+  const handleReveal = () => {
+    setInputRevealed(true)
+    setTimeout(() => textareaRef.current?.focus(), 380)
+  }
 
-  // Sprint G4 breadcrumb: only shown to Mirror users with actual connections.
-  // hasMirrorAccess is already set above for chain-root sessions. For non-root
-  // sessions it stays false until here — re-check only when a graph edge exists
-  // (avoids an extra DB call for the common case of no connections yet).
-  const rawGraphCount = graphEdgeCountResult.count ?? 0
-  let graphConnectionCount = 0
-  if (rawGraphCount > 0 && session.user_id) {
-    if (!hasMirrorAccess) {
-      const accessState = await getMirrorAccessState(session.user_id, supabase)
-      hasMirrorAccess = accessState === 'unlocked'
+  const handleCardClick = () => {
+    if (isOnboarding) {
+      if (onboardingPanel < 4) {
+        setOnboardingPanel(p => p + 1)
+      } else {
+        markOnboarded()
+        handleReveal()
+      }
+    } else {
+      handleReveal()
     }
-    if (hasMirrorAccess) graphConnectionCount = rawGraphCount
   }
 
-  // Group by persona, deduplicated.
-  // If a session was re-run (e.g. pre-Sprint 24b or via examiner update), multiple assistant
-  // rows exist per persona key. Keep only the LAST initial assistant message per persona —
-  // that is, the last assistant message before any user (pushback) message in that group.
-  // Pushback exchanges (user + following assistant) are preserved in full.
-  const raw: Record<string, { role: string; content: string }[]> = {}
-  for (const msg of messages) {
-    if (!raw[msg.persona]) raw[msg.persona] = []
-    raw[msg.persona].push({ role: msg.role, content: msg.content })
+  const handleSkipOnboarding = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    markOnboarded()
+    handleReveal()
   }
-  const byPersona: Record<string, { role: string; content: string }[]> = {}
-  for (const [key, msgs] of Object.entries(raw)) {
-    const firstUserIdx = msgs.findIndex(m => m.role === 'user')
-    const initialBlock  = firstUserIdx === -1 ? msgs : msgs.slice(0, firstUserIdx)
-    const exchanges     = firstUserIdx === -1 ? []   : msgs.slice(firstUserIdx)
-    // Of potentially multiple initial assistant messages, keep only the last
-    const latestInitial = initialBlock.filter(m => m.role === 'assistant').slice(-1)
-    byPersona[key] = [...latestInitial, ...exchanges]
+
+  // Video panel (0) → Council panel (1). Used both when the intro video
+  // finishes naturally and when it fails to load at all.
+  const advancePastIntroVideo = () => {
+    setOnboardingPanel(p => (p === 0 ? 1 : p))
+  }
+
+  // Item #10: attach a file to the context box. Reuses the same client-side
+  // parser Context Ingestion uses — the file never leaves the browser, only
+  // the extracted plain text does. Each attachment is capped independently
+  // at CONTEXT_ATTACHMENT_CHAR_CAP (see comment near the constant) so a
+  // large export can't dwarf the actual decision text in the persona prompt.
+  const handleAttachFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setAttachError('')
+    setAttaching(true)
+    try {
+      for (const file of Array.from(files)) {
+        try {
+          const parsed = await parseExportFile(file)
+          const capped = parsed.text.length > CONTEXT_ATTACHMENT_CHAR_CAP
+          const text = capped ? parsed.text.slice(0, CONTEXT_ATTACHMENT_CHAR_CAP) : parsed.text
+          setContextAttachments(prev => [...prev, {
+            id:        `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name:      file.name,
+            text,
+            charCount: text.length,
+            truncated: capped || !!parsed.truncated,
+          }])
+        } catch (err) {
+          setAttachError(err instanceof Error ? err.message : `Couldn't read ${file.name}.`)
+        }
+      }
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  const removeAttachment = (id: string) => {
+    setContextAttachments(prev => prev.filter(a => a.id !== id))
+  }
+
+  // Combines the pasted-text context box with every attachment's extracted
+  // text into the single context_text string the API expects.
+  const buildContextPayload = () => {
+    const parts: string[] = []
+    if (context.trim()) parts.push(context.trim())
+    for (const a of contextAttachments) {
+      parts.push(`— From attached file: ${a.name}${a.truncated ? ' (truncated)' : ''} —\n${a.text}`)
+    }
+    return parts.join('\n\n') || null
+  }
+
+  const handleSubmit = async () => {
+    if (!decision.trim() || decision.trim().length < 20) {
+      setError('Please describe your decision in at least a sentence.')
+      return
+    }
+    setError('')
+    setLoading(true)
+    try {
+      // S4-02: get access token → send as Bearer header; server derives user_id.
+      // user_id removed from body to prevent session hijacking.
+      let accessToken: string | null = null
+      try {
+        const { createClient: getClient } = await import('@/lib/supabase')
+        const sb = getClient()
+        const { data: { session: authSession } } = await sb.auth.getSession()
+        accessToken = authSession?.access_token ?? null
+      } catch {}
+      const res = await fetch('/api/session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({
+          decision_text:           decision.trim(),
+          context_text:            buildContextPayload(),
+          register_mode:           framingIntent === 'clarify' ? 'clarification' : 'analytical',
+          framing_intent:          framingIntent,
+          pre_decision_confidence: preDecisionConfidence,
+          user_email:              userEmail ?? null,
+          device_id:               getOrCreateDeviceId(),
+          // user_id intentionally omitted — server derives from Bearer token
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const { id } = await res.json()
+      pushSessionId(id)
+      router.push(`/session/${id}`)
+    } catch {
+      setError('Something went wrong. Check environment variables.')
+      setLoading(false)
+    }
+  }
+
+  // ── SB-1: Show profile capture overlay once for users without a profile ──────
+  // Fires for new users AND existing users who haven't filled in a profile.
+  // 'quorum_profile_overlay_shown' prevents it from re-showing after dismiss.
+  // Unified session, point 4: under the flag, skipped entirely until a user
+  // has completed at least one session — every screen before first value
+  // counts against the "no concierge" test, including optional/skippable
+  // ones. Flag off: unchanged, fires exactly as before.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('quorum_profile_overlay_shown') === 'true') return
+    } catch {}
+    // Don't show during onboarding panels 0 or 1
+    if (isOnboarding) return
+    if (isUnifiedSessionEnabled() && sessions.length === 0) return
+    const checkProfile = async () => {
+      if (!authToken) {
+        // Not authed — show after a brief delay so the page is settled
+        setTimeout(() => setShowProfileCapture(true), 1200)
+        return
+      }
+      try {
+        const res = await fetch('/api/profile', {
+          headers: { Authorization: `Bearer ${authToken}` },
+        })
+        const { profile } = await res.json()
+        if (!profile) setShowProfileCapture(true)
+      } catch {}
+    }
+    checkProfile()
+  }, [authToken, isOnboarding])
+
+  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+    if (!window.confirm('Delete this decision? This cannot be undone.')) return
+    setSessions(prev => prev.filter(s => s.id !== sessionId))
+    removeSessionId(sessionId)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+      await fetch('/api/record', { method: 'DELETE', headers, body: JSON.stringify({ sessionId }) })
+    } catch {}
+  }
+
+  const handleTipsToggle = () => {
+    const next = !tipsOpen
+    setTipsOpen(next)
+    try { localStorage.setItem('quorum_tips_open', String(next)) } catch {}
+  }
+
+  // ── Derived values ────────────────────────────────────
+  const isReturning  = sessions.length > 0
+  // Vet-fix (d): "first three user sessions" = while 0, 1, or 2 decisions
+  // exist yet (i.e. walking into session 1, 2, or 3) — sessions.length is a
+  // count of already-completed decisions, so < 3 covers exactly those three.
+  // From the 4th session on (sessions.length >= 3) this is false and the
+  // methodology positioning block below no longer renders.
+  const showMethodologyIntro = isUnifiedSessionEnabled()
+    // Unified session, point 1 + deferred onboarding: shown from session 2
+    // onward instead of from session 0 — a brand-new user sees this only
+    // after they've already gotten value once, not before.
+    ? sessions.length >= 1 && sessions.length < 3 && !loadingHist
+    : sessions.length < 3 && !loadingHist
+  const pending      = sessions.filter(s => !s.outcome)
+  const decided      = sessions.filter(s =>  s.outcome)
+  const filtered     = activeTab === 'all' ? sessions : activeTab === 'pending' ? pending : decided
+  // Unified session, point 2: mode selector hidden for a brand-new user's
+  // first session — Quorum uses the existing default (challenge/analytical)
+  // silently. Resurfaces from session 2 onward, exactly as before (appears
+  // as soon as there's decision text). Flag off: unchanged, always as before.
+  const showControls = decision.trim().length > 0 && (!isUnifiedSessionEnabled() || sessions.length >= 1)
+
+  const helpedColor: Record<string, string> = {
+    yes:       'var(--outcome-yes)',
+    partially: 'var(--outcome-partial)',
+    no:        'var(--outcome-no)',
+  }
+  const helpedLabel: Record<string, string> = {
+    yes:       'Changed thinking',
+    partially: 'New angles surfaced',
+    no:        'Not helpful',
   }
 
   return (
     <>
-      {/* ── Entrance animations + page-specific styles ──────── */}
       <style>{`
-        @keyframes recordFadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .rec-fade   { animation: recordFadeIn 380ms ease-out both; }
-        .rec-fade-1 { animation-delay: 0ms; }
-        .rec-fade-2 { animation-delay: 80ms; }
-        .rec-fade-3 { animation-delay: 160ms; }
-        .rec-fade-4 { animation-delay: 240ms; }
-
-        /* Record hero card — matches session page sv-hero */
-        .rec-hero {
-          background: var(--bg-card);
-          border: 1px solid var(--border-mid);
-          border-radius: 18px;
-          box-shadow: var(--shadow-card);
-          padding: 24px 28px 20px;
-          position: relative;
-          /* NOTE: no overflow:hidden — same Android WebKit line-clamp sibling
-             clipping bug as sv-hero on the session page. */
-          margin-bottom: 16px;
-        }
-        .rec-hero::before {
-          content: '';
-          position: absolute;
-          top: 0; left: 0; right: 0;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
-          pointer-events: none;
-        }
-        @media (max-width: 600px) {
-          .rec-hero { padding: 18px 16px 16px; }
-        }
-        .rec-hero-decision {
-          font-family: var(--font-display);
-          font-size: clamp(17px, 2.2vw, 22px);
-          font-weight: 500;
-          line-height: 1.45;
-          letter-spacing: -0.015em;
-          color: var(--text-1);
-        }
-        .rec-hero-context {
-          font-size: 12.5px;
-          line-height: 1.65;
-          color: var(--text-3);
-        }
-
-        /* Persona card tiers */
-        .rec-persona-elevated {
-          border-radius: 18px;
-          overflow: hidden;
-          background: var(--bg-card);
-          box-shadow: var(--shadow-card);
-        }
-        .rec-persona-standard {
-          border-radius: 14px;
-          overflow: hidden;
-          background: var(--bg-card);
-        }
-        .rec-persona-header-brief {
-          padding: 16px 22px;
-          border-bottom: 1px solid var(--border-dim);
-          background: var(--gold-glow);
-          border-top: 2px solid var(--gold-dim);
-        }
-        .rec-persona-header-synthesis {
-          padding: 16px 22px;
-          border-bottom: 1px solid var(--border-dim);
-          background: var(--synthesis-done);
-        }
-        .rec-persona-header-standard {
-          padding: 13px 18px;
-          border-bottom: 1px solid var(--border-dim);
-          background: var(--bg-card-alt);
-        }
-        /* Light mode: card-alt is readable; dark mode: it's #101628 */
-
-        /* Pushback exchange styles */
-        .rec-pushback-user {
-          border-radius: 8px;
-          padding: 11px 14px 11px 16px;
-          background: var(--bg-inset);
-          border: 1px solid var(--border-dim);
-          border-left: 2px solid var(--gold-dim);
-        }
-        .rec-pushback-response {
-          padding-left: 14px;
-          border-left: 1px solid var(--border-dim);
-          margin-left: 2px;
-        }
-
-        /* Bottom tray */
-        .rec-bottom-tray {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          flex-wrap: wrap;
-          justify-content: space-between;
-        }
-        .rec-bottom-left { display: flex; gap: 8px; flex-wrap: wrap; }
-        @media (max-width: 480px) {
-          .rec-bottom-tray { flex-direction: column; align-items: stretch; }
-          .rec-bottom-left { flex-direction: column; }
-          .rec-bottom-left .btn-ghost { justify-content: center; }
-        }
-
-        /* Header flex wrap on mobile */
-        .rec-header-row {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 16px;
-          flex-wrap: wrap;
-          margin-bottom: 24px;
-        }
-        @media (max-width: 480px) {
-          .rec-header-row { gap: 12px; }
-          .rec-header-row > a { width: 100%; }
-          .rec-header-row > a button { width: 100%; justify-content: center; }
-        }
+        @keyframes blink { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+        .card-back-inner { transition: opacity 0.18s ease; }
+        .card-back-inner:hover .card-cta { color: var(--text-3) !important; letter-spacing: 0.22em !important; }
       `}</style>
 
-      <div style={{ minHeight: '100vh', background: 'var(--bg-void)', padding: '40px 16px 64px' }}>
-        <div style={{ maxWidth: '48rem', margin: '0 auto' }}>
+      {/* ── Fixed Navbar ─────────────────────────────────── */}
+      <nav style={{
+        position: 'sticky', top: 0,
+        height: 56, zIndex: 100,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 24px',
+        background: navScrolled ? 'var(--bg-void)' : 'transparent',
+        borderBottom: `1px solid ${navScrolled ? 'var(--border-dim)' : 'transparent'}`,
+        backdropFilter: navScrolled ? 'blur(20px)' : 'none',
+        WebkitBackdropFilter: navScrolled ? 'blur(20px)' : 'none',
+        transition: 'background 0.3s ease, border-color 0.3s ease',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: '50%',
+            border: '1px solid var(--gold-dim)',
+            background: 'rgba(201,168,76,0.06)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--gold)',
+          }}>
+            <IconScale />
+          </div>
+          <span style={{
+            fontSize: 14, fontWeight: 400,
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+            fontFamily: 'var(--font-display)', color: 'var(--gold)',
+          }}>
+            Quorum
+          </span>
+          {mirrorStatusLoaded && (
+            <Link
+              // Bug fix: matches the "Free plan · Upgrade →" wording used by
+              // the global PlanBadge strip on every other page (see
+              // components/PlanBadge.tsx) — this pill previously just said
+              // "Free" with no upgrade affordance. Hash lands on the Mirror
+              // page's payment CTA card directly for free users, same as
+              // PlanBadge's own link.
+              href={mirrorUnlocked ? '/mirror' : '/mirror#mirror-cta'}
+              style={{
+                display:        'flex',
+                alignItems:     'center',
+                gap:            5,
+                marginLeft:     4,
+                padding:        '3px 9px 3px 7px',
+                borderRadius:   999,
+                border:         `1px solid ${mirrorUnlocked ? 'var(--gold-dim)' : 'var(--border-mid)'}`,
+                fontSize:       9.5,
+                fontFamily:     'var(--font-mono)',
+                fontWeight:     600,
+                letterSpacing:  '0.05em',
+                textTransform:  'uppercase',
+                textDecoration: 'none',
+                color:          mirrorUnlocked ? 'var(--gold)' : 'var(--text-4)',
+                whiteSpace:     'nowrap',
+              }}
+            >
+              <span style={{
+                width: 5, height: 5, borderRadius: '50%',
+                background: mirrorUnlocked ? 'var(--gold)' : 'var(--text-4)',
+                flexShrink: 0,
+              }} />
+              {mirrorUnlocked ? 'Elite' : 'Free plan'}
+              {!mirrorUnlocked && <span style={{ opacity: 0.65, textTransform: 'none', letterSpacing: 'normal' }}>· Upgrade →</span>}
+            </Link>
+          )}
+          <Link
+            href="/settings/personalization"
+            title="Personalization settings"
+            style={{
+              display:        'flex',
+              alignItems:     'center',
+              marginLeft:     6,
+              padding:        '4px',
+              borderRadius:   999,
+              color:          'var(--text-4)',
+              textDecoration: 'none',
+            }}
+          >
+            ⚙
+          </Link>
+        </div>
+        <span className="nav-tagline">Decision Intelligence for high-stakes calls</span>
+      </nav>
 
-          {/* ── Page Header ────────────────────────────────────── */}
-          <div className="rec-header-row rec-fade rec-fade-1">
-            <div>
-              {/* Back button — exact component + inline style override preserved */}
-              <BackButton
-                label="← Back"
-                style={{
-                  padding: 0,
-                  fontSize: 12,
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-4)',
-                  cursor: 'pointer',
-                  marginBottom: 12,
-                  display: 'block',
-                  fontFamily: 'inherit',
-                  minHeight: 0,
-                }}
-              />
-              <Link href="/" style={{ textDecoration: 'none' }}>
-                <span style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  letterSpacing: '0.22em',
-                  color: 'var(--gold)',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  display: 'block',
-                  marginBottom: 6,
-                }}>
-                  Quorum
-                </span>
-              </Link>
-              <p style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                color: 'var(--text-4)',
-              }}>
-                Decision Record · {dateStr}
-              </p>
+      {/* ── Main ─────────────────────────────────────────── */}
+      <main style={{
+        minHeight: '100vh',
+        paddingBottom: 80,
+        background: 'var(--bg-void)',
+      }}>
+        <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 16px' }}>
 
-              {/* RET-5 Sprint 1: revisit breadcrumbs */}
-              {parentLink && (
-                <Link href={`/record/${parentLink.id}`} style={{ textDecoration: 'none' }} title={parentLink.decisionPreview}>
-                  <p style={{
-                    fontSize: 11.5, color: 'var(--gold)', marginTop: 6,
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    ← Revisiting a decision from {formatDate(parentLink.createdAt)}
-                  </p>
-                </Link>
-              )}
-              {childLink && (
-                <Link href={`/record/${childLink.id}`} style={{ textDecoration: 'none' }}>
-                  <p style={{
-                    fontSize: 11.5, color: 'var(--gold)', marginTop: 6,
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    Revisited on {formatDate(childLink.createdAt)}
-                    {childLink.count > 1 ? ` (+${childLink.count - 1} more)` : ''} →
-                  </p>
-                </Link>
-              )}
-
-              {/* Sprint G4: graph breadcrumb — Mirror users with connections only */}
-              {graphConnectionCount > 0 && (
-                <Link href="/mirror#msec-graph" style={{ textDecoration: 'none' }}>
-                  <p style={{
-                    fontSize: 11.5, color: 'var(--text-4)', marginTop: 6,
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.6 }}>
-                      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                    </svg>
-                    Connected to {graphConnectionCount} decision{graphConnectionCount !== 1 ? 's' : ''} in your graph
-                  </p>
-                </Link>
-              )}
-            </div>
-
-            <Link href="/">
+          {/* Bug fix: the hero card below is the first thing every visitor
+              sees, new or returning — a user with a decision still waiting
+              on its outcome had to scroll past it to find that out. This
+              nudge surfaces that context first; tapping it jumps straight
+              to the pending tab in the judgment record below. Dismissable
+              (× button) — same sessionStorage-per-visit convention as
+              EmailCaptureCard's dismiss flag, so it's quiet for the rest of
+              this visit but returns next time if still unrecorded. Explicit
+              marginTop/marginBottom (rather than relying on the card's own
+              spacing) so it reads as its own element on both the nav side
+              and the card side, not stacked flush against either. */}
+          {pending.length > 0 && !loadingHist && !pendingStripDismissed && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                setActiveTab('pending')
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  setActiveTab('pending')
+                }
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                marginTop: 28,
+                marginBottom: 24,
+                padding: '12px 12px 12px 16px',
+                background: 'rgba(201,168,76,0.08)',
+                border: '1px solid var(--gold-dim)',
+                borderRadius: 12,
+                cursor: 'pointer',
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#c9a84c', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: 'var(--text-2)', flex: 1 }}>
+                {pending.length === 1
+                  ? '1 decision is waiting for its outcome'
+                  : `${pending.length} decisions are waiting for their outcome`}
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--gold)', flexShrink: 0 }}>Log it →</span>
               <button
-                className="btn-ghost"
-                data-tour-id="record-new-decision"
+                onClick={e => {
+                  e.stopPropagation()
+                  setPendingStripDismissed(true)
+                  try { sessionStorage.setItem('quorum_pending_strip_dismissed', '1') } catch {}
+                }}
+                aria-label="Dismiss"
                 style={{
-                  padding: '10px 18px',
-                  fontSize: 12.5,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  minHeight: 44,
-                  marginTop: 4,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 22, height: 22, flexShrink: 0,
+                  background: 'none', border: 'none', padding: 0,
+                  fontSize: 16, lineHeight: 1, color: 'var(--text-4)', cursor: 'pointer',
                 }}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                New Decision
+                ×
               </button>
-            </Link>
-          </div>
-
-          {/* S2-03 — Trust badge strip: encryption, visibility, AI disclosure */}
-          <TrustBadgeStrip encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY} securityHref="/security" />
-
-          {/* ── Decision Hero Card ─────────────────────────────── */}
-          <div className="rec-hero rec-fade rec-fade-2" data-tour-id="record-decision">
-            <p style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: 'var(--text-4)',
-              marginBottom: 10,
-            }}>
-              The Decision
-            </p>
-
-            <RecordDecisionHero
-              decisionText={session.decision_text}
-              contextText={session.context_text}
-            />
-          </div>
-
-          {/* ── Validation prompt — only place a returning user (e.g. from   */}
-          {/* the validation-nudge email) can actually answer this. Lives    */}
-          {/* right after the decision itself, before any secondary asks.    */}
-          {/* Self-hides via its own fetch if already confirmed/corrected.   */}
-          {/* Unified session, point 7: skipped under the flag, same as its  */}
-          {/* SessionView counterpart — this is "Quorum's Read" from the     */}
-          {/* screenshot. Its job (a read of the decision, checked against   */}
-          {/* cross-session bias patterns) is now covered by the "How this   */}
-          {/* decision moved" prediction-arc summary further down instead.  */}
-          {/* Known tradeoff: a validation-nudge email link landing here for */}
-          {/* a still-pending validation will no longer find a card to      */}
-          {/* answer it under the flag — flagging this explicitly rather    */}
-          {/* than leaving it as a silent side effect. */}
-          {!isUnifiedSessionEnabled() && session.validation_state === 'pending' && (
-            <div className="rec-fade rec-fade-2" style={{ marginBottom: 4 }}>
-              <ValidationCard
-                sessionId={session.id}
-                authToken={null}
-                userEmail={session.user_email ?? null}
-              />
             </div>
           )}
 
-          {/* ── Outcome Tracker ────────────────────────────────── */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }} data-tour-id="record-outcome">
-            <OutcomeTracker
-              sessionId={session.id}
-              existingOutcome={outcome}
-              preDecisionConfidence={session.pre_decision_confidence ?? null}
-            />
-          </div>
+          {/* ── Flip card wrapper ─────────────────────────── */}
+          <div style={{ position: 'relative', marginBottom: 'clamp(16px, 4vw, 56px)' }}>
 
-          {/* ── Decision Brief CTA ─────────────────────────────── */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }} data-tour-id="record-decision-brief">
-            <BriefCTA sessionId={session.id} />
-          </div>
-
-          {/* ── Session count signal (2–4 decisions) — EarlyEchoCard ── */}
-          {/* Reads localStorage client-side; hidden at 0–1 or 5+ sessions */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }}>
-            <EarlyEchoCard sessionId={session.id} />
-          </div>
-
-          {/* ── Email capture — shown to unlinked users only ────── */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 28 }}>
-            <EmailCaptureCard sessionId={session.id} />
-          </div>
-
-          {/* ── Persona Sections ───────────────────────────────── */}
-          <div className="rec-fade rec-fade-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* Unified session, point 7: replaces the six persona cards below (hidden
-                under the flag) with a compact record of the actual new-experience
-                arc — initial lean, Quorum's prediction, what was finally decided,
-                and the review date. Only renders fields that exist, so an older
-                session (pre-migration, or created with the flag off) just shows
-                nothing here rather than a row of blanks. */}
-            {isUnifiedSessionEnabled() && (session.initial_instinct || session.quorum_predicted_choice || session.final_decision) && (
-              <div style={{
-                border: '1px solid var(--border-mid)', borderRadius: 12,
-                padding: '18px 20px', marginBottom: 20, background: 'var(--bg-card)',
-              }}>
-                <p style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
-                  textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 14px',
-                }}>
-                  How this decision moved
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
-                  {session.initial_instinct && (
-                    <div>
-                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Initial lean</p>
-                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>
-                        {session.initial_instinct === 'accept' ? 'Leaning yes' : session.initial_instinct === 'reject' ? 'Leaning no' : 'Genuinely unsure'}
-                      </p>
-                    </div>
-                  )}
-                  {session.quorum_predicted_choice && (
-                    <div>
-                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quorum predicted</p>
-                      <p style={{ fontSize: 14, color: 'var(--gold)', margin: 0 }}>{session.quorum_predicted_choice}</p>
-                    </div>
-                  )}
-                  {session.final_decision && (
-                    <div>
-                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Finally chose</p>
-                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>{session.final_decision}</p>
-                      {session.prediction_matched_final !== null && session.prediction_matched_final !== undefined && (
-                        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '3px 0 0' }}>
-                          {session.prediction_matched_final ? 'Quorum predicted this' : 'This surprised Quorum'}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {session.commitment_review_date && (
-                    <div>
-                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Review date</p>
-                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>{formatDate(session.commitment_review_date)}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+            {/* ── Radial bloom behind card — dark mode only (hidden via .card-bloom in light) ── */}
+            {!inputRevealed && (
+              <div className="card-bloom" style={{
+                position:     'absolute',
+                top:          '-80px',
+                left:         0,
+                right:        0,
+                bottom:       '-40px',
+                background:   'radial-gradient(ellipse at 50% 48%, rgba(22, 42, 88, 0.72) 0%, rgba(10, 20, 48, 0.38) 42%, transparent 68%)',
+                pointerEvents:'none',
+                zIndex:       0,
+              }} />
             )}
 
-            {/* Consistency pass: this CSS-only disclosure ("See how Quorum
-                got here — all six advisors") was built explicitly to mirror
-                the live session page's old Council disclosure toggle — see
-                the removed-toggle note in SessionView.tsx. That toggle is
-                gone (the six cards there are visible automatically now), so
-                this one is removed too rather than left as the one place
-                still hiding them behind a click. The six standard advisor
-                cards below render unconditionally now, same as everywhere
-                else in the product. */}
-
-            {PERSONA_ORDER.map(key => {
-              const msgs = byPersona[key]
-              if (!msgs || msgs.length === 0) return null
-              const persona    = PERSONAS[key]
-              const isSynthesis = key === 'synthesis'
-              const isBrief     = key === 'decision_brief'
-              const isElevated  = isSynthesis || isBrief
-
-              // Bug fix: see extractTag/LEAN_LABELS above — realcost/lean
-              // were being discarded with nothing shown in their place.
-              const assistantMsgs = isElevated ? [] : msgs.filter(m => m.role === 'assistant')
-              const realCost      = extractTag(assistantMsgs[0]?.content ?? '', 'realcost')
-              const initialLeanRaw = extractTag(assistantMsgs[0]?.content ?? '', 'lean').toLowerCase()
-              const finalLeanRaw   = extractTag(assistantMsgs[assistantMsgs.length - 1]?.content ?? '', 'lean').toLowerCase()
-              const initialLean = LEAN_LABELS[initialLeanRaw] ? initialLeanRaw : ''
-              const finalLean   = LEAN_LABELS[finalLeanRaw]   ? finalLeanRaw   : ''
-
-              return (
-                <div
-                  key={key}
-                  className={isElevated ? 'rec-persona-elevated' : 'rec-persona-standard'}
+            {/* ── BACK FACE — QUORUM entry point / onboarding ─ */}
+            <div
+              className="card-back-inner hero-card"
+              onClick={handleCardClick}
+              onMouseEnter={() => setCardHovered(true)}
+              onMouseLeave={() => setCardHovered(false)}
+              style={{
+                position:      inputRevealed ? 'absolute' : 'relative',
+                top: 0, left: 0, right: 0,
+                backdropFilter:'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border:        '2px solid var(--gold-dim)',
+                borderRadius:  20,
+                minHeight:     inputRevealed ? 0 : 'clamp(420px, 58svh, 620px)',
+                display:       'flex',
+                flexDirection: 'column',
+                alignItems:    'center',
+                justifyContent:'center',
+                cursor:        'pointer',
+                opacity:       inputRevealed ? 0 : 1,
+                transform:     inputRevealed ? 'scale(0.985)' : cardHovered ? 'scale(1.002)' : 'scale(1)',
+                transition:    'opacity 0.38s ease, transform 0.38s ease, box-shadow 0.38s ease',
+                pointerEvents: inputRevealed ? 'none' : 'auto',
+                zIndex:        inputRevealed ? 0 : 1,
+                boxShadow:     cardHovered
+                  ? '0 0 0 1px var(--gold-dim), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 100px var(--gold-glow), 0 40px 120px rgba(0,0,0,0.60)'
+                  : '0 0 0 1px var(--gold-dim), inset 0 1px 0 rgba(255,255,255,0.05), inset 0 0 70px var(--gold-glow), 0 28px 90px rgba(0,0,0,0.50)',
+                padding:       '60px 40px',
+                userSelect:    'none',
+              }}
+            >
+              {/* Skip — shown during onboarding panels 0, 1, 2 & 3 (video, Council, Mirror, Privacy) */}
+              {isOnboarding && onboardingPanel < 4 && (
+                <button
+                  onClick={handleSkipOnboarding}
                   style={{
-                    border: isBrief
-                      ? '1px solid rgba(201,168,76,0.35)'
-                      : isSynthesis
-                      ? '1px solid var(--green-border)'
-                      : '1px solid var(--border-dim)',
+                    position:      'absolute',
+                    top:           20,
+                    right:         24,
+                    background:    'none',
+                    border:        'none',
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9.5,
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase',
+                    color:         'var(--text-4)',
+                    cursor:        'pointer',
+                    padding:       '6px 4px',
+                    opacity:       0.6,
+                    transition:    'opacity 0.2s',
                   }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
                 >
-                  {/* ── Card header ── */}
-                  <div className={
-                    isBrief ? 'rec-persona-header-brief'
-                    : isSynthesis ? 'rec-persona-header-synthesis'
-                    : 'rec-persona-header-standard'
-                  }>
-                    {isElevated ? (
-                      <>
-                        {/* Elevated: display serif name */}
-                        <p style={{
-                          fontFamily: 'var(--font-display)',
-                          fontSize: 17,
-                          fontWeight: 500,
-                          letterSpacing: '-0.01em',
-                          color: isBrief ? 'var(--gold)' : 'var(--text-1)',
-                          margin: 0,
-                          marginBottom: 3,
-                        }}>
-                          {persona.label}
-                        </p>
-                        <p style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 10,
-                          letterSpacing: '0.1em',
-                          textTransform: 'uppercase',
-                          color: isBrief ? 'var(--gold-dim)' : 'var(--text-4)',
-                          margin: 0,
-                        }}>
-                          {persona.tagline}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        {/* Standard: compact mono label + smaller name */}
-                        <p style={{
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: 9.5,
-                          letterSpacing: '0.12em',
-                          textTransform: 'uppercase',
-                          color: 'var(--text-4)',
-                          margin: 0,
-                          marginBottom: 3,
-                        }}>
-                          Advisor
-                        </p>
-                        <p style={{
-                          fontFamily: 'var(--font-display)',
-                          fontSize: 15,
-                          fontWeight: 500,
-                          letterSpacing: '-0.01em',
-                          color: 'var(--gold)',
-                          margin: 0,
-                          marginBottom: 2,
-                        }}>
-                          {persona.label}
-                        </p>
-                        <p style={{
-                          fontSize: 11,
-                          color: 'var(--text-4)',
-                          margin: 0,
-                          fontStyle: 'italic',
-                        }}>
-                          {persona.tagline}
-                        </p>
-                      </>
-                    )}
-                  </div>
+                  Skip →
+                </button>
+              )}
 
-                  {(initialLean || realCost) && (
-                    <div style={{
-                      padding: '0 18px 12px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                    }}>
-                      {initialLean && (
-                        <p style={{
-                          fontSize: 11,
-                          fontFamily: 'var(--font-mono)',
-                          letterSpacing: '0.04em',
-                          color: 'var(--text-3)',
-                          margin: 0,
-                        }}>
-                          {finalLean && finalLean !== initialLean
-                            ? <>Shifted after pushback → now leaning <strong style={{ color: 'var(--gold)' }}>{LEAN_LABELS[finalLean]}</strong></>
-                            : <>Leaning: <strong style={{ color: 'var(--gold)' }}>{LEAN_LABELS[initialLean]}</strong></>}
-                        </p>
-                      )}
-                      {realCost && (
-                        <div style={{
-                          padding: '10px 12px',
-                          background: 'var(--bg-inset)',
-                          border: '1px solid var(--border-dim)',
-                          borderRadius: 8,
-                        }}>
-                          <p style={{
-                            fontSize: 9.5,
-                            fontFamily: 'var(--font-mono)',
-                            letterSpacing: '0.1em',
-                            textTransform: 'uppercase',
-                            color: 'var(--text-4)',
-                            margin: '0 0 4px',
-                          }}>
-                            Real Cost
-                          </p>
-                          <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-2)', margin: 0 }}>
-                            {realCost}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Card body ── */}
-                  <div style={{
-                    padding: isElevated ? '20px 22px' : '16px 18px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 16,
+              {/* ── Panel 0 — INTRO VIDEO ───────────────────── */}
+              {/* Video 1 (intro/self-help), per video strategy doc: shown once,
+                  before the input box, skippable. Autoplay+muted (no user
+                  gesture needed inside the card), native controls exposed so
+                  the person can unmute or scrub if they want to. If the file
+                  hasn't been uploaded yet, onError skips straight to the
+                  Council panel — no broken player, same flow as today. */}
+              {isOnboarding && onboardingPanel === 0 && !introVideoFailed && (
+                <div style={{ width: '100%', maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    margin:        '0 0 20px',
+                    opacity:       0.75,
+                    textAlign:     'center',
                   }}>
-                    {msgs.map((msg, i) => (
-                      <div key={i}>
-                        {msg.role === 'user' ? (
-                          <div className="rec-pushback-user">
-                            <p style={{
-                              fontFamily: 'var(--font-mono)',
-                              fontSize: 9.5,
-                              letterSpacing: '0.1em',
-                              textTransform: 'uppercase',
-                              color: 'var(--text-4)',
-                              marginBottom: 6,
-                            }}>
-                              You challenged
-                            </p>
-                            <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6 }}>
-                              {cleanPushbackText(msg.content)}
-                            </p>
-                          </div>
-                        ) : (
-                          /* If this assistant message follows a user pushback, indent it */
-                          i > 0 && msgs[i - 1]?.role === 'user' ? (
-                            <div className="rec-pushback-response">
-                              {isSynthesis ? renderSynthesisMessage(msg.content) : isBrief ? renderBriefBody(msg.content) : (
-                                <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
-                                  {stripHeaderTags(msg.content)}
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            isSynthesis ? renderSynthesisMessage(msg.content) : isBrief ? renderBriefBody(msg.content) : (
-                              <p style={{ fontSize: 13.5, lineHeight: 1.85, color: 'var(--text-2)', whiteSpace: 'pre-wrap' }}>
-                                {stripHeaderTags(msg.content)}
-                              </p>
-                            )
-                          )
-                        )}
-                      </div>
+                    Welcome to Quorum
+                  </p>
+                  <video
+                    autoPlay
+                    muted
+                    controls
+                    playsInline
+                    preload="metadata"
+                    poster="/videos/quorum-intro-poster.jpg"
+                    onEnded={advancePastIntroVideo}
+                    onError={() => { setIntroVideoFailed(true); advancePastIntroVideo() }}
+                    style={{
+                      width:        '100%',
+                      borderRadius: 12,
+                      border:       '1px solid var(--gold-dim)',
+                      background:   '#000',
+                      display:      'block',
+                    }}
+                  >
+                    <source src="/videos/quorum-intro.mp4" type="video/mp4" />
+                    <track kind="captions" src="/videos/quorum-intro.vtt" srcLang="en" label="English" default />
+                  </video>
+                  <p
+                    onClick={() => setOnboardingPanel(1)}
+                    style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      9.5,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      color:         'var(--text-4)',
+                      textAlign:     'center',
+                      margin:        '14px 0 0',
+                      cursor:        'pointer',
+                      opacity:       0.7,
+                    }}
+                  >
+                    Skip video →
+                  </p>
+                </div>
+              )}
+
+              {/* ── Panel 1 — THE COUNCIL ──────────────────── */}
+              {isOnboarding && onboardingPanel === 1 && (
+                <>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    margin:        '0 0 28px',
+                    opacity:       0.75,
+                  }}>
+                    01 · The Council
+                  </p>
+                  <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(28px, 5vw, 38px)',
+                    fontWeight:    400,
+                    color:         'var(--text-1)',
+                    letterSpacing: '-0.01em',
+                    lineHeight:    1.35,
+                    textAlign:     'center',
+                    margin:        0,
+                    maxWidth:      340,
+                  }}>
+                    {isUnifiedSessionEnabled()
+                      ? 'Quorum makes a call on you — then checks if it was right'
+                      : 'Six advisors analyse every decision you bring'}
+                  </p>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      13,
+                    color:         'var(--text-4)',
+                    lineHeight:    1.65,
+                    textAlign:     'center',
+                    margin:        '20px 0 0',
+                    maxWidth:      320,
+                    letterSpacing: '0.02em',
+                  }}>
+                    {isUnifiedSessionEnabled()
+                      ? 'Six advisors run in the background on every decision — stress-testing, risk mapping, pattern matching, and more.'
+                      : 'Each from a structurally distinct angle — stress-testing, risk mapping, pattern matching, and more.'}
+                  </p>
+                </>
+              )}
+
+              {/* ── Panel 2 — YOUR MIRROR ─────────────────── */}
+              {isOnboarding && onboardingPanel === 2 && (
+                <>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    margin:        '0 0 28px',
+                    opacity:       0.75,
+                  }}>
+                    02 · Your Mirror
+                  </p>
+                  <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(28px, 5vw, 38px)',
+                    fontWeight:    400,
+                    color:         'var(--text-1)',
+                    letterSpacing: '-0.01em',
+                    lineHeight:    1.35,
+                    textAlign:     'center',
+                    margin:        0,
+                    maxWidth:      340,
+                  }}>
+                    Every decision is recorded and remembered
+                  </p>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      13,
+                    color:         'var(--text-4)',
+                    lineHeight:    1.65,
+                    textAlign:     'center',
+                    margin:        '20px 0 0',
+                    maxWidth:      320,
+                    letterSpacing: '0.02em',
+                  }}>
+                    Over time, Mirror builds a precise model of how you actually make decisions — not how you think you do. On Elite, you can also import context you&apos;ve already built elsewhere to get started faster.
+                  </p>
+                </>
+              )}
+
+              {/* ── Panel 3 — PRIVACY (Trust Audit P1-1) ─────
+                  Onboarding sold capability (Council, Mirror) with zero
+                  accompanying privacy statement, and was one tap to skip
+                  entirely. Same font treatment/rhythm as panels 1 & 2 so it
+                  doesn't feel bolted on; copy matches the encryption /
+                  no-training / export-anytime facts already reviewed for
+                  /security and FAQSection.tsx, not new claims. ── */}
+              {isOnboarding && onboardingPanel === 3 && (
+                <>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      11,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    margin:        '0 0 28px',
+                    opacity:       0.75,
+                  }}>
+                    03 · Built to Earn Trust
+                  </p>
+                  <div style={{ width: 40, height: 1, background: 'var(--gold-dim)', marginBottom: 28, opacity: 0.5 }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(28px, 5vw, 38px)',
+                    fontWeight:    400,
+                    color:         'var(--text-1)',
+                    letterSpacing: '-0.01em',
+                    lineHeight:    1.35,
+                    textAlign:     'center',
+                    margin:        0,
+                    maxWidth:      340,
+                  }}>
+                    Encrypted, private, and yours to delete
+                  </p>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      13,
+                    color:         'var(--text-4)',
+                    lineHeight:    1.65,
+                    textAlign:     'center',
+                    margin:        '20px 0 0',
+                    maxWidth:      320,
+                    letterSpacing: '0.02em',
+                  }}>
+                    Your decisions are encrypted at the field level and never used to train AI models. Export or delete your full record any time from Settings.
+                  </p>
+                </>
+              )}
+
+              {/* ── Panel 4 / Default — QUORUM face ────────── */}
+              {(!isOnboarding || onboardingPanel === 4) && (
+                <>
+                  <div style={{
+                    width:      56, height: 1,
+                    background: 'var(--gold-dim)',
+                    marginBottom: 28,
+                    opacity:    cardHovered ? 0.9 : 0.7,
+                    transition: 'opacity 0.3s ease',
+                  }} />
+                  <p style={{
+                    fontFamily:    'var(--font-display)',
+                    fontSize:      'clamp(40px, 10vw, 80px)',
+                    fontWeight:    400,
+                    color:         'var(--gold)',
+                    letterSpacing: 'clamp(0.1em, 3.8vw, 0.38em)',
+                    margin:        0,
+                    lineHeight:    1,
+                    textTransform: 'uppercase',
+                    textAlign:     'center',
+                  }}>
+                    Quorum
+                  </p>
+                  <div style={{
+                    width:      56, height: 1,
+                    background: 'var(--gold-dim)',
+                    marginTop:  28, marginBottom: 36,
+                    opacity:    cardHovered ? 0.9 : 0.7,
+                    transition: 'opacity 0.3s ease',
+                  }} />
+                  <p className="card-cta" style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      10.5,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color:         'var(--text-4)',
+                    margin:        0,
+                    width:         '100%',
+                    textAlign:     'center',
+                    transition:    'color 0.3s ease, letter-spacing 0.35s ease',
+                  }}>
+                    Tap to try it on a real decision
+                  </p>
+                </>
+              )}
+
+              {/* ── Bottom strip: dots + tap prompt ────────── */}
+              <div style={{
+                position:       'absolute',
+                bottom:         28,
+                left:           0, right: 0,
+                display:        'flex',
+                flexDirection:  'column',
+                alignItems:     'center',
+                gap:            10,
+              }}>
+                {/* Dot indicators — only during onboarding */}
+                {isOnboarding && (
+                  <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                    {[0, 1, 2, 3, 4].map(i => (
+                      <div key={i} style={{
+                        width:        i === onboardingPanel ? 18 : 6,
+                        height:       6,
+                        borderRadius: 3,
+                        background:   i === onboardingPanel ? 'var(--gold)' : 'var(--border-mid)',
+                        opacity:      i === onboardingPanel ? 1 : 0.5,
+                        transition:   'width 0.3s ease, background 0.3s ease',
+                      }} />
                     ))}
                   </div>
+                )}
+
+                {/* Tap prompt — Council (1), Mirror (2) & Privacy (3) only.
+                    Video panel (0) has its own "Skip video →" link + native
+                    controls; QUORUM panel (4) has its own CTA copy below. */}
+                {isOnboarding && onboardingPanel > 0 && onboardingPanel < 4 && (
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9,
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold-dim)',
+                    margin:        0,
+                    opacity:       0.75,
+                    display:       'flex',
+                    alignItems:    'center',
+                    gap:           6,
+                  }}>
+                    Tap to continue
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--gold-dim)' }}>
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* ── FRONT FACE — Decision form ──────────────── */}
+            <div style={{
+              position:      inputRevealed ? 'relative' : 'absolute',
+              top: 0, left: 0, right: 0,
+              background:    'var(--bg-card)',
+              border:        '1px solid var(--border-mid)',
+              borderRadius:  20,
+              padding:       '32px 28px 28px',
+              boxShadow:     'var(--shadow-card)',
+              opacity:       inputRevealed ? 1 : 0,
+              transform:     inputRevealed ? 'scale(1)' : 'scale(0.985)',
+              transition:    'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
+              pointerEvents: inputRevealed ? 'auto' : 'none',
+            }}>
+
+              <h1 style={{
+                fontSize:      22,
+                fontWeight:    400,
+                color:         'var(--text-1)',
+                marginBottom:  6,
+                fontFamily:    'var(--font-display)',
+                lineHeight:    1.2,
+                letterSpacing: '-0.01em',
+              }}>
+                What decision are you bringing to your record?
+              </h1>
+              <p style={{ fontSize: 12, color: 'var(--text-4)', marginBottom: 14, lineHeight: 1.6, fontStyle: 'italic' }}>
+                Add it to your judgment record. The Council runs on every decision you bring.
+              </p>
+
+              {/* ── Trust Audit fix (P0-1/P0-3/P2-1): trust signal renders
+                  ABOVE the textarea. encryptionEnabled mirrors the same
+                  guarantee lib/encryption.ts enforces: DB_ENCRYPTION_KEY is
+                  required and fails closed in production, so encryption is
+                  on whenever this is a real deployment — this can't drift
+                  from the truth the way an independently-set flag could.
+                  Declutter pass: dropped the "Not a chatbot" line (already
+                  covered in onboarding panel 1) and "Your data" line
+                  (restated what the strip above it already says), plus the
+                  separate "Full FAQ" and "See exactly what we encrypt"
+                  links — the latter is now securityHref on the strip
+                  itself, so "Encrypted" IS the link to /security rather
+                  than needing a second line to point at it.
+                  Engagement-gated pass: only reveals once the person has
+                  actually started typing (one word in — decision.trim()
+                  non-empty), not on page load. Reassurance for someone
+                  already writing their decision is useful; the same badge
+                  in front of an empty textarea is friction before they've
+                  even engaged. Record/session/drawer surfaces show it
+                  immediately since the user has already committed to being
+                  there by the time they reach those. */}
+              <div style={{
+                maxHeight:  decision.trim().length > 0 ? 32 : 0,
+                opacity:    decision.trim().length > 0 ? 1 : 0,
+                overflow:   'hidden',
+                transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease',
+              }}>
+                <TrustBadgeStrip
+                  encryptionEnabled={process.env.NODE_ENV === 'production'}
+                  securityHref="/security"
+                />
+              </div>
+
+              <textarea
+                ref={textareaRef}
+                key={formKey}
+                className="decision-input"
+                rows={5}
+                style={{ fontSize: 15 }}
+                autoComplete="off"
+                placeholder="e.g. I am considering whether to sell my 40% stake in the family business to a PE firm at 8× EBITDA. The offer expires in 3 weeks…"
+                value={decision}
+                onChange={e => setDecision(e.target.value)}
+                data-tour-id="home-textarea"
+              />
+
+              <div style={{ marginTop: 10 }} data-tour-id="home-voice">
+                <VoiceInput onTranscript={(text) => setDecision(text)} />
+              </div>
+
+              {/* Strategy doc: decision starters — solves the blank-page problem.
+                  Only shown while the box is empty; disappears once real text
+                  or a starter has been picked, so it never competes with typing. */}
+              {isUnifiedSessionEnabled() && decision.trim().length === 0 && (
+                <DecisionStarters onPick={(text) => setDecision(text)} />
+              )}
+
+              <div style={{ marginTop: 12 }}>
+                {!showContext ? (
+                  <button className="btn-ghost" onClick={() => setShowContext(true)} data-tour-id="home-context">
+                    + Add context · details, background, documents
+                  </button>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 8 }}>
+                      Add any relevant detail — numbers, background, prior conversations, or documents like emails and term sheets
+                    </p>
+                    <textarea
+                      rows={3}
+                      style={{ fontSize: 13 }}
+                      placeholder="Paste context here..."
+                      value={context}
+                      onChange={e => setContext(e.target.value)}
+                    />
+
+                    <input
+                      ref={contextFileInputRef}
+                      type="file"
+                      accept={ACCEPTED_FILE_EXTENSIONS}
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        handleAttachFiles(e.target.files)
+                        e.target.value = '' // allow re-selecting the same file
+                      }}
+                    />
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={attaching}
+                        onClick={() => contextFileInputRef.current?.click()}
+                        style={{ fontSize: 11.5, padding: '6px 12px' }}
+                      >
+                        {attaching ? 'Reading file…' : 'Attach a file'}
+                      </button>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-5)' }}>
+                        {ACCEPTED_FILE_TYPES_LABEL}
+                      </span>
+                    </div>
+
+                    {attachError && (
+                      <p style={{ fontSize: 11, color: 'var(--error)', marginTop: 6 }}>
+                        {attachError}
+                      </p>
+                    )}
+
+                    {contextAttachments.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+                        {contextAttachments.map(a => (
+                          <div key={a.id} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            gap: 10, padding: '6px 10px',
+                            background: 'var(--bg-card-alt)', border: '1px solid var(--border-dim)',
+                            borderRadius: 8,
+                          }}>
+                            <span style={{ fontSize: 11.5, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {a.name}
+                              <span style={{ color: 'var(--text-5)' }}>
+                                {' '}· {a.charCount.toLocaleString()} chars{a.truncated ? ' · truncated' : ''}
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeAttachment(a.id)}
+                              aria-label={`Remove ${a.name}`}
+                              style={{
+                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                color: 'var(--text-4)', fontSize: 14, lineHeight: 1, padding: 4,
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <BehaviorAlerts decision={decision} authToken={authToken} />
+
+              {/* State-gated: register mode + slider */}
+              <div style={{
+                overflow:   'hidden',
+                maxHeight:  showControls ? 420 : 0,
+                opacity:    showControls ? 1 : 0,
+                marginTop:  showControls ? 20 : 0,
+                transition: 'max-height 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.35s ease, margin-top 0.35s ease',
+              }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', marginBottom: 10, letterSpacing: '0.04em' }}>
+                  What are you looking for from the Council?
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {/* Option 1: Challenge */}
+                  <button
+                    type="button"
+                    onClick={() => { setFramingIntent('challenge'); setRegisterMode('analytical') }}
+                    style={{
+                      padding: '11px 14px', borderRadius: 10,
+                      border: `1px solid ${framingIntent === 'challenge' ? 'var(--gold)' : 'var(--border-dim)'}`,
+                      background: framingIntent === 'challenge' ? 'rgba(201,168,76,0.1)' : 'transparent',
+                      textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                    }}
+                  >
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: framingIntent === 'challenge' ? 'var(--gold)' : 'var(--text-2)', marginBottom: 3 }}>
+                      <IconChallenge /> Challenge my thinking
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
+                      Stress-test the decision. Find what I am missing.
+                    </p>
+                  </button>
+                  {/* Option 2: Clarify */}
+                  <button
+                    type="button"
+                    onClick={() => { setFramingIntent('clarify'); setRegisterMode('clarification') }}
+                    style={{
+                      padding: '11px 14px', borderRadius: 10,
+                      border: `1px solid ${framingIntent === 'clarify' ? 'var(--green-border)' : 'var(--border-dim)'}`,
+                      background: framingIntent === 'clarify' ? 'var(--green-soft)' : 'transparent',
+                      textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                    }}
+                  >
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: framingIntent === 'clarify' ? 'var(--green-text)' : 'var(--text-2)', marginBottom: 3 }}>
+                      <IconMirror /> Help me clarify what I actually want
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
+                      What I&apos;m optimizing for, and what I&apos;d regret.
+                    </p>
+                  </button>
+                  {/* Option 3: Right — SB-1 */}
+                  <button
+                    type="button"
+                    onClick={() => { setFramingIntent('right'); setRegisterMode('analytical') }}
+                    style={{
+                      padding: '11px 14px', borderRadius: 10,
+                      border: `1px solid ${framingIntent === 'right' ? '#8840c4' : 'var(--border-dim)'}`,
+                      background: framingIntent === 'right' ? 'rgba(136,64,196,0.1)' : 'transparent',
+                      textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                    }}
+                  >
+                    <p style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: framingIntent === 'right' ? '#b070e0' : 'var(--text-2)', marginBottom: 3 }}>
+                      <IconScale size={13} /> Tell me what&apos;s actually right here
+                    </p>
+                    <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.4 }}>
+                      Even if it&apos;s not what I want to hear.
+                    </p>
+                  </button>
                 </div>
-              )
-            })}
+
+                <div style={{ marginTop: 18, marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.04em', margin: 0 }}>
+                      Pre-session clarity
+                    </p>
+                    <span style={{
+                      fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)',
+                      color: preDecisionConfidence <= 3 ? '#c04040' : preDecisionConfidence <= 6 ? 'var(--gold)' : 'var(--green-text)',
+                      minWidth: 28, textAlign: 'right',
+                    }}>
+                      {preDecisionConfidence}
+                      <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-4)' }}>/10</span>
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '0 0 10px', lineHeight: 1.5 }}>
+                    How clearly do you understand this decision right now? The Council will test this and we track how your read compares to hindsight over time.
+                  </p>
+                  <input
+                    type="range" min={1} max={10} step={1}
+                    value={preDecisionConfidence}
+                    onChange={e => setPreDecisionConfidence(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      accentColor: preDecisionConfidence <= 3 ? '#c04040' : preDecisionConfidence <= 6 ? 'var(--gold)' : 'var(--green-text)',
+                      cursor: 'pointer', height: 4,
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Foggy</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-4)' }}>Fully clear</span>
+                  </div>
+                </div>
+              </div>
+
+              {error && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--error)' }}>{error}</p>}
+
+              <button
+                className="btn-primary"
+                style={{ width: '100%', fontSize: 15, padding: '14px', marginTop: 22, letterSpacing: '0.06em' }}
+                onClick={handleSubmit}
+                disabled={loading || !decision.trim()}
+                data-tour-id="home-submit"
+              >
+                {loading ? 'Convening the Council…' : 'Convene the Council'}
+              </button>
+            </div>
           </div>
 
-          {/* ── Decision Arc timeline — root sessions with ≥1 revisit ──── */}
-          {/* RET-5 Sprint 3: free and ungated. Mirror conversion tile additive at bottom. */}
-          {timelineEntries && (
-            <div className="rec-fade rec-fade-4" style={{ marginTop: 24, marginBottom: 8 }}>
-              <DecisionTimeline
-                entries={timelineEntries}
-                currentSessionId={id}
-                hasMirrorAccess={hasMirrorAccess}
-                foundingAvailable={foundingAvailable}
-                avgCalibrationDelta={avgCalibrationDelta}
+          {/* ── Judgment Record strip (all users) ───────── */}
+          <div style={{
+            padding:        '18px 0 6px',
+            display:        'flex',
+            flexDirection:  'column',
+            alignItems:     'center',
+            gap:            5,
+          }}>
+            <p style={{
+              fontFamily:    'var(--font-mono)',
+              fontSize:      10,
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color:         'var(--text-4)',
+              margin:        0,
+            }}>
+              Your judgment record
+              <span style={{ margin: '0 10px', opacity: 0.4 }}>·</span>
+              <span style={{ color: 'var(--text-3)' }}>
+                {loadingHist ? '—' : `${sessions.length} decision${sessions.length !== 1 ? 's' : ''}`}
+              </span>
+            </p>
+            {!isReturning && !loadingHist && (
+              <p style={{
+                fontFamily:    'var(--font-mono)',
+                fontSize:      9.5,
+                letterSpacing: '0.1em',
+                color:         'var(--text-4)',
+                margin:        0,
+                opacity:       0.65,
+              }}>
+                Every decision builds your private judgment OS
+              </p>
+            )}
+          </div>
+
+          {/* ── Positioning block (first three sessions) ──────────────
+              Redesign, v2: same clarity content (category statement,
+              mechanism, chatbot pre-empt, audience, proof example) but
+              restyled as open editorial copy instead of a bordered card,
+              and moved BELOW the hero card. The gold hero card is now
+              the first thing a first-time visitor sees — one object,
+              lots of air, matching the original premium feel — and this
+              explanation reads as a quiet follow-up once they've scrolled,
+              not a wall of text blocking the entry point.
+              Vet-fix (d): was gated on `!isReturning` — sessions.length === 0
+              — so it vanished forever the moment a user's first decision
+              landed, along with the only visible explanation of how the
+              Council actually works (the footer's "How Quorum Works" link,
+              same size/weight as Privacy Policy and Terms, was all that was
+              left). Extended to sessions.length < 3 so a new user still gets
+              this context walking into their 2nd and 3rd decisions, not just
+              their 1st, and a direct link to the full methodology page is
+              now part of the block itself rather than only living in the
+              footer. From the 4th session on this reverts to exactly the
+              prior default: no block, footer link only. */}
+          {showMethodologyIntro && (
+            <div style={{ marginTop: 56, marginBottom: 8, padding: '0 6px' }}>
+              <div style={{
+                width: 36, height: 1, margin: '0 auto 26px',
+                background: 'linear-gradient(90deg, transparent, var(--gold-dim), transparent)',
+              }} />
+              <p style={{
+                fontFamily:    'var(--font-display)',
+                fontSize:      'clamp(18px, 3.6vw, 22px)',
+                fontWeight:    400,
+                color:         'var(--text-1)',
+                lineHeight:    1.4,
+                margin:        '0 0 10px',
+                letterSpacing: '-0.01em',
+                textAlign:     'center',
+              }}>
+                {isUnifiedSessionEnabled()
+                  ? 'Not a chatbot. Quorum makes a call on you \u2014 then tells you if it was right.'
+                  : 'Not a chatbot. Quorum reads the structure of a decision before it answers.'}
+              </p>
+              <p style={{
+                fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.75,
+                margin: '0 auto 24px', maxWidth: 460, textAlign: 'center',
+              }}>
+                {isUnifiedSessionEnabled()
+                  ? 'Every decision is read at a structural level, stress-tested from multiple independent angles, and locked against your own starting instinct \u2014 so Quorum can tell you whether it actually understood you, not just what it thinks you should do.'
+                  : 'Every decision is read at a structural level, then stress-tested from six independent angles — and remembered, so it can hold you to it next time. Built for founders, operators, and principals making decisions where being wrong is expensive.'}
+              </p>
+              {isUnifiedSessionEnabled() ? (
+                // Point 2: full card treatment, not a quiet left-border indent —
+                // the acquiring mechanism of prediction was under-selling itself
+                // sharing the same visual weight as a supporting example.
+                <div style={{
+                  maxWidth: 460, margin: '0 auto',
+                  border: '1px solid var(--gold-dim, var(--border-mid))',
+                  borderRadius: 14, padding: '18px 22px',
+                  background: 'var(--bg-card)',
+                }}>
+                  <p style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 9.5,
+                    letterSpacing: '0.14em', textTransform: 'uppercase',
+                    color: 'var(--text-4)', margin: '0 0 10px',
+                  }}>
+                    Example
+                  </p>
+                  <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 12px', fontStyle: 'italic' }}>
+                    &quot;Considering selling my 40% stake to a PE firm at 8× EBITDA. Offer expires in 3 weeks.&quot;
+                  </p>
+                  <p style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em',
+                    textTransform: 'uppercase', color: 'var(--gold)', margin: '0 0 6px',
+                  }}>
+                    Quorum&apos;s hypothesis
+                  </p>
+                  <p style={{ fontSize: 16, color: 'var(--text-1)', lineHeight: 1.5, margin: '0 0 8px', fontWeight: 500 }}>
+                    &quot;We think you&apos;ll take the offer.&quot;
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.6, margin: 0 }}>
+                    Stated before the full read — checked against what you actually decide.
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  maxWidth: 420, margin: '0 auto',
+                  borderLeft: '2px solid var(--gold-dim)', paddingLeft: 16,
+                }}>
+                  <p style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 9.5,
+                    letterSpacing: '0.14em', textTransform: 'uppercase',
+                    color: 'var(--text-4)', margin: '0 0 8px',
+                  }}>
+                    Example
+                  </p>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 6px', fontStyle: 'italic' }}>
+                    &quot;Considering selling my 40% stake to a PE firm at 8× EBITDA. Offer expires in 3 weeks.&quot;
+                  </p>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+                    <span style={{ color: 'var(--gold)', fontWeight: 600 }}>Risk Architect</span> — runs a pre-mortem before you commit: where this fails, in what order, and which failure you&apos;re least prepared for.
+                  </p>
+                </div>
+              )}
+
+              {/* Vet-fix (d): the only other place this exists is a footer
+                  link the same size/weight as Privacy Policy and Terms. */}
+              <div style={{ textAlign: 'center', marginTop: 22 }}>
+                <Link
+                  href="/methodology"
+                  style={{
+                    display:       'inline-flex',
+                    alignItems:    'center',
+                    gap:           6,
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      10.5,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color:         'var(--gold)',
+                    textDecoration:'none',
+                    borderBottom:  '1px solid var(--gold-dim)',
+                    paddingBottom: 2,
+                  }}
+                >
+                  See how Quorum works
+                  <span aria-hidden="true">→</span>
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* ── Personas — reveal after CTA click ─────────── */}
+          <div style={{
+            overflow:   'hidden',
+            maxHeight:  inputRevealed ? 160 : 0,
+            opacity:    inputRevealed ? 1 : 0,
+            marginTop:  inputRevealed ? 20 : 0,
+            transition: 'max-height 0.5s ease 0.35s, opacity 0.5s ease 0.35s, margin-top 0.4s ease 0.35s',
+          }}>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 10, padding: '0 2px', fontStyle: 'italic' }}>
+              {isUnifiedSessionEnabled()
+                ? 'Six advisors run in the background on every decision — stress-testing assumptions, surfacing hidden gaps, challenging the frame. Each one\u2019s verdict is visible the moment the read is ready \u2014 tap a card for the full reasoning.'
+                : 'Six advisors · stress-test assumptions, surface hidden gaps, and challenge the frame of every decision'}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '0 2px' }}>
+              {PERSONAS_GRID.map(p => (
+                <div
+                  key={p.label}
+                  title={p.hint}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    padding: '6px 12px', borderRadius: 999,
+                    border: '1px solid var(--border-dim)',
+                    background: 'var(--bg-card)',
+                    cursor: 'default',
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-mid)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-dim)')}
+                >
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: p.col, opacity: 0.85, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                    {p.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Tips — collapsible (below personas) ─────────── */}
+          <div style={{
+            overflow:   'hidden',
+            maxHeight:  inputRevealed ? 600 : 0,
+            opacity:    inputRevealed ? 1 : 0,
+            marginTop:  inputRevealed ? 28 : 0,
+            transition: 'max-height 0.5s ease 0.5s, opacity 0.5s ease 0.5s, margin-top 0.4s ease 0.5s',
+          }}>
+            <button
+              onClick={handleTipsToggle}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'transparent', border: 'none',
+                color: 'var(--text-4)', fontSize: 11,
+                fontFamily: 'var(--font-mono)', letterSpacing: '0.1em',
+                textTransform: 'uppercase', cursor: 'pointer',
+                padding: '6px 2px', transition: 'color 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-4)')}
+            >
+              <IconChevron open={tipsOpen} />
+              How to get the most out of Quorum
+            </button>
+            <div style={{
+              overflow: 'hidden',
+              maxHeight: tipsOpen ? 500 : 0,
+              opacity: tipsOpen ? 1 : 0,
+              transition: 'max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease',
+            }}>
+              <div className="home-two-col" style={{ gap: 10, marginTop: 12 }}>
+                <div style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid var(--gold-dim)', borderRadius: 12, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: 6, background: 'rgba(201,168,76,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+                      </svg>
+                    </div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>Challenge the advisors</p>
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+                    After each advisor responds, you&apos;ll see a <span style={{ color: 'var(--gold)', fontWeight: 600 }}>&quot;Disagree or ask a follow-up&quot;</span> button. Add information they missed or push back on their reasoning — it&apos;s automatically shared with the rest of the council as new evidence, and each advisor reassesses independently. The Council synthesizes once, after everyone has weighed in.
+                  </p>
+                </div>
+                <div style={{ background: 'var(--green-soft)', border: '1px solid var(--green-border)', borderRadius: 12, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--green-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--green-text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-text)', margin: 0 }}>Log what you decided</p>
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+                    Once you decide, return and open any past session to log the outcome. Over time this builds a private record of how you actually decide.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bug fix: session-0 email capture — previously AuthPanel only rendered
+              inside the "returning users" history block (sessions.length > 0), so a
+              brand-new user had NO way to link an email before running their first
+              session. That first session would then only be linkable retroactively
+              via the record-page EmailCaptureCard / magic-link sweep, which is a much
+              more fragile path. Surfacing the same AuthPanel here — before any session
+              exists — lets the very first session be created with user_email already
+              attached server-side (see handleSubmit's session POST body), so no
+              retroactive linking is needed for it at all. */}
+          {!userEmail && sessions.length === 0 && !loadingHist && (
+            <div id="auth-panel-anchor" style={{ marginTop: 20 }}>
+              <AuthPanel onAuthenticated={email => setUserEmail(email)} userEmail={userEmail} />
+            </div>
+          )}
+
+          {/* Bug fix / UX: Watchlist is deliberately signed-in-only (see
+              WatchlistSection.tsx — "no anonymous path"), which made it invisible
+              to any brand-new, unauthenticated visitor — most visibly at session 0,
+              since that's when almost everyone is still anonymous. Rather than
+              showing nothing (and the feature going completely undiscovered), show
+              a compact locked teaser that explains what it is and links down to the
+              email-capture panel above (now shown at session 0 too, see AuthPanel
+              block above) so the two features reinforce each other.
+
+              Bug fix: buildWatchlistTourStep() (OnboardingTour.tsx) targets
+              [data-tour-id="home-watchlist"], which previously only existed on
+              WatchlistSection's own container — never rendered for anonymous
+              visitors. The tour step had nothing to find or highlight for exactly
+              the audience (new, signed-out, session 0) most likely to see it.
+              Same data-tour-id now added here too, so the step resolves to
+              whichever of the two states (locked teaser or unlocked section)
+              is actually on the page. */}
+          {isWatchlistEnabled() && !authToken && (
+            <div
+              data-tour-id="home-watchlist"
+              style={{
+              marginTop: 20,
+              padding: '14px 16px',
+              background: 'var(--bg-card)',
+              border: '1px dashed var(--border-mid)',
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}>
+              <span style={{ fontSize: 17, lineHeight: 1, flexShrink: 0 }}>👁️</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>
+                  Watchlist
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-4)', lineHeight: 1.5 }}>
+                  Park a decision you're not ready to bring to the Council yet — link your email to unlock it.
+                </p>
+              </div>
+              <button
+                onClick={() => document.getElementById('auth-panel-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border-mid)',
+                  borderRadius: 6,
+                  color: 'var(--gold)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                Unlock
+              </button>
+            </div>
+          )}
+
+          {/* Sprint W1 — Watchlist. Gated behind NEXT_PUBLIC_WATCHLIST_ENABLED;
+              see lib/feature-flags.ts. onGraduate hands the item's text back
+              here to pre-fill + focus the existing decision input — no
+              navigation needed, Watchlist lives on this same page. */}
+          {isWatchlistEnabled() && authToken && (
+            <WatchlistSection
+              authToken={authToken}
+              onGraduate={(text) => {
+                setDecision(text)
+                setInputRevealed(true)
+                setTimeout(() => textareaRef.current?.focus(), 380)
+              }}
+            />
+          )}
+
+          {/* ── Chunk 4a — Proactive Pattern Card ─────────── */}
+          {mirrorUnlocked && sessions.length >= 5 && (
+            <div style={{ marginTop: 28 }}>
+              <PatternSurfaceCard
+                authToken={authToken}
+                sessionCount={sessions.length}
               />
             </div>
           )}
 
-          {/* ── Bottom Tray ────────────────────────────────────── */}
-          <div style={{ marginTop: 44 }}>
-            <div className="gold-rule" style={{ marginBottom: 22 }} />
-            <div className="rec-bottom-tray">
-              <div className="rec-bottom-left">
-                <BackButton
-                  label="← Back"
-                  style={{ padding: '10px 18px', fontSize: 13, minHeight: 44 }}
-                />
-                <ReanalyzeDrawer
-                  sessionId={session.id}
-                  decisionText={session.decision_text}
-                  contextText={session.context_text}
-                  userId={session.user_id ?? null}
-                  encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY}
-                />
-                <ShareRecordButton
-                  sessionId={session.id}
-                  decisionText={session.decision_text}
-                />
-              </div>
-              <Link href="/">
-                <button
-                  className="btn-ghost"
-                  style={{ padding: '10px 18px', fontSize: 13, minHeight: 44 }}
-                >
-                  New Decision
-                </button>
-              </Link>
+          {/* ── Chunk 4b — Calibration Reveal Card ────────── */}
+          {/* Shows avg delta + pattern label for unlocked users */}
+          {/* who have ≥3 logged outcomes. Gate is inside component. */}
+          {/* Unified session flag also unlocks this for free tier — see the */}
+          {/* component's own doc comment for why (overlap resolution with   */}
+          {/* the now-removed QuorumLearnedSomething).                       */}
+          {(mirrorUnlocked || isUnifiedSessionEnabled()) && (
+            <CalibrationRevealCard
+              authToken={authToken}
+              mirrorUnlocked={mirrorUnlocked}
+            />
+          )}
+
+          {/* ── Chunk 4c — Recurring Condition Card ───────── */}
+          {mirrorUnlocked && patternDimensions.length > 0 && (
+            <RecurringConditionCard
+              dimensions={patternDimensions}
+              sessionCount={sessions.length}
+            />
+          )}
+          
+          {/* ── Mirror Open Loop Card (non-unlocked returning users) ──── */}
+          {/* Shows a pattern-building hook for users without a Mirror sub.  */}
+          {/* Countdown (1–2 sessions) or teaser (3+ sessions).             */}
+          {sessions.length > 0 && (
+            <div style={{ marginTop: mirrorUnlocked ? 0 : 20 }}>
+              <MirrorOpenLoopCard
+                authToken={authToken}
+                sessionCount={sessions.length}
+                mirrorUnlocked={mirrorUnlocked}
+              />
             </div>
+          )}
 
-            {/* Session watermark */}
-            <p style={{
-              marginTop: 28,
-              textAlign: 'center',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              color: 'var(--text-4)',
-              opacity: 0.6,
-            }}>
-              Quorum · {id.slice(0, 8)}
-            </p>
-          </div>
+          {/* ── Memory Engine (returning users only) ──────── */}
+          {sessions.length > 0 && (
+            <div style={{ marginTop: 'clamp(20px, 4vw, 28px)' }}>
+              <MemoryEngineStatus
+                sessionCount={sessions.length}
+                pendingOutcomes={pending.length}
+                decidedCount={decided.length}
+                hasIdentity={!!userEmail}
+                mirrorUnlocked={mirrorUnlocked}
+                foundingAvailable={foundingAvailable}
+                onScrollToHistory={() => {
+                  historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  setActiveTab('pending')
+                }}
+              />
+            </div>
+          )}
 
+          {/* ── Push notifications opt-in (logged-in returning users) ── */}
+           {authToken && sessions.length >= 1 && (
+             <PushEnablePrompt authToken={authToken} />
+           )}
+
+          {/* Item #4 — quiet, collapsed-by-default reference section, moved to sit
+              directly before the Judgment Record; still deliberately kept off the
+              live synthesis path per the working decision on this item.
+              Unified session, point 1: skipped under the flag — this section's
+              whole purpose is introducing the six named advisors by name, which
+              doesn't match a home page that no longer leads with that framing. */}
+          {!isUnifiedSessionEnabled() && <MeetTheCouncil />}
+
+          {/* ── Decision history (returning users only) ────── */}
+          {(sessions.length > 0 || loadingHist) && (
+            <div ref={historyRef} style={{ marginTop: 8, opacity: loadingHist ? 0 : 1, transition: 'opacity 0.6s ease' }}>
+              {/* Header + tabs */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)', margin: 0 }}>
+                  Your judgment record
+                </p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(['all', 'pending', 'decided'] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => { setActiveTab(tab); setHistoryShowAll(false) }}
+                      style={{
+                        fontSize: 11, padding: '4px 12px', borderRadius: 20,
+                        border: '1px solid',
+                        borderColor: activeTab === tab ? 'var(--gold-dim)' : 'var(--border-dim)',
+                        background: activeTab === tab ? 'rgba(201,168,76,0.1)' : 'transparent',
+                        color: activeTab === tab ? 'var(--gold)' : 'var(--text-4)',
+                        cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {tab === 'all'     ? `All ${sessions.length}`   : ''}
+                      {tab === 'pending' ? `Open ${pending.length}`   : ''}
+                      {tab === 'decided' ? `Logged ${decided.length}` : ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Auth badge */}
+              {!userEmail && (
+                <div style={{ marginBottom: 16 }}>
+                  <AuthPanel onAuthenticated={email => setUserEmail(email)} userEmail={userEmail} />
+                </div>
+              )}
+              {userEmail && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 14px', marginBottom: 14,
+                  background: 'var(--green-soft)',
+                  border: '1px solid var(--green-border)',
+                  borderRadius: 10,
+                }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green-text)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                    Sessions linked to <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{userEmail}</span>
+                    {' · '}cross-device history active
+                  </span>
+                </div>
+              )}
+
+              {loadingHist && (
+                <div style={{ textAlign: 'center', padding: 24 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--border-mid)', animation: 'blink 1.2s infinite', display: 'inline-block' }} />
+                </div>
+              )}
+
+              {/* Session list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(historyShowAll ? filtered : filtered.slice(0, HISTORY_PREVIEW)).map(s => {
+                  const date    = new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  const snippet = s.decision_text.length > 120 ? s.decision_text.slice(0, 120) + '…' : s.decision_text
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => router.push(`/record/${s.id}`)}
+                      style={{
+                        background: 'var(--bg-card)', border: '1px solid var(--border-dim)',
+                        borderRadius: 12, padding: '14px 16px',
+                        cursor: 'pointer', transition: 'border-color 0.2s',
+                        display: 'flex', alignItems: 'flex-start', gap: 12,
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-hi)')}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-dim)')}
+                    >
+                      <div style={{ flexShrink: 0, marginTop: 3 }}>
+                        {s.outcome ? (
+                          <div style={{ width: 20, height: 20, borderRadius: '50%', background: helpedColor[s.outcome.council_helped] || 'var(--outcome-yes)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--green-text)' }}>
+                            <IconCheck />
+                          </div>
+                        ) : (
+                          <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--bg-inset)', border: '1px solid var(--border-mid)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-4)' }}>
+                            <IconDot />
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, color: 'var(--text-1)', lineHeight: 1.5, marginBottom: 6 }}>{snippet}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-4)', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <IconClock /> {date}
+                          </span>
+                          {s.outcome ? (
+                            <span style={{ fontSize: 11, padding: '2px 10px', borderRadius: 20, background: helpedColor[s.outcome.council_helped] || 'var(--outcome-yes)', color: 'var(--text-2)', flexShrink: 0 }}>
+                              {helpedLabel[s.outcome.council_helped] || 'Decided'}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: '#c9a84c', padding: '2px 10px', borderRadius: 20, background: 'rgba(201,168,76,0.08)', border: '1px solid var(--gold-dim)', flexShrink: 0 }}>
+                              Outcome pending
+                            </span>
+                          )}
+                          {s.outcome?.what_decided && (
+                            <span style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+                              {s.outcome.what_decided}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 2 }}>
+                        <ShareRecordButton
+                          sessionId={s.id}
+                          decisionText={s.decision_text}
+                          compact
+                        />
+                        <button
+                          onClick={e => { e.stopPropagation(); handleDeleteSession(e, s.id) }}
+                          title="Delete this decision"
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 30, height: 30, borderRadius: 6,
+                            border: '1px solid transparent', background: 'transparent',
+                            color: 'var(--text-4)', cursor: 'pointer', transition: 'all 0.15s',
+                            flexShrink: 0, padding: 0,
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.color = '#c04040'
+                            e.currentTarget.style.borderColor = 'rgba(192,64,64,0.3)'
+                            e.currentTarget.style.background = 'rgba(192,64,64,0.07)'
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.color = 'var(--text-4)'
+                            e.currentTarget.style.borderColor = 'transparent'
+                            e.currentTarget.style.background = 'transparent'
+                          }}
+                        >
+                          <IconTrash />
+                        </button>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-4)' }}>
+                          <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {filtered.length === 0 && !loadingHist && (
+                  <p style={{ fontSize: 13, color: 'var(--text-4)', textAlign: 'center', padding: '20px 0', fontStyle: 'italic' }}>
+                    {activeTab === 'pending' ? 'No open outcomes — all decisions logged.' : 'No decisions in this category yet.'}
+                  </p>
+                )}
+              </div>
+
+              {/* Show More */}
+              {filtered.length > HISTORY_PREVIEW && !historyShowAll && (
+                <button
+                  onClick={() => setHistoryShowAll(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: '100%', marginTop: 10,
+                    background: 'transparent', border: '1px solid var(--border-dim)',
+                    borderRadius: 10, padding: '10px 0',
+                    fontSize: 12, color: 'var(--text-4)', cursor: 'pointer',
+                    fontFamily: 'inherit', transition: 'border-color 0.2s, color 0.2s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-mid)'; e.currentTarget.style.color = 'var(--text-3)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-dim)'; e.currentTarget.style.color = 'var(--text-4)' }}
+                >
+                  Show {filtered.length - HISTORY_PREVIEW} more decisions
+                </button>
+              )}
+            </div>
+          )}
+
+          <p style={{ marginTop: 40, fontSize: 11, color: 'var(--text-4)', letterSpacing: '0.04em', textAlign: 'center' }}>
+            {userEmail
+              ? `Sessions linked to ${userEmail} · private by URL`
+              : 'Sessions are private by URL. No account linked.'
+            }
+          </p>
+
+          {/* Item #10 — end of home page, each question collapsed by default */}
+          <FAQSection />
+
+          {/* Item #17 — plain referral link, signed-in users only */}
+          {userId && <ReferralLink userId={userId} />}
         </div>
-      </div>
+      </main>
 
-      {/* ── Sprint TOUR-1: First-decision record tour (client component) ── */}
-      <RecordTour totalSessionCount={totalSessionCount} tourDone={recordTourDone} />
+      {/* ── Sprint TOUR-1: First-decision home tour ────────────────────── */}
+      {showHomeTour && (
+        <OnboardingTour
+          page="home"
+          steps={homeTourSteps}
+          active={showHomeTour}
+          onComplete={() => {
+            try { localStorage.setItem('quorum_tour.home', 'done') } catch {}
+            // Item #3: also persist server-side for signed-in users, so this
+            // holds across devices/browsers, not just this localStorage.
+            if (authToken) {
+              fetch('/api/onboarding/complete', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${authToken}` },
+              }).catch(() => {})
+            }
+            setShowHomeTour(false)
+          }}
+          onSkip={() => {
+            // Product decision (2026-08): the three tours (home, council,
+            // record) are independent — skipping the home tour should only
+            // ever record that the *home* tour was skipped. This used to
+            // write 'skip' to all three localStorage keys at once, which
+            // pre-emptively marked the council and record tours as already
+            // dismissed before the user had ever seen them — the actual
+            // root cause of those two tours silently never showing after a
+            // home-tour skip (see the matching fix + comment in
+            // components/SessionView.tsx and components/RecordTour.tsx,
+            // which removed the *other* half of this same coupling).
+            try { localStorage.setItem('quorum_tour.home', 'skip') } catch {}
+            if (authToken) {
+              fetch('/api/onboarding/complete', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${authToken}` },
+              }).catch(() => {})
+            }
+            setShowHomeTour(false)
+          }}
+        />
+      )}
+      {/* ── SB-1: Profile capture overlay — fires once for users without a profile ── */}
+      {showProfileCapture && (
+        <ProfileCaptureOverlay
+          authToken={authToken}
+          deviceId={null}
+          onDone={() => setShowProfileCapture(false)}
+        />
+      )}
     </>
   )
 }
