@@ -7,6 +7,7 @@ import PersonaPanel from './PersonaPanel'
 import ExaminerPanel from './ExaminerPanel'
 import SynthesisCard from './SynthesisCard'
 import CouncilStatusBar from './CouncilStatusBar'
+import CouncilGlanceStrip from './CouncilGlanceStrip'
 import { TTSProvider } from '@/context/TTSContext'
 import {
   PERSONAS, PERSONA_ORDER, computePersonaOrder,
@@ -474,6 +475,25 @@ export default function SessionView({ session: initialSession, initialMessages =
   // S3-01: per-persona lean classification (proceed/wait/mixed), parsed from each
   // persona's raw <lean> header tag in handlePersonaComplete.
   const [personaLeans, setPersonaLeans] = useState<Record<string, Lean>>({})
+  // Council redesign (Sprint 2), point C — which persona cards are currently
+  // expanded (collapsed === false), keyed by PersonaKey. Populated via each
+  // PersonaPanel's onCollapseChange, including its initial-mount call, so
+  // this always reflects reality rather than an assumed default. Used only
+  // to toggle .persona-grid-item-expanded on that card's grid-item wrapper
+  // (see globals.css) — nothing here changes what PersonaPanel itself does.
+  const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>({})
+  const handleCollapseChange = useCallback((key: string, collapsed: boolean) => {
+    setCollapsedMap(prev => (prev[key] === collapsed ? prev : { ...prev, [key]: collapsed }))
+  }, [])
+  // Council redesign (Sprint 2), point C — bumped when a CouncilGlanceStrip
+  // chip is clicked; passed to that persona's PersonaPanel as
+  // expandRequestToken, which expands (if collapsed) and scrolls to it. A
+  // counter rather than a boolean so clicking the same chip twice in a row
+  // (e.g. after the user manually re-collapsed that card) still fires.
+  const [expandRequests, setExpandRequests] = useState<Record<string, number>>({})
+  const handleGlanceSelect = useCallback((key: PersonaKey) => {
+    setExpandRequests(prev => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }))
+  }, [])
   // P1 fix: called when a pushback reply carries a fresh lean that differs
   // from the persona's original classification (PersonaPanel's onLeanUpdate).
   // This is the only place personaLeans updates after the initial response —
@@ -2242,31 +2262,48 @@ export default function SessionView({ session: initialSession, initialMessages =
               )}
 
               {/* ── 4. Six persona panels ── */}
+              {/* Council redesign (Sprint 2): the display:none toggle below now
+                  lives on this outer wrapper rather than the grid directly, so
+                  it covers the glance strip too — both appear/disappear
+                  together with the disclosure toggle above. */}
               <div
-                className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sv-fade sv-fade-3"
-                data-tour-id="council-personas"
                 style={{
-                  paddingTop:    12,
-                  opacity:       (redirectBlocked || notReadyBlocked) ? 0.55 : 1,
-                  pointerEvents: (redirectBlocked || notReadyBlocked) ? 'none' : 'auto',
-                  // Unified session flag: collapsed by default, expandable via
-                  // the disclosure toggle above. The cards still mount and
-                  // fetch/stream in the background either way — this only
-                  // hides them visually, so nothing about the underlying
-                  // Council generation changes. Flag off → always visible,
-                  // identical to the pre-flag behavior.
                   display: (isUnifiedSessionEnabled() && !councilExpanded) ? 'none' : undefined,
                 }}
               >
+                {isUnifiedSessionEnabled() && (
+                  <CouncilGlanceStrip
+                    orderedKeys={orderedPersonaKeys}
+                    leans={personaLeans}
+                    expandedKeys={new Set(Object.keys(collapsedMap).filter(k => collapsedMap[k] === false))}
+                    onSelect={handleGlanceSelect}
+                  />
+                )}
+                <div
+                  className={`grid ${isUnifiedSessionEnabled() ? 'grid-cols-2' : 'grid-cols-1'} md:grid-cols-2 xl:grid-cols-3 gap-4 sv-fade sv-fade-3`}
+                  data-tour-id="council-personas"
+                  style={{
+                    paddingTop:    12,
+                    opacity:       (redirectBlocked || notReadyBlocked) ? 0.55 : 1,
+                    pointerEvents: (redirectBlocked || notReadyBlocked) ? 'none' : 'auto',
+                  }}
+                >
                 {orderedPersonaKeys.map((key, personaIndex) => {
                   // Card is DB-hydrated (Back to Council / reload) — always shown
                   // instantly, never held back by the cosmetic stagger below.
                   const isHydrated = sessionKey === 0 && !!initialMessages[key]
                   const isRevealed = isHydrated || personaIndex <= streamUnlockedUpTo
+                  // Council redesign (Sprint 2), point C: only meaningful under
+                  // the flag — off-flag, PersonaPanel's default is always
+                  // "expanded" by original design (collapsedMap[key] === false
+                  // for every card), and the pre-existing grid already handles
+                  // that correctly without any span override.
+                  const isExpandedCard = isUnifiedSessionEnabled() && collapsedMap[key] === false
                   return (
                     <div
                       key={`${key}-${sessionKey}`}
                       ref={el => { cardRefs.current[key] = el }}
+                      className={`persona-grid-item${isExpandedCard ? ' persona-grid-item-expanded' : ''}`}
                       style={{
                         willChange: 'transform',
                         // Cosmetic-only entrance stagger (see streamUnlockedUpTo above) —
@@ -2291,6 +2328,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                       onComplete={handlePersonaComplete}
                       onLeanUpdate={handleLeanUpdate}
                       currentLean={personaLeans[key]}
+                      onCollapseChange={(collapsed) => handleCollapseChange(key, collapsed)}
+                      expandRequestToken={expandRequests[key]}
                       examinerContext={examinerContextByPersona[key]}
                       structuralContext={structuralContext ?? undefined}
                       onShareContext={(text) => handleShareContext(key, text)}
@@ -2326,6 +2365,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                     </div>
                   )
                 })}
+                </div>
               </div>
 
               {/* ── Capture Position — after personas, giving time to read all six advisors ── */}

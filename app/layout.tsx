@@ -21,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" data-theme="dark" data-unified-session={isUnifiedSessionEnabled() ? 'true' : undefined} suppressHydrationWarning>
+    <html lang="en" data-theme="light" data-unified-session={isUnifiedSessionEnabled() ? 'true' : undefined} suppressHydrationWarning>
       <head>
         {/* ── Prevent theme flash ── */}
         <script

@@ -747,6 +747,39 @@ textarea::placeholder { color: var(--text-4); }
   display: none;
 }
 
+/* Council redesign (Sprint 2) — same collapse mechanism as the mobile-only
+   rules inside @media (max-width: 600px) below, but applied at every
+   viewport width, scoped via the [data-unified-session="true"] attribute
+   set on <html> (app/layout.tsx) instead of a breakpoint. Deliberately
+   additive: the mobile-only rules below are untouched, so flag-off behavior
+   (mobile still gets the pre-existing accordion; desktop still always shows
+   the full card) is unchanged. Needs !important for the same reason the
+   mobile rule does — .persona-mobile-toggle's base display is set via
+   inline style above, which nothing but an !important stylesheet rule can
+   override. */
+[data-unified-session="true"] .persona-mobile-toggle {
+  display: flex !important;
+}
+[data-unified-session="true"] .persona-body-mobile.is-collapsed {
+  display: none;
+}
+[data-unified-session="true"] .persona-collapsed-realcost.is-collapsed {
+  display: block;
+}
+
+/* Council redesign (Sprint 2), point C — an expanded (non-collapsed)
+   persona card takes the full grid row below the xl breakpoint, so its full
+   analysis isn't squeezed into a half-width (2-column) track. At xl+ the
+   grid is already 3 columns wide enough for a full card in one column, so
+   this is a no-op there. SessionView.tsx toggles this class on the grid
+   item wrapper (not on PersonaPanel's own root) via onCollapseChange, since
+   grid-column only affects a direct child of the grid container. */
+@media (max-width: 1279px) {
+  .persona-grid-item.persona-grid-item-expanded {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ── Tooltip (system-prompted "action due" hints — no popups) ─────────────
    Hover/focus only; disappears on mouseleave/blur. Uses the same theme
    tokens as everything else so it follows light/dark automatically. */

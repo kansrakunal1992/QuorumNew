@@ -7,16 +7,12 @@ import { useTTSContext } from '@/context/TTSContext'
 import type { PersonaMeta, Message } from '@/lib/types'
 import type { Lean } from './TensionInterstitial'
 import { PERSONAS_WITH_STRUCTURAL_CONTEXT } from '@/lib/structural-dims'
+import LeanBadge, { LEAN_LABELS } from './LeanBadge'
 
-// Vet-fix (b): labels for the "shifted" badge below — same wording as
-// WhatChangedDrawer's LEAN_LABELS, so a lean shift reads the same way
-// wherever it's shown (this card, the What Changed drawer, the Tension
-// interstitial).
-const LEAN_LABELS: Record<Lean, string> = {
-  proceed: 'Proceed',
-  wait:    'Wait',
-  mixed:   'Mixed',
-}
+// LEAN_LABELS above now lives in LeanBadge.tsx (Council redesign, Sprint 2)
+// — same wording as before ("Shifted after pushback → now leaning
+// {LEAN_LABELS[currentLean]}" below), and also as WhatChangedDrawer's own
+// copy, so a lean shift reads the same way wherever it's shown.
 
 // Unified session, Tier 3 — "Challenge Quorum" structured reasons. Purely a
 // prefill helper for the free-form pushback textarea below (see product doc
@@ -146,11 +142,22 @@ interface Props {
   /** Fires the first time THIS card's pushback completes — SessionView uses this
    *  to flip anyCardChallenged to true for the rest of the session. */
   onFirstChallengeUsed?: () => void
+  /** Council redesign (Sprint 2): fires whenever this card's collapsed state
+   *  changes (including once on mount) — SessionView uses this to know
+   *  which grid item should span the full row width at the 2-column
+   *  breakpoint (see .persona-grid-item-expanded in globals.css) instead of
+   *  squeezing a full analysis into a half-width column. */
+  onCollapseChange?: (collapsed: boolean) => void
+  /** Council redesign (Sprint 2): bumped by CouncilGlanceStrip when this
+   *  card's chip is clicked — expands the card (if collapsed) and scrolls
+   *  it into view. A counter rather than a boolean so clicking the same
+   *  chip twice in a row (e.g. after manually re-collapsing) still fires. */
+  expandRequestToken?: number
 }
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, authToken, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, authToken, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed, onCollapseChange, expandRequestToken }: Props) {
   const [response, setResponse]           = useState(initialContent ?? '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
   const [messages, setMessages]           = useState<Message[]>([])
@@ -183,15 +190,20 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // the citation badge only ever renders when this is non-empty.
   const [structuralCitationText, setStructuralCitationText] = useState('')
 
-  // Item #9 (revised) — mobile-only collapse for this persona card, default
-  // OPEN/expanded. Unlike the Judgment Record or FAQ (secondary/reference
-  // content, collapsed by default), this card's analysis IS the core product
-  // value — collapsing it by default would hide the main thing someone opened
-  // the session to read. This only ever gates visibility under the 600px
-  // breakpoint (see .persona-body-mobile in globals.css); desktop is
-  // unaffected regardless of this state. The toggle itself only appears once
-  // panelState === 'done' — collapsing mid-stream would be disorienting.
-  const [mobileCollapsed, setMobileCollapsed] = useState(false)
+  // Item #9 (revised), then Council redesign (Sprint 2) — collapse for this
+  // persona card. Originally mobile-only (sub-600px), default OPEN,
+  // reasoning being that this card's analysis IS the core product value so
+  // collapsing by default would hide the thing someone opened the session
+  // to read. Under isUnifiedSessionEnabled(), that reasoning flips: the
+  // position/realcost header (which survives collapse below, unaffected by
+  // this state) now carries the "core value read" job, at every viewport —
+  // so the default becomes collapsed there, same as the disclosure toggle
+  // that already gates the whole six-card grid one level up. Flag OFF:
+  // unchanged — default open, still only visually enforced under 600px (see
+  // the plain .persona-body-mobile rule in globals.css; the new
+  // [data-unified-session="true"] rules next to it are what make this class
+  // apply at every width, only when the flag is on).
+  const [mobileCollapsed, setMobileCollapsed] = useState(isUnifiedSessionEnabled())
 
   // Item #14 — synthesized one-line rationale, tucked behind a small "why"
   // toggle, hidden by default so it never competes with the analysis itself.
@@ -291,6 +303,28 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   useEffect(() => { onLeanUpdateRef.current     = onLeanUpdate    }, [onLeanUpdate])
   useEffect(() => { onPersonaCompleteRef.current = onPersonaComplete }, [onPersonaComplete])
   useEffect(() => { onExaminerUpdateCompleteRef.current = onExaminerUpdateComplete }, [onExaminerUpdateComplete])
+
+  // Council redesign (Sprint 2): tell SessionView whenever this card's
+  // collapsed state changes, including the very first render — that's how
+  // it knows which grid item should span the full row at the 2-column
+  // breakpoint. Runs on mount too (mount IS a "change" from the parent's
+  // point of view, since it starts with no entry for this key at all).
+  useEffect(() => {
+    onCollapseChange?.(mobileCollapsed)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileCollapsed])
+
+  // Council redesign (Sprint 2): a click on this persona's CouncilGlanceStrip
+  // chip bumps expandRequestToken — expand (if currently collapsed) and
+  // scroll into view. Guarded on the token being truthy so this doesn't fire
+  // on mount (token starts undefined/0 for every card).
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!expandRequestToken) return
+    setMobileCollapsed(false)
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandRequestToken])
 
   // S1-02: Sequential streaming — fire when this persona transitions to done
   useEffect(() => {
@@ -992,7 +1026,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   ) : null
 
   return (
-    <div className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280, borderLeft: `3px solid ${accentColor}` }}>
+    <div ref={rootRef} className={`persona-card ${panelState === 'streaming' ? 'streaming' : panelState === 'done' ? 'done' : ''}`} style={{ minHeight: 280, borderLeft: `3px solid ${accentColor}` }}>
       {/* S5-01: Rate limit banner — shown when 429 is returned from /api/persona */}
       {rateLimitInfo && (
         <div style={{ padding: '8px 12px 4px' }}>
@@ -1030,19 +1064,28 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusBadge />
-          {/* Item #9 (revised) — mobile-only card collapse toggle; hidden
-              entirely on desktop, and only shown once the response is done */}
-          {panelState === 'done' && (
+          {/* Item #9 (revised), then Council redesign (Sprint 2): was
+              mobile-only + done-only + icon-only, on the reasoning that this
+              was a minor nicety, not the primary way anyone reached the
+              analysis. It's now the primary interaction under the unified-
+              session flag (see the [data-unified-session="true"] rules in
+              globals.css making it visible at every width), so: available
+              once streaming starts (not just once done — someone can peek at
+              a card that's still in progress), and given a visible label
+              rather than a bare chevron. */}
+          {(panelState === 'streaming' || panelState === 'done') && (
             <button
               className="persona-mobile-toggle"
               onClick={() => setMobileCollapsed(c => !c)}
               aria-expanded={!mobileCollapsed}
-              aria-label={mobileCollapsed ? 'Expand analysis' : 'Collapse analysis'}
+              aria-label={mobileCollapsed ? 'Read full analysis' : 'Show less'}
               style={{
                 background: 'transparent', border: 'none', cursor: 'pointer',
-                color: 'var(--text-4)', padding: 2, display: 'none', alignItems: 'center',
+                color: 'var(--text-4)', padding: '2px 4px', display: 'none',
+                alignItems: 'center', gap: 4, font: 'inherit', fontSize: 11, fontWeight: 500,
               }}
             >
+              <span>{mobileCollapsed ? 'Read full analysis' : 'Show less'}</span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                 style={{ transform: mobileCollapsed ? 'none' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
                 <polyline points="6 9 12 15 18 9" />
@@ -1062,7 +1105,18 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           it keeps the exact same className/is-collapsed behavior as before. */}
       <div style={{ padding: '14px 16px 0' }}>
         {positionText && (
-          <div style={{ marginBottom: mobileCollapsed && realCostText && panelState === 'done' ? 10 : 14 }}>
+          <div style={{ marginBottom: mobileCollapsed && realCostText ? 10 : 14 }}>
+            {/* Council redesign (Sprint 2), point B — "color classification".
+                initialLean (frozen, same convention as positionText/
+                realCostText above) rather than the live-updating currentLean,
+                so this badge never disagrees with the frozen verdict sentence
+                sitting right below it; a post-pushback shift already has its
+                own "Shifted after pushback" line just underneath. */}
+            {initialLean && (
+              <div style={{ marginBottom: 8 }}>
+                <LeanBadge lean={initialLean} />
+              </div>
+            )}
             <p style={{
               fontSize:   15,
               fontWeight: 600,
@@ -1109,9 +1163,20 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             copies of "The real cost" showed at once. Now always rendered
             in the tree; visibility is entirely CSS-driven via
             .persona-collapsed-realcost, which only resolves to visible
-            inside the same @media(max-width:600px) block that hides the
-            detail block — the two can no longer disagree. */}
-        {realCostText && panelState === 'done' && (
+            inside the same @media(max-width:600px) block (or, under the
+            unified-session flag, the [data-unified-session="true"] rules
+            beside it) that hides the detail block — the two can no longer
+            disagree.
+            Council redesign (Sprint 3, speed): previously also required
+            panelState === 'done', which meant this line waited for the
+            entire ~200-word response to finish streaming even though
+            <realcost> — like <position> above, which has no such gate —
+            is already fully parsed the moment the header block lands, near
+            the very start of the stream. Dropped that requirement so the
+            collapsed executive summary (position + this line) finishes
+            within a couple of seconds of a persona starting to respond,
+            not only once it's completely done. */}
+        {realCostText && (
           <p
             className={`persona-collapsed-realcost${mobileCollapsed ? ' is-collapsed' : ''}`}
             style={{

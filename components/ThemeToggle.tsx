@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 
 // Reads the current theme synchronously from localStorage (same key the
 // inline anti-flash script uses). Falls back to the DOM attribute so that
-// both SSR and CSR paths agree. Never reads 'dark' as a hardcoded default —
-// that caused the button to briefly show the wrong mode on every page load.
+// both SSR and CSR paths agree. The final fallback below should always match
+// the SSR default in app/layout.tsx (data-theme="light") — kept as a literal
+// here (not read from a shared constant) same as before, just flipped.
 function getPersistedTheme(): 'dark' | 'light' {
   try {
     const stored = localStorage.getItem('quorum_theme')
@@ -16,7 +17,7 @@ function getPersistedTheme(): 'dark' | 'light' {
     const attr = document.documentElement.getAttribute('data-theme')
     if (attr === 'light' || attr === 'dark') return attr
   }
-  return 'dark'
+  return 'light'
 }
 
 export default function ThemeToggle() {
@@ -27,7 +28,8 @@ export default function ThemeToggle() {
     // Sync from persisted preference on every mount (covers page navigations)
     const persisted = getPersistedTheme()
     setTheme(persisted)
-    // Ensure the DOM attribute is in sync (in case SSR defaulted to 'dark')
+    // Ensure the DOM attribute is in sync (in case SSR's default, or a stale
+    // pre-hydration value, doesn't match this user's persisted preference)
     document.documentElement.setAttribute('data-theme', persisted)
   }, [])
 
