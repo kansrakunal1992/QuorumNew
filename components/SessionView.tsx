@@ -61,8 +61,8 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     preferredSide:  'bottom',
   },
   // Unified session: new step, recapping the hypothesis card above the
-  // synthesis — by the time this tour fires the user has already seen and
-  // acted on it (the tour waits for predictionAcknowledged), so this is
+  // synthesis — by the time this tour fires (once synthesis is ready) the
+  // user has already had the hypothesis on screen for a while, so this is
   // a "here's what that was" reinforcement, not a first introduction.
   ...(isUnifiedSessionEnabled() ? [{
     id:             'council-prediction',
@@ -364,13 +364,20 @@ export default function SessionView({ session: initialSession, initialMessages =
   // a phone if the section was already partly in view.
   const [lockSectionPulse, setLockSectionPulse] = useState(false)
   const [predictedChoiceForReveal, setPredictedChoiceForReveal] = useState<string | null>(initialSession.quorum_predicted_choice ?? null)
-  // Unified session, point 5: progressive reveal. Synthesis (and everything
-  // gated on synthesisDone below it) stays visually hidden — still
-  // generating in the background, same "hidden not unmounted" pattern as
-  // the six-persona grid — until the user has actually looked at Quorum's
-  // hypothesis and chosen to continue. Fixes "too many inputs at once":
-  // previously Synthesis and the hypothesis both appeared together.
-  const [predictionAcknowledged, setPredictionAcknowledged] = useState(!isUnifiedSessionEnabled() || !!initialSession.quorum_predicted_choice)
+  // Was: gated on an explicit "See Quorum's full read" click
+  // (QuorumPrediction's onContinue) — Synthesis, the Council section, and
+  // the lock-decision section all stayed display:none, generating in the
+  // background, until that click. Reasoning at the time was avoiding
+  // "Synthesis and the hypothesis both appearing together" competing for
+  // attention. Removed per direct request: nothing downstream needs the
+  // click itself, only this being true — always true now, so all three
+  // sections become visible automatically the moment they're each
+  // individually ready (their own synthesisDone / etc. gates still apply).
+  // QuorumPrediction's "See Quorum's full read" button no longer renders as
+  // a result (gated on `!alreadyAcknowledged`, which is now always false) —
+  // nothing else reads this as a user-intent signal, only as a visibility
+  // gate, so no other behavior changes.
+  const [predictionAcknowledged, setPredictionAcknowledged] = useState(true)
   const [examinerInitialContext, setExaminerInitialContext] = useState<Record<string, string>>({})
   const [synthExaminerContext,   setSynthExaminerContext]   = useState<string | undefined>(undefined)
 
@@ -732,19 +739,19 @@ export default function SessionView({ session: initialSession, initialMessages =
         // Build step list: base steps + optional PWA install step
         const pwaStep = buildPWAInstallStep()
         setCouncilTourSteps(pwaStep ? [...COUNCIL_STEPS_BASE, pwaStep] : COUNCIL_STEPS_BASE)
-        // Race condition fix: the old fixed 800ms delay fired as soon as
-        // synthesisDone flipped true, but under the unified session flag,
-        // council-synthesis's wrapper (see the progressive-reveal div around
-        // SynthesisCard further down) stays display:none until the user has
-        // also clicked past Quorum's hypothesis card — synthesisDone can be
-        // true while that wrapper is still invisible, which is exactly what
-        // "has run but the tour doesn't focus on it" looks like. Fixed by
-        // adding predictionAcknowledged to this effect's own dependency
-        // array below, so under the flag the tour only fires once BOTH are
-        // true — the effect re-runs correctly when either changes, no
-        // polling or interval needed. Flag off: unchanged, same 800ms.
+        // Race condition fix (historical): under the unified session flag,
+        // council-synthesis's wrapper used to stay display:none until the
+        // user also clicked past Quorum's hypothesis card, so synthesisDone
+        // could be true while that wrapper was still invisible — "has run
+        // but the tour doesn't focus on it." Fixed at the time by adding
+        // predictionAcknowledged to this effect's dependency array. That
+        // click requirement is gone now (predictionAcknowledged is always
+        // true — see its own comment above), so the branch below is
+        // permanently dead in practice; left in place rather than pulled
+        // out, since it's harmless and untangling it isn't worth the risk
+        // to this effect's sequencing for a no-op branch.
         if (isUnifiedSessionEnabled() && !predictionAcknowledged) {
-          return // re-runs automatically once predictionAcknowledged flips — see deps array
+          return
         }
         const t = setTimeout(() => setShowCouncilTour(true), 800)
         return () => clearTimeout(t)
@@ -2006,13 +2013,15 @@ export default function SessionView({ session: initialSession, initialMessages =
               )}
 
               {/* ── 1. Council Synthesis ── */}
-              {/* Unified session, point 5: hidden (not unmounted — synthesis keeps
-                  generating underneath) until predictionAcknowledged, so the
-                  hypothesis and the full read don't compete for attention at once. */}
+              {/* Was gated on predictionAcknowledged too (hidden until the
+                  user clicked past Quorum's hypothesis card) — that click
+                  requirement is gone (see predictionAcknowledged's own
+                  comment above), so this is unconditionally visible once
+                  generated; still "hidden (not unmounted)" while generating,
+                  same pattern as before. */}
               <div
                 className="sv-fade sv-fade-2"
                 data-tour-id="council-synthesis"
-                style={{ display: (isUnifiedSessionEnabled() && !predictionAcknowledged) ? 'none' : undefined }}
               >
                 <SynthesisCard
                   key={`synthesis-${sessionKey}`}
@@ -2229,7 +2238,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                   synthesisDone gate the Council section below uses to
                   become visible — by the time synthesis is ready, there's
                   enough on screen for the user to actually decide. */}
-              {isUnifiedSessionEnabled() && synthesisDone && predictionAcknowledged && (
+              {isUnifiedSessionEnabled() && synthesisDone && (
                 <div
                   data-tour-id="council-make-decision"
                   style={{
@@ -2258,15 +2267,17 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Council redesign, round 2: the disclosure toggle that used to
                   sit here ("See how Quorum got here" / setCouncilExpanded) is
                   removed — the glance strip + card grid below now become
-                  visible automatically, no click required, the moment the
-                  same condition the toggle itself used to wait on before it
-                  would even render is met (synthesisDone && predictionAcknowledged).
-                  Nothing about the underlying Council generation changes —
-                  this only ever controlled visibility. Flag off → unchanged,
-                  always visible, identical to before. */}
+                  visible automatically, no click required, the moment
+                  synthesisDone — the same condition the toggle itself used to
+                  wait on before it would even render (this used to also wait
+                  on predictionAcknowledged, since removed as a gate entirely —
+                  see its own comment above). Nothing about the underlying
+                  Council generation changes — this only ever controlled
+                  visibility. Flag off → unchanged, always visible, identical
+                  to before. */}
               <div
                 style={{
-                  display: (isUnifiedSessionEnabled() && !(synthesisDone && predictionAcknowledged)) ? 'none' : undefined,
+                  display: (isUnifiedSessionEnabled() && !synthesisDone) ? 'none' : undefined,
                 }}
               >
                 {isUnifiedSessionEnabled() && (

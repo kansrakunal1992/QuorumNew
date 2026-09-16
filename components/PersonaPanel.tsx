@@ -334,9 +334,29 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // ── Header tag extractor ───────────────────────────────────────────────────
   // Strips <lens>, <position>, <realcost>, <lean>, <structural> tags from streamed output and returns clean prose
   const extractHeaderTags = useCallback((raw: string): string => {
+    // Bug fix (visible tag leak): <estimate>/<assumption>/<reversal> are
+    // legitimate INLINE display tags the model can place anywhere in its
+    // prose per the Numeric Provenance / Reversibility Examination rules in
+    // lib/personas.ts — including, it turns out, inside the <realcost> or
+    // <position> sentence itself (e.g. "...for the next
+    // <estimate>12-18 months</estimate>."). The main body paragraph handles
+    // these correctly further down (they get parsed into highlighted spans),
+    // but these four header fields are rendered as plain text and never went
+    // through that pipeline, so a nested tag rendered raw on screen — this is
+    // the tag leak reported from the collapsed-card summary. Fix: strip just
+    // the tag markers (keep the inner text) from whatever this captures,
+    // before it's ever set as state. Covers a stray/unclosed marker too
+    // (e.g. model drops the closing tag) since the regex matches the marker
+    // itself, not a paired span — nothing here can delete real content, only
+    // markup.
+    const stripInlineDisplayTags = (s: string) =>
+      s
+        .replace(/<\/?estimate>/g, '')
+        .replace(/<\/?assumption>/g, '')
+        .replace(/<\/?reversal>/g, '')
     const get = (tag: string) => {
       const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
-      return m ? m[1].trim() : ''
+      return m ? stripInlineDisplayTags(m[1].trim()) : ''
     }
     const lens     = get('lens')
     const position = get('position')

@@ -177,9 +177,22 @@ const LEAN_LABELS: Record<string, string> = {
   mixed:   'Mixed',
 }
 
+// Bug fix (visible tag leak, same root cause as PersonaPanel.tsx's
+// extractHeaderTags, the record page, and RecordExport.tsx): <estimate>/
+// <assumption>/<reversal> can legitimately appear nested inside a
+// <realcost> or <position> sentence, and this returned that content
+// verbatim — leaking raw tag markup into the generated PDF. Strip just the
+// markers, keep the inner text.
+function stripInlineDisplayTags(s: string): string {
+  return s
+    .replace(/<\/?estimate>/gi, '')
+    .replace(/<\/?assumption>/gi, '')
+    .replace(/<\/?reversal>/gi, '')
+}
+
 function extractTag(raw: string, tag: string): string {
   const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'))
-  return m ? m[1].trim() : ''
+  return m ? stripInlineDisplayTags(m[1].trim()) : ''
 }
 
 // ── Colour palettes — dark (original) + light ─────────────────────────────────

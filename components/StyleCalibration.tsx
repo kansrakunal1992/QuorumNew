@@ -111,12 +111,16 @@ export default function StyleCalibration({ authToken, onComplete, onDismiss }: P
 
   return (
     <div style={{
-      border:       '1px solid var(--border)',
+      // Bug fix: --border and --surface aren't defined anywhere in
+      // globals.css — this card has been rendering with no real border or
+      // background this whole time. Using the established --border-dim /
+      // --bg-card tokens instead, same as the rest of the app.
+      border:       '1px solid var(--border-dim)',
       borderRadius: 6,
       padding:      '22px 24px 20px',
       marginBottom: 32,
       position:     'relative',
-      background:   'var(--surface)',
+      background:   'var(--bg-card)',
     }}>
 
       {/* Dismiss */}
@@ -157,7 +161,7 @@ export default function StyleCalibration({ authToken, onComplete, onDismiss }: P
         {/* Progress bar */}
         <div style={{
           height:       2,
-          background:   'var(--border)',
+          background:   'var(--border-dim)', // bug fix: --border is undefined
           borderRadius: 1,
           marginTop:    8,
           overflow:     'hidden',
@@ -192,9 +196,12 @@ export default function StyleCalibration({ authToken, onComplete, onDismiss }: P
             style={{
               textAlign:    'left',
               padding:      '10px 14px',
-              border:       '1px solid var(--border)',
+              // Bug fix: --border is undefined (see the card container above),
+              // and `background: 'none'` left this option row without a fill —
+              // same fix as .btn-ghost in globals.css.
+              border:       '1px solid var(--border-dim)',
               borderRadius: 4,
-              background:   'none',
+              background:   'var(--bg-card)',
               cursor:       'pointer',
               fontSize:     13,
               color:        'var(--text-2)',
@@ -206,7 +213,7 @@ export default function StyleCalibration({ authToken, onComplete, onDismiss }: P
               ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-1)'
             }}
             onMouseLeave={e => {
-              ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'
+              ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-dim)' // bug fix: --border is undefined
               ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'
             }}
           >

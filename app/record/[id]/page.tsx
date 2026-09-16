@@ -40,9 +40,23 @@ const LEAN_LABELS: Record<string, string> = {
   mixed:   'Mixed',
 }
 
+// Bug fix (visible tag leak, same root cause as PersonaPanel.tsx's
+// extractHeaderTags): <estimate>/<assumption>/<reversal> can legitimately
+// appear nested inside a <realcost> or <position> sentence per the prompt
+// rules in lib/personas.ts, and this function returned that content
+// verbatim — so a nested tag rendered raw on the record page exactly like
+// it did on the live session page before that fix. Strip just the markers,
+// keep the inner text.
+function stripInlineDisplayTags(s: string): string {
+  return s
+    .replace(/<\/?estimate>/g, '')
+    .replace(/<\/?assumption>/g, '')
+    .replace(/<\/?reversal>/g, '')
+}
+
 function extractTag(raw: string, tag: string): string {
   const m = raw.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
-  return m ? m[1].trim() : ''
+  return m ? stripInlineDisplayTags(m[1].trim()) : ''
 }
 
 // Strip <lens>, <position>, <realcost>, <lean> tags stored in DB — rendered separately
@@ -963,6 +977,7 @@ export default async function RecordPage({ params }: Props) {
               {/* Back button — exact component + inline style override preserved */}
               <BackButton
                 label="← Back"
+                href="/"
                 style={{
                   padding: 0,
                   fontSize: 12,
@@ -1412,6 +1427,7 @@ export default async function RecordPage({ params }: Props) {
               <div className="rec-bottom-left">
                 <BackButton
                   label="← Back"
+                  href="/"
                   style={{ padding: '10px 18px', fontSize: 13, minHeight: 44 }}
                 />
                 <ReanalyzeDrawer

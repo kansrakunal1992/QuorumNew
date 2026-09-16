@@ -195,14 +195,16 @@ const stopBtn: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 7,
   padding: '7px 18px', borderRadius: 7,
   border: '1px solid var(--border-mid)',
-  background: 'transparent', color: 'var(--text-2)',
+  // Bug fix: was `transparent` — same fix as .btn-ghost in globals.css.
+  background: 'var(--bg-card)', color: 'var(--text-2)',
   cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'all 0.18s',
 }
 const dismissBtn: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   width: 28, height: 28, borderRadius: 6,
   border: '1px solid var(--border-dim)',
-  background: 'transparent', color: 'var(--text-4)',
+  // Bug fix: was `transparent` — same fix as .btn-ghost in globals.css.
+  background: 'var(--bg-card)', color: 'var(--text-4)',
   cursor: 'pointer', transition: 'all 0.18s',
 }
 
@@ -249,7 +251,8 @@ export default function VoiceInput({ onTranscript }: VoiceInputProps) {
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '6px 12px', borderRadius: 7,
         border: '1px solid var(--border-mid)',
-        background: 'transparent', color: 'var(--text-3)',
+        // Bug fix: was `transparent` — same fix as .btn-ghost in globals.css.
+        background: 'var(--bg-card)', color: 'var(--text-3)',
         cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'all 0.18s',
       }}
         onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold-dim)'; e.currentTarget.style.color = 'var(--gold)' }}
@@ -357,7 +360,8 @@ export default function VoiceInput({ onTranscript }: VoiceInputProps) {
             display: 'flex', alignItems: 'center', gap: 5,
             padding: '5px 11px', borderRadius: 6,
             border: '1px solid var(--border-dim)',
-            background: 'transparent', color: 'var(--text-3)',
+            // Bug fix: was `transparent` — same fix as .btn-ghost in globals.css.
+            background: 'var(--bg-card)', color: 'var(--text-3)',
             cursor: 'pointer', fontSize: 11, fontFamily: 'inherit', transition: 'all 0.18s',
           }}>Try again</button>
         )}

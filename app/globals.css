@@ -499,7 +499,14 @@ textarea::placeholder { color: var(--text-4); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 
 .btn-ghost {
-  background: transparent;
+  /* Bug fix: was `transparent` — looked fine against the dark theme's
+     higher-contrast border, but a transparent fill plus --border-dim's
+     lower-contrast value in light theme (now the default) reads as barely
+     visible against --bg-void's warm off-white. --bg-card is already
+     theme-aware and gives real edge definition in both themes without
+     being as loud as .btn-primary's gold fill — still reads as the
+     secondary/lower-emphasis button it's meant to be. */
+  background: var(--bg-card);
   color: var(--text-3);
   border: 1px solid var(--border-dim);
   border-radius: 7px;
@@ -512,7 +519,8 @@ textarea::placeholder { color: var(--text-4); }
 .btn-ghost:hover { border-color: var(--gold-dim); color: var(--gold); }
 
 .btn-pushback {
-  background: transparent;
+  /* Same fix, same reasoning as .btn-ghost above. */
+  background: var(--bg-card);
   color: var(--text-4);
   border: 1px solid var(--border-dim);
   border-radius: 6px;

@@ -28,10 +28,10 @@ interface FAQItem {
 // Unified session, point 1: the two FAQ entries below describe the six-
 // named-advisor mechanic directly ("each of the six advisors," "reaches all
 // six") — accurate to what's shown by default when the flag is off, but
-// actively confusing under the collapsed-Council experience, where a first-
-// time reader has no six named advisors in front of them to make sense of
-// the answer. Swapped for two entries describing what a reader actually
-// sees under the flag instead of deleting the space they occupied.
+// actively confusing under the compact-summary Council experience, where a
+// first-time reader has no six named advisors in front of them yet to make
+// sense of the answer. Swapped for two entries describing what a reader
+// actually sees under the flag instead of deleting the space they occupied.
 const CLASSIC_MODEL_FAQS: FAQItem[] = [
   {
     q: 'How does the Council actually decide what each advisor says?',

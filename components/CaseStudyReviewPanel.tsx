@@ -196,5 +196,9 @@ const approveButtonStyle: React.CSSProperties = {
 
 const rejectButtonStyle: React.CSSProperties = {
   fontSize: 12, padding: '7px 14px', borderRadius: 7, cursor: 'pointer',
-  background: 'transparent', color: 'var(--text-3)', border: '1px solid var(--border-mid)',
+  // Bug fix: was `transparent` — sat next to approveButtonStyle above, which
+  // already has a solid fill, so this looked inconsistent/weaker by
+  // comparison rather than deliberately secondary. Same fix as .btn-ghost/
+  // .btn-pushback in globals.css.
+  background: 'var(--bg-card)', color: 'var(--text-3)', border: '1px solid var(--border-mid)',
 }
