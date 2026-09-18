@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react'
-import { getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
+import { getOrCreateDeviceId, getStoredSessionIds, captureUtm, getStoredUtm } from '@/lib/storage'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 import { trackMetaEvent } from '@/lib/meta-pixel'
 
@@ -35,6 +35,11 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
   useEffect(() => {
     if (!userEmail) {
       trackMetaEvent('ViewContent', { content_name: 'Quorum Free Tier' })
+      // GTM attribution: snapshot ?utm_source/campaign/content the moment
+      // this panel is shown, so it survives even if the user browses
+      // around a bit before actually signing up. No-op if no consent yet
+      // or no utm params present — see lib/storage.ts.
+      captureUtm()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -78,6 +83,7 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
       // link-sessions works even when clicked in a different browser with empty localStorage.
       const deviceId   = getOrCreateDeviceId()
       const sessionIds = getStoredSessionIds()
+      const utm        = getStoredUtm() // ← NEW: first-touch GTM attribution
 
       const res = await fetch('/api/auth', {
         method:  'POST',
@@ -86,6 +92,9 @@ export default function AuthPanel({ userEmail, onAuthenticated }: Props) {
           email:      email.trim().toLowerCase(),
           deviceId,                    // ← NEW: quorum_device_id from this browser
           sessionIds,                  // ← NEW: all session IDs from this browser
+          utmSource:   utm.utm_source,   // ← NEW: GTM attribution
+          utmCampaign: utm.utm_campaign, // ← NEW
+          utmContent:  utm.utm_content,  // ← NEW
         }),
       })
 

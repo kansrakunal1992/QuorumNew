@@ -98,6 +98,12 @@ function CallbackHandler() {
         console.log(`[AuthCallback]   local: ${localSessionIds.length} sessions, device=${localDeviceId}`)
         console.log(`[AuthCallback]   url:   ${urlSessionIds.length} sessions, device=${urlDeviceId}`)
 
+        // ← NEW: GTM attribution — read back the us/uc/ct params /api/auth
+        // embedded in the magic link (see that route for the write side).
+        const urlUtmSource   = searchParams.get('us') ?? null
+        const urlUtmCampaign = searchParams.get('uc') ?? null
+        const urlUtmContent  = searchParams.get('ct') ?? null
+
         // Sprint 12: which method this session actually authenticated with.
         // Supabase sets app_metadata.provider to 'email' for magic link /
         // OTP, and 'google' for Google OAuth — read from the session itself
@@ -138,6 +144,23 @@ function CallbackHandler() {
               status: 'completed',
             })
             console.log(`[AuthCallback] Meta Pixel: CompleteRegistration fired (${authMethod})`)
+          }
+
+          // ← NEW: GTM attribution — only ever recorded on true first
+          // registration (this same isNewRegistration gate), never
+          // overwritten by a later login. Fire-and-forget, same pattern as
+          // link-sessions below — a failure here shouldn't block sign-in.
+          if (urlUtmSource || urlUtmCampaign || urlUtmContent) {
+            fetch('/api/auth/link-utm', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId:      user.id,
+                utmSource:   urlUtmSource,
+                utmCampaign: urlUtmCampaign,
+                utmContent:  urlUtmContent,
+              }),
+            }).catch(() => { /* non-fatal — see /api/auth/link-utm */ })
           }
         }
 

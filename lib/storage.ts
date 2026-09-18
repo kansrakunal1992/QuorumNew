@@ -105,3 +105,64 @@ export function getStoredDeviceId(): string | null {
   if (typeof window === 'undefined') return null
   try { return localStorage.getItem(DEVICE_KEY) } catch { return null }
 }
+
+// ── GTM attribution: first-touch UTM capture ────────────────────────────────
+// Added to answer "what actually drove this signup?" — captured once per
+// browser session (sessionStorage, not localStorage — deliberately doesn't
+// outlive the tab/session, this is first-touch-this-visit, not permanent
+// tracking) and sent to /api/auth at signup time, which embeds it in the
+// magic link's emailRedirectTo the same way xd/xs already are. Persisted
+// write is gated behind functional consent like the rest of this file;
+// reading the CURRENT url's params is not a write and is always permitted
+// (same visit, same page — nothing new is stored).
+const UTM_KEY = 'quorum_utm_first_touch'
+
+export interface StoredUtm {
+  utm_source:   string | null
+  utm_campaign: string | null
+  utm_content:  string | null
+}
+
+const EMPTY_UTM: StoredUtm = { utm_source: null, utm_campaign: null, utm_content: null }
+
+/** Call once on a page that might be a first landing (e.g. AuthPanel mount). */
+export function captureUtm(): void {
+  if (typeof window === 'undefined') return
+  if (!hasFunctionalConsent()) return // S2-01 gate — same rule as device ID
+  try {
+    if (sessionStorage.getItem(UTM_KEY)) return // first touch already captured this session
+    const params = new URLSearchParams(window.location.search)
+    const utm: StoredUtm = {
+      utm_source:   params.get('utm_source'),
+      utm_campaign: params.get('utm_campaign'),
+      utm_content:  params.get('utm_content'),
+    }
+    if (utm.utm_source || utm.utm_campaign || utm.utm_content) {
+      sessionStorage.setItem(UTM_KEY, JSON.stringify(utm))
+    }
+  } catch { /* ignore */ }
+}
+
+/**
+ * Prefers whatever's live in the CURRENT url right now (covers the
+ * no-consent case, and a same-visit click straight through to signup),
+ * falling back to the first-touch snapshot captured earlier this session.
+ */
+export function getStoredUtm(): StoredUtm {
+  if (typeof window === 'undefined') return EMPTY_UTM
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const liveSource = params.get('utm_source')
+    if (liveSource) {
+      return {
+        utm_source:   liveSource,
+        utm_campaign: params.get('utm_campaign'),
+        utm_content:  params.get('utm_content'),
+      }
+    }
+    const raw = sessionStorage.getItem(UTM_KEY)
+    if (raw) return JSON.parse(raw) as StoredUtm
+  } catch { /* ignore */ }
+  return EMPTY_UTM
+}
+
