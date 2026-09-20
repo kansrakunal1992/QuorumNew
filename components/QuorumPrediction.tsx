@@ -10,13 +10,17 @@
 // via initialPredictedChoice, read from the session row — see SessionView.tsx),
 // this renders it immediately and never calls /api/persona/predict at all.
 //
-// Reasoning text now reveals via useTypewriter instead of popping in whole —
+// Reasoning text reveals via useTypewriter instead of popping in whole —
 // not real token streaming (the network wait is unchanged), but it removes
 // the jarring spinner-then-instant-block transition. See lib/useTypewriter.ts
 // for why this is a client-side reveal, not a backend streaming change.
 //
-// Point 5 fix: requires an explicit "Continue" click (onContinue) before
-// Synthesis reveals, instead of both appearing at once.
+// Cleanup: this used to gate Synthesis behind an explicit "Continue" click
+// here (onContinue/alreadyAcknowledged props). That requirement was removed
+// in SessionView.tsx — Synthesis now shows the moment it's ready, no click
+// needed — which left the button here permanently unreachable (its guard
+// condition could never be true anymore). Removed rather than left as dead
+// code nobody would know was unreachable without reading SessionView too.
 
 'use client'
 
@@ -27,8 +31,6 @@ interface Props {
   sessionId:               string
   authToken:               string | null
   onPredicted?:            (predictedChoice: string) => void
-  onContinue?:             () => void
-  alreadyAcknowledged?:    boolean
   initialPredictedChoice?: string | null
   initialReasoning?:       string | null
   initialUsedSearch?:      boolean | null
@@ -43,7 +45,7 @@ interface PredictionState {
 }
 
 export default function QuorumPrediction({
-  sessionId, authToken, onPredicted, onContinue, alreadyAcknowledged,
+  sessionId, authToken, onPredicted,
   initialPredictedChoice, initialReasoning, initialUsedSearch,
 }: Props) {
   const hydrated = !!initialPredictedChoice
@@ -92,11 +94,10 @@ export default function QuorumPrediction({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, hydrated])
 
-  useEffect(() => {
-    if (state.status === 'error') onContinue?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.status])
-
+  // No onContinue to fire on error anymore — Synthesis isn't waiting on
+  // anything from this component now, so a failed prediction just means
+  // this card renders nothing (below), and the rest of the session
+  // proceeds on its own regardless.
   if (state.status === 'error') return null
 
   return (
@@ -134,23 +135,13 @@ export default function QuorumPrediction({
           <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '0 0 8px', lineHeight: 1.5, minHeight: '1.5em' }}>
             {displayReasoning}
           </p>
-          <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '0 0 14px' }}>
+          <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: 0 }}>
             {(state.historyCount ?? 0) > 0
               ? `Based partly on ${state.historyCount} of your past decisions${state.usedSearch ? ' and general patterns' : ''}.`
               : state.usedSearch
                 ? 'We don\u2019t know you well yet, so this leans on general patterns rather than your own history.'
                 : null}
           </p>
-          {!alreadyAcknowledged && (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={onContinue}
-              style={{ padding: '8px 18px', fontSize: 13, minHeight: 44 }}
-            >
-              See Quorum's full read →
-            </button>
-          )}
         </>
       )}
     </div>

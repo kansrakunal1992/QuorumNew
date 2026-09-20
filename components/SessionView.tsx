@@ -1914,8 +1914,6 @@ export default function SessionView({ session: initialSession, initialMessages =
                     sessionId={session.id}
                     authToken={authTokenSV}
                     onPredicted={setPredictedChoiceForReveal}
-                    onContinue={() => setPredictionAcknowledged(true)}
-                    alreadyAcknowledged={predictionAcknowledged}
                     initialPredictedChoice={initialSession.quorum_predicted_choice}
                     initialReasoning={initialSession.quorum_prediction_reasoning}
                     initialUsedSearch={initialSession.quorum_prediction_used_search}
