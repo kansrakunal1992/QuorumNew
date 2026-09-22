@@ -119,6 +119,26 @@ const FAQS: FAQItem[] = [
   },
 ]
 
+// FAQPage structured data (schema.org), generated from the same FAQS array
+// the accordion below renders — so the two can never drift out of sync.
+// This is what lets an AI crawler (or a traditional rich-result crawler)
+// read each Q&A as a discrete, citable answer instead of one wall of text
+// it has to parse out of collapsed accordion markup.
+function faqStructuredData(items: FAQItem[]) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map((item) => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.a,
+      },
+    })),
+  }
+}
+
 function FAQRow({ item }: { item: FAQItem }) {
   const [open, setOpen] = useState(false)
   return (
@@ -158,6 +178,10 @@ function FAQRow({ item }: { item: FAQItem }) {
 export default function FAQSection() {
   return (
     <div id="faq" style={{ marginTop: 28 }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData(FAQS)) }}
+      />
       <p style={{
         fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em',
         textTransform: 'uppercase', color: 'var(--text-3)', margin: '0 0 6px',

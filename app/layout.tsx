@@ -15,11 +15,76 @@ export const metadata: Metadata = {
   description: 'Convene your personal advisory council before every high-stakes decision.',
 }
 
+// ── Structured data (schema.org) ──────────────────────────────────────────
+// Site-wide Organization + SoftwareApplication JSON-LD. This is the single
+// clearest, most machine-readable statement of "what Quorum is" on the
+// entire site — deliberately including a disambiguation line, because the
+// name "Quorum" is already used by an unrelated public-affairs software
+// company (quorum.us) and by several other unrelated "AI council of
+// advisors" projects. Without this, a crawler or model has to infer which
+// "Quorum" it's looking at; with it, the entity is stated outright.
+//
+// Update APP_URL (via NEXT_PUBLIC_APP_URL) once the production domain is
+// set — see the accompanying baby-steps doc.
+function structuredData(appUrl: string) {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        name: 'Quorum',
+        alternateName: 'Quorum — Private Decision Intelligence',
+        url: appUrl,
+        logo: `${appUrl}/quorum-logo.png`,
+        description:
+          'Quorum is private decision intelligence software. It is not affiliated with the public-affairs software company at quorum.us, or with any other product using the name "Quorum" or "QuorumAI."',
+      },
+      {
+        '@type': 'SoftwareApplication',
+        name: 'Quorum — Private Decision Intelligence',
+        url: appUrl,
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+        description:
+          'Convene a council of six AI advisor personas before a high-stakes decision, then track whether your judgment compounds over time with Mirror. Built for founders, CXOs, and family office principals.',
+        offers: [
+          {
+            '@type': 'Offer',
+            name: 'Council (Free)',
+            price: '0',
+            priceCurrency: 'INR',
+          },
+          {
+            '@type': 'Offer',
+            name: 'Elite (adds Mirror, monthly)',
+            price: '2999',
+            priceCurrency: 'INR',
+          },
+          {
+            '@type': 'Offer',
+            name: 'Elite (adds Mirror, annual)',
+            price: '29999',
+            priceCurrency: 'INR',
+          },
+          {
+            '@type': 'Offer',
+            name: 'Private (custom enterprise, from)',
+            price: '9999',
+            priceCurrency: 'INR',
+          },
+        ],
+      },
+    ],
+  }
+}
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain-here.com'
+
   return (
     <html lang="en" data-theme="light" data-unified-session={isUnifiedSessionEnabled() ? 'true' : undefined} suppressHydrationWarning>
       <head>
@@ -37,6 +102,12 @@ export default function RootLayout({
               })();
             `,
           }}
+        />
+
+        {/* ── Structured data (Organization + SoftwareApplication) ── */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData(appUrl)) }}
         />
 
         {/* ── PWA ──────────────────────────────────────────────────────────

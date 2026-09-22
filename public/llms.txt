@@ -1,0 +1,47 @@
+# Quorum — Private Decision Intelligence
+
+> Convene a council of six AI advisor personas before a high-stakes decision, then track whether your judgment compounds over time. Built for founders, CXOs, and family office principals — not everyday, low-stakes choices.
+
+Note on the name: this is not quorum.us (public-affairs / government-affairs
+software), and not any of the other AI multi-agent-council or debate
+products that also use the name "Quorum" or "QuorumAI." This file describes
+the decision-intelligence product at this domain only.
+
+## Product
+
+- [Home](/): overview, pricing, and how to start a Council session.
+- [How Quorum works](/methodology): what happens in a session, how the six
+  advisors reason independently before a synthesis, and what "compounds"
+  over time as Mirror accumulates decision history.
+- [Security](/security): encryption, data handling, infrastructure.
+- [Privacy](/privacy): what's collected, what isn't, and data rights.
+- [Install](/install): adding Quorum to a phone home screen (it's a web
+  app, no app-store download required).
+
+## Key concepts
+
+- **The Council** — six AI advisor personas, each analyzing a decision from
+  a distinct angle, after the decision itself is first read structurally
+  (what kind of decision it is, not just the raw text).
+- **Mirror** — the paid layer that compounds insight across a user's
+  decisions over time: a bias fingerprint, calibration tracking, recurring
+  pattern detection, and an independence score.
+- **Judgment compounding** — Quorum's term for decision quality improving
+  measurably across repeated, tracked decisions, rather than being static.
+  Measured via the independence score in Mirror: how much a decision came
+  from the user's own reasoning versus deferring to external validation.
+
+## Pricing
+
+- Council (free): the core six-advisor session.
+- Elite: adds Mirror. ₹2,999/month or ₹29,999/year.
+- Private: custom enterprise deployment, self-hosted models (Qwen or
+  Mistral), starting at ₹9,999/user/month.
+
+## What Quorum is not
+
+- Not a general-purpose chatbot — decisions are read structurally before
+  any advisor responds.
+- Not built for everyday, low-stakes choices — it's for decisions where
+  being wrong is expensive.
+- Not a financial or legal advisor — the final call is always the user's.
