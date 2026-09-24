@@ -267,20 +267,19 @@ export default function SynthesisCard({
     const m = initialContent.match(/<counterfactual>([\s\S]*?)<\/counterfactual>/)
     return m?.[1]?.trim() ?? ''
   })
-  // Progressive disclosure (round 12): Conditional on / If different / What to
-  // do next / Before you act sit behind one "Show full breakdown" toggle
-  // (default closed). breakdownParts feeds the toggle's sub-line so it only
-  // ever names sections that actually exist for this synthesis; hasBreakdown
-  // gates the whole row (no toggle at all when there's nothing behind it —
-  // the common case for a synthesis with no conditions, no counterfactual and
-  // no action plan). hasSensitivity requires verdictText because the pair
-  // used to render inside the verdict box, which itself only renders when
-  // there's a verdict — same condition, same behaviour. Kept open across
-  // re-syntheses (pushback) on purpose: someone who opened it wants it open.
+  // Progressive disclosure (round 12, revised): only the verdict-sensitivity
+  // pair — Conditional on / If different — sits behind a toggle (default
+  // closed). What to do next (and its nested Before you act) is ALWAYS visible:
+  // it answers "what should I do", which is the thing someone reads this card
+  // for. breakdownParts feeds the toggle's sub-line so it only ever names
+  // sections that exist for this synthesis; hasBreakdown gates the whole row.
+  // hasSensitivity requires verdictText because the pair used to render inside
+  // the verdict box, which itself only renders when there's a verdict — same
+  // condition, same behaviour. Kept open across re-syntheses (pushback) on
+  // purpose: someone who opened it wants it open.
   const [breakdownOpen, setBreakdownOpen] = useState(false)
   const hasSensitivity = !!verdictText && (conditions.length > 0 || !!counterfactual)
   const breakdownParts: string[] = [
-    ...(actionPlan.length > 0 ? ['next steps'] : []),
     ...(hasSensitivity && conditions.length > 0 ? ['conditions'] : []),
     ...(hasSensitivity && !!counterfactual ? ['what would change this'] : []),
   ]
@@ -1355,14 +1354,12 @@ export default function SynthesisCard({
                   )}
                 </p>
                 {/* Progressive disclosure (round 12): "Conditional on" and "If
-                    different" used to sit here, inside the verdict box, and
-                    the action plan sat in its own card further down — nine
-                    separately-capped sections all visible at once. They now
-                    live behind the "Show full breakdown" toggle below the
-                    prose (see breakdownOpen). Verdict + Worth confirming stay
-                    here, unconditionally visible, because those two (plus the
-                    trade-offs paragraph beneath this box) are what change what
-                    someone does next. */}
+                    different" used to sit here, inside the verdict box. They
+                    now live behind the "Show what this depends on" toggle
+                    below the action plan (see breakdownOpen). Verdict + Worth
+                    confirming stay here, unconditionally visible, and so does
+                    the action plan — those, plus the trade-offs paragraph
+                    beneath this box, are what change what someone does next. */}
                 {/* Sprint 1 follow-on — merged Features #1 (Highest-Value Unknown)
                     + #6 (Decision Sensitivity Analysis, cheap proxy). Reads as a
                     continuation of the verdict rather than a separate panel — but
@@ -1414,22 +1411,106 @@ export default function SynthesisCard({
           </>
         )}
 
-        {/* Progressive disclosure (round 12) — "Show full breakdown".
-            Collapsed by default: Conditional on, If different, What to do
-            next and Before you act. Nothing about their generation or
-            parsing changed (the same tags still stream/parse exactly as
-            before, and the record page / PDF / share message still show
-            everything) — this only controls whether they compete for
-            attention on first look. Rendered only once synthesis is done,
-            same gate the action plan already had, because none of these
-            can be complete mid-stream. The toggle's sub-line is built from
-            what actually exists for THIS synthesis, so it never promises a
-            section that isn't there.
+        {/* Decision Action Plan — ALWAYS visible (round 12 revision: it briefly
+            sat behind the breakdown toggle; moved back out). Own accent
+            (teal): verdict/conditions answer "what should I think," this
+            answers "what should I do." Flowing lines with a bolded lead
+            phrase, no bullets. Gated on state==='done' only — it can only
+            render once the full <action_plan> tag has arrived. Also rendered
+            inside focus mode (see the portal below). */}
+        {state === 'done' && synthesis && actionPlan.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              borderLeft:   '3px solid var(--action-accent)',
+              background:   'var(--action-bg)',
+              borderRadius: '0 10px 10px 0',
+              padding:      '14px 20px',
+            }}>
+              <p style={{
+                fontFamily:    'var(--font-mono)',
+                fontSize:      9,
+                fontWeight:    700,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color:         'var(--action-accent)',
+                margin:        '0 0 2px',
+              }}>
+                What to do next
+              </p>
+              <p style={{
+                fontSize:   10,
+                color:      'var(--text-4)',
+                fontStyle:  'italic',
+                margin:     '0 0 12px',
+              }}>
+                in order of impact
+              </p>
+              {actionPlan.map((item, i) => (
+                <p key={i} style={{
+                  fontSize:   13,
+                  color:      'var(--text-2)',
+                  lineHeight: 1.7,
+                  margin:     i === actionPlan.length - 1 ? 0 : '0 0 10px',
+                }}>
+                  {item.lead && (
+                    <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
+                  )}
+                  {item.lead && ' — '}
+                  {item.rest}
+                </p>
+              ))}
+              {/* Confidence to Act — nested closing note, not a peer
+                  section. Quieter than the card itself so it reads as
+                  "one more thing before you go" rather than a 5th
+                  action item. Optional by design — absence is the
+                  common case, not a bug. */}
+              {confidenceToAct && (
+                <div style={{
+                  marginTop:    12,
+                  paddingTop:   10,
+                  borderTop:    '1px solid var(--action-note-border)',
+                }}>
+                  <p style={{
+                    fontFamily:    'var(--font-mono)',
+                    fontSize:      9,
+                    fontWeight:    700,
+                    letterSpacing: '0.10em',
+                    textTransform: 'uppercase',
+                    color:         'var(--text-4)',
+                    margin:        '0 0 6px',
+                  }}>
+                    Before you act
+                  </p>
+                  <p style={{
+                    fontSize:   12,
+                    color:      'var(--text-2)',
+                    lineHeight: 1.6,
+                    margin:     0,
+                  }}>
+                    {confidenceToAct.lead && (
+                      <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
+                    )}
+                    {confidenceToAct.lead && ' — '}
+                    {confidenceToAct.rest}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
-            Focus mode (Observatory, below) deliberately still shows all of
-            it — that's an explicit opt-in "read everything" view. */}
+        {/* Progressive disclosure (round 12) — verdict-sensitivity toggle.
+            Collapsed by default: Conditional on + If different. Nothing about
+            their generation or parsing changed (same tags, same parsing; the
+            record page / PDF / share message still show them) — this only
+            controls whether they compete for attention on first look.
+            Rendered only once synthesis is done (neither can be complete
+            mid-stream). The sub-line is built from what exists for THIS
+            synthesis, so it never promises a section that isn't there.
+            Focus mode (Observatory, below) still shows them — explicit
+            opt-in "read everything" view. */}
         {state === 'done' && synthesis && hasBreakdown && (
-          <div style={{ marginTop: 18, borderTop: '1px solid var(--border-dim)' }}>
+          <div style={{ marginTop: 14, borderTop: '1px solid var(--border-dim)' }}>
             <button
               type="button"
               onClick={() => setBreakdownOpen(o => !o)}
@@ -1451,7 +1532,7 @@ export default function SynthesisCard({
             >
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-2)' }}>
-                  {breakdownOpen ? 'Hide full breakdown' : 'Show full breakdown'}
+                  {breakdownOpen ? 'Hide what this depends on' : 'Show what this depends on'}
                 </span>
                 {!breakdownOpen && (
                   <span style={{ fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.4 }}>
@@ -1475,7 +1556,7 @@ export default function SynthesisCard({
                   <div style={{
                     borderLeft:   '3px solid var(--verdict-accent)',
                     padding:      '2px 0 2px 16px',
-                    marginBottom: actionPlan.length > 0 ? 18 : 0,
+                    marginBottom: 0,
                   }}>
                     {conditions.length > 0 && (
                       <>
@@ -1522,89 +1603,6 @@ export default function SynthesisCard({
                           {counterfactual}
                         </p>
                       </>
-                    )}
-                  </div>
-                )}
-
-                {/* Decision Action Plan — unchanged card, moved inside the
-                    breakdown. Own accent (teal): verdict/conditions answer
-                    "what should I think," this answers "what should I do."
-                    Flowing lines with a bolded lead phrase, no bullets. */}
-                {actionPlan.length > 0 && (
-                  <div style={{
-                    borderLeft:   '3px solid var(--action-accent)',
-                    background:   'var(--action-bg)',
-                    borderRadius: '0 10px 10px 0',
-                    padding:      '14px 20px',
-                  }}>
-                    <p style={{
-                      fontFamily:    'var(--font-mono)',
-                      fontSize:      9,
-                      fontWeight:    700,
-                      letterSpacing: '0.14em',
-                      textTransform: 'uppercase',
-                      color:         'var(--action-accent)',
-                      margin:        '0 0 2px',
-                    }}>
-                      What to do next
-                    </p>
-                    <p style={{
-                      fontSize:   10,
-                      color:      'var(--text-4)',
-                      fontStyle:  'italic',
-                      margin:     '0 0 12px',
-                    }}>
-                      in order of impact
-                    </p>
-                    {actionPlan.map((item, i) => (
-                      <p key={i} style={{
-                        fontSize:   13,
-                        color:      'var(--text-2)',
-                        lineHeight: 1.7,
-                        margin:     i === actionPlan.length - 1 ? 0 : '0 0 10px',
-                      }}>
-                        {item.lead && (
-                          <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
-                        )}
-                        {item.lead && ' — '}
-                        {item.rest}
-                      </p>
-                    ))}
-                    {/* Confidence to Act — nested closing note, not a peer
-                        section. Quieter than the card itself so it reads as
-                        "one more thing before you go" rather than a 5th
-                        action item. Optional by design — absence is the
-                        common case, not a bug. */}
-                    {confidenceToAct && (
-                      <div style={{
-                        marginTop:    12,
-                        paddingTop:   10,
-                        borderTop:    '1px solid var(--action-note-border)',
-                      }}>
-                        <p style={{
-                          fontFamily:    'var(--font-mono)',
-                          fontSize:      9,
-                          fontWeight:    700,
-                          letterSpacing: '0.10em',
-                          textTransform: 'uppercase',
-                          color:         'var(--text-4)',
-                          margin:        '0 0 6px',
-                        }}>
-                          Before you act
-                        </p>
-                        <p style={{
-                          fontSize:   12,
-                          color:      'var(--text-2)',
-                          lineHeight: 1.6,
-                          margin:     0,
-                        }}>
-                          {confidenceToAct.lead && (
-                            <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
-                          )}
-                          {confidenceToAct.lead && ' — '}
-                          {confidenceToAct.rest}
-                        </p>
-                      </div>
                     )}
                   </div>
                 )}

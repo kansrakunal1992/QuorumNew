@@ -1123,7 +1123,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             {/* Round 12: the sharpest phrase gets emphasis (weight + a soft
                 marker in this advisor's own accent — see .persona-mark in
                 globals.css, which strengthens the marker in dark theme) and the rest of the
-                sentence steps down a notch, so six cards stop reading as six
+                sentence drops one weight step, so six cards stop reading as six
                 identical lines. splitHighlight() is a pure client-side split
                 of the existing <position> text — no new tag, no prompt
                 change; it returns null when no clean break exists, in which
@@ -1145,7 +1145,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
                 )
               }
               return (
-                <p style={{ ...base, fontWeight: 500, color: 'var(--text-2)' }}>
+                <p style={{ ...base, fontWeight: 500, color: 'var(--text-1)' }}>
                   {hl.before}
                   <span
                     className="persona-mark"

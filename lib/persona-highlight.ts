@@ -39,7 +39,11 @@ export interface HighlightSplit {
 }
 
 const MIN_LEAD_WORDS = 3
-const MAX_LEAD_WORDS = 14
+// Short on purpose: this is a highlighted PHRASE, and a long one wraps across
+// lines and stops reading as emphasis. Longer verdict clauses fall through to
+// the conditional breaks below ("Take the job | only if …") or render plain.
+const MAX_LEAD_WORDS = 8
+const MAX_TAIL_WORDS = 10
 const MIN_REST_WORDS = 3
 // A lead that swallows most of the sentence isn't a highlight, it's the sentence.
 const MAX_LEAD_SHARE = 0.72
@@ -59,6 +63,7 @@ const BREAKS: RegExp[] = [
   /;\s+/,                                                              // "Take it; the downside is capped"
   /,\s+(?:because|since|as|but|and|so|which|while|given|unless|until|otherwise)\b/i,
   /\s+(?:because|since|given that|so that)\s+/i,                       // no comma before the reason
+  /\s+(?:only if|only when|only after|unless|until|but)\s+/i,           // "Take the job | only if the terms improve"
   /,\s+/,                                                              // last resort: first comma
 ]
 
@@ -93,7 +98,7 @@ export function splitHighlight(text: string): HighlightSplit | null {
         const tailMatch = TRAILING_PUNCT.exec(afterSep)
         const tail = tailMatch ? afterSep.slice(0, tailMatch.index) : afterSep
         const tailWords = wordCount(tail)
-        if (tailWords >= MIN_LEAD_WORDS && tailWords <= MAX_LEAD_WORDS) {
+        if (tailWords >= MIN_LEAD_WORDS && tailWords <= MAX_TAIL_WORDS) {
           return {
             before:   t.slice(0, m.index + sepLen),
             emphasis: tail,

@@ -789,23 +789,26 @@ textarea::placeholder { color: var(--text-4); }
 }
 
 /* Emphasised phrase inside a persona's one-line position (round 12). The
-   accent arrives as --persona-accent from PersonaPanel. The marker strength
-   is a variable because the advisors' accent colors are dark enough that a
-   light-theme-strength tint all but disappears on the dark card background. */
+   accent arrives as --persona-accent from PersonaPanel.
+   Full-height highlighter fill, NOT a bottom band: the first version used a
+   gradient covering only the lower ~40% of the line, which on real cards read
+   as a coloured spell-check underline (red on the Contrarian) or, wrapped
+   across two lines, as a smudge. A fill behind the whole line box with
+   rounded corners reads unambiguously as "highlighted".
+   Strength is a variable because the advisors' accents are dark enough that a
+   light-theme tint all but disappears on the dark card background. */
 .persona-mark {
-  --persona-mark-strength: 26%;
+  --persona-mark-strength: 15%;
   font-weight: 600;
   color: var(--text-1);
-  padding: 0 1px;
-  background-image: linear-gradient(
-    transparent 58%,
-    color-mix(in srgb, var(--persona-accent, var(--gold)) var(--persona-mark-strength), transparent) 58%
-  );
+  padding: 0.04em 0.28em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--persona-accent, var(--gold)) var(--persona-mark-strength), transparent);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
 [data-theme="dark"] .persona-mark {
-  --persona-mark-strength: 60%;
+  --persona-mark-strength: 38%;
 }
 
 /* Council entrance (round 12) — the at-a-glance chips and each card's summary
