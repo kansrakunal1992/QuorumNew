@@ -4,10 +4,12 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import RateLimitBanner, { parseRateLimit, type RateLimitInfo } from '@/components/RateLimitBanner'
 import { useTTSContext } from '@/context/TTSContext'
-import type { PersonaMeta, Message } from '@/lib/types'
+import type { PersonaMeta, PersonaKey, Message } from '@/lib/types'
 import type { Lean } from './TensionInterstitial'
 import { PERSONAS_WITH_STRUCTURAL_CONTEXT } from '@/lib/structural-dims'
 import LeanBadge, { LEAN_LABELS } from './LeanBadge'
+import PersonaIcon from './PersonaIcon'
+import { splitHighlight } from '@/lib/persona-highlight'
 
 // LEAN_LABELS above now lives in LeanBadge.tsx (Council redesign, Sprint 2)
 // — same wording as before ("Shifted after pushback → now leaning
@@ -28,42 +30,12 @@ const CHALLENGE_REASONS: { value: string; label: string; prefill: string }[] = [
   { value: 'missing',    label: 'You\u2019re missing information', prefill: 'There\u2019s information you don\u2019t have: ' },
 ]
 
-const ICONS: Record<string, React.ReactNode> = {
-  contrarian: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-    </svg>
-  ),
-  risk_architect: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-    </svg>
-  ),
-  pattern_analyst: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-    </svg>
-  ),
-  stakeholder_mirror: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
-    </svg>
-  ),
-  elder: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
-    </svg>
-  ),
-  competitor: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
-      <line x1="13" y1="19" x2="19" y2="13"/>
-      <line x1="16" y1="16" x2="20" y2="20"/>
-      <line x1="19" y1="21" x2="21" y2="19"/>
-    </svg>
-  ),
-}
+// Card-header icons: this file used to keep its own ICONS map (generic
+// circle-x / shield / pulse / people / hourglass / sword glyphs), which
+// disagreed with PersonaIcon — the bespoke geometric set already used by
+// CouncilGlanceStrip and MeetTheCouncil — so the same advisor showed one icon
+// in the at-a-glance row and a different one on its own card, a few inches
+// apart. Removed; the header below renders PersonaIcon like everywhere else.
 
 // ACCENT_COLORS consolidated into PersonaMeta.accentColor (lib/types.ts /
 // lib/personas.ts) — was one of three independent copies of the same six
@@ -329,7 +301,6 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   }, [panelState])
 
   const accentColor = persona.accentColor ?? '#1c2b4a'
-  const icon = ICONS[persona.key]
 
   // ── Header tag extractor ───────────────────────────────────────────────────
   // Strips <lens>, <position>, <realcost>, <lean>, <structural> tags from streamed output and returns clean prose
@@ -1069,7 +1040,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <div style={{ width: 24, height: 24, borderRadius: 6, background: `${accentColor}22`, border: `1px solid ${accentColor}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accentColor, flexShrink: 0 }}>
-              {icon}
+              <PersonaIcon persona={persona.key as Exclude<PersonaKey, 'synthesis' | 'decision_brief'>} size={15} color={accentColor} strokeWidth={1.6} />
             </div>
             <div style={{ minWidth: 0 }}>
               {/* Fix (2-col mobile grid): was 12.5/11px in a row that also had
@@ -1127,7 +1098,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           glance at a collapsed card told you nothing. The summary below sits
           outside that class so it survives collapse; the detail block below
           it keeps the exact same className/is-collapsed behavior as before. */}
-      <div style={{ padding: '14px 16px 0' }}>
+      {/* Round 12: .council-stagger — under the unified-session flag, each
+          card's summary (lean + position + real cost) fades in on a short
+          per-card delay once the Council grid scrolls into view (see
+          .council-stagger / data-council-arrived in globals.css and the
+          arrival observer in SessionView), so the six takes read as six
+          independent arrivals instead of one static block. --council-i is
+          set on this card's grid-item wrapper by SessionView; unset (flag
+          off, or rendered outside the grid) this class is inert. */}
+      <div className="council-stagger" style={{ padding: '14px 16px 0' }}>
         {positionText && (
           <div style={{ marginBottom: mobileCollapsed && realCostText ? 10 : 14 }}>
             {/* Council redesign (Sprint 2), point B — "color classification".
@@ -1141,16 +1120,43 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
                 <LeanBadge lean={initialLean} />
               </div>
             )}
-            <p style={{
-              fontSize:   15,
-              fontWeight: 600,
-              fontFamily: 'var(--font-display)',
-              color:      'var(--text-1)',
-              lineHeight: 1.5,
-              margin:     '0',
-            }}>
-              {positionText}
-            </p>
+            {/* Round 12: the sharpest phrase gets emphasis (weight + a soft
+                marker in this advisor's own accent — see .persona-mark in
+                globals.css, which strengthens the marker in dark theme) and the rest of the
+                sentence steps down a notch, so six cards stop reading as six
+                identical lines. splitHighlight() is a pure client-side split
+                of the existing <position> text — no new tag, no prompt
+                change; it returns null when no clean break exists, in which
+                case the sentence renders exactly as before. before +
+                emphasis + after is always the original string. */}
+            {(() => {
+              const hl = splitHighlight(positionText)
+              const base: React.CSSProperties = {
+                fontSize:   15,
+                fontFamily: 'var(--font-display)',
+                lineHeight: 1.5,
+                margin:     '0',
+              }
+              if (!hl) {
+                return (
+                  <p style={{ ...base, fontWeight: 600, color: 'var(--text-1)' }}>
+                    {positionText}
+                  </p>
+                )
+              }
+              return (
+                <p style={{ ...base, fontWeight: 500, color: 'var(--text-2)' }}>
+                  {hl.before}
+                  <span
+                    className="persona-mark"
+                    style={{ ['--persona-accent' as string]: accentColor } as React.CSSProperties}
+                  >
+                    {hl.emphasis}
+                  </span>
+                  {hl.after}
+                </p>
+              )
+            })()}
             {/* Vet-fix (b): positionText/realCostText above are deliberately
                 frozen at the original response — kept that way so "what did
                 this advisor originally think" stays a stable reference point
@@ -1205,12 +1211,17 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             className={`persona-collapsed-realcost${mobileCollapsed ? ' is-collapsed' : ''}`}
             style={{
               fontSize:   12,
-              fontStyle:  'italic',
-              color:      'var(--text-4)',
+              color:      'var(--text-3)',
               lineHeight: 1.6,
               margin:     '0 0 14px',
             }}
           >
+            {/* Round 12: was italic text-4 with no label — the lowest-contrast
+                line on the card, and unlabeled while collapsed (the "The real
+                cost" label only exists in the expanded detail below). Now
+                upright, a step darker, with a run-in label using the same
+                phrase the expanded section already uses. */}
+            <span style={{ fontWeight: 600, color: 'var(--text-2)' }}>Real cost</span>{' '}
             {realCostText}
           </p>
         )}

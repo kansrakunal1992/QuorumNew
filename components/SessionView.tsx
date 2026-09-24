@@ -503,6 +503,37 @@ export default function SessionView({ session: initialSession, initialMessages =
   const handleGlanceSelect = useCallback((key: PersonaKey) => {
     setExpandRequests(prev => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }))
   }, [])
+  // Round 12 — Council entrance. The at-a-glance chips and each card's summary
+  // arrive one after another (see .council-stagger in globals.css), but only
+  // the first time the section is actually on screen: it sits far below the
+  // synthesis card, and an entrance that plays while it's off-screen is an
+  // entrance nobody saw. 'pending' holds the takes invisible, 'playing' runs
+  // the staggered animation, 'seen' switches it off for good — re-synthesis
+  // after a pushback hides and re-shows this section (synthesisDone goes
+  // false → true), which would otherwise replay the entrance every time.
+  // Flag off: none of this renders a data attribute, so the CSS never matches.
+  const [councilArrival, setCouncilArrival] = useState<'pending' | 'playing' | 'seen'>('pending')
+  const councilSectionRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!isUnifiedSessionEnabled() || !synthesisDone || councilArrival !== 'pending') return
+    const el = councilSectionRef.current
+    if (!el) return
+    const play = () => setCouncilArrival('playing')
+    if (typeof IntersectionObserver === 'undefined') { play(); return }
+    // -12% bottom margin: fire once the section's top edge is comfortably
+    // inside the viewport, not the instant its first pixel peeks in.
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) { play(); io.disconnect() }
+    }, { rootMargin: '0px 0px -12% 0px', threshold: 0 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [synthesisDone, councilArrival])
+  useEffect(() => {
+    if (councilArrival !== 'playing') return
+    // 5 x 110ms stagger + 420ms animation ≈ 970ms; a little headroom.
+    const t = setTimeout(() => setCouncilArrival('seen'), 1400)
+    return () => clearTimeout(t)
+  }, [councilArrival])
   // P1 fix: called when a pushback reply carries a fresh lean that differs
   // from the persona's original classification (PersonaPanel's onLeanUpdate).
   // This is the only place personaLeans updates after the initial response —
@@ -2274,6 +2305,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                   visibility. Flag off → unchanged, always visible, identical
                   to before. */}
               <div
+                ref={councilSectionRef}
+                data-council-arrived={isUnifiedSessionEnabled() ? councilArrival : undefined}
                 style={{
                   display: (isUnifiedSessionEnabled() && !synthesisDone) ? 'none' : undefined,
                 }}
@@ -2313,6 +2346,9 @@ export default function SessionView({ session: initialSession, initialMessages =
                       className={`persona-grid-item${isExpandedCard ? ' persona-grid-item-expanded' : ''}`}
                       style={{
                         willChange: 'transform',
+                        // Round 12: display-order index, read by
+                        // .council-stagger's animation-delay (globals.css).
+                        ...({ '--council-i': personaIndex } as React.CSSProperties),
                         // Cosmetic-only entrance stagger (see streamUnlockedUpTo above) —
                         // purely visual; the underlying fetch is NOT gated on this, so a
                         // card that's already loaded never sits invisible waiting on an

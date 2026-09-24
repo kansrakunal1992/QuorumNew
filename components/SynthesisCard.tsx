@@ -267,6 +267,25 @@ export default function SynthesisCard({
     const m = initialContent.match(/<counterfactual>([\s\S]*?)<\/counterfactual>/)
     return m?.[1]?.trim() ?? ''
   })
+  // Progressive disclosure (round 12): Conditional on / If different / What to
+  // do next / Before you act sit behind one "Show full breakdown" toggle
+  // (default closed). breakdownParts feeds the toggle's sub-line so it only
+  // ever names sections that actually exist for this synthesis; hasBreakdown
+  // gates the whole row (no toggle at all when there's nothing behind it —
+  // the common case for a synthesis with no conditions, no counterfactual and
+  // no action plan). hasSensitivity requires verdictText because the pair
+  // used to render inside the verdict box, which itself only renders when
+  // there's a verdict — same condition, same behaviour. Kept open across
+  // re-syntheses (pushback) on purpose: someone who opened it wants it open.
+  const [breakdownOpen, setBreakdownOpen] = useState(false)
+  const hasSensitivity = !!verdictText && (conditions.length > 0 || !!counterfactual)
+  const breakdownParts: string[] = [
+    ...(actionPlan.length > 0 ? ['next steps'] : []),
+    ...(hasSensitivity && conditions.length > 0 ? ['conditions'] : []),
+    ...(hasSensitivity && !!counterfactual ? ['what would change this'] : []),
+  ]
+  const hasBreakdown = breakdownParts.length > 0
+
   const parseModeRef   = useRef<'prose' | 'verdict' | 'tension'>('prose')
   const verdictAccRef  = useRef('')
   const tensionAccRef  = useRef('')
@@ -1335,70 +1354,15 @@ export default function SynthesisCard({
                     <span style={{ opacity: 0.35, marginLeft: 2 }}>▊</span>
                   )}
                 </p>
-                {/* P2 fix: conditions were rendering as bare bullets with no
-                    framing — added an intro label so it's clear these are
-                    assumptions the verdict depends on, not random fine print. */}
-                {conditions.length > 0 && (
-                  <>
-                    <p style={{
-                      fontFamily:    'var(--font-mono)',
-                      fontSize:      9,
-                      fontWeight:    700,
-                      letterSpacing: '0.10em',
-                      textTransform: 'uppercase',
-                      color:         'var(--text-4)',
-                      margin:        '12px 0 6px',
-                    }}>
-                      Conditional on
-                    </p>
-                    <ul style={{
-                      margin:       0,
-                      paddingLeft:  16,
-                      display:      'flex',
-                      flexDirection: 'column',
-                      gap:          3,
-                    }}>
-                      {conditions.map((c, i) => (
-                        <li key={i} style={{
-                          fontSize:   12,
-                          color:      'var(--text-3)',
-                          lineHeight: 1.5,
-                        }}>
-                          {c}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-                {/* Counterfactual Analysis: same mono-label visual language as
-                    Conditional On above (same "verdict sensitivity" family in
-                    the point-ownership hierarchy — see lib/personas.ts), just
-                    a single sentence pair instead of a bulleted list. Sits
-                    between Conditional On and the Worth Confirming highlight
-                    below, matching write/precedence/display order. */}
-                {state === 'done' && counterfactual && (
-                  <>
-                    <p style={{
-                      fontFamily:    'var(--font-mono)',
-                      fontSize:      9,
-                      fontWeight:    700,
-                      letterSpacing: '0.10em',
-                      textTransform: 'uppercase',
-                      color:         'var(--text-4)',
-                      margin:        '12px 0 6px',
-                    }}>
-                      If different
-                    </p>
-                    <p style={{
-                      fontSize:   12,
-                      color:      'var(--text-3)',
-                      lineHeight: 1.5,
-                      margin:     0,
-                    }}>
-                      {counterfactual}
-                    </p>
-                  </>
-                )}
+                {/* Progressive disclosure (round 12): "Conditional on" and "If
+                    different" used to sit here, inside the verdict box, and
+                    the action plan sat in its own card further down — nine
+                    separately-capped sections all visible at once. They now
+                    live behind the "Show full breakdown" toggle below the
+                    prose (see breakdownOpen). Verdict + Worth confirming stay
+                    here, unconditionally visible, because those two (plus the
+                    trade-offs paragraph beneath this box) are what change what
+                    someone does next. */}
                 {/* Sprint 1 follow-on — merged Features #1 (Highest-Value Unknown)
                     + #6 (Decision Sensitivity Analysis, cheap proxy). Reads as a
                     continuation of the verdict rather than a separate panel — but
@@ -1447,118 +1411,227 @@ export default function SynthesisCard({
               </p>
             )}
 
-            {/* Phase 3: permanent, always-on-screen nudge — replaces the old
-                one-shot onboarding tooltip that said the same thing. Signals
-                the verdict is provisional and names the exact next action,
-                without requiring the user to have seen (or remembered) a
-                tour step. */}
-            {state === 'done' && synthesis && (
-              <p style={{
-                fontSize:   11.5,
-                color:      'var(--text-4)',
-                lineHeight: 1.6,
-                fontStyle:  'italic',
-                margin:     '14px 0 0',
-              }}>
-                Disagree with something? Challenge any advisor above and the verdict updates.
-              </p>
-            )}
           </>
         )}
 
-        {/* Decision Action Plan — own sub-section, own accent (teal), sits after the
-            synthesis card and before Council Weighting Strip. Deliberately NOT inside
-            the verdict card: verdict/conditions/worth-confirming answer "what should I
-            think," this answers "what should I do." Flowing lines with a bolded lead
-            phrase, no bullets/numbers — reads as continued counsel, not a checklist
-            (POV-approved mockup, Variant A). Gated on state==='done' only, same as
-            worthConfirming — never shown mid-stream since it can only render once the
-            full <action_plan> tag has arrived. Also rendered inside focus mode (see the
-            focusModeActive portal below) — it and worthConfirming used to be excluded
-            there, which meant reading the synthesis in focus mode hid its most
-            actionable parts; fixed. */}
-        {state === 'done' && synthesis && actionPlan.length > 0 && (
-          <div style={{
-            marginTop:  16,
-            paddingTop: 14,
-            borderTop:  '1px solid var(--border-dim)',
-          }}>
-            <div style={{
-              borderLeft:   '3px solid var(--action-accent)',
-              background:   'var(--action-bg)',
-              borderRadius: '0 10px 10px 0',
-              padding:      '14px 20px',
-            }}>
-              <p style={{
-                fontFamily:    'var(--font-mono)',
-                fontSize:      9,
-                fontWeight:    700,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color:         'var(--action-accent)',
-                margin:        '0 0 2px',
-              }}>
-                What to do next
-              </p>
-              <p style={{
-                fontSize:   10,
-                color:      'var(--text-4)',
-                fontStyle:  'italic',
-                margin:     '0 0 12px',
-              }}>
-                in order of impact
-              </p>
-              {actionPlan.map((item, i) => (
-                <p key={i} style={{
-                  fontSize:   13,
-                  color:      'var(--text-2)',
-                  lineHeight: 1.7,
-                  margin:     i === actionPlan.length - 1 ? 0 : '0 0 10px',
-                }}>
-                  {item.lead && (
-                    <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
-                  )}
-                  {item.lead && ' — '}
-                  {item.rest}
-                </p>
-              ))}
-              {/* Confidence to Act — nested closing note, not a peer section. Deliberately
-                  quieter (--action-note-bg/border vs. the card's own --action-bg/border) so
-                  it reads as "one more thing before you go" rather than a 5th action item.
-                  Optional by design — see prompt rules; absence is the common case, not a bug. */}
-              {confidenceToAct && (
-                <div style={{
-                  marginTop:    12,
-                  paddingTop:   10,
-                  borderTop:    '1px solid var(--action-note-border)',
-                }}>
-                  <p style={{
-                    fontFamily:    'var(--font-mono)',
-                    fontSize:      9,
-                    fontWeight:    700,
-                    letterSpacing: '0.10em',
-                    textTransform: 'uppercase',
-                    color:         'var(--text-4)',
-                    margin:        '0 0 6px',
+        {/* Progressive disclosure (round 12) — "Show full breakdown".
+            Collapsed by default: Conditional on, If different, What to do
+            next and Before you act. Nothing about their generation or
+            parsing changed (the same tags still stream/parse exactly as
+            before, and the record page / PDF / share message still show
+            everything) — this only controls whether they compete for
+            attention on first look. Rendered only once synthesis is done,
+            same gate the action plan already had, because none of these
+            can be complete mid-stream. The toggle's sub-line is built from
+            what actually exists for THIS synthesis, so it never promises a
+            section that isn't there.
+
+            Focus mode (Observatory, below) deliberately still shows all of
+            it — that's an explicit opt-in "read everything" view. */}
+        {state === 'done' && synthesis && hasBreakdown && (
+          <div style={{ marginTop: 18, borderTop: '1px solid var(--border-dim)' }}>
+            <button
+              type="button"
+              onClick={() => setBreakdownOpen(o => !o)}
+              aria-expanded={breakdownOpen}
+              aria-controls="synthesis-breakdown"
+              style={{
+                width:          '100%',
+                display:        'flex',
+                alignItems:     'center',
+                justifyContent: 'space-between',
+                gap:            10,
+                padding:        '12px 2px',
+                background:     'transparent',
+                border:         'none',
+                cursor:         'pointer',
+                font:           'inherit',
+                textAlign:      'left',
+              }}
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-2)' }}>
+                  {breakdownOpen ? 'Hide full breakdown' : 'Show full breakdown'}
+                </span>
+                {!breakdownOpen && (
+                  <span style={{ fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.4 }}>
+                    {breakdownParts.join(', ')}
+                  </span>
+                )}
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ flexShrink: 0, transform: breakdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
+                aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {breakdownOpen && (
+              <div id="synthesis-breakdown" style={{ paddingBottom: 4, animation: 'examinerFadeIn 0.35s ease-out both' }}>
+                {/* Verdict-sensitivity pair — same labels, same type as they
+                    had inside the verdict box, now carrying their own gold
+                    rule since they no longer sit inside the gold box. */}
+                {hasSensitivity && (
+                  <div style={{
+                    borderLeft:   '3px solid var(--verdict-accent)',
+                    padding:      '2px 0 2px 16px',
+                    marginBottom: actionPlan.length > 0 ? 18 : 0,
                   }}>
-                    Before you act
-                  </p>
-                  <p style={{
-                    fontSize:   12,
-                    color:      'var(--text-2)',
-                    lineHeight: 1.6,
-                    margin:     0,
-                  }}>
-                    {confidenceToAct.lead && (
-                      <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
+                    {conditions.length > 0 && (
+                      <>
+                        <p style={{
+                          fontFamily:    'var(--font-mono)',
+                          fontSize:      9,
+                          fontWeight:    700,
+                          letterSpacing: '0.10em',
+                          textTransform: 'uppercase',
+                          color:         'var(--text-4)',
+                          margin:        '0 0 6px',
+                        }}>
+                          Conditional on
+                        </p>
+                        <ul style={{
+                          margin:        counterfactual ? '0 0 14px' : 0,
+                          paddingLeft:   16,
+                          display:       'flex',
+                          flexDirection: 'column',
+                          gap:           3,
+                        }}>
+                          {conditions.map((c, i) => (
+                            <li key={i} style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.55 }}>
+                              {c}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
                     )}
-                    {confidenceToAct.lead && ' — '}
-                    {confidenceToAct.rest}
-                  </p>
-                </div>
-              )}
-            </div>
+                    {counterfactual && (
+                      <>
+                        <p style={{
+                          fontFamily:    'var(--font-mono)',
+                          fontSize:      9,
+                          fontWeight:    700,
+                          letterSpacing: '0.10em',
+                          textTransform: 'uppercase',
+                          color:         'var(--text-4)',
+                          margin:        '0 0 6px',
+                        }}>
+                          If different
+                        </p>
+                        <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.55, margin: 0 }}>
+                          {counterfactual}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Decision Action Plan — unchanged card, moved inside the
+                    breakdown. Own accent (teal): verdict/conditions answer
+                    "what should I think," this answers "what should I do."
+                    Flowing lines with a bolded lead phrase, no bullets. */}
+                {actionPlan.length > 0 && (
+                  <div style={{
+                    borderLeft:   '3px solid var(--action-accent)',
+                    background:   'var(--action-bg)',
+                    borderRadius: '0 10px 10px 0',
+                    padding:      '14px 20px',
+                  }}>
+                    <p style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      9,
+                      fontWeight:    700,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      color:         'var(--action-accent)',
+                      margin:        '0 0 2px',
+                    }}>
+                      What to do next
+                    </p>
+                    <p style={{
+                      fontSize:   10,
+                      color:      'var(--text-4)',
+                      fontStyle:  'italic',
+                      margin:     '0 0 12px',
+                    }}>
+                      in order of impact
+                    </p>
+                    {actionPlan.map((item, i) => (
+                      <p key={i} style={{
+                        fontSize:   13,
+                        color:      'var(--text-2)',
+                        lineHeight: 1.7,
+                        margin:     i === actionPlan.length - 1 ? 0 : '0 0 10px',
+                      }}>
+                        {item.lead && (
+                          <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{item.lead}</strong>
+                        )}
+                        {item.lead && ' — '}
+                        {item.rest}
+                      </p>
+                    ))}
+                    {/* Confidence to Act — nested closing note, not a peer
+                        section. Quieter than the card itself so it reads as
+                        "one more thing before you go" rather than a 5th
+                        action item. Optional by design — absence is the
+                        common case, not a bug. */}
+                    {confidenceToAct && (
+                      <div style={{
+                        marginTop:    12,
+                        paddingTop:   10,
+                        borderTop:    '1px solid var(--action-note-border)',
+                      }}>
+                        <p style={{
+                          fontFamily:    'var(--font-mono)',
+                          fontSize:      9,
+                          fontWeight:    700,
+                          letterSpacing: '0.10em',
+                          textTransform: 'uppercase',
+                          color:         'var(--text-4)',
+                          margin:        '0 0 6px',
+                        }}>
+                          Before you act
+                        </p>
+                        <p style={{
+                          fontSize:   12,
+                          color:      'var(--text-2)',
+                          lineHeight: 1.6,
+                          margin:     0,
+                        }}>
+                          {confidenceToAct.lead && (
+                            <strong style={{ color: 'var(--action-accent)', fontWeight: 600 }}>{confidenceToAct.lead}</strong>
+                          )}
+                          {confidenceToAct.lead && ' — '}
+                          {confidenceToAct.rest}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+        )}
+
+        {/* Phase 3: permanent, always-on-screen nudge — replaces the old
+            one-shot onboarding tooltip that said the same thing. Signals
+            the verdict is provisional and names the exact next action,
+            without requiring the user to have seen (or remembered) a
+            tour step. Moved (round 12) from inside the verdict/prose
+            fragment to sit after the breakdown toggle, so it stays next to
+            the challenge affordance that follows rather than being
+            separated from it by an expanded breakdown. "above" -> "below":
+            the advisor cards render after this card, not before it. */}
+        {state === 'done' && synthesis && (
+          <p style={{
+            fontSize:   11.5,
+            color:      'var(--text-4)',
+            lineHeight: 1.6,
+            fontStyle:  'italic',
+            margin:     '14px 0 0',
+          }}>
+            Disagree with something? Challenge any advisor below and the verdict updates.
+          </p>
         )}
 
         {/* Mirror nudge — shown once synthesis completes (Sprint 19) */}

@@ -47,7 +47,7 @@ export default function CouncilGlanceStrip({ orderedKeys, leans, expandedKeys, o
         marginBottom: 16,
       }}
     >
-      {orderedKeys.map((key) => {
+      {orderedKeys.map((key, i) => {
         const persona = PERSONAS[key]
         if (!persona) return null
         const lean = leans[key]
@@ -60,6 +60,7 @@ export default function CouncilGlanceStrip({ orderedKeys, leans, expandedKeys, o
             key={key}
             role="listitem"
             type="button"
+            className="council-stagger"
             onClick={onSelect ? () => onSelect(key) : undefined}
             aria-label={`${persona.label}${lean ? `, leans ${lean}` : ', still responding'}`}
             style={{
@@ -72,6 +73,10 @@ export default function CouncilGlanceStrip({ orderedKeys, leans, expandedKeys, o
               background: 'var(--bg-inset)',
               cursor: onSelect ? 'pointer' : 'default',
               font: 'inherit',
+              // Round 12: display-order index for .council-stagger's
+              // animation-delay (globals.css) — inert unless an ancestor
+              // carries data-council-arrived (SessionView, flag on).
+              ...({ '--council-i': i } as React.CSSProperties),
             }}
           >
             <PersonaIcon persona={key as Exclude<PersonaKey, 'synthesis' | 'decision_brief'>} size={14} color={accent} strokeWidth={1.6} />
