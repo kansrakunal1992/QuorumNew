@@ -80,14 +80,46 @@ export default function ChatIntake({
     inputRef.current?.focus()
   }
 
-  // ── Opening line — no chat exists yet, no DB round trip needed ────────────
+  // ── Load the conversation this screen should show ──────────────────────────
+  // Two cases share one effect, both mount-only (chatIntakeId is read at the
+  // time this component mounts, not watched afterward — see the eslint
+  // suppression below):
+  //   - Brand-new chat (chatIntakeId null): no DB row exists yet, so just
+  //     grab the fixed opening line — no round trip needed.
+  //   - Resuming (chatIntakeId already set): this happens when "Let me add
+  //     more first" sends the person back from DecisionCheckpoint —
+  //     NaturalIntakeClient unmounts this component while on the checkpoint
+  //     screen and remounts a fresh instance when it flips back to 'chat',
+  //     so local state (bubbles, exchangeCount) starts empty even though
+  //     the chat_intake row and its full history are untouched server-side.
+  //     Re-fetch that transcript here so the conversation reappears instead
+  //     of the screen looking like it started over.
   useEffect(() => {
-    if (chatIntakeId) return
-    fetch('/api/chat-intake')
+    if (!chatIntakeId) {
+      fetch('/api/chat-intake')
+        .then(r => r.json())
+        .then(d => setBubbles([{ role: 'quorum', content: d.openingLine }]))
+        .catch(() => setBubbles([{ role: 'quorum', content: "What's going on?" }]))
+        .finally(() => inputRef.current?.focus())
+      return
+    }
+
+    let cancelled = false
+    fetch(`/api/chat-intake?chatIntakeId=${chatIntakeId}`)
       .then(r => r.json())
-      .then(d => setBubbles([{ role: 'quorum', content: d.openingLine }]))
-      .catch(() => setBubbles([{ role: 'quorum', content: "What's going on?" }]))
-    inputRef.current?.focus()
+      .then(d => {
+        if (cancelled) return
+        const msgs = (d.messages ?? []) as { role: 'user' | 'quorum'; content: string }[]
+        if (msgs.length) {
+          setBubbles(msgs.map(m => ({ role: m.role, content: m.content })))
+        }
+        if (typeof d.intake?.exchange_count === 'number') {
+          setExchangeCount(d.intake.exchange_count)
+        }
+      })
+      .catch(() => { /* worst case: hero shows briefly, chat still works from here */ })
+      .finally(() => { if (!cancelled) inputRef.current?.focus() })
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

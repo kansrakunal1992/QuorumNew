@@ -105,10 +105,21 @@ export function hasEnoughToCheckpoint(state: ChatDecisionState): boolean {
   return hasStatement && hasOptions && hasContext
 }
 
+// Guarantees Quorum asks at least this many real follow-up questions before
+// it's ever allowed to offer to wrap up — even when a single rich first
+// message already makes hasEnoughToCheckpoint() true. Raised from 2 to 4
+// after v1 feedback that closing after just one follow-up felt like it was
+// cutting the conversation short before it reached any real depth (see
+// docs/CHANGELOG_v1.md). At 4, exchanges 1–3 always continue the
+// conversation regardless of how complete the state looks, so the person
+// gets a minimum of three follow-up questions; readyToReflect only becomes
+// possible from exchange 4 onward, and only once the state is genuinely
+// well-formed — it can still run all the way to DEFAULT_MAX_EXCHANGES if it
+// isn't.
+export const MIN_EXCHANGES_BEFORE_STOP = 4
+
 export function shouldStopEarly(state: ChatDecisionState, exchangeCount: number): boolean {
-  // Never stop before 2 exchanges — the very first reply back needs at
-  // least one follow-up, or this behaves like a form with extra steps.
-  if (exchangeCount < 2) return false
+  if (exchangeCount < MIN_EXCHANGES_BEFORE_STOP) return false
   return hasEnoughToCheckpoint(state)
 }
 
