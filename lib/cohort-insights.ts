@@ -166,7 +166,10 @@ async function averageCalibrationDelta(userId: string, supabase: ServiceClient):
     .from('sessions')
     .select('id, outcomes(calibration_delta)')
     .eq('user_id', userId)
-    .eq('status', 'completed')
+    // Natural Intake v1: see app/api/mirror/pending-outcomes/route.ts's
+    // comment — widened to include light-path sessions with a captured
+    // commitment, not only Council-flow status='completed'.
+    .or('status.eq.completed,commitment_captured_at.not.is.null')
 
   const deltas: number[] = []
   for (const s of sessions ?? []) {

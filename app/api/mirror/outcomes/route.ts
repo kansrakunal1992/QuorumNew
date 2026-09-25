@@ -101,7 +101,10 @@ export async function GET(req: Request) {
       .from('sessions')
       .select('id')
       .in('id', sessionIds)
-      .eq('status', 'completed')
+      // Natural Intake v1: see app/api/mirror/pending-outcomes/route.ts's
+      // comment — widened to include light-path sessions with a captured
+      // commitment, not only Council-flow status='completed'.
+      .or('status.eq.completed,commitment_captured_at.not.is.null')
       .lt('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
 
     const pending = (oldSessions ?? []).filter(s => !outcomeSessions.has(s.id)).length

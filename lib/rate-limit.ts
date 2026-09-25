@@ -68,6 +68,14 @@ export const LIMITS: Record<string, LimitConfig> = {
     limit:      40,
     windowMs:   10 * 60_000,   // 40 examiner calls per 10 min
   },
+  // Natural Intake v1 — one call per chat turn (up to ~9 exchanges), plus
+  // checkpoint/done. Generous for the same reason as `persona` above: a
+  // real user having one intense chat session uses well under 20 calls.
+  chatIntake: {
+    identifier: 'chat-intake',
+    limit:      60,
+    windowMs:   10 * 60_000,   // 60 chat-intake calls per 10 min
+  },
   // Magic link sends — strictest limit; prevents email spam
   auth: {
     identifier: 'auth',

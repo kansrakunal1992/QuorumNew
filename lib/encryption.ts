@@ -19,6 +19,7 @@ import 'server-only'
  * ── ENCRYPTED COLUMNS ────────────────────────────────────────────────────────
  *   sessions           — decision_text, context_text
  *   messages           — content (all roles)
+ *   chat_intake_messages — content (Natural Intake v1 — see supabase/sprint_natural_intake_v1.sql)
  *   examiner_responses — question_text, response_text
  *   outcomes           — what_decided, notes
  *   structural_matches — context_block (text), matches_json (JSONB via _enc wrapper)

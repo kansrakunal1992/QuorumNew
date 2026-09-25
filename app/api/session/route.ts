@@ -33,6 +33,11 @@ export async function POST(req: Request) {
       user_email,
       device_id,
       parent_session_id,
+      // Natural Intake v1 — both optional, absent on every classic-form
+      // call (HomeClient.tsx is not changed by this addition). Only
+      // app/api/chat-intake/checkpoint/route.ts ever sends these.
+      intake_mode,
+      chat_intake_id,
     } = await req.json()
 
     if (!decision_text?.trim()) {
@@ -93,6 +98,11 @@ export async function POST(req: Request) {
         parent_session_id: resolvedParentId,
         // S2-05: carry prior session correction for council context injection
         validation_correction_carry: validationCorrectionCarry,
+        // Natural Intake v1 — defaults to 'classic'/null via the column
+        // defaults in supabase/sprint_natural_intake_v1.sql when absent, so
+        // this line is a no-op for every classic-form call.
+        intake_mode:    intake_mode === 'chat' ? 'chat' : 'classic',
+        chat_intake_id: chat_intake_id || null,
       })
       .select('id')
       .single()

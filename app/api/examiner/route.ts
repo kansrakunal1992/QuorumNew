@@ -61,6 +61,8 @@ import { encrypt, decrypt }      from '@/lib/encryption'
 import { checkR7Resolvable }     from '@/lib/examiner-resolvability-check'  // Audit fix #3
 import { forwardTierHeaders }    from '@/lib/tier-forward'
 import { runLocalContextLookup } from '@/lib/web-context-lookup'  // PR2 — local/regulatory/market context
+import { checkChatCoverage }     from '@/lib/examiner-derive'      // Natural Intake v1 — derive-and-confirm
+import { isNaturalIntakeEnabled } from '@/lib/feature-flags'       // Natural Intake v1
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PR1/PR2 (readiness gate foundation): criticality tiers
@@ -392,7 +394,11 @@ export async function GET(req: Request) {
     supabase
       .from('sessions')
       // SB-2: user_email added for profile fallback when user_id is null
-      .select('decision_text, context_text, user_id, user_email')
+      // Natural Intake v1: intake_mode added — gates the derive-and-confirm
+      // check below to chat-originated sessions only. Absent/'classic' on
+      // every session created before this migration and every classic-flow
+      // session created after it.
+      .select('decision_text, context_text, user_id, user_email, intake_mode')
       .eq('id', sessionId)
       .single(),
   ])
@@ -569,7 +575,12 @@ export async function GET(req: Request) {
     //   E0 first  — inward/emotional question sets reflective tone before analysis
     //   S0/rule   — domain grounding (S0) or structural flag (rule)
     //   C0 last   — reflective close: what does success look like here?
-    const questions: Array<{ order: number; text: string; gap: string; rule_id: string | null; criticality: 'critical' | 'important' | 'optional' }> = []
+    // Natural Intake v1: derived / derivedAnswer are optional and undefined
+    // for every classic-flow session — added here rather than as a second
+    // response shape so the client's ExaminerQuestion type stays one shape
+    // for both flows, same convention the REDIRECT branch above already
+    // documents for its own `criticality` field.
+    const questions: Array<{ order: number; text: string; gap: string; rule_id: string | null; criticality: 'critical' | 'important' | 'optional'; derived?: boolean; derivedAnswer?: string | null }> = []
 
     // E0 — slot 1, always
     questions.push({
@@ -614,10 +625,33 @@ export async function GET(req: Request) {
       })
     }
 
+    // ── Natural Intake v1: derive-and-confirm ─────────────────────────────────
+    // Chat-only sessions carry their transcript inside context_text (see
+    // lib/chat-intake-state.ts's assembleSessionInput). Only ever narrows
+    // what the USER has to retype — every question still gets a normal
+    // examiner_responses row either way (POST below), so bias-scorer's C0
+    // pull, independence-score, and contradiction-detector see the same
+    // shape of data as they do for a classic-flow session. Classic-flow
+    // sessions (intake_mode !== 'chat') skip this block entirely — zero
+    // behavioural change for them, flag on or off.
+    const intakeMode = (sessionRes.data as { intake_mode?: string } | null)?.intake_mode ?? 'classic'
+    if (isNaturalIntakeEnabled() && intakeMode === 'chat' && contextText) {
+      await Promise.all(
+        questions.map(async q => {
+          const result = await checkChatCoverage(q.text, contextText)
+          if (result.covered) {
+            q.derived       = true
+            q.derivedAnswer = result.derivedAnswer
+          }
+        }),
+      )
+    }
+
     console.log(
       `[Examiner GET] SB-2 v2.0 | session ${sessionId} | mode: ${effectiveMode} | ` +
       `questions: ${questions.map(q => q.rule_id).join(',')} | ` +
-      `s0: ${shouldAddS0} (${decisionWordCount}w) | profile: ${!!profileCtx} | fears: ${!!fearProfile}`
+      `s0: ${shouldAddS0} (${decisionWordCount}w) | profile: ${!!profileCtx} | fears: ${!!fearProfile} | ` +
+      `derived: ${questions.filter(q => q.derived).length}/${questions.length}`
     )
 
     return NextResponse.json({
@@ -660,6 +694,7 @@ type ExaminerResponseRow = {
   unknown_unknown_gap: string
   rule_id:             string | null
   criticality?:        'critical' | 'important' | 'optional' | null   // PR1/PR2
+  derived_from_chat?:  boolean | null   // Natural Intake v1 — see lib/examiner-derive.ts
 }
 
 export async function POST(req: Request) {
@@ -773,8 +808,18 @@ export async function POST(req: Request) {
       unknown_unknown_gap:   r.unknown_unknown_gap,
       bias_parameter_probed: null,
       rule_id:               r.rule_id ?? null,
+      // resolution_state is unaffected by derived_from_chat below — a
+      // derived-and-confirmed answer really was answered, just surfaced via
+      // the chat rather than typed in response to the question directly.
+      // lib/readiness.ts and every existing consumer of resolution_state
+      // needs zero changes.
       resolution_state:      r.response_text?.trim() ? 'answered' : 'skipped',
       criticality:           r.criticality ?? null,
+      // Natural Intake v1: audit trail only. Counts identically to a
+      // directly-typed answer everywhere resolution_state = 'answered' is
+      // read — bias scoring, independence score, contradiction detection —
+      // per product decision, Sept 2026.
+      derived_from_chat:     r.derived_from_chat ?? false,
     }))
 
     const { error: insertError } = await supabase.from('examiner_responses').insert(rows)

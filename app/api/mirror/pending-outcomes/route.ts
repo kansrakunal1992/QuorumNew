@@ -68,11 +68,17 @@ export async function GET(req: Request) {
 
   try {
     // ── 3. All completed sessions for this user ──────────────────────────────
+    // Natural Intake v1: widened from status='completed' alone to also
+    // include any session with a captured commitment, so a light-path
+    // "I'm done" session with a real next action still surfaces here even
+    // though it never goes through Council/Save Record's status flip. A
+    // light-path exit with NO committed next action still correctly stays
+    // out — see app/api/chat-intake/done/route.ts.
     const { data: allSessions } = await supabase
       .from('sessions')
       .select('id, decision_text, created_at')
       .eq('user_id', userId)
-      .eq('status', 'completed')
+      .or('status.eq.completed,commitment_captured_at.not.is.null')
       .order('created_at', { ascending: true })
 
     if (!allSessions || allSessions.length === 0) {

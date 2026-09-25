@@ -16,6 +16,8 @@
 
 import type { Metadata } from 'next'
 import HomeClient from './HomeClient'
+import NaturalIntakeClient from './NaturalIntakeClient'
+import { isNaturalIntakeEnabled } from '@/lib/feature-flags'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain-here.com'
 
@@ -43,5 +45,11 @@ export const metadata: Metadata = {
 }
 
 export default function Page() {
+  // Natural Intake v1: a user only ever sees one of these two, decided
+  // server-side before anything renders — never both, never a flash of one
+  // then the other. HomeClient is not modified by this addition.
+  if (isNaturalIntakeEnabled()) {
+    return <NaturalIntakeClient />
+  }
   return <HomeClient />
 }

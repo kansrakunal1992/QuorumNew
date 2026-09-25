@@ -78,6 +78,16 @@ export interface UserProfile {
 // ── SB-1: Validation state ─────────────────────────────────────────────────────
 export type ValidationState = 'pending' | 'confirmed' | 'corrected'
 
+// ── Natural Intake (v1): decision option vocabulary ──────────────────────────
+// Missing piece #3 (Kunal's natural-process note): most decisions aren't a
+// binary between two named options — "wait", "don't act", and "run a cheap
+// experiment first" are frequently the real answer. Used inside
+// ChatDecisionState.options[].type and ChatDecisionState.leaningType below.
+// Deliberately NOT merged into Session.initial_instinct — that field is the
+// classic flow's existing 3-value (accept/reject/unsure) UI and is untouched
+// by this addition.
+export type DecisionOptionType = 'act' | 'dont_act' | 'wait' | 'gather_info' | 'experiment'
+
 export interface Session {
   id: string
   user_id?: string
@@ -133,11 +143,94 @@ export interface Session {
   final_decision?:                 string | null   // encrypted at rest — decrypt() before display
   final_decision_locked_at?:       string | null
   prediction_matched_final?:       boolean | null
+  // ── Natural Intake (v1): provenance + depth ────────────────────────────────
+  // intake_mode:     which front door produced this session. 'classic' is the
+  //                  default and column default in Postgres — every session
+  //                  created before this migration, and every classic-form
+  //                  session created after it, reads 'classic'.
+  // chat_intake_id:  links back to the pre-session chat transcript, when
+  //                  intake_mode === 'chat'.
+  // session_depth:   null until the session reaches a depth milestone this
+  //                  v1 drop actually sets — 'checkpoint' when the chat
+  //                  checkpoint creates the session, 'council' if Convene
+  //                  the Council is chosen afterward. NOT currently read by
+  //                  any shipped Mirror code (see docs/MIRROR_TOUCHPOINTS_v1.md)
+  //                  — reserved for the deferred fast-follow.
+  intake_mode?:              'classic' | 'chat'
+  chat_intake_id?:           string | null
+  session_depth?:            'checkpoint' | 'council' | null
 }
 
 export interface DecisionRecord {
   session: Session
   messages: Message[]
+}
+
+// ── Natural Intake (v1): pre-session chat ─────────────────────────────────────
+// A chat_intake exists before a `sessions` row does — see
+// supabase/sprint_natural_intake_v1.sql for the full rationale. Once the
+// checkpoint fires, the assembled decision_text/context_text is sent through
+// the EXISTING POST /api/session, and this record is linked to the session
+// it produced.
+
+export type ChatIntakeStatus = 'active' | 'checkpointed' | 'abandoned'
+
+export interface ChatDecisionOption {
+  label:  string
+  type:   DecisionOptionType
+}
+
+export interface ChatStakeholderMention {
+  name:          string
+  role?:         string | null
+  // Missing piece #6 (Kunal's natural-process note): why this person, not
+  // just that they exist. User-stated only — Quorum never infers this.
+  consultReason?: 'expertise' | 'challenge' | 'approval' | 'affected' | 'trust' | null
+}
+
+// The running notes state a fast, cheap model updates after every chat turn.
+// Every field is optional by design (section 4C of the plan: "only what has
+// evidence" gets filled in — no field is required to progress the chat).
+export interface ChatDecisionState {
+  decisionStatement?:  string | null
+  options?:            ChatDecisionOption[]
+  leaningOptionType?:  DecisionOptionType | null
+  stakeholders?:       ChatStakeholderMention[]
+  deadline?:           string | null
+  reversibility?:      'reversible' | 'somewhat_reversible' | 'irreversible' | null
+  assumptions?:        string[]
+  unknowns?:           string[]
+  evidence?:           string[]
+  // Missing piece #5: "what would be enough evidence to change your mind" —
+  // used as the stop-early signal, not just a field for its own sake.
+  decisionThreshold?:  string | null
+  // The very first chat turn's answer, before Quorum has said anything.
+  // Missing piece #1 — kept distinct from any later, more considered lean.
+  initialReaction?:    DecisionOptionType | null
+  userCorrections?:    string[]
+}
+
+export interface ChatIntake {
+  id:               string
+  user_id?:         string | null
+  user_email?:      string | null
+  device_id?:       string | null
+  status:           ChatIntakeStatus
+  exchange_count:   number
+  decision_state:   ChatDecisionState | null
+  initial_reaction: DecisionOptionType | null
+  session_id?:      string | null
+  created_at:       string
+  last_turn_at:     string
+}
+
+export interface ChatIntakeMessage {
+  id:              string
+  chat_intake_id:  string
+  role:            'user' | 'quorum'
+  content:         string
+  turn_order:      number
+  created_at:      string
 }
 
 // ── Mirror Module Types (Sprint 7a, updated Sprint 19) ────────────────────────

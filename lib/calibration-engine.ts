@@ -110,7 +110,10 @@ export async function computeDimensionalCalibration(
           outcomes ( retrospective_confidence, calibration_delta, outcome_quality )
         `)
         .in('id', sessionIds)
-        .eq('status', 'completed'),
+        // Natural Intake v1: see app/api/mirror/pending-outcomes/route.ts's
+        // comment — widened to include light-path sessions with a captured
+        // commitment, not only Council-flow status='completed'.
+        .or('status.eq.completed,commitment_captured_at.not.is.null'),
       supabase
         .from('sessions_ontology')
         .select('session_id, ontology_vector')

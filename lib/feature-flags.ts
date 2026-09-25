@@ -90,3 +90,63 @@ export function contextIngestionCanOverrideProfile(): boolean {
 export function isUnifiedSessionEnabled(): boolean {
   return process.env.NEXT_PUBLIC_UNIFIED_SESSION_ENABLED === 'true'
 }
+
+// ── Natural Intake — master kill switch (Natural Intake Sprint 1, v1) ───────
+// Same pattern as every flag above: one NEXT_PUBLIC_ var, default OFF when
+// unset, checked identically client and server, baked in at build time
+// (redeploy required after changing it in Railway).
+//
+// When ON:
+//   - app/page.tsx renders the new chat entry point (components/ChatIntake.tsx)
+//     instead of the classic decision-input form in HomeClient.tsx. The
+//     classic form is untouched and still exists — a user only ever sees
+//     one or the other, decided by this flag, never both.
+//   - The checkpoint screen (components/DecisionCheckpoint.tsx) runs after
+//     the chat, reusing the EXISTING /api/session (→ ontology tagger) and
+//     /api/examiner pipeline exactly as the classic flow does — no second
+//     structural-analysis or bias-scoring code path is created.
+//   - app/api/examiner/route.ts's derive-and-confirm check (see
+//     lib/examiner-derive.ts) only runs for sessions with intake_mode ===
+//     'chat'. A classic-flow session's Examiner behaviour is byte-for-byte
+//     unchanged, flag on or off.
+//   - Six mechanical Mirror/outcome-tracking queries additionally match on
+//     commitment_captured_at rather than only status = 'completed' (see
+//     docs/MIRROR_TOUCHPOINTS_v1.md) — this half of the fix is NOT gated by
+//     this flag, since it only ever widens eligibility (a session that
+//     already matched status = 'completed' still matches), so it's safe to
+//     ship active even before the flag is flipped on anywhere.
+//
+// To enable in Railway: set NEXT_PUBLIC_NATURAL_INTAKE_ENABLED=true on the
+// service, then redeploy.
+
+export function isNaturalIntakeEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_NATURAL_INTAKE_ENABLED === 'true'
+}
+
+// ── Natural Intake — connector sub-flags (Phase 2–4) ─────────────────────────
+// Each external connector clears its own approval process on its own
+// timeline (Slack Marketplace review, Google verification, Microsoft
+// publisher checks) — a single flag would force hiding a connector that's
+// ready or exposing one that isn't. Same pattern as the master flag; each
+// is meaningful only when isNaturalIntakeEnabled() is also true — every
+// connector call site checks both, not just its own sub-flag.
+//
+// No code in this v1 drop reads these yet (Slack/Gmail/Outlook/WhatsApp
+// ship in Phases 2–4). Defined now so Phase 2 doesn't need a second flags
+// migration, and so Railway's env var list is set up once.
+
+export function isSlackConnectorEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_SLACK_CONNECTOR_ENABLED === 'true'
+}
+
+export function isGmailConnectorEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_GMAIL_CONNECTOR_ENABLED === 'true'
+}
+
+export function isOutlookConnectorEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_OUTLOOK_CONNECTOR_ENABLED === 'true'
+}
+
+export function isWhatsAppShareEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_WHATSAPP_SHARE_ENABLED === 'true'
+}
