@@ -13,6 +13,13 @@ import { useState } from 'react'
 
 interface Props {
   onPick: (text: string) => void
+  // Natural Intake (v1): a tiny, three-chip version for the chat hero —
+  // "not a big product tour," just Career / Business / Money. Defaults to
+  // false so HomeClient's existing six-category strip is untouched.
+  compact?: boolean
+  // Overrides the "Or start with a decision" label — the chat hero doesn't
+  // want that copy repeated under its own headline.
+  label?: string
 }
 
 const CATEGORIES: { label: string; items: string[] }[] = [
@@ -24,19 +31,23 @@ const CATEGORIES: { label: string; items: string[] }[] = [
   { label: 'Everyday',     items: ['Should I buy this?', 'Should I commit to this?'] },
 ]
 
-export default function DecisionStarters({ onPick }: Props) {
+export default function DecisionStarters({ onPick, compact = false, label = 'Or start with a decision' }: Props) {
   const [open, setOpen] = useState<string | null>(null)
+  const categories = compact ? CATEGORIES.slice(0, 3) : CATEGORIES
 
   return (
-    <div style={{ margin: '10px 0 16px' }}>
-      <p style={{
-        fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.08em',
-        textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px',
-      }}>
-        Or start with a decision
-      </p>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {CATEGORIES.map(cat => (
+    <div style={{ margin: compact ? '0' : '10px 0 16px' }}>
+      {label && (
+        <p style={{
+          fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.08em',
+          textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 8px',
+          textAlign: compact ? 'center' : 'left',
+        }}>
+          {label}
+        </p>
+      )}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: compact ? 'center' : 'flex-start' }}>
+        {categories.map(cat => (
           <div key={cat.label} style={{ position: 'relative' }}>
             <button
               type="button"

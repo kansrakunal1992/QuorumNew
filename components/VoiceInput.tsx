@@ -20,6 +20,12 @@ import { useSoniox, VoiceErrorCode } from '@/hooks/useSoniox'
 
 interface VoiceInputProps {
   onTranscript: (text: string) => void
+  // Natural Intake (v1): renders the idle state as a small icon-only round
+  // button instead of the full "Or speak your decision" label + button row.
+  // Needed so voice input can sit next to Send on its own row on narrow
+  // screens without the label pushing Send off-screen. Defaults to false —
+  // HomeClient's existing full-width row is untouched.
+  compact?: boolean
 }
 
 function errorMessage(code: VoiceErrorCode | null): string {
@@ -181,6 +187,8 @@ const rowBase: React.CSSProperties = {
   justifyContent: 'space-between',
   padding: '8px 12px',
   minHeight: 44,
+  flexWrap: 'wrap',
+  gap: 6,
 }
 const centeredRow: React.CSSProperties = {
   ...base,
@@ -209,7 +217,7 @@ const dismissBtn: React.CSSProperties = {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function VoiceInput({ onTranscript }: VoiceInputProps) {
+export default function VoiceInput({ onTranscript, compact = false }: VoiceInputProps) {
   const { state, finalText, partialText, errorCode, amplitudeRef, start, stop, reset } = useSoniox()
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const rawRef = useRef('')
@@ -242,26 +250,46 @@ export default function VoiceInput({ onTranscript }: VoiceInputProps) {
   }, [cleanupLoading, onTranscript])
 
   // ── IDLE ──────────────────────────────────────────────────────────────────
-  if (state === 'idle') return (
-    <div style={rowBase}>
-      <span style={{ fontSize: 12, color: 'var(--text-4)', letterSpacing: '0.03em' }}>
-        Or speak your decision
-      </span>
-      <button onClick={start} style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '6px 12px', borderRadius: 7,
-        border: '1px solid var(--border-mid)',
-        // Bug fix: was `transparent` — same fix as .btn-ghost in globals.css.
-        background: 'var(--bg-card)', color: 'var(--text-3)',
-        cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'all 0.18s',
-      }}
+  if (state === 'idle') {
+    if (compact) return (
+      <button
+        onClick={start}
+        aria-label="Voice input"
+        title="Voice input"
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+          border: '1px solid var(--border-mid)',
+          background: 'var(--bg-card)', color: 'var(--text-3)',
+          cursor: 'pointer', transition: 'all 0.18s',
+        }}
         onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold-dim)'; e.currentTarget.style.color = 'var(--gold)' }}
         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-mid)'; e.currentTarget.style.color = 'var(--text-3)' }}
       >
-        <IconMic /> Voice input
+        <IconMic />
       </button>
-    </div>
-  )
+    )
+    return (
+      <div style={rowBase}>
+        <span style={{ fontSize: 12, color: 'var(--text-4)', letterSpacing: '0.03em' }}>
+          Or speak your decision
+        </span>
+        <button onClick={start} style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '6px 12px', borderRadius: 7,
+          border: '1px solid var(--border-mid)',
+          // Bug fix: was `transparent` — same fix as .btn-ghost in globals.css.
+          background: 'var(--bg-card)', color: 'var(--text-3)',
+          cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', transition: 'all 0.18s',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold-dim)'; e.currentTarget.style.color = 'var(--gold)' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-mid)'; e.currentTarget.style.color = 'var(--text-3)' }}
+        >
+          <IconMic /> Voice input
+        </button>
+      </div>
+    )
+  }
 
   // ── REQUESTING ────────────────────────────────────────────────────────────
   if (state === 'requesting') return (

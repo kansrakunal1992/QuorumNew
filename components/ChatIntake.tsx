@@ -15,7 +15,10 @@
 // A brand-new file — HomeClient.tsx and SessionView.tsx are not touched.
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { getStoredUserEmail } from '@/lib/storage'
+import DecisionStarters from '@/components/DecisionStarters'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
 
 interface ChatBubble {
@@ -57,8 +60,25 @@ export default function ChatIntake({
   const [input, setInput]       = useState('')
   const [sending, setSending]   = useState(false)
   const [exchangeCount, setExchangeCount] = useState(0)
+  const [hasEmail, setHasEmail] = useState(false)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Top-bar identity affordance only — doesn't gate anything here. "Sign in"
+  // for an anonymous visitor, "Mirror" once an email is on file; both just
+  // link to /mirror, which already owns its own AuthGate (see docs note in
+  // NaturalIntakeClient.tsx about Screen 10 — sign-in stays deferred there).
+  useEffect(() => { setHasEmail(!!getStoredUserEmail()) }, [])
+
+  // True once the user has sent at least one message — switches the screen
+  // from the branded "front door" hero (headline + example chips) into the
+  // scrolling conversation thread. Same underlying bubbles array either way.
+  const started = bubbles.some(b => b.role === 'user')
+
+  function handleStarterPick(text: string) {
+    setInput(text)
+    inputRef.current?.focus()
+  }
 
   // ── Opening line — no chat exists yet, no DB round trip needed ────────────
   useEffect(() => {
@@ -128,60 +148,126 @@ export default function ChatIntake({
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
-      {/* Quiet, non-numeric progress — a dot trail, never "3 of 6" */}
-      <div style={{ display: 'flex', gap: 5, justifyContent: 'center', padding: '18px 0 4px' }}>
-        {Array.from({ length: Math.min(exchangeCount + 1, 6) }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              width: 5, height: 5, borderRadius: 999,
-              background: i <= exchangeCount ? 'var(--gold)' : 'var(--border-dim)',
-              transition: 'background 0.4s ease',
-            }}
-          />
-        ))}
+      {/* ── Front door — restrained brand bar, not a marketing header ────
+          Both pieces sit left-aligned, deliberately clear of the top-right
+          corner: ThemeToggle (globals.css .theme-toggle) is fixed at
+          top:18/right:20 across the whole app, so nothing here competes
+          with it for that space. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '16px 20px 0',
+      }}>
+        <span style={{
+          fontFamily: 'var(--font-display)', fontSize: 19, fontWeight: 500,
+          letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--gold)',
+        }}>
+          Quorum
+        </span>
+        <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
+        <Link href="/mirror" style={{
+          fontFamily: 'var(--font-mono)', fontSize: 11.5, letterSpacing: '0.05em',
+          color: 'var(--text-3)', textDecoration: 'none',
+        }}>
+          {hasEmail ? 'Mirror' : 'Sign in'}
+        </Link>
       </div>
 
-      <div
-        ref={scrollRef}
-        style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}
-      >
-        {bubbles.map((b, i) => (
-          <div
-            key={i}
-            style={{
-              alignSelf:  b.role === 'user' ? 'flex-end' : 'flex-start',
-              maxWidth:   '82%',
-              padding:    '11px 15px',
-              borderRadius: 16,
-              fontSize:   15.5,
-              lineHeight: 1.5,
-              background: b.role === 'user' ? 'var(--gold-dim)' : 'var(--bg-card)',
-              color:      'var(--text-1)',
-              border:     b.role === 'quorum' ? '1px solid var(--border-dim)' : 'none',
-            }}
-          >
-            {b.role === 'quorum' && i === bubbles.length - 1 && !sending
-              ? <TypewriterLine text={b.content} />
-              : b.content}
-          </div>
-        ))}
-        {sending && (
-          <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 4, padding: '11px 15px' }}>
-            {[0, 1, 2].map(i => (
-              <div key={i} style={{
-                width: 6, height: 6, borderRadius: 999, background: 'var(--text-4)',
-                animation: `chatDotPulse 1.1s ${i * 0.15}s infinite ease-in-out`,
-              }} />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Quiet, non-numeric progress — a dot trail, never "3 of 6". Only
+          appears once the conversation is actually under way. */}
+      {started && (
+        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', padding: '14px 0 4px' }}>
+          {Array.from({ length: Math.min(exchangeCount + 1, 6) }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width: 5, height: 5, borderRadius: 999,
+                background: i <= exchangeCount ? 'var(--gold)' : 'var(--border-dim)',
+                transition: 'background 0.4s ease',
+              }}
+            />
+          ))}
+        </div>
+      )}
 
+      {started ? (
+        <div
+          ref={scrollRef}
+          style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          {bubbles.map((b, i) => (
+            <div
+              key={i}
+              style={{
+                alignSelf:  b.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth:   '82%',
+                padding:    '11px 15px',
+                borderRadius: 16,
+                fontSize:   15.5,
+                lineHeight: 1.5,
+                background: b.role === 'user' ? 'var(--gold-dim)' : 'var(--bg-card)',
+                color:      'var(--text-1)',
+                border:     b.role === 'quorum' ? '1px solid var(--border-dim)' : 'none',
+              }}
+            >
+              {b.role === 'quorum' && i === bubbles.length - 1 && !sending
+                ? <TypewriterLine text={b.content} />
+                : b.content}
+            </div>
+          ))}
+          {sending && (
+            <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 4, padding: '11px 15px' }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: 6, height: 6, borderRadius: 999, background: 'var(--text-4)',
+                  animation: `chatDotPulse 1.1s ${i * 0.15}s infinite ease-in-out`,
+                }} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ── Hero — "Quorum is ready to think with me," not a blank chatbot.
+            Same opening line as the chat thread, just given real brand
+            presence: display type, a kicker, and three example chips
+            (never a full product tour). Replaced by the thread above the
+            moment the user sends their first message. ── */
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          textAlign: 'center', padding: '24px 28px', gap: 22,
+        }}>
+          <div>
+            <p style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.16em',
+              textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 14px',
+            }}>
+              Private decision intelligence
+            </p>
+            <h1 style={{
+              fontFamily: 'var(--font-display)', fontWeight: 400,
+              fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
+              color: 'var(--text-1)', margin: 0, maxWidth: 440,
+            }}>
+              {bubbles[0]?.content || "What's going on?"}
+            </h1>
+          </div>
+
+          <div style={{ width: '100%', maxWidth: 420 }}>
+            <DecisionStarters compact label="Try an example" onPick={handleStarterPick} />
+          </div>
+
+          <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>
+            Private · nothing is shared without your permission
+          </p>
+        </div>
+      )}
+
+      {/* Input — its own row, full width; voice and send sit below it on a
+          second row so neither crowds the other on narrow screens. */}
       <form
         onSubmit={e => { e.preventDefault(); send(input) }}
         style={{
-          display: 'flex', gap: 8, alignItems: 'flex-end',
+          display: 'flex', flexDirection: 'column', gap: 8,
           padding: '10px 16px calc(14px + env(safe-area-inset-bottom, 0px))',
           borderTop: '1px solid var(--border-dim)',
         }}
@@ -196,25 +282,27 @@ export default function ChatIntake({
           placeholder="Type here…"
           rows={1}
           style={{
-            flex: 1, resize: 'none', maxHeight: 120, padding: '11px 14px',
+            width: '100%', resize: 'none', maxHeight: 120, padding: '11px 14px',
             borderRadius: 14, border: '1px solid var(--border-mid)',
             background: 'var(--bg-inset)', color: 'var(--text-1)',
             fontSize: 16, fontFamily: 'var(--font-body)',
           }}
         />
-        <VoiceInput onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
-        <button
-          type="submit"
-          disabled={sending || !input.trim()}
-          style={{
-            padding: '11px 18px', borderRadius: 14, border: 'none',
-            background: input.trim() ? 'var(--gold)' : 'var(--border-dim)',
-            color: input.trim() ? 'var(--bg-void)' : 'var(--text-4)',
-            fontWeight: 600, fontSize: 15, cursor: input.trim() ? 'pointer' : 'default',
-          }}
-        >
-          Send
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
+          <button
+            type="submit"
+            disabled={sending || !input.trim()}
+            style={{
+              flex: 1, maxWidth: 140, padding: '11px 18px', borderRadius: 14, border: 'none',
+              background: input.trim() ? 'var(--gold)' : 'var(--border-dim)',
+              color: input.trim() ? 'var(--bg-void)' : 'var(--text-4)',
+              fontWeight: 600, fontSize: 15, cursor: input.trim() ? 'pointer' : 'default',
+            }}
+          >
+            Send
+          </button>
+        </div>
       </form>
 
       <style jsx>{`
