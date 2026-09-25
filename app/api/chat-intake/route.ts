@@ -108,21 +108,32 @@ export async function POST(req: Request) {
       intakeId = created.id
     }
 
+    // Narrow `string | null` to `string` once, then use the immutable value
+     // throughout the remainder of the request.
+     if (!intakeId) {
+     console.error('[ChatIntake] intake ID was not resolved')
+     return NextResponse.json(
+     { error: 'Failed to resolve chat' },
+     { status: 500 }
+     )
+     }
+     const resolvedIntakeId: string = intakeId
+    
     // ── Load transcript so far, append this user turn ──────────────────────────
     const { data: existingMsgs } = await supabase
       .from('chat_intake_messages')
       .select('role, content, turn_order')
-      .eq('chat_intake_id', intakeId)
+      .eq('chat_intake_id', resolvedIntakeId)
       .order('turn_order', { ascending: true })
 
     const transcriptSoFar: ChatIntakeMessage[] = (existingMsgs ?? []).map(m => ({
-      id: '', chat_intake_id: intakeId!, role: m.role as 'user' | 'quorum',
+      id: '', chat_intake_id: resolvedIntakeId, role: m.role as 'user' | 'quorum',
       content: decrypt(m.content) ?? '', turn_order: m.turn_order, created_at: '',
     }))
 
     const userOrder = transcriptSoFar.length
     const { error: insertUserErr } = await supabase.from('chat_intake_messages').insert({
-      chat_intake_id: intakeId,
+      chat_intake_id: resolvedIntakeId,
       role:           'user',
       content:        encrypt(message.trim()),
       turn_order:     userOrder,
@@ -133,7 +144,7 @@ export async function POST(req: Request) {
     }
 
     const userTurn: ChatIntakeMessage = {
-      id: '', chat_intake_id: intakeId, role: 'user', content: message.trim(),
+      id: '', chat_intake_id: resolvedIntakeId, role: 'user', content: message.trim(),
       turn_order: userOrder, created_at: '',
     }
     const transcriptWithUser = [...transcriptSoFar, userTurn]
@@ -155,7 +166,7 @@ export async function POST(req: Request) {
       : await generateFollowUpReply(updatedState, transcriptWithUser, exchangeCount, ceiling, false)
 
     const { error: insertQuorumErr } = await supabase.from('chat_intake_messages').insert({
-      chat_intake_id: intakeId,
+      chat_intake_id: resolvedIntakeId,
       role:           'quorum',
       content:        encrypt(quorumReply),
       turn_order:     userOrder + 1,
@@ -172,10 +183,10 @@ export async function POST(req: Request) {
         initial_reaction: updatedState.initialReaction ?? null,
         last_turn_at:     new Date().toISOString(),
       })
-      .eq('id', intakeId)
+      .eq('id', resolvedIntakeId)
 
     return NextResponse.json({
-      chatIntakeId:    intakeId,
+      chatIntakeId: resolvedIntakeId,
       quorumReply,
       state:           updatedState,
       exchangeCount,
