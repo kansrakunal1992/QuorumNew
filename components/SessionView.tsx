@@ -19,7 +19,7 @@ import { createClient } from '@/lib/supabase'
 import { computeReadiness } from '@/lib/readiness'   // PR3/PR4 — readiness gate
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import InitialInstinctCapture from '@/components/InitialInstinctCapture'
-import { parseOptionLabels } from '@/lib/chat-intake-state'
+import { parseOptionLabels } from '@/lib/chat-intake-context'
 import QuorumPrediction       from '@/components/QuorumPrediction'
 import PredictionReveal       from '@/components/PredictionReveal'
 import SynthesisChallenge     from '@/components/SynthesisChallenge'

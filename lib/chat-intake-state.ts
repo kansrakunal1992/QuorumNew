@@ -17,6 +17,7 @@
 
 import { createCompletion } from '@/lib/ai-client'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
+import { OPTIONS_LINE_PREFIX } from '@/lib/chat-intake-context'
 
 // ── Chat length (locked, Sept 2026) ──────────────────────────────────────────
 export const DEFAULT_MAX_EXCHANGES  = 6
@@ -156,8 +157,6 @@ export function shouldStopEarly(state: ChatDecisionState, exchangeCount: number)
   return scoreCompleteness(state).score >= COMPLETENESS_THRESHOLD
 }
 
-const OPTIONS_LINE_PREFIX = 'Options considered: '
-
 /**
  * Assembles the two fields the EXISTING POST /api/session expects
  * (decision_text, context_text) from the running state — this is the only
@@ -193,22 +192,4 @@ export function assembleSessionInput(
   contextParts.push(transcript.map(m => `${m.role === 'user' ? 'Person' : 'Quorum'}: ${m.content}`).join('\n'))
 
   return { decisionText, contextText: contextParts.join('\n\n') }
-}
-
-/**
- * Reverses the "Options considered: A; B" line assembleSessionInput() above
- * writes into context_text, for screens later in the flow that want the
- * finalized option labels for continuity (item 7, product feedback: the
- * pre-Council leaning capture read as generic and disconnected from the
- * decision + options the person had just finished confirming at the
- * checkpoint). Returns [] for a classic (non-chat) session, where
- * context_text never had this line to begin with — callers should treat
- * that as "no continuity data available" and fall back to generic copy,
- * not as an error.
- */
-export function parseOptionLabels(contextText: string | null | undefined): string[] {
-  if (!contextText) return []
-  const line = contextText.split('\n').find(l => l.startsWith(OPTIONS_LINE_PREFIX))
-  if (!line) return []
-  return line.slice(OPTIONS_LINE_PREFIX.length).split(';').map(s => s.trim()).filter(Boolean)
 }
