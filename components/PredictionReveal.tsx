@@ -186,7 +186,16 @@ export default function PredictionReveal({
         value={reviewDate}
         min={todayPlusDays(1)}
         onChange={e => setReviewDate(e.target.value)}
-        style={{ fontSize: 16, padding: '9px 10px' }}
+        style={{
+          fontSize:     16,
+          padding:      '9px 10px',
+          borderRadius: 8,
+          border:       '1px solid var(--border-dim)',
+          background:   'var(--bg-inset)',
+          color:        'var(--text-1)',
+          fontFamily:   'inherit',
+          boxSizing:    'border-box',
+        }}
         required
       />
     </div>

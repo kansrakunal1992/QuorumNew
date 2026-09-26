@@ -78,10 +78,11 @@ function buildPersonalizedBlock(history: PastDecisionSummary[]): string {
     `rather than forcing a pattern that isn't there.`
 }
 
-const PREDICTION_SYSTEM_PROMPT = `You are generating a single, short hypothesis about what a specific person will ultimately decide — not advice, not a recommendation, a guess about THEM.
+const PREDICTION_SYSTEM_PROMPT = `You are generating a single, short hypothesis about what a specific person will ultimately decide — not advice, not a recommendation, a guess about what THEY will do.
 
 Rules:
 - This is a prediction of the person's future choice, never a recommendation of what they should choose. Never write "you should" — only "we think you will."
+- Write the reasoning as if speaking directly to that person. Address them in the second person throughout — "you," "your," "you've" — never in the third person ("they," "their," "them," "this person"). The context below describes them in the third person for your own reading; your OUTPUT must not.
 - Keep predictedChoice to a short phrase (under 8 words) naming the actual choice, not a hedge like "it depends."
 - Keep reasoning to 1-3 sentences, plain language, no bullet points, no tag markup.
 - If you are relying on general patterns rather than this person's own history, say so directly in the reasoning (e.g. "we don't know you well yet, so this leans on how people generally handle...") rather than implying false personalization.

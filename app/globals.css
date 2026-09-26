@@ -468,6 +468,19 @@ textarea:focus {
 .decision-input::placeholder,
 textarea::placeholder { color: var(--text-4); }
 
+/* ── Native date inputs ─────────────────────────────────────────
+   `color-scheme` tells the browser which palette to render its OWN
+   chrome for this control in — the calendar-picker icon and (on
+   desktop) the dropdown calendar popup. Without it, those pieces
+   stay light-themed even when the input's own background/color are
+   set to the dark-theme variables via inline styles (see
+   PredictionReveal.tsx / DecisionStateCard.tsx), which is what made
+   the review-date field look like a stray light-mode box in dark
+   mode. This only affects the browser-drawn chrome — background,
+   text and border still come from each input's own styles. */
+[data-theme="dark"] input[type="date"] { color-scheme: dark; }
+[data-theme="light"] input[type="date"] { color-scheme: light; }
+
 /* ── TrustBadgeStrip: "Encrypted" link ──────────────────────────
    Muted by design (states the claim as fact, doesn't sell it) — this
    just adds a subtle hover cue so it still reads as interactive. */
