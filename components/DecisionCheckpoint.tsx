@@ -73,6 +73,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [confirmed, setConfirmed]   = useState<Record<number, boolean>>({})
   const [nextAction, setNextAction] = useState('')
   const [showNextAction, setShowNextAction] = useState(false)
+  const [showCouncilExamples, setShowCouncilExamples] = useState(false)
 
   useEffect(() => {
     fetch(`/api/chat-intake?chatIntakeId=${chatIntakeId}`)
@@ -282,7 +283,36 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       ))}
 
       <div style={{ ...cardStyle, marginTop: 4 }}>
-        <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 10 }}>You don't need the full Council for every decision.</div>
+        <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 8 }}>You don't need the full Council for every decision.</div>
+        {/* Item 6 (product feedback): the transition into Council was
+            abrupt for first-time users — two buttons with no explanation of
+            what Council actually is or when it's worth running. This short,
+            always-visible line explains the mechanism itself; the "when is
+            it worth it" contrast examples stay behind a toggle so people
+            who already get it aren't forced to read past them. */}
+        <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55, marginBottom: 10 }}>
+          The Council puts six different perspectives against what you're leaning toward — a challenger, a risk-focused read, a pattern-reader among them — then reconciles what they say into one clear synthesis. Takes about a minute.
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCouncilExamples(s => !s)}
+          style={{
+            display: 'block', background: 'none', border: 'none', padding: 0, marginBottom: 12,
+            fontSize: 12.5, color: 'var(--gold)', cursor: 'pointer', textDecoration: 'underline',
+          }}
+        >
+          {showCouncilExamples ? 'Hide examples' : 'When is it actually worth it?'}
+        </button>
+        {showCouncilExamples && (
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 12 }}>
+            <div style={{ marginBottom: 6 }}>
+              <strong style={{ color: 'var(--text-2)' }}>Usually worth it:</strong> raising money now vs. waiting, a job that means relocating your family, bringing on a co-founder, a decision you keep going back and forth on.
+            </div>
+            <div>
+              <strong style={{ color: 'var(--text-2)' }}>Usually not:</strong> picking between two similar vendors, a decision you're already confident about, anything small enough that being wrong costs you very little.
+            </div>
+          </div>
+        )}
         {!showNextAction ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <button style={primaryBtn} onClick={handleConveneCouncil}>Convene the Council</button>

@@ -85,43 +85,78 @@ export async function extractDecisionState(
 
 /**
  * "Maximum decision clarity per interaction" (plan section 4B) — stop asking
- * before the exchange ceiling if the state is already well-formed. Kept
- * deliberately simple and deterministic (no extra AI call) rather than a
- * second judgment model: a decision statement plus at least one option plus
- * at least one of {stakeholders, deadline, reversibility, assumptions} is
- * treated as "enough to checkpoint on" — the checkpoint screen itself is
- * where the person confirms or corrects it, so this only needs to be a
- * reasonable trigger, not a perfect one.
+ * before the exchange ceiling once the decision is well-formed enough,
+ * without dumping every possible field on the person first.
+ *
+ * v2 (product feedback, Sept 2026): the previous version was a single
+ * boolean (statement + options + one of {stakeholders, deadline,
+ * reversibility, assumptions}) gated behind a flat "always ask at least 3
+ * follow-ups" floor. Feedback was that the fixed minimum was the wrong lever
+ * — a rich first message shouldn't be forced through mechanical extra
+ * questions, and a sparse one shouldn't be allowed to close just because it
+ * cleared a low bar. Replaced with an explicit weighted framework: each
+ * dimension of a well-formed decision carries a weight (they don't matter
+ * equally — knowing the actual decision and the real options matters more
+ * than knowing the deadline), and the conversation is considered "complete
+ * enough" once the weighted total clears COMPLETENESS_THRESHOLD (80%) —
+ * "80–90% of the inputs needed to frame the decision," per the product call.
+ * This same breakdown (score + which dimensions are still missing) is fed
+ * back into lib/chat-intake-reply.ts's follow-up prompt, so the next
+ * question always targets a real, named gap rather than working off a
+ * separate hardcoded priority list that could say something different from
+ * what this function is actually checking.
  */
-export function hasEnoughToCheckpoint(state: ChatDecisionState): boolean {
-  const hasStatement = !!state.decisionStatement?.trim()
-  const hasOptions    = (state.options?.length ?? 0) > 0
-  const hasContext     =
-    (state.stakeholders?.length ?? 0) > 0 ||
-    !!state.deadline ||
-    !!state.reversibility ||
-    (state.assumptions?.length ?? 0) > 0
-
-  return hasStatement && hasOptions && hasContext
+interface CompletenessDimension {
+  label: string
+  weight: number
+  check: (state: ChatDecisionState) => boolean
 }
 
-// Guarantees Quorum asks at least this many real follow-up questions before
-// it's ever allowed to offer to wrap up — even when a single rich first
-// message already makes hasEnoughToCheckpoint() true. Raised from 2 to 4
-// after v1 feedback that closing after just one follow-up felt like it was
-// cutting the conversation short before it reached any real depth (see
-// docs/CHANGELOG_v1.md). At 4, exchanges 1–3 always continue the
-// conversation regardless of how complete the state looks, so the person
-// gets a minimum of three follow-up questions; readyToReflect only becomes
-// possible from exchange 4 onward, and only once the state is genuinely
-// well-formed — it can still run all the way to DEFAULT_MAX_EXCHANGES if it
-// isn't.
-export const MIN_EXCHANGES_BEFORE_STOP = 4
+const COMPLETENESS_DIMENSIONS: CompletenessDimension[] = [
+  { label: 'a clear decision statement',        weight: 20, check: s => !!s.decisionStatement?.trim() },
+  { label: 'at least two real options',         weight: 20, check: s => (s.options?.length ?? 0) >= 2 },
+  { label: 'who else is involved',              weight: 10, check: s => (s.stakeholders?.length ?? 0) > 0 },
+  { label: 'whether there\u2019s a real deadline', weight: 10, check: s => !!s.deadline },
+  { label: 'how reversible this is',            weight: 10, check: s => !!s.reversibility },
+  { label: 'the assumptions in play',           weight: 10, check: s => (s.assumptions?.length ?? 0) > 0 },
+  { label: 'what would actually change their mind', weight: 10, check: s => (s.evidence?.length ?? 0) > 0 || !!s.decisionThreshold },
+  { label: 'what matters most to them here',    weight: 10, check: s => !!s.leaningOptionType || !!s.initialReaction },
+]
+
+export interface CompletenessResult {
+  score:   number    // 0–100, weighted
+  missing: string[]  // human-readable labels for every dimension not yet covered, in priority order
+}
+
+export function scoreCompleteness(state: ChatDecisionState): CompletenessResult {
+  let score = 0
+  const missing: string[] = []
+  for (const d of COMPLETENESS_DIMENSIONS) {
+    if (d.check(state)) score += d.weight
+    else missing.push(d.label)
+  }
+  return { score, missing }
+}
+
+// "80–90%" per the product call — the lower bound is used so the framework
+// never runs long on a decision that's already genuinely well-formed.
+export const COMPLETENESS_THRESHOLD = 80
+
+// A small safety floor, not a target: without this, an unusually complete
+// single first message could close the conversation with zero follow-up
+// questions at all, which felt broken in testing regardless of how the
+// completeness math scored it. This only prevents that one edge case — from
+// exchange 2 onward, completeness (above) is the sole real gate, so a
+// decision that's still missing key pieces keeps going, and one that's
+// genuinely clear doesn't get held hostage to a fixed question count.
+const MIN_EXCHANGES_BEFORE_STOP = 2
 
 export function shouldStopEarly(state: ChatDecisionState, exchangeCount: number): boolean {
   if (exchangeCount < MIN_EXCHANGES_BEFORE_STOP) return false
-  return hasEnoughToCheckpoint(state)
+  return scoreCompleteness(state).score >= COMPLETENESS_THRESHOLD
 }
+
+const OPTIONS_LINE_PREFIX = 'Options considered: '
 
 /**
  * Assembles the two fields the EXISTING POST /api/session expects
@@ -139,7 +174,7 @@ export function assembleSessionInput(
 
   const contextParts: string[] = []
   if (state.options?.length) {
-    contextParts.push(`Options considered: ${state.options.map(o => o.label).join('; ')}`)
+    contextParts.push(`${OPTIONS_LINE_PREFIX}${state.options.map(o => o.label).join('; ')}`)
   }
   if (state.stakeholders?.length) {
     contextParts.push(`People involved: ${state.stakeholders.map(s => s.role ? `${s.name} (${s.role})` : s.name).join('; ')}`)
@@ -158,4 +193,22 @@ export function assembleSessionInput(
   contextParts.push(transcript.map(m => `${m.role === 'user' ? 'Person' : 'Quorum'}: ${m.content}`).join('\n'))
 
   return { decisionText, contextText: contextParts.join('\n\n') }
+}
+
+/**
+ * Reverses the "Options considered: A; B" line assembleSessionInput() above
+ * writes into context_text, for screens later in the flow that want the
+ * finalized option labels for continuity (item 7, product feedback: the
+ * pre-Council leaning capture read as generic and disconnected from the
+ * decision + options the person had just finished confirming at the
+ * checkpoint). Returns [] for a classic (non-chat) session, where
+ * context_text never had this line to begin with — callers should treat
+ * that as "no continuity data available" and fall back to generic copy,
+ * not as an error.
+ */
+export function parseOptionLabels(contextText: string | null | undefined): string[] {
+  if (!contextText) return []
+  const line = contextText.split('\n').find(l => l.startsWith(OPTIONS_LINE_PREFIX))
+  if (!line) return []
+  return line.slice(OPTIONS_LINE_PREFIX.length).split(';').map(s => s.trim()).filter(Boolean)
 }

@@ -18,7 +18,10 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { getStoredUserEmail } from '@/lib/storage'
+import { createClient } from '@/lib/supabase'
 import DecisionStarters from '@/components/DecisionStarters'
+import FAQModal from '@/components/FAQModal'
+import type { MirrorStatus } from '@/lib/types'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
 
 interface ChatBubble {
@@ -61,14 +64,38 @@ export default function ChatIntake({
   const [sending, setSending]   = useState(false)
   const [exchangeCount, setExchangeCount] = useState(0)
   const [hasEmail, setHasEmail] = useState(false)
+  const [mirrorStatus, setMirrorStatus] = useState<MirrorStatus | null>(null)
+  const [faqOpen, setFaqOpen]   = useState(false)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Top-bar identity affordance only — doesn't gate anything here. "Sign in"
-  // for an anonymous visitor, "Mirror" once an email is on file; both just
-  // link to /mirror, which already owns its own AuthGate (see docs note in
-  // NaturalIntakeClient.tsx about Screen 10 — sign-in stays deferred there).
-  useEffect(() => { setHasEmail(!!getStoredUserEmail()) }, [])
+  // Top-bar identity affordance — doesn't gate anything here, just answers
+  // "where do my past decisions live now?" for a returning, signed-in
+  // visitor, the same way the classic home page's plan/status badge used to
+  // (PlanBadge.tsx deliberately skips path "/" and leaves that job to
+  // whichever screen renders there — HomeClient normally, ChatIntake when
+  // Natural Intake is on, so this is that screen's own version of it).
+  // getStoredUserEmail() is a same-tick hint so the label doesn't flash
+  // "Sign in" before the network call below resolves; the real Bearer-token
+  // check (same pattern as PlanBadge.tsx) fills in the actual decision
+  // count once it lands, or leaves the plain "Mirror"/"Sign in" label if it
+  // can't reach a session.
+  useEffect(() => {
+    setHasEmail(!!getStoredUserEmail())
+    let cancelled = false
+    ;(async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token ?? null
+        if (!token || cancelled) return
+        setHasEmail(true)
+        const res = await fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
+        if (res.ok && !cancelled) setMirrorStatus(await res.json() as MirrorStatus)
+      } catch { /* header just falls back to the plain label below */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // True once the user has sent at least one message — switches the screen
   // from the branded "front door" hero (headline + example chips) into the
@@ -181,12 +208,12 @@ export default function ChatIntake({
       }}
     >
       {/* ── Front door — restrained brand bar, not a marketing header ────
-          Both pieces sit left-aligned, deliberately clear of the top-right
-          corner: ThemeToggle (globals.css .theme-toggle) is fixed at
-          top:18/right:20 across the whole app, so nothing here competes
+          Left group (wordmark + FAQ + Mirror) is deliberately clear of the
+          top-right corner: ThemeToggle (globals.css .theme-toggle) is fixed
+          at top:18/right:20 across the whole app, so nothing here competes
           with it for that space. */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 14,
+        display: 'flex', alignItems: 'center', gap: 10,
         padding: '16px 20px 0',
       }}>
         <span style={{
@@ -196,13 +223,27 @@ export default function ChatIntake({
           Quorum
         </span>
         <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
+        <button
+          onClick={() => setFaqOpen(true)}
+          style={{
+            fontFamily: 'var(--font-mono)', fontSize: 11.5, letterSpacing: '0.05em',
+            color: 'var(--text-3)', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          }}
+        >
+          FAQ
+        </button>
+        <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
         <Link href="/mirror" style={{
           fontFamily: 'var(--font-mono)', fontSize: 11.5, letterSpacing: '0.05em',
           color: 'var(--text-3)', textDecoration: 'none',
         }}>
-          {hasEmail ? 'Mirror' : 'Sign in'}
+          {mirrorStatus && mirrorStatus.gateState !== 'auth' && mirrorStatus.sessionCount > 0
+            ? `${mirrorStatus.sessionCount} decision${mirrorStatus.sessionCount === 1 ? '' : 's'}`
+            : hasEmail ? 'Mirror' : 'Sign in'}
         </Link>
       </div>
+
+      {faqOpen && <FAQModal onClose={() => setFaqOpen(false)} />}
 
       {/* Quiet, non-numeric progress — a dot trail, never "3 of 6". Only
           appears once the conversation is actually under way. */}
@@ -259,33 +300,55 @@ export default function ChatIntake({
         </div>
       ) : (
         /* ── Hero — "Quorum is ready to think with me," not a blank chatbot.
-            Same opening line as the chat thread, just given real brand
-            presence: display type, a kicker, and three example chips
-            (never a full product tour). Replaced by the thread above the
-            moment the user sends their first message. ── */
+            Devil's-advocate note (product docs, Sept 2026): a bare "type
+            here" screen reads as "isn't this just ChatGPT?" within seconds.
+            This hero is the fix — a short positioning line + what happens
+            next (Council for the decisions worth it), not decoration (no
+            gold borders/animation, per the same docs: "the premium feeling
+            should come from clarity + confidence + restraint"). The literal
+            first chat message (OPENING_LINE, shown once the thread starts)
+            carries the fuller warm-welcome version of this same positioning
+            as an actual paragraph — this headline is deliberately just the
+            short prompt, not that whole paragraph blown up to display type,
+            which would look like a wall of giant text. Replaced by the
+            thread the moment the user sends their first message. ── */
         <div style={{
           flex: 1, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          textAlign: 'center', padding: '24px 28px', gap: 22,
+          textAlign: 'center', padding: '24px 28px', gap: 20,
         }}>
           <div>
             <p style={{
               fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.16em',
               textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 14px',
             }}>
-              Private decision intelligence
+              Think it through before you decide
             </p>
             <h1 style={{
               fontFamily: 'var(--font-display)', fontWeight: 400,
               fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
-              color: 'var(--text-1)', margin: 0, maxWidth: 440,
+              color: 'var(--text-1)', margin: '0 0 10px', maxWidth: 440,
             }}>
-              {bubbles[0]?.content || "What's going on?"}
+              What's going on?
             </h1>
+            <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 360 }}>
+              Don't worry about structuring it — just tell me, and I'll help
+              you find the decision underneath it. Big enough call? We can
+              bring in the full Council once we know what you're deciding.
+            </p>
           </div>
 
-          <div style={{ width: '100%', maxWidth: 420 }}>
-            <DecisionStarters compact label="Try an example" onPick={handleStarterPick} />
+          <div style={{ width: '100%', maxWidth: 440 }}>
+            <DecisionStarters compact label="Not sure where to start? Try one of these" onPick={handleStarterPick} />
+            {/* Grey helper text (requested): make explicit that these chips
+                are only a nudge, never the whole input — and hint at what
+                turns a generic example into something Quorum can actually
+                work with. */}
+            <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: '10px auto 0', maxWidth: 360 }}>
+              These are just starting points — type or speak your own anytime.
+              Whichever you use, make it yours: who's really involved, what
+              you're actually choosing between, and what's making it hard to call.
+            </p>
           </div>
 
           <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>
@@ -295,12 +358,18 @@ export default function ChatIntake({
       )}
 
       {/* Input — its own row, full width; voice and send sit below it on a
-          second row so neither crowds the other on narrow screens. */}
+          second row so neither crowds the other on narrow screens.
+          Bottom padding is deliberately generous (52px, not just the safe-
+          area inset): globals.css's .visitor-counter pill is fixed at
+          bottom:20/left:20 site-wide (see VisitorCounter.tsx) — on a screen
+          this short, that corner is exactly where the mic button would
+          otherwise sit, so this clears it rather than rendering underneath
+          it. */}
       <form
         onSubmit={e => { e.preventDefault(); send(input) }}
         style={{
           display: 'flex', flexDirection: 'column', gap: 8,
-          padding: '10px 16px calc(14px + env(safe-area-inset-bottom, 0px))',
+          padding: '10px 16px calc(52px + env(safe-area-inset-bottom, 0px))',
           borderTop: '1px solid var(--border-dim)',
         }}
       >

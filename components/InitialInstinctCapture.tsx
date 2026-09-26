@@ -5,15 +5,31 @@
 // see SessionView.tsx for the gate (nothing else in the session renders
 // until this resolves, matching the product doc's "critical bias
 // protection" requirement).
+//
+// Item 7 (product feedback, Sept 2026): this screen used to be entirely
+// generic ("Leaning yes / Leaning no / Genuinely unsure") no matter what the
+// person had just spent a whole chat + checkpoint establishing — no
+// continuity with the actual decision or the specific options that were
+// just confirmed. decisionText and optionLabels are both optional and
+// additive: SessionView.tsx passes session.decision_text and (when the
+// session came from Natural Intake) the finalized option labels parsed via
+// lib/chat-intake-state.ts's parseOptionLabels(); a classic, non-chat
+// session simply has no optionLabels, and this renders exactly as it did
+// before. The underlying instinct value is still only ever 'accept' |
+// 'reject' | 'unsure' — unchanged data contract, API route, and downstream
+// prediction-matching logic — only the two chip LABELS change, to name the
+// real options instead of generic yes/no when there are exactly two.
 
 'use client'
 
 import { useState } from 'react'
 
 interface Props {
-  sessionId:  string
-  authToken:  string | null
-  onComplete: (instinct: 'accept' | 'reject' | 'unsure', priority: string) => void
+  sessionId:     string
+  authToken:     string | null
+  onComplete:    (instinct: 'accept' | 'reject' | 'unsure', priority: string) => void
+  decisionText?: string | null
+  optionLabels?: string[]
 }
 
 const PRIORITIES: { value: string; label: string }[] = [
@@ -25,13 +41,22 @@ const PRIORITIES: { value: string; label: string }[] = [
   { value: 'other',         label: 'Something else' },
 ]
 
-export default function InitialInstinctCapture({ sessionId, authToken, onComplete }: Props) {
+export default function InitialInstinctCapture({ sessionId, authToken, onComplete, decisionText, optionLabels }: Props) {
   const [instinct, setInstinct] = useState<'accept' | 'reject' | 'unsure' | null>(null)
   const [priority, setPriority] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const canSubmit = instinct !== null && priority !== null && !submitting
+
+  // Only swap in the real option names when there are exactly two — with
+  // one, three, or more, "accept vs. reject" doesn't map cleanly onto them,
+  // so it falls back to the generic yes/no/unsure copy rather than guessing
+  // which two of several options deserve the two chips.
+  const namedOptions = (optionLabels?.length ?? 0) === 2 ? optionLabels! : null
+  const instinctLabel: Record<'accept' | 'reject' | 'unsure', string> = namedOptions
+    ? { accept: namedOptions[0], reject: namedOptions[1], unsure: 'Genuinely unsure' }
+    : { accept: 'Leaning yes', reject: 'Leaning no', unsure: 'Genuinely unsure' }
 
   async function handleSubmit() {
     if (!instinct || !priority) return
@@ -76,8 +101,14 @@ export default function InitialInstinctCapture({ sessionId, authToken, onComplet
         Before Quorum weighs in
       </p>
 
+      {decisionText && (
+        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 14px', lineHeight: 1.5, fontStyle: 'italic' }}>
+          You told Quorum: "{decisionText}"
+        </p>
+      )}
+
       <p style={{ fontSize: 15, color: 'var(--text-1)', margin: '0 0 10px', fontWeight: 500 }}>
-        What are you currently leaning toward?
+        {namedOptions ? 'Which way are you leaning?' : 'What are you currently leaning toward?'}
       </p>
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {(['accept', 'reject', 'unsure'] as const).map(opt => (
@@ -87,7 +118,7 @@ export default function InitialInstinctCapture({ sessionId, authToken, onComplet
             onClick={() => setInstinct(opt)}
             style={chipStyle(instinct === opt)}
           >
-            {opt === 'accept' ? 'Leaning yes' : opt === 'reject' ? 'Leaning no' : 'Genuinely unsure'}
+            {instinctLabel[opt]}
           </button>
         ))}
       </div>

@@ -23,17 +23,49 @@ interface Props {
 }
 
 const CATEGORIES: { label: string; items: string[] }[] = [
-  { label: 'Career',       items: ['Should I take this job offer?', 'Should I leave my current job?', 'Should I ask for a promotion?'] },
-  { label: 'Business',     items: ['Should I hire this person?', 'Should I start this company?', 'Should I raise money right now?'] },
-  { label: 'Money',        items: ['Should I make this investment?', 'Should I buy this house?'] },
-  { label: 'Life',         items: ['Should I move?', 'Should I make this major change?'] },
-  { label: 'Relationships',items: ['Should I have this difficult conversation?'] },
-  { label: 'Everyday',     items: ['Should I buy this?', 'Should I commit to this?'] },
+  { label: 'Career',   items: [
+    'Should I take this job offer?',
+    'Should I leave my current job?',
+    'Should I ask for a promotion?',
+    'Should I switch to a completely different field?',
+  ] },
+  { label: 'Business', items: [
+    'Should I hire this person?',
+    'Should I start this company?',
+    'Should I raise money right now?',
+    'Should I fire this person?',
+    'Should I bring on a co-founder?',
+  ] },
+  { label: 'Money',    items: [
+    'Should I make this investment?',
+    'Should I buy this house?',
+    'Should I pay off debt or invest instead?',
+    'Should I take on this financial risk?',
+  ] },
+  { label: 'Personal', items: [
+    'Should I move to a new city?',
+    'Should I go back to school?',
+    'Should I make this major lifestyle change?',
+    'Should I take a career break?',
+  ] },
+  { label: 'Relationships', items: [
+    'Should I have this difficult conversation?',
+    'Should I end this relationship?',
+    'Should I set this boundary?',
+  ] },
+  { label: 'Everyday', items: [
+    'Should I buy this?',
+    'Should I commit to this?',
+    'Should I say yes to this commitment?',
+  ] },
 ]
 
 export default function DecisionStarters({ onPick, compact = false, label = 'Or start with a decision' }: Props) {
   const [open, setOpen] = useState<string | null>(null)
-  const categories = compact ? CATEGORIES.slice(0, 3) : CATEGORIES
+  // Compact mode (the chat hero) shows four tabs, not the full six — "not a
+  // big product tour," but "Career / Business / Money" alone was felt to be
+  // too narrow, so Personal joins the compact set.
+  const categories = compact ? CATEGORIES.slice(0, 4) : CATEGORIES
 
   return (
     <div style={{ margin: compact ? '0' : '10px 0 16px' }}>

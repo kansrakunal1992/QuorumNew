@@ -24,6 +24,7 @@ import { isNaturalIntakeEnabled } from '@/lib/feature-flags'
 import {
   extractDecisionState,
   shouldStopEarly,
+  scoreCompleteness,
   DEFAULT_MAX_EXCHANGES,
   ABSOLUTE_MAX_EXCHANGES,
 } from '@/lib/chat-intake-state'
@@ -160,10 +161,17 @@ export async function POST(req: Request) {
     const ceiling      = Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES)
     const readyToReflect = shouldStopEarly(updatedState, exchangeCount) || exchangeCount >= ceiling
 
+    // Same weighted framework shouldStopEarly() just checked against — its
+    // "missing" list feeds the follow-up prompt below so the next question
+    // targets a real, named gap in this specific decision instead of a
+    // generic hardcoded priority list that could disagree with what
+    // actually determined whether the conversation was ready to wrap.
+    const { missing: missingDimensions } = scoreCompleteness(updatedState)
+
     // ── Conversational reply ─────────────────────────────────────────────────
     const quorumReply = readyToReflect
-      ? await generateFollowUpReply(updatedState, transcriptWithUser, exchangeCount, ceiling, true)
-      : await generateFollowUpReply(updatedState, transcriptWithUser, exchangeCount, ceiling, false)
+      ? await generateFollowUpReply(updatedState, transcriptWithUser, exchangeCount, ceiling, true, missingDimensions)
+      : await generateFollowUpReply(updatedState, transcriptWithUser, exchangeCount, ceiling, false, missingDimensions)
 
     const { error: insertQuorumErr } = await supabase.from('chat_intake_messages').insert({
       chat_intake_id: resolvedIntakeId,

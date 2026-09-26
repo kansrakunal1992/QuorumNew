@@ -19,6 +19,7 @@ import { createClient } from '@/lib/supabase'
 import { computeReadiness } from '@/lib/readiness'   // PR3/PR4 — readiness gate
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import InitialInstinctCapture from '@/components/InitialInstinctCapture'
+import { parseOptionLabels } from '@/lib/chat-intake-state'
 import QuorumPrediction       from '@/components/QuorumPrediction'
 import PredictionReveal       from '@/components/PredictionReveal'
 import SynthesisChallenge     from '@/components/SynthesisChallenge'
@@ -1466,6 +1467,8 @@ export default function SessionView({ session: initialSession, initialMessages =
         <InitialInstinctCapture
           sessionId={session.id}
           authToken={authTokenSV}
+          decisionText={session.decision_text}
+          optionLabels={parseOptionLabels(session.context_text)}
           onComplete={(instinct, priority) => {
             setLockedInstinct(instinct)
             setLockedPriority(priority)
