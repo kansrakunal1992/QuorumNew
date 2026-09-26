@@ -430,13 +430,26 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       </div>
 
       <div style={{ ...cardStyle, marginTop: 4 }}>
-        <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 8 }}>You don't need the full Council for every decision.</div>
         {/* Item 6 (product feedback): the transition into Council was
             abrupt for first-time users — two buttons with no explanation of
             what Council actually is or when it's worth running. This short,
             always-visible line explains the mechanism itself; the "when is
             it worth it" contrast examples stay behind a toggle so people
-            who already get it aren't forced to read past them. */}
+            who already get it aren't forced to read past them.
+            Item (later feedback): the original always-on header ("You don't
+            need the full Council for every decision") sat right above the
+            Convene button and read as talking the person out of clicking it
+            — literally the opposite of what the button emphasis below is
+            trying to do. Now mirrors that same insight?.stakesLevel check:
+            while loading or "high," lead with an affirming line; only once
+            it's confidently "low" — where staying out of Council is the
+            actually correct, honest suggestion — does the original line
+            show. */}
+        <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 8 }}>
+          {insight?.stakesLevel === 'low'
+            ? "You don't need the full Council for every decision."
+            : 'This is exactly the kind of decision the Council is built for.'}
+        </div>
         <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55, marginBottom: 10 }}>
           The Council puts six different perspectives against what you're leaning toward — a challenger, a risk-focused read, a pattern-reader among them — then reconciles what they say into one clear synthesis. Takes about a minute.
         </div>
