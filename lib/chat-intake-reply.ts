@@ -60,7 +60,7 @@ ${JSON.stringify(state)}
 THIS IS EXCHANGE ${exchangeCount} OF UP TO ${maxExchanges}.
 
 ${closingTurn
-  ? `This is the LAST turn before you reflect the decision back to them. Do not ask a new question. Write one short line that closes the conversation naturally and signals you're about to sum up what you've heard — e.g. something like "Okay — I think I've got a clear picture. Let me reflect it back to you."`
+  ? `This is the LAST turn before you reflect the decision back to them. Do not ask a new question. Write one short line that closes the conversation naturally, signals you're about to sum up what you've heard, AND briefly previews what happens next — that they'll see the decision reflected back, then can choose to bring in the full Council if it's worth it. Keep the preview to a few words, not a list — e.g. something like "Okay — I think I've got a clear picture. Let me reflect it back, and then you can decide if this is worth bringing the full Council into." Never use the words "checkpoint," "session," or "Examiner."`
   : missingDimensions.length
     ? `Here is what's still genuinely missing from this decision, in priority order: ${missingDimensions.join(' \u00b7 ')}.
 Pick ONLY the single most useful one of these to surface right now — never more than one, and never something not on this list. If the top item doesn't fit naturally given what they just said, use judgment and pick whichever one on the list does.`
@@ -89,7 +89,7 @@ export async function generateFollowUpReply(
   } catch (err) {
     console.error('[ChatIntake] generateFollowUpReply failed:', err)
     return closingTurn
-      ? "Okay — I think I've got enough. Let me reflect back what I'm hearing."
+      ? "Okay — I think I've got enough. Let me reflect it back, and then you can decide if this is worth bringing the full Council into."
       : 'Tell me a bit more about what\'s making this hard to call.'
   }
 }

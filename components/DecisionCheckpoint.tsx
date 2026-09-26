@@ -25,6 +25,9 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ChatDecisionState } from '@/lib/types'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import { createClient } from '@/lib/supabase'
+import InitialInstinctCapture from '@/components/InitialInstinctCapture'
 
 interface ExaminerQuestion {
   order:          number
@@ -36,13 +39,29 @@ interface ExaminerQuestion {
   derivedAnswer?: string | null
 }
 
+// Deliberately NOT imported from lib/chat-intake-insight.ts — that file
+// pulls in lib/ai-client.ts (server-only build guard), and this is a
+// Client Component. Duplicating this 2-line shape here is the safe choice;
+// see lib/chat-intake-context.ts's file header for the exact build failure
+// that pattern caused last time and how it was fixed.
+interface CheckpointInsight {
+  stakesLevel: 'low' | 'high'
+  message:     string
+}
+
+const REVERSIBILITY_LABEL: Record<string, string> = {
+  reversible:          'Easy to reverse',
+  somewhat_reversible: 'Somewhat reversible',
+  irreversible:        'Hard to reverse',
+}
+
 interface Props {
   chatIntakeId:      string
   onBackToChat:      () => void
   onSessionCreated:  (sessionId: string) => void
 }
 
-type SubPhase = 'loading' | 'reflect' | 'editing' | 'creating' | 'examine' | 'submitting' | 'done'
+type SubPhase = 'loading' | 'reflect' | 'editing' | 'creating' | 'lean' | 'examine' | 'submitting' | 'done'
 
 const cardStyle: CSSProperties = {
   background: 'var(--bg-card)',
@@ -74,6 +93,25 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [nextAction, setNextAction] = useState('')
   const [showNextAction, setShowNextAction] = useState(false)
   const [showCouncilExamples, setShowCouncilExamples] = useState(false)
+  const [authToken, setAuthToken]   = useState<string | null>(null)
+  const [insight, setInsight]       = useState<CheckpointInsight | null>(null)
+  const [insightLoading, setInsightLoading] = useState(false)
+
+  // Same "does this person have a live session" check ChatIntake.tsx and
+  // PlanBadge.tsx already do — needed here so InitialInstinctCapture (the
+  // lean-capture step, below) can attribute the instinct to a signed-in
+  // user the same way Council's own copy of that screen does.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!cancelled) setAuthToken(session?.access_token ?? null)
+      } catch { /* fine — InitialInstinctCapture accepts a null token */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     fetch(`/api/chat-intake?chatIntakeId=${chatIntakeId}`)
@@ -99,10 +137,32 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       if (!res.ok || !data.sessionId) throw new Error(data?.error || 'Failed to create session')
       setSessionId(data.sessionId)
 
+      // Fired in parallel, not awaited — the examine card shows a brief
+      // placeholder if this is still in flight when it first renders
+      // rather than blocking the whole screen on one more model call.
+      setInsightLoading(true)
+      fetch('/api/chat-intake/insight', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ chatIntakeId }),
+      })
+        .then(r => r.json())
+        .then(d => { if (d?.stakesLevel) setInsight(d as CheckpointInsight) })
+        .catch(() => { /* card just shows nothing in that slot */ })
+        .finally(() => setInsightLoading(false))
+
       const examRes  = await fetch(`/api/examiner?sessionId=${data.sessionId}`)
       const examData = await examRes.json()
       setQuestions(examData.questions ?? [])
-      setSubPhase('examine')
+
+      // Item 1 (product feedback): lean was only ever captured right as
+      // Council loaded, disconnected from the chat + checkpoint journey
+      // that just established it. Moved here — right after the session
+      // exists, before the Examiner questions — so it happens once, early,
+      // for everyone Unified Session covers. instinctLocked's own check in
+      // SessionView.tsx (session.initial_instinct already set) means
+      // Council won't ask again once this has run.
+      setSubPhase(isUnifiedSessionEnabled() ? 'lean' : 'examine')
     } catch (err) {
       console.error('[DecisionCheckpoint] session creation failed:', err)
       setSubPhase('reflect')
@@ -169,9 +229,20 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         <div style={{ color: 'var(--text-3)', fontSize: 14.5, maxWidth: 340 }}>
           This is part of your Quorum history now, whether or not you dig deeper.
         </div>
-        <button style={{ ...secondaryBtn, width: 'auto', padding: '11px 22px' }} onClick={() => window.location.reload()}>
-          Start a new decision
-        </button>
+        {/* Item 4 (product feedback): picking "I'm done" used to be a dead
+            end — no way back to Council if the person changed their mind
+            after seeing the reward screen. The session and every Examiner
+            answer already exist at this point, so this is pure navigation —
+            no re-submission needed (submitExaminer() already ran, inside
+            handleImDone, before this screen ever rendered). */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 280 }}>
+          <button style={secondaryBtn} onClick={() => sessionId && onSessionCreated(sessionId)}>
+            Actually, convene the Council
+          </button>
+          <button style={{ ...secondaryBtn, border: 'none', color: 'var(--text-4)' }} onClick={() => window.location.reload()}>
+            Start a new decision
+          </button>
+        </div>
       </div>
     )
   }
@@ -180,6 +251,27 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     flex: 1, maxWidth: 560, margin: '0 auto', width: '100%',
     padding: '28px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
     display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto',
+  }
+
+  // ── subPhase === 'lean' ──────────────────────────────────────────────────
+  // Item 1 (product feedback): reuses the exact same component + API route
+  // Council's own pre-deliberation lean screen uses (InitialInstinctCapture,
+  // POST /api/session/[id]/instinct) — just triggered here, right after the
+  // session exists, instead of only later inside SessionView.tsx. Gated the
+  // same way that screen already is (isUnifiedSessionEnabled), so this is a
+  // no-op when that flag is off, not a second, divergent implementation.
+  if (subPhase === 'lean') {
+    return (
+      <div style={container}>
+        <InitialInstinctCapture
+          sessionId={sessionId!}
+          authToken={authToken}
+          decisionText={state.decisionStatement}
+          optionLabels={state.options?.map(o => o.label) ?? []}
+          onComplete={() => setSubPhase('examine')}
+        />
+      </div>
+    )
   }
 
   if (subPhase === 'reflect' || subPhase === 'editing') {
@@ -282,6 +374,61 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         </div>
       ))}
 
+      {/* Item 2/3 (product feedback): this used to be two bare buttons with
+          no substance — no reward for finishing the chat, and no real
+          incentive to click Convene. Now: a structural read (built
+          straight from the chat's own decision_state — no waiting on
+          anything) plus one adaptive AI read (see
+          lib/chat-intake-insight.ts) that either gives a genuine verdict
+          for a low-stakes call, or names the specific reason THIS decision
+          would benefit from multiple perspectives — never a generic
+          feature pitch either way. */}
+      <div style={cardStyle}>
+        <div style={{
+          fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.08em',
+          textTransform: 'uppercase', color: 'var(--text-4)', marginBottom: 14,
+        }}>
+          The shape of your decision
+        </div>
+        {!!state.reversibility && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Reversibility</div>
+            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{REVERSIBILITY_LABEL[state.reversibility] ?? state.reversibility}</div>
+          </div>
+        )}
+        {!!state.stakeholders?.length && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Who's involved</div>
+            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.stakeholders.map(s => s.name).join(', ')}</div>
+          </div>
+        )}
+        {!!state.deadline && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Timeline</div>
+            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.deadline}</div>
+          </div>
+        )}
+        {!!state.unknowns?.length && (
+          <div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Biggest uncertainty</div>
+            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.unknowns[0]}</div>
+          </div>
+        )}
+
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-dim)' }}>
+          {insight ? (
+            <>
+              <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 6 }}>
+                {insight.stakesLevel === 'low' ? "Quorum's early read" : 'Worth a closer look, because'}
+              </div>
+              <div style={{ fontSize: 14.5, color: 'var(--text-1)', lineHeight: 1.55 }}>{insight.message}</div>
+            </>
+          ) : insightLoading ? (
+            <div style={{ fontSize: 13.5, color: 'var(--text-4)', fontStyle: 'italic' }}>Reading this a little closer…</div>
+          ) : null}
+        </div>
+      </div>
+
       <div style={{ ...cardStyle, marginTop: 4 }}>
         <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 8 }}>You don't need the full Council for every decision.</div>
         {/* Item 6 (product feedback): the transition into Council was
@@ -314,9 +461,15 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
           </div>
         )}
         {!showNextAction ? (
+          // Button emphasis follows the same read: while it's still loading
+          // or came back "high," Council stays the default recommended
+          // path (matches today's behavior). Only once it's confidently
+          // "low" does "I'm done" become the natural next click — the
+          // verdict above already gave them something real, so pushing
+          // them toward Council anyway would undercut it.
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button style={primaryBtn} onClick={handleConveneCouncil}>Convene the Council</button>
-            <button style={secondaryBtn} onClick={() => setShowNextAction(true)}>I'm done</button>
+            <button style={insight?.stakesLevel === 'low' ? secondaryBtn : primaryBtn} onClick={handleConveneCouncil}>Convene the Council</button>
+            <button style={insight?.stakesLevel === 'low' ? primaryBtn : secondaryBtn} onClick={() => setShowNextAction(true)}>I'm done</button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

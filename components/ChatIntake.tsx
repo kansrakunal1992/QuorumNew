@@ -62,6 +62,7 @@ export default function ChatIntake({
   const [bubbles, setBubbles]   = useState<ChatBubble[]>([])
   const [input, setInput]       = useState('')
   const [sending, setSending]   = useState(false)
+  const [transitioning, setTransitioning] = useState(false)
   const [exchangeCount, setExchangeCount] = useState(0)
   const [hasEmail, setHasEmail] = useState(false)
   const [mirrorStatus, setMirrorStatus] = useState<MirrorStatus | null>(null)
@@ -156,7 +157,7 @@ export default function ChatIntake({
 
   const send = useCallback(async (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed || sending) return
+    if (!trimmed || sending || transitioning) return
 
     setBubbles(prev => [...prev, { role: 'user', content: trimmed }])
     setInput('')
@@ -181,9 +182,16 @@ export default function ChatIntake({
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
 
       if (data.readyToReflect) {
-        // Small pause so the closing line is readable before the screen
-        // transitions — this isn't a dead end, it's a handoff.
-        setTimeout(() => onReadyToReflect(data.chatIntakeId ?? chatIntakeId!), 900)
+        // 5 full seconds (was 900ms) — product feedback: the closing line
+        // now actually previews what's coming next (see chat-intake-reply.ts's
+        // FOLLOW_UP_PROMPT), so it needs real time to be read, not just
+        // glimpsed before the screen changes underneath it. transitioning
+        // disables the input below for this whole window — otherwise
+        // there's a real window where sending gets set back to false (see
+        // finally, below) while the person could still type and hit Send
+        // into a chat that's about to be replaced by the checkpoint screen.
+        setTransitioning(true)
+        setTimeout(() => onReadyToReflect(data.chatIntakeId ?? chatIntakeId!), 5000)
       }
     } catch (err) {
       console.error('[ChatIntake] send failed:', err)
@@ -192,7 +200,7 @@ export default function ChatIntake({
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [chatIntakeId, deviceId, grantExtraExchanges, sending, onChatIntakeId, onReadyToReflect])
+  }, [chatIntakeId, deviceId, grantExtraExchanges, sending, transitioning, onChatIntakeId, onReadyToReflect])
 
   return (
     <div
@@ -380,25 +388,27 @@ export default function ChatIntake({
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
           }}
-          placeholder="Type here…"
+          placeholder={transitioning ? 'One moment…' : 'Type here…'}
           rows={1}
+          disabled={transitioning}
           style={{
             width: '100%', resize: 'none', maxHeight: 120, padding: '11px 14px',
             borderRadius: 14, border: '1px solid var(--border-mid)',
             background: 'var(--bg-inset)', color: 'var(--text-1)',
             fontSize: 16, fontFamily: 'var(--font-body)',
+            opacity: transitioning ? 0.6 : 1,
           }}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
           <button
             type="submit"
-            disabled={sending || !input.trim()}
+            disabled={sending || transitioning || !input.trim()}
             style={{
               flex: 1, maxWidth: 140, padding: '11px 18px', borderRadius: 14, border: 'none',
-              background: input.trim() ? 'var(--gold)' : 'var(--border-dim)',
-              color: input.trim() ? 'var(--bg-void)' : 'var(--text-4)',
-              fontWeight: 600, fontSize: 15, cursor: input.trim() ? 'pointer' : 'default',
+              background: input.trim() && !transitioning ? 'var(--gold)' : 'var(--border-dim)',
+              color: input.trim() && !transitioning ? 'var(--bg-void)' : 'var(--text-4)',
+              fontWeight: 600, fontSize: 15, cursor: input.trim() && !transitioning ? 'pointer' : 'default',
             }}
           >
             Send
