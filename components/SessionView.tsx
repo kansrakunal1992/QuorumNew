@@ -748,6 +748,14 @@ export default function SessionView({ session: initialSession, initialMessages =
   }, [synthesisDone, authTokenSV, totalSessionCount])
 
   // Sprint TOUR-1: fire council tour once after synthesis completes
+  // Item 6 plan: under Natural Intake + unified session ("the new
+  // experience"), this is deliberately the ONLY onboarding tour a user
+  // ever sees — it already can't fire before this point, since synthesis
+  // has to exist for these targetSelectors to resolve to anything, and
+  // neither components/ChatIntake.tsx nor components/DecisionCheckpoint.tsx
+  // (nor app/NaturalIntakeClient.tsx, which renders both) mounts an
+  // <OnboardingTour> of its own. Do not add one there — see
+  // NaturalIntakeClient.tsx's own note on this same decision.
   // P0 fix: previously gated on localStorage alone, which is device-local — a
   // user with real decisions already on record (server truth: councilTourDone,
   // or a real DB count via totalSessionCount) would still see a "first decision"
@@ -2244,19 +2252,6 @@ export default function SessionView({ session: initialSession, initialMessages =
                 <OpeningCeremonyCard onDismiss={() => setCeremonyDismissed(true)} />
               )}
 
-              {/* ── 3. Relevance label ── */}
-              {gridReordered && !redirectBlocked && !notReadyBlocked && (
-                <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0 12px' }}>
-                  <span className="relevance-label">
-                    {labelText}
-                    {labelText.length < LABEL_FULL.length && (
-                      <span style={{ opacity: 1, animation: 'blink 0.7s step-end infinite', marginLeft: 1 }}>|</span>
-                    )}
-                  </span>
-                </div>
-              )}
-
-
               {/* ── S3-01: Tension interstitial — gates synthesis for a brief beat ── */}
               {/* Repositioned to sit at the persona grid rather than near the Examiner: */}
               {/* it only ever renders once allPersonasDone is true, so by the time it   */}
@@ -2292,6 +2287,26 @@ export default function SessionView({ session: initialSession, initialMessages =
                     alreadyDecided={decisionLocked}
                     initialMatched={initialSession.prediction_matched_final}
                   />
+                </div>
+              )}
+
+              {/* ── 3. Relevance label ── */}
+              {/* Moved here (was between the Opening Ceremony and the
+                  Tension interstitial, well above both the review section
+                  and the persona grid) — "ranked by relevance to your
+                  decision" is describing the ordering of the six persona
+                  cards immediately below, so it reads oddly appearing
+                  before the person has even made their decision in
+                  PredictionReveal. Same gate, same copy, just repositioned
+                  to sit directly above what it's actually describing. */}
+              {gridReordered && !redirectBlocked && !notReadyBlocked && (
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0 12px' }}>
+                  <span className="relevance-label">
+                    {labelText}
+                    {labelText.length < LABEL_FULL.length && (
+                      <span style={{ opacity: 1, animation: 'blink 0.7s step-end infinite', marginLeft: 1 }}>|</span>
+                    )}
+                  </span>
                 </div>
               )}
 

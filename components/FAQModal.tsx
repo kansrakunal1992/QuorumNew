@@ -9,10 +9,22 @@
 // The chatbot itself can also answer these questions inline (see the FAQ
 // reference block wired into lib/chat-intake-reply.ts) — this modal is for
 // the person who'd rather scan everything at once than ask one at a time.
+//
+// Item 6 plan, Phase 4 ("make FAQ modal richer"): two changes from the
+// original version —
+//   1. A search box filters the list as you type. Reachable mid-conversation
+//      rather than at the end of a long page, so scanning-by-scrolling is a
+//      worse fit here than it is for FAQSection's in-page accordion; typing
+//      a keyword ("privacy", "cancel", "price") gets to the answer faster.
+//   2. Rows toggle independently (FAQSection.tsx's own pattern) instead of
+//      a strict one-open-at-a-time accordion — useful once filtering means
+//      the visible set is already short, and someone comparing two answers
+//      (e.g. Elite vs. Private) shouldn't have opening the second collapse
+//      the first.
 
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { FAQS } from '@/lib/faq-content'
 
@@ -21,7 +33,23 @@ interface Props {
 }
 
 export default function FAQModal({ onClose }: Props) {
-  const [openIndex, setOpenIndex] = useState<number | null>(0)
+  const [query, setQuery]             = useState('')
+  const [openQuestions, setOpenQuestions] = useState<Set<string>>(() => new Set([FAQS[0]?.q].filter(Boolean) as string[]))
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return FAQS
+    return FAQS.filter(item => item.q.toLowerCase().includes(q) || item.a.toLowerCase().includes(q))
+  }, [query])
+
+  function toggle(question: string) {
+    setOpenQuestions(prev => {
+      const next = new Set(prev)
+      if (next.has(question)) next.delete(question)
+      else next.add(question)
+      return next
+    })
+  }
 
   return (
     <div
@@ -64,43 +92,62 @@ export default function FAQModal({ onClose }: Props) {
           </button>
         </div>
 
-        <div>
-          {FAQS.map((item, i) => {
-            const open = openIndex === i
-            return (
-              <div key={i} style={{ borderBottom: '1px solid var(--border-dim)' }}>
-                <button
-                  onClick={() => setOpenIndex(open ? null : i)}
-                  aria-expanded={open}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    gap: 14, padding: '14px 2px', background: 'transparent', border: 'none', cursor: 'pointer',
-                    fontFamily: 'inherit', textAlign: 'left',
-                  }}
-                >
-                  <span style={{ fontSize: 13.5, color: 'var(--text-1)' }}>{item.q}</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ color: 'var(--text-4)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-                {open && (
-                  <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, paddingRight: 26 }}>
-                    {item.a}
-                    {item.link && (
-                      <>
-                        {' '}
-                        <Link href={item.link.href} style={{ color: 'var(--gold)', textDecoration: 'none' }}>
-                          {item.link.label} →
-                        </Link>
-                      </>
-                    )}
-                  </p>
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search — privacy, pricing, cancel…"
+          style={{
+            width: '100%', boxSizing: 'border-box', fontSize: 14, padding: '10px 12px',
+            borderRadius: 10, border: '1px solid var(--border-mid)',
+            background: 'var(--bg-inset)', color: 'var(--text-1)',
+            fontFamily: 'inherit', marginBottom: 8,
+          }}
+        />
+
+        {filtered.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: 'var(--text-4)', textAlign: 'center', padding: '20px 0' }}>
+            Nothing matches "{query}" — try a different word, or just ask Quorum directly below.
+          </p>
+        ) : (
+          <div>
+            {filtered.map((item) => {
+              const open = openQuestions.has(item.q)
+              return (
+                <div key={item.q} style={{ borderBottom: '1px solid var(--border-dim)' }}>
+                  <button
+                    onClick={() => toggle(item.q)}
+                    aria-expanded={open}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 14, padding: '14px 2px', background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit', textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ fontSize: 13.5, color: 'var(--text-1)' }}>{item.q}</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      style={{ color: 'var(--text-4)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                  {open && (
+                    <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, paddingRight: 26 }}>
+                      {item.a}
+                      {item.link && (
+                        <>
+                          {' '}
+                          <Link href={item.link.href} style={{ color: 'var(--gold)', textDecoration: 'none' }}>
+                            {item.link.label} →
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '14px 0 0', textAlign: 'center' }}>
           Something else? Just ask Quorum directly — it can answer most of this mid-conversation.

@@ -16,11 +16,21 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { getStoredUserEmail } from '@/lib/storage'
-import { createClient } from '@/lib/supabase'
 import DecisionStarters from '@/components/DecisionStarters'
 import FAQModal from '@/components/FAQModal'
+import BehaviorAlerts from '@/components/BehaviorAlerts'           // item 6 plan, Phase 1
+import AuthPanel from '@/components/AuthPanel'                     // item 6 plan, Phase 3
+import MeetTheCouncil from '@/components/MeetTheCouncil'           // item 6 plan, Phase 4
+import ReferralLink from '@/components/ReferralLink'               // item 6 plan, Phase 4
+import MemoryEngineStatus from '@/components/MemoryEngineStatus'   // item 6 plan, Phase 2
+import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'   // item 6 plan, Phase 2
+import PatternSurfaceCard from '@/components/PatternSurfaceCard'   // item 6 plan, Phase 2
+import CalibrationRevealCard from '@/components/CalibrationRevealCard' // item 6 plan, Phase 2
+import RecurringConditionCard from '@/components/RecurringConditionCard' // item 6 plan, Phase 2
+import type { DimPattern } from '@/components/RecurringConditionCard'
+import type { HeroCardId } from '@/lib/hero-cards'
 import type { MirrorStatus } from '@/lib/types'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
 
@@ -35,6 +45,19 @@ interface ChatIntakeProps {
   grantExtraExchanges:   boolean
   onChatIntakeId:        (id: string) => void
   onReadyToReflect:      (chatIntakeId: string) => void
+
+  // Item 6 plan, Phase 0 — fetched once by NaturalIntakeClient and shared
+  // between the top bar's Mirror label and the hero's status-card stack,
+  // instead of this component fetching /api/mirror/status a second time.
+  authToken:             string | null
+  userId:                string | null
+  userEmail:             string | null
+  onUserEmailChange:     (email: string) => void
+  mirrorStatus:          MirrorStatus | null
+  patternDimensions:     DimPattern[]
+  pendingOutcomesCount:  number
+  decidedCount:          number
+  heroCards:             HeroCardId[]
 }
 
 function TypewriterLine({ text }: { text: string }) {
@@ -58,17 +81,25 @@ export default function ChatIntake({
   grantExtraExchanges,
   onChatIntakeId,
   onReadyToReflect,
+  authToken,
+  userId,
+  userEmail,
+  onUserEmailChange,
+  mirrorStatus,
+  patternDimensions,
+  pendingOutcomesCount,
+  decidedCount,
+  heroCards,
 }: ChatIntakeProps) {
   const [bubbles, setBubbles]   = useState<ChatBubble[]>([])
   const [input, setInput]       = useState('')
   const [sending, setSending]   = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const [exchangeCount, setExchangeCount] = useState(0)
-  const [hasEmail, setHasEmail] = useState(false)
-  const [mirrorStatus, setMirrorStatus] = useState<MirrorStatus | null>(null)
   const [faqOpen, setFaqOpen]   = useState(false)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const router    = useRouter() // only used by MemoryEngineStatus's onScrollToHistory below
 
   // Top-bar identity affordance — doesn't gate anything here, just answers
   // "where do my past decisions live now?" for a returning, signed-in
@@ -76,27 +107,11 @@ export default function ChatIntake({
   // (PlanBadge.tsx deliberately skips path "/" and leaves that job to
   // whichever screen renders there — HomeClient normally, ChatIntake when
   // Natural Intake is on, so this is that screen's own version of it).
-  // getStoredUserEmail() is a same-tick hint so the label doesn't flash
-  // "Sign in" before the network call below resolves; the real Bearer-token
-  // check (same pattern as PlanBadge.tsx) fills in the actual decision
-  // count once it lands, or leaves the plain "Mirror"/"Sign in" label if it
-  // can't reach a session.
-  useEffect(() => {
-    setHasEmail(!!getStoredUserEmail())
-    let cancelled = false
-    ;(async () => {
-      try {
-        const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        const token = session?.access_token ?? null
-        if (!token || cancelled) return
-        setHasEmail(true)
-        const res = await fetch('/api/mirror/status', { headers: { Authorization: `Bearer ${token}` } })
-        if (res.ok && !cancelled) setMirrorStatus(await res.json() as MirrorStatus)
-      } catch { /* header just falls back to the plain label below */ }
-    })()
-    return () => { cancelled = true }
-  }, [])
+  // userEmail/mirrorStatus arrive as props now (item 6 plan, Phase 0) —
+  // NaturalIntakeClient fetches both once on mount and shares them with the
+  // hero's status-card stack below, rather than this component making its
+  // own separate /api/mirror/status call the way it used to.
+  const hasEmail = !!userEmail
 
   // True once the user has sent at least one message — switches the screen
   // from the branded "front door" hero (headline + example chips) into the
@@ -321,47 +336,122 @@ export default function ChatIntake({
             which would look like a wall of giant text. Replaced by the
             thread the moment the user sends their first message. ── */
         <div style={{
-          flex: 1, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          textAlign: 'center', padding: '24px 28px', gap: 20,
+          flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', textAlign: 'center', padding: '24px 28px 32px',
         }}>
-          <div>
-            <p style={{
-              fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.16em',
-              textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 14px',
-            }}>
-              Think it through before you decide
-            </p>
-            <h1 style={{
-              fontFamily: 'var(--font-display)', fontWeight: 400,
-              fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
-              color: 'var(--text-1)', margin: '0 0 10px', maxWidth: 440,
-            }}>
-              What's going on?
-            </h1>
-            <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 360 }}>
-              Don't worry about structuring it — just tell me, and I'll help
-              you find the decision underneath it. Big enough call? We can
-              bring in the full Council once we know what you're deciding.
+          {/* Wrapped in its own `margin: auto 0` block, rather than putting
+              justifyContent:'center' on the scrolling parent above — that
+              combination (flex column + overflow:auto + justify-content:
+              center) clips the top of the content once it's taller than the
+              viewport in some browsers. This still centers the primary
+              hero content vertically when it's short (a brand-new,
+              anonymous visitor with nothing eligible below) and lets it
+              scroll naturally once the optional blocks below make the
+              screen taller (a returning user with hero cards, AuthPanel,
+              and/or the reference section all present). */}
+          <div style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, width: '100%' }}>
+            <div>
+              <p style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.16em',
+                textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 14px',
+              }}>
+                Think it through before you decide
+              </p>
+              <h1 style={{
+                fontFamily: 'var(--font-display)', fontWeight: 400,
+                fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
+                color: 'var(--text-1)', margin: '0 0 10px', maxWidth: 440,
+              }}>
+                What's going on?
+              </h1>
+              <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 360 }}>
+                Don't worry about structuring it — just tell me, and I'll help
+                you find the decision underneath it. Big enough call? We can
+                bring in the full Council once we know what you're deciding.
+              </p>
+            </div>
+
+            <div style={{ width: '100%', maxWidth: 440 }}>
+              <DecisionStarters compact label="Not sure where to start? Try one of these" onPick={handleStarterPick} />
+              {/* Grey helper text (requested): make explicit that these chips
+                  are only a nudge, never the whole input — and hint at what
+                  turns a generic example into something Quorum can actually
+                  work with. */}
+              <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: '10px auto 0', maxWidth: 360 }}>
+                These are just starting points — type or speak your own anytime.
+                Whichever you use, make it yours: who's really involved, what
+                you're actually choosing between, and what's making it hard to call.
+              </p>
+            </div>
+
+            <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>
+              Private · nothing is shared without your permission
             </p>
           </div>
 
-          <div style={{ width: '100%', maxWidth: 440 }}>
-            <DecisionStarters compact label="Not sure where to start? Try one of these" onPick={handleStarterPick} />
-            {/* Grey helper text (requested): make explicit that these chips
-                are only a nudge, never the whole input — and hint at what
-                turns a generic example into something Quorum can actually
-                work with. */}
-            <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: '10px auto 0', maxWidth: 360 }}>
-              These are just starting points — type or speak your own anytime.
-              Whichever you use, make it yours: who's really involved, what
-              you're actually choosing between, and what's making it hard to call.
-            </p>
-          </div>
+          {/* Item 6 plan, Phase 2 — Mirror/status hero cards. At most two,
+              picked dynamically (lib/hero-cards.ts) so this never stacks up
+              to the full five-card wall the classic home page shows below
+              its input. Each card still applies its own internal gate
+              (e.g. CalibrationRevealCard needs ≥3 paired outcomes) — being
+              in this list means "eligible," not "guaranteed to render
+              something." */}
+          {heroCards.length > 0 && (
+            <div style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 12, marginTop: 28, textAlign: 'left' }}>
+              {heroCards.map(id => {
+                switch (id) {
+                  case 'memory-engine':
+                    return (
+                      <MemoryEngineStatus
+                        key={id}
+                        sessionCount={mirrorStatus?.sessionCount ?? 0}
+                        pendingOutcomes={pendingOutcomesCount}
+                        decidedCount={decidedCount}
+                        hasIdentity={hasEmail}
+                        mirrorUnlocked={mirrorStatus?.gateState === 'unlocked'}
+                        foundingAvailable={mirrorStatus?.foundingAvailable}
+                        onScrollToHistory={() => router.push('/mirror')}
+                      />
+                    )
+                  case 'mirror-open-loop':
+                    return (
+                      <MirrorOpenLoopCard
+                        key={id}
+                        authToken={authToken}
+                        sessionCount={mirrorStatus?.sessionCount ?? 0}
+                        mirrorUnlocked={mirrorStatus?.gateState === 'unlocked'}
+                      />
+                    )
+                  case 'pattern-surface':
+                    return <PatternSurfaceCard key={id} authToken={authToken} sessionCount={mirrorStatus?.sessionCount ?? 0} />
+                  case 'calibration-reveal':
+                    return <CalibrationRevealCard key={id} authToken={authToken} mirrorUnlocked={mirrorStatus?.gateState === 'unlocked'} />
+                  case 'recurring-condition':
+                    return <RecurringConditionCard key={id} dimensions={patternDimensions} sessionCount={mirrorStatus?.sessionCount ?? 0} />
+                  default:
+                    return null
+                }
+              })}
+            </div>
+          )}
 
-          <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>
-            Private · nothing is shared without your permission
-          </p>
+          {/* Item 6 plan, Phase 3 — inline capture, supplementing (not
+              replacing) the top-bar "Sign in" link, the same low-friction
+              placement app/HomeClient.tsx uses for signed-out visitors. */}
+          {!hasEmail && (
+            <div style={{ width: '100%', maxWidth: 440, marginTop: 16, textAlign: 'left' }}>
+              <AuthPanel userEmail={userEmail} onAuthenticated={onUserEmailChange} />
+            </div>
+          )}
+
+          {/* Item 6 plan, Phase 4 — reference content, same as the classic
+              home page: read-whenever, not core to the current task, so it
+              sits below everything else rather than competing for the
+              first-glance attention the headline above gets. */}
+          <div style={{ width: '100%', maxWidth: 440, marginTop: 28, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <MeetTheCouncil />
+            {userId && <ReferralLink userId={userId} />}
+          </div>
         </div>
       )}
 
@@ -414,6 +504,11 @@ export default function ChatIntake({
             Send
           </button>
         </div>
+        {/* Item 6 plan, Phase 1 — the classic home page's live bias detector
+            (app/HomeClient.tsx) had no equivalent here at all. Same
+            component, same two props, wired to this screen's own input
+            state instead of HomeClient's `decision` state. */}
+        <BehaviorAlerts decision={input} authToken={authToken} />
       </form>
 
       <style jsx>{`

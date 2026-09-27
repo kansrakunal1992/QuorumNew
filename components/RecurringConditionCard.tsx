@@ -6,7 +6,10 @@
 // CTA links to Mirror → "What Keeps Coming Up" section for full detail.
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface DimPattern {
+// Exported (item 6 plan, natural-intake hero stack) so ChatIntake.tsx and
+// NaturalIntakeClient.tsx can type the patternDimensions they fetch and pass
+// down, instead of redeclaring an identical shape.
+export interface DimPattern {
   dim:        string
   label:      string
   avg_score:  number

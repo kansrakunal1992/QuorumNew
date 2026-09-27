@@ -75,6 +75,28 @@ export function clearUserEmail(): void {
   try { localStorage.removeItem(EMAIL_KEY) } catch {}
 }
 
+// Item 6 plan, Phase 2 — Natural Intake hero card rotation. Returns the
+// current index (starting at 0 for a brand-new device) and advances it for
+// next time, so lib/hero-cards.ts's pickTopHeroCards shows a different pair
+// of Mirror/status cards on each fresh visit instead of the same two every
+// time. Deliberately a plain incrementing counter rather than a date-based
+// seed — advances once per actual visit (this is called once on mount, not
+// per render), which is what "each time they log back in" means, and
+// doesn't skip a beat if someone visits twice in one day or not at all for
+// a week.
+const HERO_ROTATION_KEY = 'quorum_hero_rotation_index'
+
+export function getAndAdvanceHeroRotationIndex(): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    const current = parseInt(localStorage.getItem(HERO_ROTATION_KEY) ?? '0', 10) || 0
+    localStorage.setItem(HERO_ROTATION_KEY, String(current + 1))
+    return current
+  } catch {
+    return 0
+  }
+}
+
 // ── Sprint 4b: Anonymous device identity ────────────────────────────────────
 // Generated on first visit. Persists until localStorage is cleared.
 // Used as a third-tier accumulation key in bias_library:
