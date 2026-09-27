@@ -294,6 +294,11 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
                 rows={4}
                 style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border-mid)', background: 'var(--bg-inset)', color: 'var(--text-1)', fontSize: 14.5, resize: 'vertical' }}
               />
+              {(channel === 'slack' || channel === 'teams') && (
+                <div style={{ fontSize: 12, color: 'var(--text-4)' }}>
+                  This will be sent from your own {channel === 'slack' ? 'Slack' : 'Teams'} account, as you. Nothing goes out until you tap Send.
+                </div>
+              )}
               {sendError && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{sendError}</div>}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={smallPrimaryBtn} onClick={send}>
