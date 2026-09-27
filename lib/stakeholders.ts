@@ -43,7 +43,7 @@ export async function upsertStakeholder(
     return {
       id:            existing.id,
       name:          decrypt(existing.name) ?? name,
-      role:          role ? role : decrypt(existing.role),
+      role:          role ? role : (decrypt(existing.role) ?? null),
       consultReason: consultReason ?? existing.consult_reason,
     }
   }
