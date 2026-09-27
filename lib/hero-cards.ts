@@ -1,5 +1,5 @@
 // lib/hero-cards.ts
-// ── Natural Intake hero card rotation (item 6 plan, Phase 2) ────────────────
+// ── Natural Intake hero card rotation new (item 6 plan, Phase 2) ────────────────
 //
 // The classic home page (app/HomeClient.tsx) renders up to five Mirror/
 // status mechanisms in a fixed vertical stack below the input — Memory
