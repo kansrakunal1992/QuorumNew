@@ -17,6 +17,22 @@
 // MirrorOpenLoopCard, etc. still render exactly as they do on the classic
 // home page once expanded, so nothing about their behavior on HomeClient.tsx
 // changes.
+//
+// Bug fix (reported): expanding a card took 3-4 seconds every single time,
+// including the second time. Cause: `{open && children}` unmounts the
+// wrapped component whenever it collapses — three of the five cards
+// (PatternSurfaceCard, MirrorOpenLoopCard, CalibrationRevealCard) fetch
+// their own data in a mount-time useEffect, so collapsing threw that fetch
+// away, and the next expand started a brand-new one from scratch, with
+// nothing shown in between (all three render null while loading — no
+// spinner). children are now always mounted, just hidden with `display`
+// when collapsed, so: the fetch fires once, as soon as this card is picked
+// for the hero (often finished before the person even taps it open), and
+// re-opening after a collapse reveals the same already-fetched instance
+// instead of re-running its effect. Trade-off worth knowing: this means
+// each picked card's fetch now runs whether or not the person ever opens
+// it — with at most 2 cards on screen at once, that's a small, worthwhile
+// cost for a near-instant expand.
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
@@ -77,7 +93,16 @@ export default function HeroCardCollapsible({ title, summary, statusDot, default
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
-      {open && <div style={{ marginTop: 4 }}>{children}</div>}
+      {/* Always mounted (not `{open && ...}`) so the wrapped card's own
+          data-fetching effect runs once, the moment this component mounts,
+          instead of restarting every time the person re-opens it. Hidden
+          with `display: none` rather than left unrendered — that keeps the
+          component instance (and whatever it already fetched) alive
+          underneath, and `aria-hidden` keeps it out of the accessibility
+          tree while collapsed. */}
+      <div style={{ display: open ? 'block' : 'none', marginTop: open ? 4 : 0 }} aria-hidden={!open}>
+        {children}
+      </div>
     </div>
   )
 }
