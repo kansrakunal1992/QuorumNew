@@ -55,6 +55,7 @@ type Phase = 'prompt' | 'channel' | 'search' | 'draft' | 'sent' | 'paste' | 'sav
 
 export default function StakeholderOutreach({ sessionId, stakeholders, authToken }: Props) {
   const [phase, setPhase]           = useState<Phase>('prompt')
+  const [history, setHistory]       = useState<Phase[]>([])   // enables the header's Back button — see goToPhase/goBack below
   const [expanded, setExpanded]     = useState(false)
   const [person, setPerson]         = useState(stakeholders[0] ?? null)
   const [channel, setChannel]       = useState<Channel | null>(null)
@@ -82,12 +83,29 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
   const authedFetch = (url: string, init: RequestInit = {}) =>
     fetch(url, { ...init, headers: { ...(init.headers ?? {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) } })
 
-  async function startDraft(ch: Channel) {
-    setChannel(ch)
-    setDrafting(true)
-    setPhase(ch === 'slack' || ch === 'teams' ? 'search' : 'draft')
-    if (ch === 'slack' || ch === 'teams') setSearchQuery(person!.name)
+  // Every forward step goes through here instead of setPhase directly, so
+  // the header's Back button can always unwind exactly one step — whichever
+  // phase the user actually came from (this is what lets 'paste', reached
+  // either straight from 'prompt' or via 'sent', pop back to the right place
+  // without special-casing either route).
+  function goToPhase(next: Phase) {
+    setHistory(h => [...h, phase])
+    setPhase(next)
+  }
 
+  function goBack() {
+    if (!history.length) return
+    setPhase(history[history.length - 1])
+    setHistory(h => h.slice(0, -1))
+    setSendError(null)
+  }
+
+  // Shared by startDraft (first draft, moves the phase forward) and
+  // regenerateDraft (re-rolls the text in place, phase untouched) — pulled
+  // out so "Regenerate" can't accidentally re-trigger the search-step
+  // detour startDraft needs on first entry for Slack/Teams.
+  async function fetchDraft(ch: Channel) {
+    setDrafting(true)
     try {
       const res = await authedFetch('/api/stakeholder-outreach/draft', {
         method:  'POST',
@@ -101,10 +119,26 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
       setDraftText(data.draftText ?? '')
       setWhatsappLink(data.whatsappLink ?? null)
     } catch (err) {
-      console.error('[StakeholderOutreach] draft failed:', err)
+      console.error('[StakeholderOutreach] draft fetch failed:', err)
     } finally {
       setDrafting(false)
     }
+  }
+
+  async function startDraft(ch: Channel) {
+    setChannel(ch)
+    goToPhase(ch === 'slack' || ch === 'teams' ? 'search' : 'draft')
+    if (ch === 'slack' || ch === 'teams') setSearchQuery(person!.name)
+    await fetchDraft(ch)
+  }
+
+  // "Regenerate" — was previously wired to startDraft(channel!), which for
+  // Slack/Teams re-ran the ch==='slack'||'teams' branch and silently kicked
+  // the phase back to 'search' (the user would look like they'd lost their
+  // place). Regenerating should only ever refetch the text.
+  async function regenerateDraft() {
+    if (!channel) return
+    await fetchDraft(channel)
   }
 
   async function runSearch() {
@@ -134,23 +168,24 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
 
   function pickTarget(m: SearchMatch) {
     setTarget(m)
-    setPhase('draft')
+    goToPhase('draft')
   }
 
   async function send() {
     if (!channel) return
     setSendError(null)
+    setReplies(null)   // clear any replies shown for a previous send before this one starts
 
     if (channel === 'whatsapp') {
       if (whatsappLink) window.open(whatsappLink, '_blank')
-      setPhase('sent')
+      goToPhase('sent')
       return
     }
     if (channel === 'manual') {
       // "Copy" path — nothing to send via API; clipboard, then straight to
       // the paste-a-reply step (there's nothing to poll for).
       try { await navigator.clipboard.writeText(draftText) } catch { /* clipboard permission denied — text is still selectable on screen */ }
-      setPhase('sent')
+      goToPhase('sent')
       return
     }
     if (!target) return
@@ -163,7 +198,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Send failed')
       setSentMarker(data.sentMarker)
-      setPhase('sent')
+      goToPhase('sent')
     } catch (err) {
       console.error('[StakeholderOutreach] send failed:', err)
       setSendError('Couldn\u2019t send that — want to try again, or copy it instead?')
@@ -201,7 +236,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
           sourceTimestamp: timestamp ? new Date(Number(timestamp) * 1000 || timestamp).toISOString() : undefined,
         }),
       })
-      setPhase('saved')
+      goToPhase('saved')
     } catch (err) {
       console.error('[StakeholderOutreach] save failed:', err)
     } finally {
@@ -234,7 +269,18 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
   return (
     <div style={cardStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ fontSize: 15, color: 'var(--text-1)' }}>Asking {person.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={goBack}
+              style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 13, cursor: 'pointer', padding: 0 }}
+            >
+              ← Back
+            </button>
+          )}
+          <div style={{ fontSize: 15, color: 'var(--text-1)' }}>Asking {person.name}</div>
+        </div>
         <button style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 13, cursor: 'pointer' }} onClick={() => setExpanded(false)}>Close</button>
       </div>
 
@@ -248,7 +294,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
             <button style={smallBtn} onClick={() => startDraft('whatsapp')}>WhatsApp</button>
             <button style={smallBtn} onClick={() => startDraft('manual')}>Copy a message</button>
           </div>
-          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => setPhase('paste')}>
+          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => goToPhase('paste')}>
             Already have something {person.name.split(' ')[0]} said? Paste it in
           </button>
         </div>
@@ -304,7 +350,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
                 <button style={smallPrimaryBtn} onClick={send}>
                   {channel === 'whatsapp' ? 'Open in WhatsApp' : channel === 'manual' ? 'Copy' : `Send${target ? ` to ${target.label}` : ''}`}
                 </button>
-                <button style={smallBtn} onClick={() => startDraft(channel!)}>Regenerate</button>
+                <button style={smallBtn} onClick={regenerateDraft}>Regenerate</button>
               </div>
             </>
           )}
@@ -341,7 +387,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
           ) : (
             <div style={{ fontSize: 13, color: 'var(--text-4)' }}>Once they reply, come back and paste it in.</div>
           )}
-          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => setPhase('paste')}>
+          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => goToPhase('paste')}>
             Paste their reply myself
           </button>
         </div>
