@@ -150,3 +150,16 @@ export function isOutlookConnectorEnabled(): boolean {
 export function isWhatsAppShareEnabled(): boolean {
   return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_WHATSAPP_SHARE_ENABLED === 'true'
 }
+
+// ── Natural Intake — Microsoft Teams connector sub-flag (Phase 3, v2) ───────
+// Same pattern as the four sibling sub-flags above (added after them, not
+// alongside, since Teams was scoped in after Slack/Gmail/Outlook/WhatsApp
+// were already locked). Meaningful only when isNaturalIntakeEnabled() is
+// also true, same as every other connector flag.
+//
+// To enable in Railway: set NEXT_PUBLIC_TEAMS_CONNECTOR_ENABLED=true on the
+// service, then redeploy.
+
+export function isTeamsConnectorEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_TEAMS_CONNECTOR_ENABLED === 'true'
+}

@@ -28,6 +28,7 @@ import type { ChatDecisionState } from '@/lib/types'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { createClient } from '@/lib/supabase'
 import InitialInstinctCapture from '@/components/InitialInstinctCapture'
+import StakeholderOutreach from '@/components/StakeholderOutreach'   // Phase 2/3, v2
 
 interface ExaminerQuestion {
   order:          number
@@ -428,6 +429,12 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
           ) : null}
         </div>
       </div>
+
+      {/* Phase 2/3, v2 — only appears when the chat actually named someone;
+          never a standing "Integrations" menu (plan section 22). */}
+      {!!state.stakeholders?.length && sessionId && (
+        <StakeholderOutreach sessionId={sessionId} stakeholders={state.stakeholders} authToken={authToken} />
+      )}
 
       <div style={{ ...cardStyle, marginTop: 4 }}>
         {/* Item 6 (product feedback): the transition into Council was

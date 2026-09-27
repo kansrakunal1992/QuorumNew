@@ -20,6 +20,9 @@ import 'server-only'
  *   sessions           — decision_text, context_text
  *   messages           — content (all roles)
  *   chat_intake_messages — content (Natural Intake v1 — see supabase/sprint_natural_intake_v1.sql)
+ *   stakeholders — name, role (Phase 2/3, v2 — see supabase/sprint_stakeholder_connectors_v2.sql)
+ *   stakeholder_inputs — source_text, extracted_claims, user_interpretation (v2)
+ *   connector_accounts — access_token, refresh_token (v2)
  *   examiner_responses — question_text, response_text
  *   outcomes           — what_decided, notes
  *   structural_matches — context_block (text), matches_json (JSONB via _enc wrapper)
