@@ -81,3 +81,54 @@ export function pickTopHeroCards(
   }
   return picked
 }
+
+// ── Collapsed summary text (round 2 — components/HeroCardCollapsible.tsx) ──
+// Feedback: even 2 full-detail cards read as crowded on the hero. Each
+// picked card now renders collapsed by default behind one of these summary
+// lines, expanding to the real component on tap. Kept deliberately terse —
+// this is a teaser for tapping, not a restatement of what's inside.
+//
+// Per explicit request, Memory Engine's line states Mirror status as a
+// plain binary ("active"/"inactive") — the full card's own header still
+// shows the richer in-progress states (Recording, Preview, etc.) once
+// expanded; this line is just the at-a-glance version.
+
+export interface HeroCardSummaryInput {
+  sessionCount:           number
+  mirrorUnlocked:         boolean
+  patternDimensionsCount: number
+}
+
+export interface HeroCardSummary {
+  title:      string
+  summary:    string
+  statusDot:  'active' | 'inactive' | 'gold'
+}
+
+export function heroCardSummary(id: HeroCardId, input: HeroCardSummaryInput): HeroCardSummary {
+  const { sessionCount, mirrorUnlocked, patternDimensionsCount } = input
+  switch (id) {
+    case 'memory-engine':
+      return {
+        title:     'Memory Engine',
+        summary:   `${sessionCount} session${sessionCount === 1 ? '' : 's'} · Mirror ${mirrorUnlocked ? 'active' : 'inactive'}`,
+        statusDot: mirrorUnlocked ? 'active' : 'inactive',
+      }
+    case 'mirror-open-loop':
+      return {
+        title:     'Mirror',
+        summary:   mirrorUnlocked ? 'Active' : `Building — ${sessionCount} session${sessionCount === 1 ? '' : 's'} so far`,
+        statusDot: mirrorUnlocked ? 'active' : 'gold',
+      }
+    case 'pattern-surface':
+      return { title: 'Pattern', summary: 'A pattern surfaced from your record', statusDot: 'gold' }
+    case 'calibration-reveal':
+      return { title: 'Calibration', summary: 'Confidence vs. outcome check', statusDot: 'gold' }
+    case 'recurring-condition':
+      return {
+        title:     'Recurring',
+        summary:   `${patternDimensionsCount} recurring theme${patternDimensionsCount === 1 ? '' : 's'} in your decisions`,
+        statusDot: 'gold',
+      }
+  }
+}

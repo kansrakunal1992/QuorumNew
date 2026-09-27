@@ -169,6 +169,20 @@ export default function MemoryEngineStatus({
           0%, 100% { opacity: 0.4; }
           50%       { opacity: 1; }
         }
+        /* Bug fix (Natural Intake hero, 440px column): this row was a fixed
+           1fr/auto CSS grid, sized for the classic home page's much wider
+           column. At ~440px or less, "N sessions" plus the outcomes-pending
+           box no longer both fit on one row, and the box's own padding
+           pushed it past the card's right edge instead of wrapping. Below
+           480px the row now stacks instead of shrinking text to fit —
+           shortening the copy would only postpone the same overflow at the
+           next three-digit session count. */
+        .mem-metrics-row { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; }
+        .mem-metrics-right { text-align: right; flex-shrink: 0; }
+        @media (max-width: 480px) {
+          .mem-metrics-row   { grid-template-columns: 1fr; }
+          .mem-metrics-right { text-align: left; margin-top: 10px; }
+        }
       `}</style>
 
       <div
@@ -225,8 +239,11 @@ export default function MemoryEngineStatus({
           </span>
         </div>
 
-        {/* Main metrics row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 16, alignItems: 'center' }}>
+        {/* Main metrics row — see the .mem-metrics-row media query above for
+            why this is a className now instead of an inline grid style: an
+            inline style on this element would always beat the stylesheet's
+            media query, however narrow the viewport gets. */}
+        <div className="mem-metrics-row">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <SegmentBar
@@ -244,14 +261,19 @@ export default function MemoryEngineStatus({
             </p>
             {mirrorUnlocked && (
               <p style={{ fontSize: 11, color: 'var(--green-text)', margin: '3px 0 0', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 0 }}>
-                {patternActive ? 'Mirror active' : 'Mirror access active — recording your decisions'}
+                {/* Bug fix: when patternActive, statusLabel above already
+                    reads "Pattern Memory active · Mirror active" — this line
+                    used to repeat "Mirror active" verbatim right underneath
+                    it. Now shows just the link in that case; the
+                    non-patternActive wording is unchanged. */}
+                {patternActive ? null : 'Mirror access active — recording your decisions'}
                 <a
                   href="/mirror"
                   style={{
                     display:        'inline-flex',
                     alignItems:     'center',
                     gap:            4,
-                    marginLeft:     10,
+                    marginLeft:     patternActive ? 0 : 10,
                     color:          'var(--green-text)',
                     fontSize:       10.5,
                     fontWeight:     600,
@@ -288,7 +310,7 @@ export default function MemoryEngineStatus({
             )}
           </div>
 
-          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div className="mem-metrics-right">
             {pendingOutcomes > 0 ? (
               <button
                 onClick={onScrollToHistory}
@@ -299,7 +321,6 @@ export default function MemoryEngineStatus({
                   padding: '6px 12px',
                   cursor: 'pointer',
                   fontFamily: 'inherit',
-                  textAlign: 'right',
                 }}
               >
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)', margin: '0 0 1px' }}>
@@ -310,7 +331,7 @@ export default function MemoryEngineStatus({
                 </p>
               </button>
             ) : decidedCount > 0 ? (
-              <div style={{ textAlign: 'right' }}>
+              <div>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-text)', margin: '0 0 1px' }}>
                   {decidedCount}
                 </p>

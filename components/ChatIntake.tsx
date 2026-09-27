@@ -23,13 +23,14 @@ import FAQModal from '@/components/FAQModal'
 import BehaviorAlerts from '@/components/BehaviorAlerts'           // item 6 plan, Phase 1
 import AuthPanel from '@/components/AuthPanel'                     // item 6 plan, Phase 3
 import MeetTheCouncil from '@/components/MeetTheCouncil'           // item 6 plan, Phase 4
-import ReferralLink from '@/components/ReferralLink'               // item 6 plan, Phase 4
 import MemoryEngineStatus from '@/components/MemoryEngineStatus'   // item 6 plan, Phase 2
 import MirrorOpenLoopCard from '@/components/MirrorOpenLoopCard'   // item 6 plan, Phase 2
 import PatternSurfaceCard from '@/components/PatternSurfaceCard'   // item 6 plan, Phase 2
 import CalibrationRevealCard from '@/components/CalibrationRevealCard' // item 6 plan, Phase 2
 import RecurringConditionCard from '@/components/RecurringConditionCard' // item 6 plan, Phase 2
+import HeroCardCollapsible from '@/components/HeroCardCollapsible' // item 6 plan, round 2
 import type { DimPattern } from '@/components/RecurringConditionCard'
+import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
 import type { MirrorStatus } from '@/lib/types'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
@@ -50,7 +51,6 @@ interface ChatIntakeProps {
   // between the top bar's Mirror label and the hero's status-card stack,
   // instead of this component fetching /api/mirror/status a second time.
   authToken:             string | null
-  userId:                string | null
   userEmail:             string | null
   onUserEmailChange:     (email: string) => void
   mirrorStatus:          MirrorStatus | null
@@ -82,7 +82,6 @@ export default function ChatIntake({
   onChatIntakeId,
   onReadyToReflect,
   authToken,
-  userId,
   userEmail,
   onUserEmailChange,
   mirrorStatus,
@@ -111,7 +110,9 @@ export default function ChatIntake({
   // NaturalIntakeClient fetches both once on mount and shares them with the
   // hero's status-card stack below, rather than this component making its
   // own separate /api/mirror/status call the way it used to.
-  const hasEmail = !!userEmail
+  const hasEmail       = !!userEmail
+  const mirrorUnlocked = mirrorStatus?.gateState === 'unlocked'
+  const sessionCount   = mirrorStatus?.sessionCount ?? 0
 
   // True once the user has sent at least one message — switches the screen
   // from the branded "front door" hero (headline + example chips) into the
@@ -216,6 +217,72 @@ export default function ChatIntake({
       inputRef.current?.focus()
     }
   }, [chatIntakeId, deviceId, grantExtraExchanges, sending, transitioning, onChatIntakeId, onReadyToReflect])
+
+  // Item 6 plan, round 2 — extracted so the exact same input row can render
+  // in two different places depending on `started`: inline in the hero
+  // (right after the starter chips, so it's visible without scrolling
+  // past anything) before the first message, and pinned to the screen
+  // bottom once the thread view takes over. Same handlers/refs either way;
+  // only its position in the tree changes, and the two spots are mutually
+  // exclusive (started flips exactly once per visit), so there's no risk
+  // of it ever rendering twice at once.
+  const inputForm = (
+    <form
+      onSubmit={e => { e.preventDefault(); send(input) }}
+      style={{
+        display: 'flex', flexDirection: 'column', gap: 8,
+        padding: started ? '10px 16px calc(52px + env(safe-area-inset-bottom, 0px))' : '0',
+        borderTop: started ? '1px solid var(--border-dim)' : 'none',
+      }}
+    >
+      <textarea
+        ref={inputRef}
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
+        }}
+        placeholder={transitioning ? 'One moment…' : 'Type here…'}
+        rows={1}
+        disabled={transitioning}
+        style={{
+          width: '100%', resize: 'none', maxHeight: 120, padding: '11px 14px',
+          borderRadius: 14, border: '1px solid var(--border-mid)',
+          background: 'var(--bg-inset)', color: 'var(--text-1)',
+          fontSize: 16, fontFamily: 'var(--font-body)',
+          opacity: transitioning ? 0.6 : 1,
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
+        <button
+          type="submit"
+          disabled={sending || transitioning || !input.trim()}
+          style={{
+            flex: 1, maxWidth: 140, padding: '11px 18px', borderRadius: 14, border: 'none',
+            background: input.trim() && !transitioning ? 'var(--gold)' : 'var(--border-dim)',
+            color: input.trim() && !transitioning ? 'var(--bg-void)' : 'var(--text-4)',
+            fontWeight: 600, fontSize: 15, cursor: input.trim() && !transitioning ? 'pointer' : 'default',
+          }}
+        >
+          Send
+        </button>
+      </div>
+      {/* Item 6 plan, Phase 1 — the classic home page's live bias detector
+          (app/HomeClient.tsx) had no equivalent here at all. Same
+          component, same two props, wired to this screen's own input
+          state instead of HomeClient's `decision` state. */}
+      <BehaviorAlerts decision={input} authToken={authToken} />
+    </form>
+  )
+
+  // Shared inputs for every collapsed hero card's one-line summary — see
+  // lib/hero-cards.ts's heroCardSummary.
+  const heroSummaryInput = {
+    sessionCount,
+    mirrorUnlocked,
+    patternDimensionsCount: patternDimensions.length,
+  }
 
   return (
     <div
@@ -384,132 +451,108 @@ export default function ChatIntake({
               </p>
             </div>
 
+            {/* Item 6 plan, round 2 — the input moves up to right after the
+                starter chips, instead of being pinned to the screen bottom
+                the way it is once the thread starts. Previously, a
+                brand-new anonymous visitor saw AuthPanel and a "Sign in"
+                link before ever reaching the input — this is the actual
+                fix for that (not a separate move of AuthPanel): the input
+                is now the first actionable thing after the headline, and
+                everything else — AuthPanel included — reads as optional,
+                below it. */}
+            <div style={{ width: '100%', maxWidth: 440 }}>
+              {inputForm}
+            </div>
+
             <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>
               Private · nothing is shared without your permission
             </p>
           </div>
 
-          {/* Item 6 plan, Phase 2 — Mirror/status hero cards. At most two,
-              picked dynamically (lib/hero-cards.ts) so this never stacks up
-              to the full five-card wall the classic home page shows below
-              its input. Each card still applies its own internal gate
-              (e.g. CalibrationRevealCard needs ≥3 paired outcomes) — being
-              in this list means "eligible," not "guaranteed to render
-              something." */}
+          {/* Item 6 plan, Phase 2 / round 2 — Mirror/status hero cards.
+              Still at most two, picked dynamically (lib/hero-cards.ts), but
+              now collapsed to a one-line summary by default
+              (components/HeroCardCollapsible.tsx) rather than rendering
+              full detail immediately — two full cards still read as
+              crowded even at two instead of five. Each still applies its
+              own internal gate too (e.g. CalibrationRevealCard needs ≥3
+              paired outcomes) — being in this list means "eligible," not
+              "guaranteed to have something to show once expanded." */}
           {heroCards.length > 0 && (
-            <div style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 12, marginTop: 28, textAlign: 'left' }}>
-              {heroCards.map(id => {
-                switch (id) {
-                  case 'memory-engine':
-                    return (
-                      <MemoryEngineStatus
-                        key={id}
-                        sessionCount={mirrorStatus?.sessionCount ?? 0}
-                        pendingOutcomes={pendingOutcomesCount}
-                        decidedCount={decidedCount}
-                        hasIdentity={hasEmail}
-                        mirrorUnlocked={mirrorStatus?.gateState === 'unlocked'}
-                        foundingAvailable={mirrorStatus?.foundingAvailable}
-                        onScrollToHistory={() => router.push('/mirror')}
-                      />
-                    )
-                  case 'mirror-open-loop':
-                    return (
-                      <MirrorOpenLoopCard
-                        key={id}
-                        authToken={authToken}
-                        sessionCount={mirrorStatus?.sessionCount ?? 0}
-                        mirrorUnlocked={mirrorStatus?.gateState === 'unlocked'}
-                      />
-                    )
-                  case 'pattern-surface':
-                    return <PatternSurfaceCard key={id} authToken={authToken} sessionCount={mirrorStatus?.sessionCount ?? 0} />
-                  case 'calibration-reveal':
-                    return <CalibrationRevealCard key={id} authToken={authToken} mirrorUnlocked={mirrorStatus?.gateState === 'unlocked'} />
-                  case 'recurring-condition':
-                    return <RecurringConditionCard key={id} dimensions={patternDimensions} sessionCount={mirrorStatus?.sessionCount ?? 0} />
-                  default:
-                    return null
-                }
+            <div style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', marginTop: 28, textAlign: 'left' }}>
+              {heroCards.map((id, i) => {
+                const { title, summary, statusDot } = heroCardSummary(id, heroSummaryInput)
+                const card = (() => {
+                  switch (id) {
+                    case 'memory-engine':
+                      return (
+                        <MemoryEngineStatus
+                          sessionCount={sessionCount}
+                          pendingOutcomes={pendingOutcomesCount}
+                          decidedCount={decidedCount}
+                          hasIdentity={hasEmail}
+                          mirrorUnlocked={mirrorUnlocked}
+                          foundingAvailable={mirrorStatus?.foundingAvailable}
+                          onScrollToHistory={() => router.push('/mirror')}
+                        />
+                      )
+                    case 'mirror-open-loop':
+                      return <MirrorOpenLoopCard authToken={authToken} sessionCount={sessionCount} mirrorUnlocked={mirrorUnlocked} />
+                    case 'pattern-surface':
+                      return <PatternSurfaceCard authToken={authToken} sessionCount={sessionCount} />
+                    case 'calibration-reveal':
+                      return <CalibrationRevealCard authToken={authToken} mirrorUnlocked={mirrorUnlocked} />
+                    case 'recurring-condition':
+                      return <RecurringConditionCard dimensions={patternDimensions} sessionCount={sessionCount} />
+                    default:
+                      return null
+                  }
+                })()
+                return (
+                  <div key={id} style={{ borderTop: i > 0 ? '1px solid var(--border-dim)' : 'none' }}>
+                    <HeroCardCollapsible title={title} summary={summary} statusDot={statusDot}>
+                      {card}
+                    </HeroCardCollapsible>
+                  </div>
+                )
               })}
             </div>
           )}
 
-          {/* Item 6 plan, Phase 3 — inline capture, supplementing (not
-              replacing) the top-bar "Sign in" link, the same low-friction
-              placement app/HomeClient.tsx uses for signed-out visitors. */}
+          {/* Item 6 plan, Phase 3 — inline capture. Now clearly below the
+              input (see the note above it) rather than above, so it reads
+              as "you can do this later," not a gate in front of typing. */}
           {!hasEmail && (
             <div style={{ width: '100%', maxWidth: 440, marginTop: 16, textAlign: 'left' }}>
               <AuthPanel userEmail={userEmail} onAuthenticated={onUserEmailChange} />
             </div>
           )}
 
-          {/* Item 6 plan, Phase 4 — reference content, same as the classic
-              home page: read-whenever, not core to the current task, so it
-              sits below everything else rather than competing for the
-              first-glance attention the headline above gets. */}
-          <div style={{ width: '100%', maxWidth: 440, marginTop: 28, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Item 6 plan, Phase 4 — reference content: read-whenever, not
+              core to the current task, so it's the last thing on the
+              screen. Referral link removed from here entirely (round 2) —
+              it now lives on the record page instead, after the person has
+              actually been through a decision. Generous bottom padding
+              matches inputForm's own bottom padding in the `started` state:
+              globals.css's .visitor-counter pill is fixed at bottom:20/
+              left:20 site-wide, and this is now the last scrollable content
+              in the hero, so it needs the same clearance the input used to
+              provide on its own. */}
+          <div style={{
+            width: '100%', maxWidth: 440, marginTop: 28,
+            paddingBottom: 'calc(52px + env(safe-area-inset-bottom, 0px))',
+          }}>
             <MeetTheCouncil />
-            {userId && <ReferralLink userId={userId} />}
           </div>
         </div>
       )}
 
-      {/* Input — its own row, full width; voice and send sit below it on a
-          second row so neither crowds the other on narrow screens.
-          Bottom padding is deliberately generous (52px, not just the safe-
-          area inset): globals.css's .visitor-counter pill is fixed at
-          bottom:20/left:20 site-wide (see VisitorCounter.tsx) — on a screen
-          this short, that corner is exactly where the mic button would
-          otherwise sit, so this clears it rather than rendering underneath
-          it. */}
-      <form
-        onSubmit={e => { e.preventDefault(); send(input) }}
-        style={{
-          display: 'flex', flexDirection: 'column', gap: 8,
-          padding: '10px 16px calc(52px + env(safe-area-inset-bottom, 0px))',
-          borderTop: '1px solid var(--border-dim)',
-        }}
-      >
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
-          }}
-          placeholder={transitioning ? 'One moment…' : 'Type here…'}
-          rows={1}
-          disabled={transitioning}
-          style={{
-            width: '100%', resize: 'none', maxHeight: 120, padding: '11px 14px',
-            borderRadius: 14, border: '1px solid var(--border-mid)',
-            background: 'var(--bg-inset)', color: 'var(--text-1)',
-            fontSize: 16, fontFamily: 'var(--font-body)',
-            opacity: transitioning ? 0.6 : 1,
-          }}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
-          <button
-            type="submit"
-            disabled={sending || transitioning || !input.trim()}
-            style={{
-              flex: 1, maxWidth: 140, padding: '11px 18px', borderRadius: 14, border: 'none',
-              background: input.trim() && !transitioning ? 'var(--gold)' : 'var(--border-dim)',
-              color: input.trim() && !transitioning ? 'var(--bg-void)' : 'var(--text-4)',
-              fontWeight: 600, fontSize: 15, cursor: input.trim() && !transitioning ? 'pointer' : 'default',
-            }}
-          >
-            Send
-          </button>
-        </div>
-        {/* Item 6 plan, Phase 1 — the classic home page's live bias detector
-            (app/HomeClient.tsx) had no equivalent here at all. Same
-            component, same two props, wired to this screen's own input
-            state instead of HomeClient's `decision` state. */}
-        <BehaviorAlerts decision={input} authToken={authToken} />
-      </form>
+      {/* Input — pinned to the screen bottom once the thread view takes
+          over (see inputForm's own definition above for the hero-state
+          version, which renders inline instead). Voice and send sit below
+          the textarea on a second row so neither crowds the other on
+          narrow screens. */}
+      {started && inputForm}
 
       <style jsx>{`
         @keyframes chatDotPulse {

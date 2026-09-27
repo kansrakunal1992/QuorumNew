@@ -52,7 +52,6 @@ export default function NaturalIntakeClient() {
 
   // ── Phase 0 — shared plumbing ────────────────────────────────────────────
   const [authToken, setAuthToken]   = useState<string | null>(null)
-  const [userId, setUserId]         = useState<string | null>(null)
   const [userEmail, setUserEmail]   = useState<string | null>(null)
   const [mirrorStatus, setMirrorStatus]           = useState<MirrorStatus | null>(null)
   const [patternDimensions, setPatternDimensions] = useState<DimPattern[]>([])
@@ -75,7 +74,10 @@ export default function NaturalIntakeClient() {
         const token = session?.access_token ?? null
         if (cancelled) return
         setAuthToken(token)
-        setUserId(session?.user?.id ?? null)
+        // Item 6 plan, round 2: userId is no longer needed here — it only
+        // ever fed ChatIntake's ReferralLink, which has moved to the record
+        // page (app/record/[id]/page.tsx), where session.user_id already
+        // covers the same need without this component fetching it too.
         if (session?.user?.email) setUserEmail(session.user.email)
         if (!token) return
 
@@ -202,7 +204,6 @@ export default function NaturalIntakeClient() {
           onChatIntakeId={setChatIntakeId}
           onReadyToReflect={handleReadyToReflect}
           authToken={authToken}
-          userId={userId}
           userEmail={userEmail}
           onUserEmailChange={setUserEmail}
           mirrorStatus={mirrorStatus}

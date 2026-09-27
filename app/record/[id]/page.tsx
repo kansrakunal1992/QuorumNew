@@ -10,6 +10,7 @@ import ValidationCard from '@/components/ValidationCard'
 import Link from 'next/link'
 import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
 import ShareRecordButton from '@/components/ShareRecordButton'
+import ReferralLink from '@/components/ReferralLink'          // item 6 plan, round 2 — moved here from the Natural Intake hero
 import BackButton from '@/components/BackButton'
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
@@ -1417,6 +1418,20 @@ export default async function RecordPage({ params }: Props) {
                 foundingAvailable={foundingAvailable}
                 avgCalibrationDelta={avgCalibrationDelta}
               />
+            </div>
+          )}
+
+          {/* Item 6 plan, round 2 — referral link. Previously lived on the
+              Natural Intake hero (and, before that, the classic home page),
+              shown before the person had even asked their first question.
+              Moved here: right after they've seen a full decision worked
+              through, which is the point they actually have something to
+              tell a friend about, and signed-in-only (session.user_id) so
+              it never nudges an anonymous visitor to invite people before
+              they've signed up themselves. */}
+          {session.user_id && (
+            <div className="rec-fade rec-fade-4">
+              <ReferralLink userId={session.user_id} />
             </div>
           )}
 
