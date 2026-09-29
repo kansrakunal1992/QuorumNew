@@ -13,7 +13,8 @@ import { disconnectConnector, type ConnectorProvider } from '@/lib/connectors/to
 
 export async function POST(req: Request, { params }: { params: Promise<{ provider: string }> }) {
   const { provider } = await params
-  if (provider !== 'slack' && provider !== 'teams') {
+  const known = ['slack', 'teams', 'gmail', 'outlook']
+  if (!known.includes(provider)) {
     return NextResponse.json({ error: 'Unknown provider' }, { status: 400 })
   }
 

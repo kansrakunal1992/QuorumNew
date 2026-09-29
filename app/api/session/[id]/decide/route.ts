@@ -18,6 +18,7 @@ import { createServiceClient }     from '@/lib/supabase'
 import { encrypt, decrypt }        from '@/lib/encryption'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { countMatchingPastPattern } from '@/lib/prediction-engine'
+import { evaluateSessionReflections } from '@/lib/stakeholder-network'   // Phase 5, v3
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -126,6 +127,14 @@ export async function POST(req: Request, { params }: Params) {
     console.error('[decide] save failed', error)
     return NextResponse.json({ error: 'Failed to save' }, { status: 500 })
   }
+
+  // Phase 5, v3 — fire-and-forget, same pattern as this codebase's other
+  // post-write async enrichment calls (e.g. the ontology tagger fired from
+  // app/api/session/route.ts). Never awaited: a slow or failed reflection
+  // check must not delay or break the response the user is waiting on.
+  evaluateSessionReflections(sessionId, finalDecision).catch(err =>
+    console.error('[decide] stakeholder reflection evaluation failed:', err),
+  )
 
   return NextResponse.json({
     predictionMatched,

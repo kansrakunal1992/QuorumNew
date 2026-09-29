@@ -10,7 +10,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 
-export type ConnectorProvider = 'slack' | 'teams'
+export type ConnectorProvider = 'slack' | 'teams' | 'gmail' | 'outlook'   // gmail/outlook added Phase 4, v3
 
 interface ConnectorState {
   enabled:       boolean
@@ -19,8 +19,10 @@ interface ConnectorState {
 }
 
 interface StatusResponse {
-  slack: ConnectorState
-  teams: ConnectorState
+  slack:   ConnectorState
+  teams:   ConnectorState
+  gmail:   ConnectorState
+  outlook: ConnectorState
 }
 
 interface Props {
@@ -28,24 +30,13 @@ interface Props {
   onStatus?:  (status: StatusResponse) => void
 }
 
-const LABEL: Record<ConnectorProvider, string> = { slack: 'Slack', teams: 'Microsoft Teams' }
-
-// Shown once, inline, the first time someone taps Connect for a given
-// provider — before they're sent to the real OAuth screen. Per
-// docs/PRIVACY_COPY_DRAFT_v1.md's "consent language shown at first
-// connect" draft, reworded per-provider and wired in here so it actually
-// ships with the connect flow instead of living only as draft copy.
-const CONSENT_COPY: Record<ConnectorProvider, string> = {
-  slack:
-    'Quorum will only search Slack when you ask it to, for exactly what you ask it to find \u2014 never a background scan of your channels or DMs. You\u2019ll see what it found before any of it is used. Anything you send goes out from your own Slack account, as you, and only after you\u2019ve reviewed the message \u2014 nothing sends on its own. Disconnect anytime from here; anything already imported can be deleted along with the rest of your data.',
-  teams:
-    'Quorum will only search Teams when you ask it to, for exactly what you ask it to find \u2014 never a background scan of your chats. You\u2019ll see what it found before any of it is used. Anything you send goes out from your own Teams account, as you, and only after you\u2019ve reviewed the message \u2014 nothing sends on its own. Disconnect anytime from here; anything already imported can be deleted along with the rest of your data.',
+const LABEL: Record<ConnectorProvider, string> = {
+  slack: 'Slack', teams: 'Microsoft Teams', gmail: 'Gmail', outlook: 'Outlook',
 }
 
 export default function ConnectorSettings({ authToken, onStatus }: Props) {
   const [status, setStatus]   = useState<StatusResponse | null>(null)
   const [connecting, setConnecting] = useState<ConnectorProvider | null>(null)
-  const [confirming, setConfirming] = useState<ConnectorProvider | null>(null)
 
   const refresh = useCallback(() => {
     fetch('/api/connectors/status', {
@@ -75,7 +66,6 @@ export default function ConnectorSettings({ authToken, onStatus }: Props) {
 
   async function connect(provider: ConnectorProvider) {
     if (!authToken) return
-    setConfirming(null)
     setConnecting(provider)
     try {
       const returnPath = window.location.pathname + window.location.search
@@ -101,68 +91,39 @@ export default function ConnectorSettings({ authToken, onStatus }: Props) {
 
   if (!status) return null
 
-  const providers: ConnectorProvider[] = (['slack', 'teams'] as const).filter(p => status[p].enabled)
+  const providers: ConnectorProvider[] = (['slack', 'teams', 'gmail', 'outlook'] as const).filter(p => status[p].enabled)
   if (!providers.length) return null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {providers.map(p => (
-        <div key={p} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13.5 }}>
-            <span style={{ color: 'var(--text-3)' }}>
-              {status[p].connected
-                ? `${LABEL[p]} — connected${status[p].workspaceName ? ` as ${status[p].workspaceName}` : ''}`
-                : LABEL[p]}
-            </span>
-            {status[p].connected ? (
-              <button
-                type="button"
-                onClick={() => disconnect(p)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
-              >
-                Disconnect
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirming(confirming === p ? null : p)}
-                disabled={connecting === p || !authToken}
-                style={{
-                  background: 'none', border: '1px solid var(--border-mid)', borderRadius: 8,
-                  padding: '4px 10px', color: 'var(--text-2)', fontSize: 13,
-                  cursor: authToken ? 'pointer' : 'default', opacity: authToken ? 1 : 0.5,
-                }}
-              >
-                {connecting === p ? 'Connecting…' : 'Connect'}
-              </button>
-            )}
-          </div>
-
-          {/* First-connect consent — shown inline before handing off to the
-              provider's real OAuth screen, never skipped. */}
-          {confirming === p && !status[p].connected && (
-            <div style={{
-              background: 'var(--bg-inset)', border: '1px solid var(--border-dim)',
-              borderRadius: 10, padding: 10, fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.45,
-            }}>
-              {CONSENT_COPY[p]}
-              <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => connect(p)}
-                  style={{ background: 'none', border: 'none', color: 'var(--gold-bright)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                >
-                  Continue to {LABEL[p]}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirming(null)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 12.5, cursor: 'pointer', padding: 0 }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+        <div key={p} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13.5 }}>
+          <span style={{ color: 'var(--text-3)' }}>
+            {status[p].connected
+              ? `${LABEL[p]} — connected${status[p].workspaceName ? ` as ${status[p].workspaceName}` : ''}`
+              : LABEL[p]}
+          </span>
+          {status[p].connected ? (
+            <button
+              type="button"
+              onClick={() => disconnect(p)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Disconnect
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => connect(p)}
+              disabled={connecting === p || !authToken}
+              style={{
+                background: 'none', border: '1px solid var(--border-mid)', borderRadius: 8,
+                padding: '4px 10px', color: 'var(--text-2)', fontSize: 13,
+                cursor: authToken ? 'pointer' : 'default', opacity: authToken ? 1 : 0.5,
+              }}
+            >
+              {connecting === p ? 'Connecting…' : 'Connect'}
+            </button>
           )}
         </div>
       ))}

@@ -14,7 +14,7 @@ import 'server-only'
 import { createServiceClient } from '@/lib/supabase'
 import { encrypt, decrypt } from '@/lib/encryption'
 
-export type ConnectorProvider = 'slack' | 'teams'
+export type ConnectorProvider = 'slack' | 'teams' | 'gmail' | 'outlook'   // gmail/outlook added Phase 4, v3
 
 export interface ConnectorAccount {
   id:                 string

@@ -20,11 +20,11 @@ import type { CSSProperties } from 'react'
 import type { ChatStakeholderMention } from '@/lib/types'
 import ConnectorSettings, { type ConnectorProvider } from '@/components/ConnectorSettings'
 
-type Channel = 'slack' | 'teams' | 'whatsapp' | 'manual'
+type Channel = 'slack' | 'teams' | 'gmail' | 'outlook' | 'whatsapp' | 'manual'
 
 interface SearchMatch {
-  targetId:    string   // Slack: channel id. Teams: chat id.
-  channelName: string   // Slack: channel/DM name (also used for check-replies). Teams: chat topic.
+  targetId:    string   // Slack: channel id. Teams: chat id. Outlook: message id (unused for send, kept for symmetry).
+  channelName: string   // Slack: channel/DM name. Teams: chat topic. Outlook: the sender's email address — used as "to" for send + check-replies.
   label:       string
   snippet:     string
 }
@@ -55,11 +55,12 @@ type Phase = 'prompt' | 'channel' | 'search' | 'draft' | 'sent' | 'paste' | 'sav
 
 export default function StakeholderOutreach({ sessionId, stakeholders, authToken }: Props) {
   const [phase, setPhase]           = useState<Phase>('prompt')
-  const [history, setHistory]       = useState<Phase[]>([])   // enables the header's Back button — see goToPhase/goBack below
   const [expanded, setExpanded]     = useState(false)
   const [person, setPerson]         = useState(stakeholders[0] ?? null)
   const [channel, setChannel]       = useState<Channel | null>(null)
-  const [connectors, setConnectors] = useState<{ slack: boolean; teams: boolean }>({ slack: false, teams: false })
+  const [connectors, setConnectors] = useState<{ slack: boolean; teams: boolean; gmail: boolean; outlook: boolean }>({ slack: false, teams: false, gmail: false, outlook: false })
+  const [toAddress, setToAddress]   = useState('')       // Gmail only — no search to resolve an address from
+  const [subject, setSubject]       = useState('Quick question')   // Gmail/Outlook only
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchMatch[] | null>(null)
@@ -83,66 +84,35 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
   const authedFetch = (url: string, init: RequestInit = {}) =>
     fetch(url, { ...init, headers: { ...(init.headers ?? {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) } })
 
-  // Every forward step goes through here instead of setPhase directly, so
-  // the header's Back button can always unwind exactly one step — whichever
-  // phase the user actually came from (this is what lets 'paste', reached
-  // either straight from 'prompt' or via 'sent', pop back to the right place
-  // without special-casing either route).
-  function goToPhase(next: Phase) {
-    setHistory(h => [...h, phase])
-    setPhase(next)
-  }
-
-  function goBack() {
-    if (!history.length) return
-    setPhase(history[history.length - 1])
-    setHistory(h => h.slice(0, -1))
-    setSendError(null)
-  }
-
-  // Shared by startDraft (first draft, moves the phase forward) and
-  // regenerateDraft (re-rolls the text in place, phase untouched) — pulled
-  // out so "Regenerate" can't accidentally re-trigger the search-step
-  // detour startDraft needs on first entry for Slack/Teams.
-  async function fetchDraft(ch: Channel) {
+  async function startDraft(ch: Channel) {
+    setChannel(ch)
     setDrafting(true)
+    const needsSearch = ch === 'slack' || ch === 'teams' || ch === 'outlook'
+    setPhase(needsSearch ? 'search' : 'draft')
+    if (needsSearch) setSearchQuery(person!.name)
+
     try {
       const res = await authedFetch('/api/stakeholder-outreach/draft', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId, stakeholderName: person!.name, role: person!.role ?? null,
-          consultReason: person!.consultReason ?? null, channel: ch === 'manual' ? 'manual' : ch,
+          consultReason: person!.consultReason ?? null,
+          channel: ch === 'manual' ? 'manual' : (ch === 'gmail' || ch === 'outlook') ? 'email' : ch,
         }),
       })
       const data = await res.json()
       setDraftText(data.draftText ?? '')
       setWhatsappLink(data.whatsappLink ?? null)
     } catch (err) {
-      console.error('[StakeholderOutreach] draft fetch failed:', err)
+      console.error('[StakeholderOutreach] draft failed:', err)
     } finally {
       setDrafting(false)
     }
   }
 
-  async function startDraft(ch: Channel) {
-    setChannel(ch)
-    goToPhase(ch === 'slack' || ch === 'teams' ? 'search' : 'draft')
-    if (ch === 'slack' || ch === 'teams') setSearchQuery(person!.name)
-    await fetchDraft(ch)
-  }
-
-  // "Regenerate" — was previously wired to startDraft(channel!), which for
-  // Slack/Teams re-ran the ch==='slack'||'teams' branch and silently kicked
-  // the phase back to 'search' (the user would look like they'd lost their
-  // place). Regenerating should only ever refetch the text.
-  async function regenerateDraft() {
-    if (!channel) return
-    await fetchDraft(channel)
-  }
-
   async function runSearch() {
-    if (!channel || (channel !== 'slack' && channel !== 'teams') || !searchQuery.trim()) return
+    if (!channel || (channel !== 'slack' && channel !== 'teams' && channel !== 'outlook') || !searchQuery.trim()) return
     setSearching(true)
     setSearchResults(null)
     try {
@@ -151,12 +121,11 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
         body: JSON.stringify({ query: searchQuery.trim() }),
       })
       const data = await res.json()
-      const matches: SearchMatch[] = (data.matches ?? []).map((m: any) => ({
-        targetId:    channel === 'slack' ? m.channelId : m.chatId,
-        channelName: channel === 'slack' ? m.channelName : m.chatTopic,
-        label:       channel === 'slack' ? `#${m.channelName || 'DM'}` : m.chatTopic,
-        snippet:     m.text?.slice(0, 90) ?? '',
-      }))
+      const matches: SearchMatch[] = (data.matches ?? []).map((m: any) => {
+        if (channel === 'slack')   return { targetId: m.channelId, channelName: m.channelName, label: `#${m.channelName || 'DM'}`, snippet: m.text?.slice(0, 90) ?? '' }
+        if (channel === 'outlook') return { targetId: m.messageId, channelName: m.fromAddress ?? '', label: m.fromName || m.fromAddress || 'Unknown sender', snippet: `${m.subject ?? ''} — ${m.text ?? ''}`.slice(0, 90) }
+        return { targetId: m.chatId, channelName: m.chatTopic, label: m.chatTopic, snippet: m.text?.slice(0, 90) ?? '' }
+      })
       setSearchResults(matches)
     } catch (err) {
       console.error('[StakeholderOutreach] search failed:', err)
@@ -168,37 +137,43 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
 
   function pickTarget(m: SearchMatch) {
     setTarget(m)
-    goToPhase('draft')
+    setPhase('draft')
   }
 
   async function send() {
     if (!channel) return
     setSendError(null)
-    setReplies(null)   // clear any replies shown for a previous send before this one starts
 
     if (channel === 'whatsapp') {
       if (whatsappLink) window.open(whatsappLink, '_blank')
-      goToPhase('sent')
+      setPhase('sent')
       return
     }
     if (channel === 'manual') {
       // "Copy" path — nothing to send via API; clipboard, then straight to
       // the paste-a-reply step (there's nothing to poll for).
       try { await navigator.clipboard.writeText(draftText) } catch { /* clipboard permission denied — text is still selectable on screen */ }
-      goToPhase('sent')
+      setPhase('sent')
       return
     }
-    if (!target) return
+    if (channel === 'gmail' && !toAddress.trim()) { setSendError('Add their email address first.'); return }
+    if ((channel === 'slack' || channel === 'teams' || channel === 'outlook') && !target) return
+
+    const body = channel === 'gmail'
+      ? { to: toAddress.trim(), subject: subject.trim(), text: draftText }
+      : channel === 'outlook'
+        ? { to: target!.channelName, subject: subject.trim(), text: draftText }
+        : { targetId: target!.targetId, text: draftText }
 
     try {
       const res = await authedFetch(`/api/connectors/${channel}/send`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetId: target.targetId, text: draftText }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Send failed')
       setSentMarker(data.sentMarker)
-      goToPhase('sent')
+      setPhase('sent')
     } catch (err) {
       console.error('[StakeholderOutreach] send failed:', err)
       setSendError('Couldn\u2019t send that — want to try again, or copy it instead?')
@@ -206,12 +181,16 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
   }
 
   async function checkForReplies() {
-    if (!channel || (channel !== 'slack' && channel !== 'teams') || !sentMarker || !target) return
+    if (!channel || (channel !== 'slack' && channel !== 'teams' && channel !== 'outlook') || !sentMarker || !target) return
     setCheckingReplies(true)
     try {
       const res = await authedFetch(`/api/connectors/${channel}/check-replies`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetId: target.targetId, channelName: target.channelName, sentAfter: sentMarker }),
+        body: JSON.stringify({
+          targetId: target.targetId, channelName: target.channelName,
+          fromAddress: channel === 'outlook' ? target.channelName : undefined,
+          sentAfter: sentMarker,
+        }),
       })
       const data = await res.json()
       setReplies((data.matches ?? []).map((m: any) => ({ text: m.text, userName: m.userName, timestamp: m.timestamp })))
@@ -236,7 +215,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
           sourceTimestamp: timestamp ? new Date(Number(timestamp) * 1000 || timestamp).toISOString() : undefined,
         }),
       })
-      goToPhase('saved')
+      setPhase('saved')
     } catch (err) {
       console.error('[StakeholderOutreach] save failed:', err)
     } finally {
@@ -269,32 +248,23 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
   return (
     <div style={cardStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {history.length > 0 && (
-            <button
-              type="button"
-              onClick={goBack}
-              style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 13, cursor: 'pointer', padding: 0 }}
-            >
-              ← Back
-            </button>
-          )}
-          <div style={{ fontSize: 15, color: 'var(--text-1)' }}>Asking {person.name}</div>
-        </div>
+        <div style={{ fontSize: 15, color: 'var(--text-1)' }}>Asking {person.name}</div>
         <button style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 13, cursor: 'pointer' }} onClick={() => setExpanded(false)}>Close</button>
       </div>
 
       {phase === 'prompt' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <ConnectorSettings authToken={authToken} onStatus={s => setConnectors({ slack: s.slack.connected, teams: s.teams.connected })} />
+          <ConnectorSettings authToken={authToken} onStatus={s => setConnectors({ slack: s.slack.connected, teams: s.teams.connected, gmail: s.gmail.connected, outlook: s.outlook.connected })} />
           <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 4 }}>How do you want to reach them?</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {connectors.slack && <button style={smallBtn} onClick={() => startDraft('slack')}>Slack</button>}
             {connectors.teams && <button style={smallBtn} onClick={() => startDraft('teams')}>Teams</button>}
+            {connectors.gmail && <button style={smallBtn} onClick={() => startDraft('gmail')}>Gmail</button>}
+            {connectors.outlook && <button style={smallBtn} onClick={() => startDraft('outlook')}>Outlook</button>}
             <button style={smallBtn} onClick={() => startDraft('whatsapp')}>WhatsApp</button>
             <button style={smallBtn} onClick={() => startDraft('manual')}>Copy a message</button>
           </div>
-          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => goToPhase('paste')}>
+          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => setPhase('paste')}>
             Already have something {person.name.split(' ')[0]} said? Paste it in
           </button>
         </div>
@@ -306,7 +276,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
             <input
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder={`Search ${channel === 'slack' ? 'Slack' : 'Teams'} for ${person.name}`}
+              placeholder={`Search ${channel === 'slack' ? 'Slack' : channel === 'outlook' ? 'Outlook' : 'Teams'} for ${person.name}`}
               style={{ flex: 1, padding: 10, borderRadius: 10, border: '1px solid var(--border-mid)', background: 'var(--bg-inset)', color: 'var(--text-1)', fontSize: 14 }}
             />
             <button style={smallPrimaryBtn} onClick={runSearch} disabled={searching}>{searching ? '…' : 'Search'}</button>
@@ -334,23 +304,34 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
             <div style={{ fontSize: 13.5, color: 'var(--text-4)', fontStyle: 'italic' }}>Drafting…</div>
           ) : (
             <>
+              {channel === 'gmail' && (
+                <input
+                  value={toAddress}
+                  onChange={e => setToAddress(e.target.value)}
+                  placeholder={`${person.name}'s email address`}
+                  style={{ padding: 10, borderRadius: 10, border: '1px solid var(--border-mid)', background: 'var(--bg-inset)', color: 'var(--text-1)', fontSize: 14 }}
+                />
+              )}
+              {(channel === 'gmail' || channel === 'outlook') && (
+                <input
+                  value={subject}
+                  onChange={e => setSubject(e.target.value)}
+                  placeholder="Subject"
+                  style={{ padding: 10, borderRadius: 10, border: '1px solid var(--border-mid)', background: 'var(--bg-inset)', color: 'var(--text-1)', fontSize: 14 }}
+                />
+              )}
               <textarea
                 value={draftText}
                 onChange={e => setDraftText(e.target.value)}
                 rows={4}
                 style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border-mid)', background: 'var(--bg-inset)', color: 'var(--text-1)', fontSize: 14.5, resize: 'vertical' }}
               />
-              {(channel === 'slack' || channel === 'teams') && (
-                <div style={{ fontSize: 12, color: 'var(--text-4)' }}>
-                  This will be sent from your own {channel === 'slack' ? 'Slack' : 'Teams'} account, as you. Nothing goes out until you tap Send.
-                </div>
-              )}
               {sendError && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{sendError}</div>}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={smallPrimaryBtn} onClick={send}>
-                  {channel === 'whatsapp' ? 'Open in WhatsApp' : channel === 'manual' ? 'Copy' : `Send${target ? ` to ${target.label}` : ''}`}
+                  {channel === 'whatsapp' ? 'Open in WhatsApp' : channel === 'manual' ? 'Copy' : channel === 'gmail' ? 'Send email' : `Send${target ? ` to ${target.label}` : ''}`}
                 </button>
-                <button style={smallBtn} onClick={regenerateDraft}>Regenerate</button>
+                <button style={smallBtn} onClick={() => startDraft(channel!)}>Regenerate</button>
               </div>
             </>
           )}
@@ -362,7 +343,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
           <div style={{ fontSize: 14, color: 'var(--gold-bright)' }}>
             {channel === 'manual' ? 'Copied.' : channel === 'whatsapp' ? 'Opened in WhatsApp.' : 'Sent.'}
           </div>
-          {(channel === 'slack' || channel === 'teams') ? (
+          {(channel === 'slack' || channel === 'teams' || channel === 'outlook') ? (
             <>
               <button style={smallBtn} onClick={checkForReplies} disabled={checkingReplies}>
                 {checkingReplies ? 'Checking…' : 'Check for a reply'}
@@ -387,7 +368,7 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
           ) : (
             <div style={{ fontSize: 13, color: 'var(--text-4)' }}>Once they reply, come back and paste it in.</div>
           )}
-          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => goToPhase('paste')}>
+          <button style={{ ...smallBtn, border: 'none', textDecoration: 'underline', width: 'fit-content' }} onClick={() => setPhase('paste')}>
             Paste their reply myself
           </button>
         </div>

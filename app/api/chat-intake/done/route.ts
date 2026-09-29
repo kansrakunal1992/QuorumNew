@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { encrypt } from '@/lib/encryption'
 import { isNaturalIntakeEnabled } from '@/lib/feature-flags'
+import { evaluateSessionReflections } from '@/lib/stakeholder-network'   // Phase 5, v3
 
 export async function POST(req: Request) {
   if (!isNaturalIntakeEnabled()) {
@@ -50,6 +51,18 @@ export async function POST(req: Request) {
     if (error) {
       console.error('[ChatIntake Done] update failed:', error)
       return NextResponse.json({ error: 'Failed to save' }, { status: 500 })
+    }
+
+    // Phase 5, v3 — same fire-and-forget pattern as
+    // app/api/session/[id]/decide/route.ts. Only runs when a real next
+    // action was given: that's the closest thing to "the decision" this
+    // light-path exit produces (there's no separate final_decision field
+    // here), and with no next action there's nothing meaningful to compare
+    // a stakeholder's input against anyway.
+    if (nextAction?.trim()) {
+      evaluateSessionReflections(sessionId, nextAction.trim()).catch(err =>
+        console.error('[ChatIntake Done] stakeholder reflection evaluation failed:', err),
+      )
     }
 
     return NextResponse.json({ ok: true, committed: !!nextAction?.trim() })
