@@ -208,6 +208,22 @@ export interface ChatDecisionState {
   // Missing piece #1 — kept distinct from any later, more considered lean.
   initialReaction?:    DecisionOptionType | null
   userCorrections?:    string[]
+  // ── v4: Examiner-aligned slots, captured conversationally ────────────────
+  // The Examiner always asks E0 (gut / emotion) and C0 (what a good outcome
+  // looks like). Capturing them in the chat lets the checkpoint confirm them
+  // with one tap instead of asking the person the same thing twice.
+  // Both are the person's own words, as closely as the transcript allows.
+  gutFeeling?:         string | null
+  successPicture?:     string | null
+  // ── v4: set ONLY by the end-of-chat chips (POST /api/chat-intake/lean) ───
+  // Never written by the extraction model, and carried forward across
+  // extraction runs by lib/chat-intake-state.ts so a later chat turn can't
+  // silently drop them. chosenLean uses the same 3-value contract as
+  // sessions.initial_instinct; chosenLeanLabel is the exact option text the
+  // person tapped (null for "not sure yet").
+  chosenLean?:           'accept' | 'reject' | 'unsure' | null
+  chosenLeanLabel?:      string | null
+  optimizationPriority?: string | null
 }
 
 export interface ChatIntake {

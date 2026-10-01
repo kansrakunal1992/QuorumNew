@@ -107,14 +107,32 @@ export async function POST(req: Request) {
     // session_depth: 'checkpoint' — see supabase/sprint_natural_intake_v1.sql's
     // comment on this column. Not read by any v1 Mirror code yet; set here
     // so the deferred fast-follow has correct historical data once it ships.
-    await supabase.from('sessions').update({ session_depth: 'checkpoint' }).eq('id', sessionId)
+    // It flips to 'council' when the first synthesis completes (see
+    // app/api/session/[id]/synthesis-version/route.ts).
+    //
+    // v4: the end-of-chat lean + priority chips (POST /api/chat-intake/lean)
+    // are copied onto the session here, in the same write, so the prediction
+    // can start the instant the person confirms — it needs both set
+    // (app/api/persona/predict/route.ts returns 409 otherwise). Both or
+    // neither: a half-set pair would just trip that 409 later.
+    const sessionPatch: Record<string, unknown> = { session_depth: 'checkpoint' }
+    if (state.chosenLean && state.optimizationPriority) {
+      sessionPatch.initial_instinct      = state.chosenLean
+      sessionPatch.optimization_priority = state.optimizationPriority
+    }
+    await supabase.from('sessions').update(sessionPatch).eq('id', sessionId)
 
     await supabase
       .from('chat_intakes')
       .update({ status: 'checkpointed', session_id: sessionId })
       .eq('id', chatIntakeId)
 
-    return NextResponse.json({ sessionId })
+    // leanSaved tells the client whether the prediction can start right away
+    // (false = an older in-flight chat that never saw the chips).
+    return NextResponse.json({
+      sessionId,
+      leanSaved: !!(state.chosenLean && state.optimizationPriority),
+    })
   } catch (err) {
     console.error('[ChatIntake Checkpoint] error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

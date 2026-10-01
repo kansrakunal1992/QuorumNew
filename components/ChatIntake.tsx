@@ -14,7 +14,8 @@
 //
 // A brand-new file — HomeClient.tsx and SessionView.tsx are not touched.
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -32,7 +33,10 @@ import HeroCardCollapsible from '@/components/HeroCardCollapsible' // item 6 pla
 import type { DimPattern } from '@/components/RecurringConditionCard'
 import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
-import type { MirrorStatus } from '@/lib/types'
+import type { MirrorStatus, ChatDecisionState } from '@/lib/types'
+import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import { buildLeanChoices, matchSavedLean, PRIORITIES } from '@/lib/chat-intake-lean'
+import type { LeanChoice } from '@/lib/chat-intake-lean'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
 
 interface ChatBubble {
@@ -93,7 +97,19 @@ export default function ChatIntake({
   const [bubbles, setBubbles]   = useState<ChatBubble[]>([])
   const [input, setInput]       = useState('')
   const [sending, setSending]   = useState(false)
-  const [transitioning, setTransitioning] = useState(false)
+  // v4 — the chat no longer hands off on a timer. When the server says the
+  // conversation is complete, `closing` holds what the end-of-chat panel
+  // needs (the id to hand off, and the state the lean chips are built from);
+  // the input stays locked while it's set. The panel's Continue button is the
+  // transition — nothing waits on a clock.
+  const [closing, setClosing] = useState<{ chatIntakeId: string; state: ChatDecisionState } | null>(null)
+  const transitioning = !!closing
+  const [leanPick, setLeanPick]         = useState<LeanChoice | null>(null)
+  const [priorityPick, setPriorityPick] = useState<string | null>(null)
+  const [savingLean, setSavingLean]     = useState(false)
+  const [leanError, setLeanError]       = useState<string | null>(null)
+  const unified = isUnifiedSessionEnabled()
+  const leanChoices = useMemo(() => (closing ? buildLeanChoices(closing.state.options) : []), [closing])
   const [exchangeCount, setExchangeCount] = useState(0)
   const [faqOpen, setFaqOpen]   = useState(false)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
@@ -169,7 +185,7 @@ export default function ChatIntake({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [bubbles, sending])
+  }, [bubbles, sending, closing])
 
   const send = useCallback(async (text: string) => {
     const trimmed = text.trim()
@@ -198,16 +214,17 @@ export default function ChatIntake({
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
 
       if (data.readyToReflect) {
-        // 5 full seconds (was 900ms) — product feedback: the closing line
-        // now actually previews what's coming next (see chat-intake-reply.ts's
-        // FOLLOW_UP_PROMPT), so it needs real time to be read, not just
-        // glimpsed before the screen changes underneath it. transitioning
-        // disables the input below for this whole window — otherwise
-        // there's a real window where sending gets set back to false (see
-        // finally, below) while the person could still type and hit Send
-        // into a chat that's about to be replaced by the checkpoint screen.
-        setTransitioning(true)
-        setTimeout(() => onReadyToReflect(data.chatIntakeId ?? chatIntakeId!), 5000)
+        // v4: no timer. The closing line stays on screen with the lean /
+        // priority panel directly beneath it (or just a Continue button when
+        // the unified session flag is off, since the chips only exist for it).
+        // Preselects any earlier tap, so someone who came back via "Let me
+        // add more first" doesn't have to pick everything again.
+        const st      = (data.state ?? {}) as ChatDecisionState
+        const choices = buildLeanChoices(st.options)
+        setLeanPick(matchSavedLean(choices, st.chosenLean, st.chosenLeanLabel))
+        setPriorityPick(st.optimizationPriority ?? null)
+        setLeanError(null)
+        setClosing({ chatIntakeId: data.chatIntakeId ?? chatIntakeId!, state: st })
       }
     } catch (err) {
       console.error('[ChatIntake] send failed:', err)
@@ -216,7 +233,50 @@ export default function ChatIntake({
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [chatIntakeId, deviceId, grantExtraExchanges, sending, transitioning, onChatIntakeId, onReadyToReflect])
+  }, [chatIntakeId, deviceId, grantExtraExchanges, sending, transitioning, onChatIntakeId])
+
+  const canContinue = unified ? (!!leanPick && !!priorityPick && !savingLean) : !savingLean
+
+  async function handleContinue() {
+    if (!closing || !canContinue) return
+    if (!unified) { onReadyToReflect(closing.chatIntakeId); return }
+    if (!leanPick || !priorityPick) return
+
+    setSavingLean(true)
+    setLeanError(null)
+    try {
+      const res = await fetch('/api/chat-intake/lean', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatIntakeId:         closing.chatIntakeId,
+          initialInstinct:      leanPick.value,
+          optimizationPriority: priorityPick,
+          label:                leanPick.isUnsure ? null : leanPick.fullLabel,
+        }),
+      })
+      if (!res.ok) throw new Error('lean save failed')
+      onReadyToReflect(closing.chatIntakeId)   // parent swaps this screen out
+    } catch (err) {
+      console.error('[ChatIntake] lean save failed:', err)
+      setLeanError("That didn't save — tap Continue to try again.")
+      setSavingLean(false)
+    }
+  }
+
+  function handleAddMore() {
+    setClosing(null)
+    setLeanError(null)
+    inputRef.current?.focus()
+  }
+
+  const chipStyle = (selected: boolean): CSSProperties => ({
+    padding: '9px 14px', borderRadius: 999, fontSize: 14.5, lineHeight: 1.3,
+    border: selected ? '1px solid var(--gold)' : '1px solid var(--border-mid)',
+    background: selected ? 'var(--gold-dim)' : 'transparent',
+    color: selected ? 'var(--text-1)' : 'var(--text-2)',
+    cursor: 'pointer', textAlign: 'left',
+  })
 
   // Item 6 plan, round 2 — extracted so the exact same input row can render
   // in two different places depending on `started`: inline in the hero
@@ -242,7 +302,7 @@ export default function ChatIntake({
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
         }}
-        placeholder={transitioning ? 'One moment…' : 'Type here…'}
+        placeholder={transitioning ? 'Tap your answers above…' : 'Type here…'}
         rows={1}
         disabled={transitioning}
         style={{
@@ -385,6 +445,84 @@ export default function ChatIntake({
                   animation: `chatDotPulse 1.1s ${i * 0.15}s infinite ease-in-out`,
                 }} />
               ))}
+            </div>
+          )}
+
+          {/* v4 — end-of-chat panel: the lean + priority taps that used to be
+              a separate screen after the checkpoint. Tap-only (no typing),
+              both required before Continue, saved before the person ever sees
+              Quorum's prediction (bias protection). */}
+          {closing && (
+            <div style={{
+              alignSelf: 'stretch', background: 'var(--bg-card)',
+              border: '1px solid var(--border-dim)', borderRadius: 16,
+              padding: 16, display: 'flex', flexDirection: 'column', gap: 16,
+            }}>
+              {unified && (
+                <>
+                  <div>
+                    <p style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-1)', margin: '0 0 10px' }}>
+                      Where are you leaning?
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {leanChoices.map((c, i) => (
+                        <button
+                          key={`${i}-${c.fullLabel}`}
+                          type="button"
+                          title={c.fullLabel}
+                          onClick={() => setLeanPick(c)}
+                          style={chipStyle(leanPick?.fullLabel === c.fullLabel)}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-1)', margin: '0 0 10px' }}>
+                      What matters most here?
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {PRIORITIES.map(p => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          onClick={() => setPriorityPick(p.value)}
+                          style={chipStyle(priorityPick === p.value)}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+              {leanError && (
+                <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>{leanError}</p>
+              )}
+              <button
+                type="button"
+                disabled={!canContinue}
+                onClick={handleContinue}
+                style={{
+                  padding: '13px 20px', borderRadius: 14, border: 'none', width: '100%',
+                  background: canContinue ? 'var(--gold)' : 'var(--border-dim)',
+                  color: canContinue ? 'var(--bg-void)' : 'var(--text-4)',
+                  fontWeight: 600, fontSize: 15.5, cursor: canContinue ? 'pointer' : 'default',
+                }}
+              >
+                {savingLean ? 'One moment…' : 'Continue'}
+              </button>
+              <button
+                type="button"
+                onClick={handleAddMore}
+                style={{
+                  background: 'none', border: 'none', padding: 0, margin: '-4px auto 0',
+                  fontSize: 13, color: 'var(--text-4)', cursor: 'pointer', textDecoration: 'underline',
+                }}
+              >
+                Add one more thing first
+              </button>
             </div>
           )}
         </div>

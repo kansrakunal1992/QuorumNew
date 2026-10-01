@@ -13,6 +13,13 @@ import { createServiceClient }     from '@/lib/supabase'
 import { decrypt }                 from '@/lib/encryption'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { generatePrediction }      from '@/lib/prediction-engine'
+import {
+  parseOptionLabels,
+  parseContextLine,
+  LEAN_LINE_PREFIX,
+  GUT_LINE_PREFIX,
+  SUCCESS_LINE_PREFIX,
+} from '@/lib/chat-intake-context'
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -55,7 +62,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, user_id, decision_text, initial_instinct, optimization_priority, quorum_predicted_choice, quorum_prediction_reasoning, quorum_prediction_used_search')
+    .select('id, user_id, decision_text, context_text, initial_instinct, optimization_priority, quorum_predicted_choice, quorum_prediction_reasoning, quorum_prediction_used_search')
     .eq('id', sessionId)
     .single()
 
@@ -87,6 +94,16 @@ export async function POST(req: Request, { params }: Params) {
   // cold-start/search path rather than failing.
   const effectiveUserId = session.user_id ?? userId ?? sessionId
 
+  // v4 — Natural Intake sessions carry the finalized options, the tapped
+  // lean, and the person's own gut / success lines in context_text (written
+  // by lib/chat-intake-state.ts's assembleSessionInput). Classic sessions
+  // have none of those lines, so every value below is simply empty and the
+  // prediction runs exactly as it did before. Best-effort: an undecryptable
+  // or missing context_text just means "no extra context".
+  let contextText = ''
+  try { contextText = session.context_text ? (decrypt(session.context_text as string) ?? '') : '' } catch { /* no extra context */ }
+  const leanLabelRaw = parseContextLine(contextText, LEAN_LINE_PREFIX)
+
   let result
   try {
     result = await generatePrediction({
@@ -94,6 +111,10 @@ export async function POST(req: Request, { params }: Params) {
       decisionText,
       initialInstinct:      session.initial_instinct as 'accept' | 'reject' | 'unsure',
       optimizationPriority: session.optimization_priority,
+      optionLabels:         parseOptionLabels(contextText),
+      leanLabel:            leanLabelRaw && leanLabelRaw !== 'not sure yet' ? leanLabelRaw : null,
+      gutFeeling:           parseContextLine(contextText, GUT_LINE_PREFIX),
+      successPicture:       parseContextLine(contextText, SUCCESS_LINE_PREFIX),
     })
   } catch (err) {
     console.error('[predict] generation failed', err)

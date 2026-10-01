@@ -56,6 +56,21 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Failed to save synthesis version' }, { status: 500 })
     }
 
+    // v4 — the Council has now actually produced a synthesis, which is the
+    // only moment sessions.session_depth should read 'council' (the natural
+    // intake checkpoint writes 'checkpoint'; nothing wrote 'council' before,
+    // so any analysis keyed on it saw every session as checkpoint-only).
+    // Best-effort and non-blocking for the same reason the upsert above is:
+    // a failed depth stamp must never affect the synthesis the person is
+    // already reading.
+    supabase
+      .from('sessions')
+      .update({ session_depth: 'council' })
+      .eq('id', sessionId)
+      .then(({ error: depthErr }: { error: { message?: string } | null }) => {
+        if (depthErr) console.error('[SynthesisVersion POST] session_depth stamp failed:', depthErr)
+      })
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[SynthesisVersion POST] Route error:', err)

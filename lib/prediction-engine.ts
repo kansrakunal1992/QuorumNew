@@ -87,6 +87,8 @@ Rules:
 - Keep reasoning to 1-3 sentences, plain language, no bullet points, no tag markup.
 - If you are relying on general patterns rather than this person's own history, say so directly in the reasoning (e.g. "we don't know you well yet, so this leans on how people generally handle...") rather than implying false personalization.
 - Never state a probability or confidence percentage.
+- When the person's options are listed, predictedChoice must name one of those options (shortened is fine) — not a vague restatement.
+- Do not simply echo their stated lean because they stated it. Predict what you think they will actually do, using their situation, what they say matters most, how they feel, and any history. If your prediction DOES match their lean, use the reasoning to name the one doubt or tension most likely to test that choice (never just "you already lean this way"). If it differs, say plainly what you think pulls them away from their lean.
 - Respond as JSON only: {"predictedChoice": "...", "reasoning": "..."}. No other text.`
 
 /**
@@ -101,15 +103,39 @@ export async function generatePrediction(params: {
   decisionText:         string
   initialInstinct:      'accept' | 'reject' | 'unsure'
   optimizationPriority: string
+  // v4 (Natural Intake): richer context the chat already captured. All
+  // optional — classic-flow sessions don't have them and behave exactly as
+  // before. leanLabel is the exact option the person tapped, which is far
+  // less ambiguous than the bare 'accept' / 'reject' value.
+  optionLabels?:        string[]
+  leanLabel?:           string | null
+  gutFeeling?:          string | null
+  successPicture?:      string | null
 }): Promise<PredictionResult> {
   const supabase = createServiceClient()
   const history = await fetchPastDecisions(params.userId, supabase)
   const personalized = history.length >= HISTORY_THRESHOLD_FOR_PERSONALIZATION
 
+  const optionsLine = params.optionLabels?.length
+    ? `Options they are weighing: ${params.optionLabels.join(' | ')}\n`
+    : ''
+  const leanText = params.leanLabel?.trim()
+    ? `${params.leanLabel.trim()} (${params.initialInstinct})`
+    : params.initialInstinct
+  const feelingLine = params.gutFeeling?.trim()
+    ? `\nHow they say they feel about it: ${params.gutFeeling.trim()}`
+    : ''
+  const successLine = params.successPicture?.trim()
+    ? `\nWhat a good outcome looks like to them: ${params.successPicture.trim()}`
+    : ''
+
   const basePrompt =
     `Decision: "${params.decisionText}"\n` +
-    `Their stated initial lean: ${params.initialInstinct}\n` +
+    optionsLine +
+    `Their stated initial lean: ${leanText}\n` +
     `What they say matters most: ${params.optimizationPriority}` +
+    feelingLine +
+    successLine +
     buildPersonalizedBlock(history)
 
   // Personalized path: enough history to reason from the person's own record,

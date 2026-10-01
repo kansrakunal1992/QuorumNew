@@ -35,3 +35,25 @@ export function parseOptionLabels(contextText: string | null | undefined): strin
   if (!line) return []
   return line.slice(OPTIONS_LINE_PREFIX.length).split(';').map(s => s.trim()).filter(Boolean)
 }
+
+// ── v4: the rest of the structured lines assembleSessionInput() writes ─────
+// Same single-source-of-truth rule as OPTIONS_LINE_PREFIX above: the server
+// writes these lines into context_text, and anything that needs them back
+// (the prediction route, the examiner derive step) reads them with
+// parseContextLine() instead of re-implementing the format.
+export const LEAN_LINE_PREFIX     = 'Where they are leaning: '
+export const PRIORITY_LINE_PREFIX = 'What matters most to them: '
+export const GUT_LINE_PREFIX      = 'How they feel about it: '
+export const SUCCESS_LINE_PREFIX  = 'What a good outcome looks like to them: '
+
+/** Returns the text after `prefix` on the first matching line, or null. */
+export function parseContextLine(
+  contextText: string | null | undefined,
+  prefix: string,
+): string | null {
+  if (!contextText) return null
+  const line = contextText.split('\n').find(l => l.startsWith(prefix))
+  if (!line) return null
+  const value = line.slice(prefix.length).trim()
+  return value || null
+}

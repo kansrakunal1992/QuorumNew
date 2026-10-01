@@ -17,7 +17,14 @@
 
 import { createCompletion } from '@/lib/ai-client'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
-import { OPTIONS_LINE_PREFIX } from '@/lib/chat-intake-context'
+import {
+  OPTIONS_LINE_PREFIX,
+  LEAN_LINE_PREFIX,
+  PRIORITY_LINE_PREFIX,
+  GUT_LINE_PREFIX,
+  SUCCESS_LINE_PREFIX,
+} from '@/lib/chat-intake-context'
+import { priorityLabel, preserveChipFields } from '@/lib/chat-intake-lean'
 
 // ── Chat length (locked, Sept 2026) ──────────────────────────────────────────
 export const DEFAULT_MAX_EXCHANGES  = 6
@@ -34,6 +41,8 @@ RULES:
 - Never ask a question yourself — you are not part of the conversation, only its notetaker.
 - "options" should reflect real alternatives the person has named or clearly implied, including passive ones — staying with the status quo, waiting, or testing something first are all valid options, not just the two obvious named choices.
 - "initialReaction" should only be set from the person's very first message in the transcript, before the assistant said anything back — capture their gut reaction untouched by anything the assistant said afterward. Never overwrite it once set.
+- "gutFeeling" is how the person says they FEEL about this decision (excited, dreading it, guilty, relieved, torn...) — their own words, as close as the transcript allows. Only set it if they actually expressed a feeling; never infer one from the topic.
+- "successPicture" is what the person says a good outcome would look like for them ("I'd be glad I made the move if...") — their own words, as close as the transcript allows. Only set it if they actually described one.
 - "userCorrections" should capture only cases where the person explicitly corrected something the assistant said back to them ("no, that's not it" / "actually..."). Do not use it for ordinary new information.
 - Return ONLY a JSON object matching this shape (all fields optional, omit anything with no evidence yet):
 {
@@ -48,6 +57,8 @@ RULES:
   "evidence": [string],
   "decisionThreshold": string,
   "initialReaction": "act"|"dont_act"|"wait"|"gather_info"|"experiment",
+  "gutFeeling": string,
+  "successPicture": string,
   "userCorrections": [string]
 }
 
@@ -75,7 +86,7 @@ export async function extractDecisionState(
     const clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
     const parsed = JSON.parse(clean)
     if (parsed && typeof parsed === 'object') {
-      return parsed as ChatDecisionState
+      return preserveChipFields(priorState, parsed as ChatDecisionState)
     }
     return priorState ?? {}
   } catch (err) {
@@ -113,15 +124,25 @@ interface CompletenessDimension {
   check: (state: ChatDecisionState) => boolean
 }
 
+// v4 weights: the Examiner always asks E0 (gut) and C0 (what success looks
+// like) at the checkpoint, so the chat now treats them as first-class gaps —
+// worth 10 each — and the checkpoint only confirms them with one tap. To keep
+// the chat from running longer, the structural dimensions that used to carry
+// 10 each (deadline, assumptions, what would change their mind, what matters
+// most) were trimmed to 5; 'what matters most' is also answered by the
+// end-of-chat priority chip, so it no longer needs a chat question at all.
+// Array order is question priority (see lib/chat-intake-reply.ts).
 const COMPLETENESS_DIMENSIONS: CompletenessDimension[] = [
   { label: 'a clear decision statement',        weight: 20, check: s => !!s.decisionStatement?.trim() },
   { label: 'at least two real options',         weight: 20, check: s => (s.options?.length ?? 0) >= 2 },
+  { label: 'how they feel about it',            weight: 10, check: s => !!s.gutFeeling?.trim() },
+  { label: 'what a good outcome looks like',    weight: 10, check: s => !!s.successPicture?.trim() },
   { label: 'who else is involved',              weight: 10, check: s => (s.stakeholders?.length ?? 0) > 0 },
-  { label: 'whether there\u2019s a real deadline', weight: 10, check: s => !!s.deadline },
   { label: 'how reversible this is',            weight: 10, check: s => !!s.reversibility },
-  { label: 'the assumptions in play',           weight: 10, check: s => (s.assumptions?.length ?? 0) > 0 },
-  { label: 'what would actually change their mind', weight: 10, check: s => (s.evidence?.length ?? 0) > 0 || !!s.decisionThreshold },
-  { label: 'what matters most to them here',    weight: 10, check: s => !!s.leaningOptionType || !!s.initialReaction },
+  { label: 'whether there\u2019s a real deadline', weight: 5, check: s => !!s.deadline },
+  { label: 'the assumptions in play',           weight: 5,  check: s => (s.assumptions?.length ?? 0) > 0 },
+  { label: 'what would actually change their mind', weight: 5, check: s => (s.evidence?.length ?? 0) > 0 || !!s.decisionThreshold },
+  { label: 'what matters most to them here',    weight: 5,  check: s => !!s.leaningOptionType || !!s.initialReaction || !!s.optimizationPriority },
 ]
 
 export interface CompletenessResult {
@@ -175,6 +196,17 @@ export function assembleSessionInput(
   if (state.options?.length) {
     contextParts.push(`${OPTIONS_LINE_PREFIX}${state.options.map(o => o.label).join('; ')}`)
   }
+  // v4 — the chip-selected lean + priority, and the two Examiner-aligned
+  // slots. The gut / success lines are what lets lib/examiner-derive.ts
+  // recognise E0 and C0 as already answered (it reads this context_text).
+  if (state.chosenLean) {
+    contextParts.push(`${LEAN_LINE_PREFIX}${state.chosenLeanLabel?.trim() || 'not sure yet'}`)
+  }
+  if (state.optimizationPriority) {
+    contextParts.push(`${PRIORITY_LINE_PREFIX}${priorityLabel(state.optimizationPriority)}`)
+  }
+  if (state.gutFeeling?.trim())     contextParts.push(`${GUT_LINE_PREFIX}${state.gutFeeling.trim()}`)
+  if (state.successPicture?.trim()) contextParts.push(`${SUCCESS_LINE_PREFIX}${state.successPicture.trim()}`)
   if (state.stakeholders?.length) {
     contextParts.push(`People involved: ${state.stakeholders.map(s => s.role ? `${s.name} (${s.role})` : s.name).join('; ')}`)
   }

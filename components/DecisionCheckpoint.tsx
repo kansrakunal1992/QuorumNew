@@ -3,31 +3,37 @@
 // components/DecisionCheckpoint.tsx
 // ── Natural Intake (v1) — the checkpoint screen ───────────────────────────────
 //
-// Two moments, per the plan (section 4E):
+// v4 flow (see docs/CHANGELOG_v4.md). The lean + priority taps now happen at
+// the END of the chat (components/ChatIntake.tsx), so this screen no longer
+// has a lean step. Moments, in order:
 //   1. "Here's the decision I think you're actually making" — pure reflection
 //      of the chat, no session created yet. Confirm / Edit / Let me add more.
-//   2. Once confirmed, a real session is created through the EXISTING
-//      POST /api/session (via /api/chat-intake/checkpoint), and this screen
-//      shows whatever the Examiner still needs to ask — with any
-//      chat-already-answered items shown as a one-tap confirm instead of a
-//      blank box (see lib/examiner-derive.ts) — then the three exits:
-//      Convene the Council / I'm done. ("Keep thinking" at this second
-//      moment is a scoped v1 deferral — see docs/CHANGELOG_v1.md.)
+//   2. Confirming creates a real session (POST /api/chat-intake/checkpoint,
+//      which also copies the chat's lean + priority onto it) and immediately
+//      starts Quorum's prediction in parallel with everything below.
+//   3. "Quick check" — ONLY if the Examiner still needs something. Answers the
+//      chat already covered are shown together and confirmed with one tap
+//      (lib/examiner-derive.ts); only genuine gaps are asked. If nothing is
+//      left, this step is skipped entirely.
+//   4. The reveal — "You lean X / we predict Y", with Convene the Council as
+//      the one primary action and "I'm done" as a small link. Prediction
+//      comes AFTER the quick check on purpose: Quorum's hypothesis must not
+//      be visible while the person is still answering questions that feed
+//      bias scoring.
+//   5. "I'm done" ends on a reward screen that keeps Convene one tap away.
 //
 // Deliberately does NOT render the Structural Read visualization or the
 // six-persona grid — those stay exactly as SessionView.tsx already renders
-// them, reached only via "Convene the Council". This screen's job ends the
-// moment the person picks a path.
+// them, reached only via "Convene the Council".
 //
 // No internal terms ("Examiner", "rule_id", "structural read") ever reach
 // this component's copy — see docs/COPY_AND_STRUCTURE_LOCK_v1.md.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ChatDecisionState } from '@/lib/types'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { createClient } from '@/lib/supabase'
-import InitialInstinctCapture from '@/components/InitialInstinctCapture'
 import StakeholderOutreach from '@/components/StakeholderOutreach'   // Phase 2/3, v2
 
 interface ExaminerQuestion {
@@ -50,19 +56,30 @@ interface CheckpointInsight {
   message:     string
 }
 
-const REVERSIBILITY_LABEL: Record<string, string> = {
-  reversible:          'Easy to reverse',
-  somewhat_reversible: 'Somewhat reversible',
-  irreversible:        'Hard to reverse',
-}
-
 interface Props {
   chatIntakeId:      string
   onBackToChat:      () => void
   onSessionCreated:  (sessionId: string) => void
 }
 
-type SubPhase = 'loading' | 'reflect' | 'editing' | 'creating' | 'lean' | 'examine' | 'submitting' | 'done'
+type SubPhase = 'loading' | 'reflect' | 'editing' | 'creating' | 'examine' | 'reveal' | 'submitting' | 'done'
+
+interface PredictionView {
+  predictedChoice: string
+  reasoning:       string
+}
+
+// 'unavailable' = this session can't have a prediction (unified flag off, or
+// an older in-flight chat that never saw the lean chips) — the reveal screen
+// simply omits that card rather than showing an error.
+type PredictionStatus = 'idle' | 'loading' | 'ready' | 'failed' | 'unavailable'
+
+// Questions the Council cannot run without (lib/readiness.ts: only 'critical'
+// ones produce NOT_READY). R1/R7 are excluded — those are REDIRECT hard
+// blocks with their own override path on the session page.
+function isCouncilCritical(q: ExaminerQuestion): boolean {
+  return q.criticality === 'critical' && q.rule_id !== 'R1' && q.rule_id !== 'R7'
+}
 
 const cardStyle: CSSProperties = {
   background: 'var(--bg-card)',
@@ -93,15 +110,25 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [confirmed, setConfirmed]   = useState<Record<number, boolean>>({})
   const [nextAction, setNextAction] = useState('')
   const [showNextAction, setShowNextAction] = useState(false)
-  const [showCouncilExamples, setShowCouncilExamples] = useState(false)
   const [authToken, setAuthToken]   = useState<string | null>(null)
   const [insight, setInsight]       = useState<CheckpointInsight | null>(null)
   const [insightLoading, setInsightLoading] = useState(false)
+  const [prediction, setPrediction]           = useState<PredictionView | null>(null)
+  const [predictionStatus, setPredictionStatus] = useState<PredictionStatus>('idle')
+  // The in-flight prediction request, so Convene can wait for it instead of
+  // racing it: the session page also asks for a prediction if none is saved,
+  // and two concurrent first calls would each generate their own answer.
+  const predictionInFlight = useRef<Promise<void> | null>(null)
+
+  // A question is resolved when the person confirmed a chat-derived answer or
+  // typed one. Used to decide whether Convene would hit the NOT_READY wall.
+  const isResolved = (q: ExaminerQuestion) =>
+    (!!q.derived && !!confirmed[q.order]) || !!answers[q.order]?.trim()
+  const councilBlocked = questions.some(q => isCouncilCritical(q) && !isResolved(q))
 
   // Same "does this person have a live session" check ChatIntake.tsx and
-  // PlanBadge.tsx already do — needed here so InitialInstinctCapture (the
-  // lean-capture step, below) can attribute the instinct to a signed-in
-  // user the same way Council's own copy of that screen does.
+  // PlanBadge.tsx already do — needed here so the prediction call
+  // (loadPrediction, below) can attribute the session to a signed-in user.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -109,7 +136,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         const supabase = createClient()
         const { data: { session } } = await supabase.auth.getSession()
         if (!cancelled) setAuthToken(session?.access_token ?? null)
-      } catch { /* fine — InitialInstinctCapture accepts a null token */ }
+      } catch { /* fine — the prediction route accepts a missing token */ }
     })()
     return () => { cancelled = true }
   }, [])
@@ -126,6 +153,50 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       .catch(() => setSubPhase('reflect'))
   }, [chatIntakeId])
 
+  // Quorum's prediction. Idempotent server-side, so a retry or a second mount
+  // can't bill a second call or produce a second, different answer.
+  function loadPrediction(sid: string): void {
+    setPredictionStatus('loading')
+    predictionInFlight.current = runPrediction(sid)
+  }
+
+  async function runPrediction(sid: string): Promise<void> {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (authToken) headers.Authorization = `Bearer ${authToken}`
+      const res = await fetch('/api/persona/predict', {
+        method: 'POST', headers, body: JSON.stringify({ sessionId: sid }),
+      })
+      if (!res.ok) throw new Error(`predict ${res.status}`)
+      const d = await res.json()
+      // The engine's own "couldn't form a hypothesis" fallback is the literal
+      // string 'Unclear' — showing "we predict you'll choose Unclear" would be
+      // worse than showing nothing.
+      if (!d?.predictedChoice || d.predictedChoice === 'Unclear') throw new Error('no usable prediction')
+      setPrediction({ predictedChoice: d.predictedChoice, reasoning: d.reasoning ?? '' })
+      setPredictionStatus('ready')
+    } catch (err) {
+      console.error('[DecisionCheckpoint] prediction failed:', err)
+      setPredictionStatus('failed')
+    }
+  }
+
+  // The Examiner only has questions once the ontology tagger has finished, so
+  // a null list means "not ready yet", not "nothing to ask". A short poll
+  // keeps a slow tagger from silently skipping the quick-check step (which
+  // would just push the same questions onto the session page instead).
+  async function fetchExaminerQuestions(sid: string): Promise<ExaminerQuestion[]> {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const res  = await fetch(`/api/examiner?sessionId=${sid}`)
+        const data = await res.json()
+        if (Array.isArray(data?.questions)) return data.questions as ExaminerQuestion[]
+      } catch { /* fall through to retry */ }
+      await new Promise(r => setTimeout(r, 1500))
+    }
+    return []
+  }
+
   async function confirmAndCreateSession(overrideText?: string) {
     setSubPhase('creating')
     try {
@@ -138,9 +209,16 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       if (!res.ok || !data.sessionId) throw new Error(data?.error || 'Failed to create session')
       setSessionId(data.sessionId)
 
-      // Fired in parallel, not awaited — the examine card shows a brief
-      // placeholder if this is still in flight when it first renders
-      // rather than blocking the whole screen on one more model call.
+      // Everything below is fired in parallel, not awaited one after another.
+      // The prediction starts the instant the session exists (its lean and
+      // priority were copied on in the checkpoint route), so it's usually
+      // ready by the time the reveal screen needs it.
+      if (isUnifiedSessionEnabled() && data.leanSaved) {
+        loadPrediction(data.sessionId)
+      } else {
+        setPredictionStatus('unavailable')
+      }
+
       setInsightLoading(true)
       fetch('/api/chat-intake/insight', {
         method:  'POST',
@@ -149,21 +227,14 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       })
         .then(r => r.json())
         .then(d => { if (d?.stakesLevel) setInsight(d as CheckpointInsight) })
-        .catch(() => { /* card just shows nothing in that slot */ })
+        .catch(() => { /* the reveal just omits that line */ })
         .finally(() => setInsightLoading(false))
 
-      const examRes  = await fetch(`/api/examiner?sessionId=${data.sessionId}`)
-      const examData = await examRes.json()
-      setQuestions(examData.questions ?? [])
+      const qs = await fetchExaminerQuestions(data.sessionId)
+      setQuestions(qs)
 
-      // Item 1 (product feedback): lean was only ever captured right as
-      // Council loaded, disconnected from the chat + checkpoint journey
-      // that just established it. Moved here — right after the session
-      // exists, before the Examiner questions — so it happens once, early,
-      // for everyone Unified Session covers. instinctLocked's own check in
-      // SessionView.tsx (session.initial_instinct already set) means
-      // Council won't ask again once this has run.
-      setSubPhase(isUnifiedSessionEnabled() ? 'lean' : 'examine')
+      // Nothing left to ask → skip the quick-check step entirely.
+      setSubPhase(qs.length > 0 ? 'examine' : 'reveal')
     } catch (err) {
       console.error('[DecisionCheckpoint] session creation failed:', err)
       setSubPhase('reflect')
@@ -195,15 +266,42 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     }
   }
 
+  // One tap on the quick-check screen confirms every answer the chat already
+  // covered (they're all on screen, above the button) and moves on.
+  function handleExamineContinue() {
+    setConfirmed(prev => {
+      const next = { ...prev }
+      questions.forEach(q => { if (q.derived) next[q.order] = true })
+      return next
+    })
+    setSubPhase('reveal')
+  }
+
   async function handleConveneCouncil() {
+    // A critical question still blank would put the person at a "Not ready to
+    // call" wall on the session page — send them back to answer it here,
+    // where it takes one line, instead.
+    if (councilBlocked) {
+      setSubPhase('examine')
+      return
+    }
     setSubPhase('submitting')
+    // Let a still-running prediction land first (capped, so a slow search
+    // can never trap someone on this screen) — the session page then loads
+    // the saved one instead of generating a second, different answer.
+    if (predictionInFlight.current) {
+      await Promise.race([predictionInFlight.current, new Promise(r => setTimeout(r, 15000))])
+    }
     await submitExaminer()
     onSessionCreated(sessionId!)
   }
 
   async function handleImDone() {
     setSubPhase('submitting')
-    await submitExaminer()
+    // Skip saving blank rows for a critical question: if the person changes
+    // their mind on the next screen, the session page can still ask it,
+    // instead of finding it already recorded as skipped.
+    if (!councilBlocked) await submitExaminer()
     await fetch('/api/chat-intake/done', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -230,16 +328,20 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         <div style={{ color: 'var(--text-3)', fontSize: 14.5, maxWidth: 340 }}>
           This is part of your Quorum history now, whether or not you dig deeper.
         </div>
-        {/* Item 4 (product feedback): picking "I'm done" used to be a dead
-            end — no way back to Council if the person changed their mind
-            after seeing the reward screen. The session and every Examiner
-            answer already exist at this point, so this is pure navigation —
-            no re-submission needed (submitExaminer() already ran, inside
-            handleImDone, before this screen ever rendered). */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 280 }}>
-          <button style={secondaryBtn} onClick={() => sessionId && onSessionCreated(sessionId)}>
+        {predictionStatus === 'ready' && prediction && (
+          <div style={{ color: 'var(--text-2)', fontSize: 14.5, maxWidth: 340, lineHeight: 1.5 }}>
+            We predicted you'd choose <strong style={{ color: 'var(--text-1)' }}>{prediction.predictedChoice}</strong>. Curious whether the Council sees it the same way?
+          </div>
+        )}
+        {/* Second chance, now the primary action: the session and every
+            answer already exist, so this is pure navigation — nothing to
+            re-submit (handleImDone already did, unless a critical question
+            was still open, in which case the session page asks it). */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 300 }}>
+          <button style={primaryBtn} onClick={() => sessionId && onSessionCreated(sessionId)}>
             Actually, convene the Council
           </button>
+          <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginTop: -4 }}>About a minute</div>
           <button style={{ ...secondaryBtn, border: 'none', color: 'var(--text-4)' }} onClick={() => window.location.reload()}>
             Start a new decision
           </button>
@@ -252,27 +354,6 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     flex: 1, maxWidth: 560, margin: '0 auto', width: '100%',
     padding: '28px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
     display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto',
-  }
-
-  // ── subPhase === 'lean' ──────────────────────────────────────────────────
-  // Item 1 (product feedback): reuses the exact same component + API route
-  // Council's own pre-deliberation lean screen uses (InitialInstinctCapture,
-  // POST /api/session/[id]/instinct) — just triggered here, right after the
-  // session exists, instead of only later inside SessionView.tsx. Gated the
-  // same way that screen already is (isUnifiedSessionEnabled), so this is a
-  // no-op when that flag is off, not a second, divergent implementation.
-  if (subPhase === 'lean') {
-    return (
-      <div style={container}>
-        <InitialInstinctCapture
-          sessionId={sessionId!}
-          authToken={authToken}
-          decisionText={state.decisionStatement}
-          optionLabels={state.options?.map(o => o.label) ?? []}
-          onComplete={() => setSubPhase('examine')}
-        />
-      </div>
-    )
   }
 
   if (subPhase === 'reflect' || subPhase === 'editing') {
@@ -333,166 +414,156 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     )
   }
 
-  // ── subPhase === 'examine' ──────────────────────────────────────────────────
-  return (
-    <div style={container}>
-      <div style={{ color: 'var(--text-3)', fontSize: 13.5, letterSpacing: 0.3 }}>A couple of things to make this sharper</div>
+  const labelStyle: CSSProperties = {
+    fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.08em',
+    textTransform: 'uppercase', color: 'var(--text-4)', marginBottom: 12,
+  }
 
-      {questions.map(q => (
-        <div key={q.order} style={cardStyle}>
-          <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 10 }}>{q.text}</div>
-          {q.derived ? (
-            confirmed[q.order] ? (
-              <div style={{ fontSize: 14, color: 'var(--gold-bright)' }}>✓ Using what you told me: "{q.derivedAnswer}"</div>
-            ) : (
-              <div>
-                <div style={{ fontSize: 14, color: 'var(--text-3)', marginBottom: 8, fontStyle: 'italic' }}>
-                  You mentioned: "{q.derivedAnswer}" — is that right?
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button style={{ ...secondaryBtn, width: 'auto', padding: '8px 16px', fontSize: 13.5 }} onClick={() => setConfirmed(prev => ({ ...prev, [q.order]: true }))}>
-                    That's right
-                  </button>
-                  <button style={{ ...secondaryBtn, width: 'auto', padding: '8px 16px', fontSize: 13.5, border: 'none' }} onClick={() => setQuestions(prev => prev.map(pq => pq.order === q.order ? { ...pq, derived: false } : pq))}>
-                    Let me add to it
-                  </button>
-                </div>
+  // ── subPhase === 'examine' — the quick check ────────────────────────────────
+  // Only reached when the Examiner has something to ask. Chat-covered answers
+  // sit together in one card behind a single "These look right" tap; only
+  // genuine gaps get a text box.
+  if (subPhase === 'examine') {
+    const derivedQs = questions.filter(q => q.derived)
+    const openQs    = questions.filter(q => !q.derived)
+    const buttonLabel =
+      derivedQs.length > 0 && openQs.length === 0 ? 'These look right'
+      : derivedQs.length > 0                      ? 'These look right — continue'
+      : 'Continue'
+
+    return (
+      <div style={container}>
+        <div style={{ color: 'var(--text-3)', fontSize: 13.5, letterSpacing: 0.3 }}>
+          {derivedQs.length > 0 && openQs.length === 0 ? 'Did I get this right?' : 'A quick check before we go on'}
+        </div>
+
+        {derivedQs.length > 0 && (
+          <div style={cardStyle}>
+            <div style={labelStyle}>What you've already told me</div>
+            {derivedQs.map((q, i) => (
+              <div key={q.order} style={{ marginBottom: i === derivedQs.length - 1 ? 0 : 16 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>{q.text}</div>
+                <div style={{ fontSize: 14.5, color: 'var(--text-1)', lineHeight: 1.5 }}>“{q.derivedAnswer}”</div>
+                <button
+                  type="button"
+                  onClick={() => setQuestions(prev => prev.map(pq => pq.order === q.order ? { ...pq, derived: false } : pq))}
+                  style={{ background: 'none', border: 'none', padding: 0, marginTop: 6, fontSize: 12.5, color: 'var(--text-4)', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Change this
+                </button>
               </div>
-            )
-          ) : (
+            ))}
+          </div>
+        )}
+
+        {openQs.map(q => (
+          <div key={q.order} style={cardStyle}>
+            {isCouncilCritical(q) && (
+              <div style={{ ...labelStyle, color: 'var(--gold)', marginBottom: 8 }}>Needed for the Council to run</div>
+            )}
+            <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 10 }}>{q.text}</div>
             <textarea
               value={answers[q.order] ?? ''}
               onChange={e => setAnswers(prev => ({ ...prev, [q.order]: e.target.value }))}
               rows={2}
-              placeholder="Your answer (optional)"
+              placeholder={isCouncilCritical(q) ? 'Your answer' : 'Your answer (optional)'}
               style={{
                 width: '100%', padding: 12, borderRadius: 12, border: '1px solid var(--border-mid)',
                 background: 'var(--bg-inset)', color: 'var(--text-1)', fontSize: 15,
                 fontFamily: 'var(--font-body)', resize: 'vertical',
               }}
             />
-          )}
-        </div>
-      ))}
+          </div>
+        ))}
 
-      {/* Item 2/3 (product feedback): this used to be two bare buttons with
-          no substance — no reward for finishing the chat, and no real
-          incentive to click Convene. Now: a structural read (built
-          straight from the chat's own decision_state — no waiting on
-          anything) plus one adaptive AI read (see
-          lib/chat-intake-insight.ts) that either gives a genuine verdict
-          for a low-stakes call, or names the specific reason THIS decision
-          would benefit from multiple perspectives — never a generic
-          feature pitch either way. */}
+        <button style={primaryBtn} onClick={handleExamineContinue}>{buttonLabel}</button>
+      </div>
+    )
+  }
+
+  // ── subPhase === 'reveal' — Quorum's read, then the one real choice ─────────
+  const leanText =
+    state.chosenLeanLabel?.trim() || (state.chosenLean === 'unsure' ? 'Not sure yet' : null)
+  const showPredictionCard = predictionStatus !== 'unavailable'
+
+  return (
+    <div style={container}>
+      <div style={{ color: 'var(--text-3)', fontSize: 13.5, letterSpacing: 0.3 }}>Before the Council weighs in</div>
+
       <div style={cardStyle}>
-        <div style={{
-          fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.08em',
-          textTransform: 'uppercase', color: 'var(--text-4)', marginBottom: 14,
-        }}>
-          The shape of your decision
-        </div>
-        {!!state.reversibility && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Reversibility</div>
-            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{REVERSIBILITY_LABEL[state.reversibility] ?? state.reversibility}</div>
-          </div>
-        )}
-        {!!state.stakeholders?.length && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Who's involved</div>
-            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.stakeholders.map(s => s.name).join(', ')}</div>
-          </div>
-        )}
-        {!!state.deadline && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Timeline</div>
-            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.deadline}</div>
-          </div>
-        )}
-        {!!state.unknowns?.length && (
-          <div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Biggest uncertainty</div>
-            <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.unknowns[0]}</div>
-          </div>
+        {showPredictionCard && (
+          <>
+            {leanText && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>You lean</div>
+                <div style={{ fontSize: 15.5, color: 'var(--text-2)' }}>{leanText}</div>
+              </div>
+            )}
+            <div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 6 }}>We predict you'll choose</div>
+              {predictionStatus === 'ready' && prediction ? (
+                <>
+                  <div style={{ fontSize: 20, fontFamily: 'var(--font-display)', color: 'var(--text-1)', lineHeight: 1.3, marginBottom: 8 }}>
+                    {prediction.predictedChoice}
+                  </div>
+                  {!!prediction.reasoning && (
+                    <div style={{ fontSize: 14.5, color: 'var(--text-2)', lineHeight: 1.55 }}>{prediction.reasoning}</div>
+                  )}
+                </>
+              ) : predictionStatus === 'failed' ? (
+                <div style={{ fontSize: 14.5, color: 'var(--text-3)', lineHeight: 1.55 }}>
+                  We couldn't form a read on this one yet — the Council can still weigh in.
+                </div>
+              ) : (
+                <div style={{ fontSize: 14, color: 'var(--text-4)', fontStyle: 'italic' }}>Reading your situation…</div>
+              )}
+            </div>
+          </>
         )}
 
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-dim)' }}>
-          {insight ? (
-            <>
-              <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 6 }}>
-                {insight.stakesLevel === 'low' ? "Quorum's early read" : 'Worth a closer look, because'}
-              </div>
-              <div style={{ fontSize: 14.5, color: 'var(--text-1)', lineHeight: 1.55 }}>{insight.message}</div>
-            </>
-          ) : insightLoading ? (
-            <div style={{ fontSize: 13.5, color: 'var(--text-4)', fontStyle: 'italic' }}>Reading this a little closer…</div>
-          ) : null}
-        </div>
+        {/* One bridging line from the adaptive read (lib/chat-intake-insight.ts)
+            — it either gives a real early verdict for a low-stakes call or
+            names why THIS decision would benefit from more perspectives. */}
+        {(insight || insightLoading) && (
+          <div style={{ marginTop: showPredictionCard ? 16 : 0, paddingTop: showPredictionCard ? 16 : 0, borderTop: showPredictionCard ? '1px solid var(--border-dim)' : 'none' }}>
+            {insight ? (
+              <>
+                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 6 }}>
+                  {insight.stakesLevel === 'low' ? "Quorum's early read" : 'Worth a closer look, because'}
+                </div>
+                <div style={{ fontSize: 14.5, color: 'var(--text-1)', lineHeight: 1.55 }}>{insight.message}</div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13.5, color: 'var(--text-4)', fontStyle: 'italic' }}>Reading this a little closer…</div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Phase 2/3, v2 — only appears when the chat actually named someone;
-          never a standing "Integrations" menu (plan section 22). */}
-      {!!state.stakeholders?.length && sessionId && (
-        <StakeholderOutreach sessionId={sessionId} stakeholders={state.stakeholders} authToken={authToken} />
-      )}
-
-      <div style={{ ...cardStyle, marginTop: 4 }}>
-        {/* Item 6 (product feedback): the transition into Council was
-            abrupt for first-time users — two buttons with no explanation of
-            what Council actually is or when it's worth running. This short,
-            always-visible line explains the mechanism itself; the "when is
-            it worth it" contrast examples stay behind a toggle so people
-            who already get it aren't forced to read past them.
-            Item (later feedback): the original always-on header ("You don't
-            need the full Council for every decision") sat right above the
-            Convene button and read as talking the person out of clicking it
-            — literally the opposite of what the button emphasis below is
-            trying to do. Now mirrors that same insight?.stakesLevel check:
-            while loading or "high," lead with an affirming line; only once
-            it's confidently "low" — where staying out of Council is the
-            actually correct, honest suggestion — does the original line
-            show. */}
-        <div style={{ fontSize: 15, color: 'var(--text-1)', marginBottom: 8 }}>
-          {insight?.stakesLevel === 'low'
-            ? "You don't need the full Council for every decision."
-            : 'This is exactly the kind of decision the Council is built for.'}
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55, marginBottom: 10 }}>
-          The Council puts six different perspectives against what you're leaning toward — a challenger, a risk-focused read, a pattern-reader among them — then reconciles what they say into one clear synthesis. Takes about a minute.
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowCouncilExamples(s => !s)}
-          style={{
-            display: 'block', background: 'none', border: 'none', padding: 0, marginBottom: 12,
-            fontSize: 12.5, color: 'var(--gold)', cursor: 'pointer', textDecoration: 'underline',
-          }}
-        >
-          {showCouncilExamples ? 'Hide examples' : 'When is it actually worth it?'}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Convene is ALWAYS the primary action now — previously a "low
+            stakes" early read flipped "I'm done" to primary, which is where
+            people left before the Council ever ran. A low-stakes read is
+            still shown above; it just doesn't change which button is loudest. */}
+        <button style={primaryBtn} onClick={handleConveneCouncil}>
+          {councilBlocked ? 'Answer one quick question first' : 'Convene the Council'}
         </button>
-        {showCouncilExamples && (
-          <div style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 12 }}>
-            <div style={{ marginBottom: 6 }}>
-              <strong style={{ color: 'var(--text-2)' }}>Usually worth it:</strong> raising money now vs. waiting, a job that means relocating your family, bringing on a co-founder, a decision you keep going back and forth on.
-            </div>
-            <div>
-              <strong style={{ color: 'var(--text-2)' }}>Usually not:</strong> picking between two similar vendors, a decision you're already confident about, anything small enough that being wrong costs you very little.
-            </div>
-          </div>
-        )}
+        <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5, textAlign: 'center' }}>
+          {councilBlocked
+            ? 'The Council needs that one answer before it can run.'
+            : "See how six different perspectives read this against what you're leaning toward. About a minute."}
+        </div>
+
         {!showNextAction ? (
-          // Button emphasis follows the same read: while it's still loading
-          // or came back "high," Council stays the default recommended
-          // path (matches today's behavior). Only once it's confidently
-          // "low" does "I'm done" become the natural next click — the
-          // verdict above already gave them something real, so pushing
-          // them toward Council anyway would undercut it.
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button style={insight?.stakesLevel === 'low' ? secondaryBtn : primaryBtn} onClick={handleConveneCouncil}>Convene the Council</button>
-            <button style={insight?.stakesLevel === 'low' ? primaryBtn : secondaryBtn} onClick={() => setShowNextAction(true)}>I'm done</button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowNextAction(true)}
+            style={{ background: 'none', border: 'none', padding: '6px 0', fontSize: 13.5, color: 'var(--text-4)', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            I'm done
+          </button>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 13.5, color: 'var(--text-3)' }}>Anything you're actually going to do next? (optional)</div>
             <input
               value={nextAction}
@@ -503,10 +574,17 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
                 background: 'var(--bg-inset)', color: 'var(--text-1)', fontSize: 15,
               }}
             />
-            <button style={primaryBtn} onClick={handleImDone}>Done</button>
+            <button style={secondaryBtn} onClick={handleImDone}>Done</button>
           </div>
         )}
       </div>
+
+      {/* Phase 2/3, v2 — only appears when the chat actually named someone;
+          never a standing "Integrations" menu (plan section 22). Sits below
+          the actions on purpose so it can't push Convene off screen. */}
+      {!!state.stakeholders?.length && sessionId && (
+        <StakeholderOutreach sessionId={sessionId} stakeholders={state.stakeholders} authToken={authToken} />
+      )}
     </div>
   )
 }
