@@ -65,7 +65,12 @@ export async function POST(req: Request) {
   // GoTrue's `filter` does a partial match on email, so the exact-match
   // check below guards against e.g. "sam@x.com" matching "sam@x.com.evil.com".
   try {
-    const { data: existing, error: lookupError } = await supabase.auth.admin.listUsers({ filter: email })
+    // `filter` is a real, supported GoTrue admin API param (confirmed
+    // against Supabase's own docs) but this installed @supabase/supabase-js
+    // version's TypeScript types don't declare it on PageParams yet — a
+    // type lag, not a runtime issue. Narrow cast here rather than widen
+    // the whole call's type.
+    const { data: existing, error: lookupError } = await supabase.auth.admin.listUsers({ filter: email } as any)
     if (lookupError) throw lookupError
     const existingUser = existing?.users?.find(u => u.email?.toLowerCase() === email)
     if (existingUser?.app_metadata?.provider === 'google') {
