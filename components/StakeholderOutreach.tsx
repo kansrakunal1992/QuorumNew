@@ -81,6 +81,33 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
 
   if (!person) return null
 
+  // Back navigation (fixes the one-way flow — a person picking Slack by
+  // mistake, or wanting to try a different search result, previously had no
+  // way back short of closing the whole panel and starting over).
+  function goBack() {
+    setSendError(null)
+    if (phase === 'search') {
+      setPhase('prompt'); setChannel(null); setSearchResults(null); setSearchQuery('')
+      return
+    }
+    if (phase === 'draft') {
+      if (channel === 'slack' || channel === 'teams' || channel === 'outlook') {
+        setPhase('search'); setTarget(null); setDraftText(''); setSubject('Quick question'); setToAddress('')
+        return
+      }
+      setPhase('prompt'); setChannel(null); setDraftText(''); setSubject('Quick question'); setToAddress('')
+      return
+    }
+    if (phase === 'sent') {
+      setPhase('prompt'); setChannel(null); setTarget(null); setSentMarker(null); setReplies(null); setDraftText('')
+      return
+    }
+    if (phase === 'paste') {
+      setPhase('prompt')
+      return
+    }
+  }
+
   const authedFetch = (url: string, init: RequestInit = {}) =>
     fetch(url, { ...init, headers: { ...(init.headers ?? {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) } })
 
@@ -248,7 +275,19 @@ export default function StakeholderOutreach({ sessionId, stakeholders, authToken
   return (
     <div style={cardStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ fontSize: 15, color: 'var(--text-1)' }}>Asking {person.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {phase !== 'prompt' && phase !== 'saved' && (
+            <button
+              type="button"
+              onClick={goBack}
+              aria-label="Back"
+              style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: 16, cursor: 'pointer', padding: 0, lineHeight: 1 }}
+            >
+              ←
+            </button>
+          )}
+          <div style={{ fontSize: 15, color: 'var(--text-1)' }}>Asking {person.name}</div>
+        </div>
         <button style={{ background: 'none', border: 'none', color: 'var(--text-4)', fontSize: 13, cursor: 'pointer' }} onClick={() => setExpanded(false)}>Close</button>
       </div>
 

@@ -9,18 +9,21 @@
 // is meant to read as "one clear next step," not a dashboard.
 //
 // Fix: compute which of the five are actually *eligible* for this user
-// (same gating conditions HomeClient already uses), then show only the top
-// two, rotating which two on each fresh visit so nothing is permanently
-// buried and the choice doesn't need per-card weighting logic to feel fair.
+// (same gating conditions HomeClient already uses), and show all of them —
+// app/NaturalIntakeClient.tsx calls eligibleHeroCards() directly.
 //
-// Known tradeoff: PatternSurfaceCard and CalibrationRevealCard each also
-// have their own internal secondary gate (a fired rule, ≥3 paired outcome
-// points) and silently render null if that isn't met yet — same
-// self-gating pattern used throughout this codebase. If one of those two
-// is rotated into a slot but has nothing to show, that slot is empty for
-// this visit rather than backfilled with a third card. Acceptable for v1;
-// a fast-follow would have each card report back via an onEmpty callback
-// so the picker can promote the next-eligible card into that slot instead.
+// UPDATE (Sept 2026, Kunal's call): the original version of this file
+// capped display to the top two of those eligible, rotating which two
+// showed on each fresh visit. That cap is removed — every eligible card
+// shows now. pickTopHeroCards() and getAndAdvanceHeroRotationIndex()
+// (lib/storage.ts) are left in place below, unused, rather than deleted,
+// in case a cap is wanted again later; nothing currently calls either.
+//
+// PatternSurfaceCard and CalibrationRevealCard each still have their own
+// internal secondary gate (a fired rule, ≥3 paired outcome points) and
+// silently render null if that isn't met yet — same self-gating pattern
+// used throughout this codebase. With no cap, that just means fewer cards
+// render for a given user, not an empty slot to backfill.
 
 export type HeroCardId =
   | 'memory-engine'
@@ -63,6 +66,10 @@ export function eligibleHeroCards({
   return eligible
 }
 
+// UNUSED as of Sept 2026 (see file header) — app/NaturalIntakeClient.tsx
+// calls eligibleHeroCards() directly now, showing everything eligible with
+// no cap. Kept for a possible future reintroduction of a cap.
+//
 // rotationIndex should advance once per fresh visit (see
 // lib/storage.ts's getAndAdvanceHeroRotationIndex), not per render — that's
 // what makes this "a different pair each time they log back in" rather

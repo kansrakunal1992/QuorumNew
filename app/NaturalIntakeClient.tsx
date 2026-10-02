@@ -22,11 +22,10 @@ import {
   getOrCreateDeviceId,
   getStoredUserEmail,
   getStoredSessionIds,
-  getAndAdvanceHeroRotationIndex,
 } from '@/lib/storage'
 import { createClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
-import { eligibleHeroCards, pickTopHeroCards } from '@/lib/hero-cards'
+import { eligibleHeroCards } from '@/lib/hero-cards'
 import type { MirrorStatus } from '@/lib/types'
 import type { DimPattern } from '@/components/RecurringConditionCard'
 import ChatIntake from '@/components/ChatIntake'
@@ -57,12 +56,6 @@ export default function NaturalIntakeClient() {
   const [patternDimensions, setPatternDimensions] = useState<DimPattern[]>([])
   const [historySessions, setHistorySessions]     = useState<HistorySession[]>([])
   const [showProfileCapture, setShowProfileCapture] = useState(false)
-
-  // Rotation index only needs to advance once per fresh visit — a lazy
-  // initializer runs exactly once on mount, not on every re-render (phase
-  // flipping between 'chat' and 'checkpoint' does not remount this
-  // component, so this correctly does NOT re-advance on that transition).
-  const [heroRotationIndex] = useState(() => getAndAdvanceHeroRotationIndex())
 
   useEffect(() => {
     setUserEmail(getStoredUserEmail())
@@ -126,14 +119,14 @@ export default function NaturalIntakeClient() {
   const pendingOutcomesCount = historySessions.filter(s => !s.outcome).length
   const decidedCount        = historySessions.filter(s =>  s.outcome).length
 
-  const heroCards = pickTopHeroCards(
-    eligibleHeroCards({
-      sessionCount,
-      mirrorUnlocked,
-      patternDimensionsCount: patternDimensions.length,
-    }),
-    heroRotationIndex,
-  )
+  // Cap removed (Sept 2026, Kunal's call) — every eligible card shows, no
+  // rotation. lib/hero-cards.ts's pickTopHeroCards/rotation-index helpers
+  // are left in place, unused, in case a cap is reintroduced later.
+  const heroCards = eligibleHeroCards({
+    sessionCount,
+    mirrorUnlocked,
+    patternDimensionsCount: patternDimensions.length,
+  })
 
   // ── SB-1: Profile capture overlay ────────────────────────────────────────
   // Same rule as app/HomeClient.tsx: under the unified-session flag, skipped
