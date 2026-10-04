@@ -302,7 +302,7 @@ export default function ChatIntake({
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
         }}
-        placeholder={transitioning ? 'Tap your answers above…' : 'Type here…'}
+        placeholder={transitioning ? 'Tap your answers above…' : started ? 'Type here…' : 'What\'s on your mind?'}
         rows={1}
         disabled={transitioning}
         style={{
@@ -556,12 +556,6 @@ export default function ChatIntake({
               and/or the reference section all present). */}
           <div style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, width: '100%' }}>
             <div>
-              <p style={{
-                fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.16em',
-                textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 14px',
-              }}>
-                Think it through before you decide
-              </p>
               <h1 style={{
                 fontFamily: 'var(--font-display)', fontWeight: 400,
                 fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
@@ -570,22 +564,22 @@ export default function ChatIntake({
                 What's going on?
               </h1>
               <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 360 }}>
-                Don't worry about structuring it — just tell me, and I'll help
-                you find the decision underneath it. Big enough call? We can
-                bring in the full Council once we know what you're deciding.
+                Tell me what's going on. I'll find the decision underneath it.
+              </p>
+              <p style={{ fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.5, margin: '6px auto 0', maxWidth: 360 }}>
+                Full Council comes in once we know the decision.
               </p>
             </div>
 
             <div style={{ width: '100%', maxWidth: 440 }}>
-              <DecisionStarters compact label="Not sure where to start? Try one of these" onPick={handleStarterPick} />
+              <DecisionStarters compact label="Not sure where to start?" onPick={handleStarterPick} />
               {/* Grey helper text (requested): make explicit that these chips
                   are only a nudge, never the whole input — and hint at what
                   turns a generic example into something Quorum can actually
                   work with. */}
               <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: '10px auto 0', maxWidth: 360 }}>
-                These are just starting points — type or speak your own anytime.
-                Whichever you use, make it yours: who's really involved, what
-                you're actually choosing between, and what's making it hard to call.
+                Or type anything — just tell me who's involved, what you're
+                choosing, or what's making it hard.
               </p>
             </div>
 

@@ -29,7 +29,10 @@ import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 // hero screen shows its own short, separate headline copy ("What's going
 // on?") rather than this whole paragraph as a giant heading — this is the
 // literal first chat message, read as a message, not as marketing type.
-export const OPENING_LINE = "Hey, I'm Quorum \u2014 think of me less like an AI advisor, more like a mirror that gets sharper about your judgment the more we work through together. Tell me what's going on, in your own words, and I'll help you find the real decision underneath it. If it turns out to be a big one, we can bring in the full Council afterward \u2014 and I'll even guess what you'll choose before you see it. So \u2014 what's going on?"
+// Oct 2026 copy trim: dropped the "Tell me what's going on, in your own words"
+// sentence — the hero headline and the closing question already say it — so
+// this reads as positioning + one question, matching the shorter hero copy.
+export const OPENING_LINE = "Hey, I'm Quorum \u2014 less an AI advisor, more a mirror that gets sharper about your judgment the more we work through together. I'll help you find the real decision underneath, bring in the full Council if it's a big one, and even guess what you'll choose before you see it. So \u2014 what's going on?"
 
 // Compact reference block the follow-up prompt below can ground FAQ-type
 // answers in — computed once per module load (FAQS itself is a static
