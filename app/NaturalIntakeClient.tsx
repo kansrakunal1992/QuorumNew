@@ -38,7 +38,13 @@ type Phase = 'chat' | 'checkpoint'
 // pending vs. decided for MemoryEngineStatus), not the rest of what
 // app/HomeClient.tsx's fuller SessionSummary carries.
 interface HistorySession {
-  outcome: unknown | null
+  id:             string
+  decision_text:  string
+  created_at:     string
+  outcome: {
+    council_helped: string
+    what_decided:   string
+  } | null
 }
 
 export default function NaturalIntakeClient() {
@@ -204,6 +210,7 @@ export default function NaturalIntakeClient() {
           pendingOutcomesCount={pendingOutcomesCount}
           decidedCount={decidedCount}
           heroCards={heroCards}
+          historySessions={historySessions}
         />
       )}
       {phase === 'checkpoint' && chatIntakeId && (

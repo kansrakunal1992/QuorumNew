@@ -30,6 +30,8 @@ import PatternSurfaceCard from '@/components/PatternSurfaceCard'   // item 6 pla
 import CalibrationRevealCard from '@/components/CalibrationRevealCard' // item 6 plan, Phase 2
 import RecurringConditionCard from '@/components/RecurringConditionCard' // item 6 plan, Phase 2
 import HeroCardCollapsible from '@/components/HeroCardCollapsible' // item 6 plan, round 2
+import JudgmentRecordStrip from '@/components/JudgmentRecordStrip'
+import type { JudgmentRecordSession } from '@/components/JudgmentRecordStrip'
 import type { DimPattern } from '@/components/RecurringConditionCard'
 import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
@@ -62,6 +64,7 @@ interface ChatIntakeProps {
   pendingOutcomesCount:  number
   decidedCount:          number
   heroCards:             HeroCardId[]
+  historySessions:       JudgmentRecordSession[]
 }
 
 function TypewriterLine({ text }: { text: string }) {
@@ -93,6 +96,7 @@ export default function ChatIntake({
   pendingOutcomesCount,
   decidedCount,
   heroCards,
+  historySessions,
 }: ChatIntakeProps) {
   const [bubbles, setBubbles]   = useState<ChatBubble[]>([])
   const [input, setInput]       = useState('')
@@ -659,6 +663,12 @@ export default function ChatIntake({
               <AuthPanel userEmail={userEmail} onAuthenticated={onUserEmailChange} />
             </div>
           )}
+
+          {/* Judgment Record, ported from app/HomeClient.tsx's flag-off
+              version — same tabs/data, deliberately NOT HeroCardCollapsible's
+              look (see components/JudgmentRecordStrip.tsx's own header
+              comment for why). Renders nothing when there's no history yet. */}
+          <JudgmentRecordStrip sessions={historySessions} />
 
           {/* Item 6 plan, Phase 4 — reference content: read-whenever, not
               core to the current task, so it's the last thing on the
