@@ -10,8 +10,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient } from '@/lib/supabase'
+import { setReturnTo } from '@/lib/return-to'
 
 export async function signInWithGoogle(): Promise<void> {
+  // Phase 0: remember where the person was so /auth/callback can send them
+  // back there instead of always to '/'. (Home itself is the default and
+  // clears any stale value.)
+  setReturnTo(window.location.pathname + window.location.search)
   const supabase = createClient()
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
   await supabase.auth.signInWithOAuth({

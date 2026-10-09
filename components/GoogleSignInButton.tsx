@@ -21,6 +21,8 @@ import { signInWithGoogle } from '@/lib/google-auth'
 interface Props {
   variant?: 'primary' | 'compact'
   subtext?: string
+  /** Phase 1: lets callers fire analytics the moment the OAuth redirect starts. */
+  onStart?: () => void
 }
 
 const GoogleIcon = () => (
@@ -32,11 +34,16 @@ const GoogleIcon = () => (
   </svg>
 )
 
-export default function GoogleSignInButton({ variant = 'primary', subtext }: Props) {
+export default function GoogleSignInButton({ variant = 'primary', subtext, onStart }: Props) {
+  // Phase 1: wrapped so the click event is not passed into signInWithGoogle
+  // and so callers can track the start. signInWithGoogle itself now records
+  // the current page as the return path (see lib/google-auth.ts).
+  const handleClick = () => { onStart?.(); void signInWithGoogle() }
+
   if (variant === 'compact') {
     return (
       <button
-        onClick={signInWithGoogle}
+        onClick={handleClick}
         style={{
           padding: '8px 16px', background: 'rgba(201,168,76,0.12)',
           border: '1px solid var(--gold-dim)', borderRadius: 8,
@@ -52,7 +59,7 @@ export default function GoogleSignInButton({ variant = 'primary', subtext }: Pro
   return (
     <>
       <button
-        onClick={signInWithGoogle}
+        onClick={handleClick}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           padding: '9px 12px', background: 'var(--bg-inset)', border: '1px solid var(--border-mid)',

@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import OutcomeTracker from '@/components/OutcomeTracker'
 import BriefCTA from '@/components/BriefCTA'
-import EmailCaptureCard from '@/components/EmailCaptureCard'
+import NextDecisionPrompt from '@/components/NextDecisionPrompt'   // Phase 1: replaces EmailCaptureCard here
 import EarlyEchoCard from '@/components/EarlyEchoCard'
 import ValidationCard from '@/components/ValidationCard'
 import Link from 'next/link'
@@ -1074,7 +1074,7 @@ export default async function RecordPage({ params }: Props) {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
-                New Decision
+                Another decision
               </button>
             </Link>
           </div>
@@ -1144,9 +1144,21 @@ export default async function RecordPage({ params }: Props) {
             <EarlyEchoCard sessionId={session.id} />
           </div>
 
-          {/* ── Email capture — shown to unlinked users only ────── */}
+          {/* ── Phase 1: continuity block ───────────────────────────
+              Replaces EmailCaptureCard. "Anything else you're going back and
+              forth on?" + park/bring-now, and (for unlinked people only) the
+              soft "keep my record" card, now tied to this record's review
+              date. 'field' variant + no explainer: this page already has the
+              brief CTA and EarlyEchoCard, and the header / footer buttons are
+              the "another decision" actions. No primary-styled button here. */}
           <div className="rec-fade rec-fade-3" style={{ marginBottom: 28 }}>
-            <EmailCaptureCard sessionId={session.id} />
+            <NextDecisionPrompt
+              surface="record_page"
+              variant="field"
+              sessionId={session.id}
+              reviewDate={session.commitment_review_date ?? null}
+              showExplainer={false}
+            />
           </div>
 
           {/* ── Persona Sections ───────────────────────────────── */}
@@ -1462,7 +1474,7 @@ export default async function RecordPage({ params }: Props) {
                   className="btn-ghost"
                   style={{ padding: '10px 18px', fontSize: 13, minHeight: 44 }}
                 >
-                  New Decision
+                  Bring me another decision &rarr;
                 </button>
               </Link>
             </div>

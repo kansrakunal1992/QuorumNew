@@ -12,7 +12,7 @@ import MetaPixel from '@/components/MetaPixel'                         // Free-t
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
-  description: 'Convene your personal advisory council before every high-stakes decision.',
+  description: 'Convene your personal advisory council for the big calls, and the smaller ones you keep circling.',
 }
 
 // ── Structured data (schema.org) ──────────────────────────────────────────
@@ -46,7 +46,7 @@ function structuredData(appUrl: string) {
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         description:
-          'Convene a council of six AI advisor personas before a high-stakes decision, then track whether your judgment compounds over time with Mirror. Built for founders, CXOs, and family office principals.',
+          'Convene a council of six AI advisor personas for a big decision, or one you keep circling, then track whether your judgment compounds over time with Mirror. Built for founders, CXOs, and family office principals.',
         offers: [
           {
             '@type': 'Offer',

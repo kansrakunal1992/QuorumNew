@@ -24,6 +24,9 @@ import QuorumPrediction       from '@/components/QuorumPrediction'
 import PredictionReveal       from '@/components/PredictionReveal'
 import SynthesisChallenge     from '@/components/SynthesisChallenge'
 import RecordReceipt from './RecordReceipt'
+import NextDecisionPrompt from '@/components/NextDecisionPrompt'   // Phase 1: continuity ending
+import { setDecisionPrefill } from '@/lib/prefill'                  // Phase 1
+import { track } from '@/lib/track'                                  // Phase 0: first-party events
 import ContradictionBanner from './ContradictionBanner'
 import DecisionStateCard from './DecisionStateCard'    // Sprint Chunk 1
 import RuleRecallBanner from './RuleRecallBanner'       // Sprint Chunk 1
@@ -254,7 +257,10 @@ export default function SessionView({ session: initialSession, initialMessages =
       const raw = localStorage.getItem(key)
       const ids: string[] = raw ? JSON.parse(raw) : []
       if (!ids.includes(initialSession.id)) {
-        const updated = [initialSession.id, ...ids].slice(0, 20)
+        // Phase 0: cap raised 20 -> 100 to match lib/storage.ts's pushSessionId;
+        // the old cap silently dropped older decisions from the on-device count,
+        // history and prediction tally for anyone past their 20th decision.
+        const updated = [initialSession.id, ...ids].slice(0, 100)
         localStorage.setItem(key, JSON.stringify(updated))
       }
     } catch {}
@@ -360,6 +366,18 @@ export default function SessionView({ session: initialSession, initialMessages =
   // Point 4: tracks whether the final decision has been locked, so
   // RecordReceipt (the "you're done" signal) can be withheld until it has.
   const [decisionLocked,   setDecisionLocked]   = useState(!!initialSession.final_decision_locked_at)
+  // Phase 1: the review date the person just chose (reported by PredictionReveal)
+  // -- feeds the "Quorum will bring this back to you on {date}" connect card.
+  const [lockedReviewDate, setLockedReviewDate] = useState<string | null>(initialSession.commitment_review_date ?? null)
+  // Phase 1: shorter default review date for reversible decisions. Uses the same
+  // stakes_reversibility field RecordReceipt reads; undefined until the ontology
+  // tagger has filled it, in which case PredictionReveal keeps its 30-day default.
+  const defaultReviewDays = (() => {
+    const s = (session.stakes_reversibility ?? '').toLowerCase()
+    if (!s || s.includes('high') || s.includes('irrevers')) return undefined
+    if (s.includes('low') || s.includes('revers')) return 7
+    return undefined
+  })()
   // D2 fix: brief highlight on the lock-decision section when Save Record
   // is clicked before locking — scrollIntoView alone can be easy to miss on
   // a phone if the section was already partly in view.
@@ -1298,15 +1316,38 @@ export default function SessionView({ session: initialSession, initialMessages =
       .catch(() => setPriorSummaryText(null))
   }, [drawerOpen, prioSummaryLoaded, session.id])
 
-  const handleNewDecision = () => {
+  // Phase 1: now takes optional text from NextDecisionPrompt's "Anything else
+  // you're going back and forth on?" field. The navbar wordmark also calls this
+  // directly (passing a click event), hence the typeof check.
+  const handleNewDecision = (prefill?: unknown) => {
+    const prefillText = typeof prefill === 'string' ? prefill : ''
     if (!saved) {
       const ok = window.confirm(
         `Start a new decision?\n\nThis session is still available at its URL, but you haven\u2019t saved the Decision Record yet.`
       )
       if (!ok) return
     }
+    if (prefillText) setDecisionPrefill(prefillText)
     router.push('/')
   }
+
+  // Phase 1: the continuity block (tally, "anything else on your plate?",
+  // soft connect) replaces the ghost "New Decision" button once this decision
+  // is actually finished -- under the unified flag that means locked.
+  const showNextPrompt = synthesisDone && (!isUnifiedSessionEnabled() || decisionLocked)
+
+  // Phase 0: one decision_completed event per Council decision, deduped per
+  // session in sessionStorage so revisiting the page does not recount it.
+  useEffect(() => {
+    if (!showNextPrompt) return
+    try {
+      const key = `quorum_evt_completed_${session.id}`
+      if (sessionStorage.getItem(key)) return
+      sessionStorage.setItem(key, '1')
+    } catch {}
+    track('decision_completed', { path: 'council' }, { sessionId: session.id })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNextPrompt])
 
   // Vet-fix (a): true while the Council is between a settled state and the
   // record page's own read of the `messages` table — either an advisor
@@ -2283,7 +2324,11 @@ export default function SessionView({ session: initialSession, initialMessages =
                       lockedInstinct === 'reject' ? 'leaning no'  :
                       lockedInstinct === 'unsure' ? 'genuinely unsure' : null
                     }
-                    onDecided={() => setDecisionLocked(true)}
+                    onDecided={(info) => {
+                      setDecisionLocked(true)
+                      if (info?.reviewDate) setLockedReviewDate(info.reviewDate)
+                    }}
+                    defaultReviewDays={defaultReviewDays}
                     alreadyDecided={decisionLocked}
                     initialMatched={initialSession.prediction_matched_final}
                   />
@@ -2446,21 +2491,37 @@ export default function SessionView({ session: initialSession, initialMessages =
             </TTSProvider>
 
 
+            {/* Phase 1 — continuity block above the tray (see NextDecisionPrompt). */}
+            {showNextPrompt && (
+              <div className="sv-fade sv-fade-4" style={{ marginTop: 44 }}>
+                <div className="gold-rule" style={{ marginBottom: 20 }} />
+                <NextDecisionPrompt
+                  surface="session_page"
+                  sessionId={session.id}
+                  reviewDate={lockedReviewDate}
+                  refreshKey={decisionLocked ? 'locked' : 'open'}
+                  onBringNow={handleNewDecision}
+                />
+              </div>
+            )}
+
             {/* ── Bottom Action Tray ── */}
             <div className="sv-fade sv-fade-4" style={{ marginTop: 44 }}>
               <div className="gold-rule" style={{ marginBottom: 20 }} />
               <div className="sv-tray">
                 <div className="sv-tray-left">
+                  {!showNextPrompt && (
                   <button
                     className="btn-ghost"
                     style={{ fontSize: 13, padding: '11px 18px', display: 'flex', alignItems: 'center', gap: 7, minHeight: 44 }}
-                    onClick={handleNewDecision}
+                    onClick={() => handleNewDecision()}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                       <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
                     New Decision
                   </button>
+                  )}
                   <button
                     className="btn-ghost"
                     style={{ fontSize: 13, padding: '11px 18px', display: 'flex', alignItems: 'center', gap: 7, minHeight: 44 }}

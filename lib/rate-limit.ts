@@ -76,6 +76,13 @@ export const LIMITS: Record<string, LimitConfig> = {
     limit:      60,
     windowMs:   10 * 60_000,   // 60 chat-intake calls per 10 min
   },
+  // Phase 0 first-party analytics (POST /api/events) -- a handful of small
+  // events per decision; generous so real use is never dropped.
+  events: {
+    identifier: 'events',
+    limit:      240,
+    windowMs:   10 * 60_000,   // 240 events per 10 min per IP
+  },
   // Magic link sends — strictest limit; prevents email spam
   auth: {
     identifier: 'auth',

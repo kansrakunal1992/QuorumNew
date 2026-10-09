@@ -34,6 +34,11 @@ import type { CSSProperties } from 'react'
 import type { ChatDecisionState } from '@/lib/types'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { createClient } from '@/lib/supabase'
+import { getAuthHeaders } from '@/lib/auth-headers'      // Phase 0: send the token on checkpoint
+import { pushSessionId } from '@/lib/storage'            // Phase 0: "I'm done" sessions must reach local history
+import { track } from '@/lib/track'                      // Phase 0: first-party events
+import NextDecisionPrompt from '@/components/NextDecisionPrompt'  // Phase 1: continuity ending
+import { setDecisionPrefill } from '@/lib/prefill'
 import StakeholderOutreach from '@/components/StakeholderOutreach'   // Phase 2/3, v2
 
 interface ExaminerQuestion {
@@ -60,6 +65,12 @@ interface Props {
   chatIntakeId:      string
   onBackToChat:      () => void
   onSessionCreated:  (sessionId: string) => void
+  /**
+   * Phase 1: called by the "I'm done" ending's continuity block with any text
+   * the person typed ('' if none). NaturalIntakeClient resets to a fresh chat
+   * (and prefills the input). Falls back to a full reload when not provided.
+   */
+  onNewDecision?:    (prefill: string) => void
 }
 
 type SubPhase = 'loading' | 'reflect' | 'editing' | 'creating' | 'examine' | 'reveal' | 'submitting' | 'done'
@@ -100,7 +111,7 @@ const secondaryBtn: CSSProperties = {
   fontWeight: 500, fontSize: 15, cursor: 'pointer', width: '100%',
 }
 
-export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessionCreated }: Props) {
+export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessionCreated, onNewDecision }: Props) {
   const [subPhase, setSubPhase]     = useState<SubPhase>('loading')
   const [state, setState]           = useState<ChatDecisionState>({})
   const [editedText, setEditedText] = useState('')
@@ -202,12 +213,16 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     try {
       const res = await fetch('/api/chat-intake/checkpoint', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // Phase 0 fix: the checkpoint route forwards this header to
+        // POST /api/session, which derives user_id from it. Without it the
+        // session was created with user_id = null even for signed-in people.
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
         body:    JSON.stringify({ chatIntakeId, editedDecisionText: overrideText }),
       })
       const data = await res.json()
       if (!res.ok || !data.sessionId) throw new Error(data?.error || 'Failed to create session')
       setSessionId(data.sessionId)
+      track('decision_checkpointed', { signed_in: !!authToken }, { sessionId: data.sessionId })
 
       // Everything below is fired in parallel, not awaited one after another.
       // The prediction starts the instant the session exists (its lean and
@@ -310,6 +325,12 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         nextAction: nextAction.trim() || undefined,
       }),
     })
+    // Phase 0 fix: an "I'm done" session never visits /session/[id], which is
+    // where SessionView adds the id to local history -- so these decisions
+    // were missing from the on-device count, the hero cards and the prediction
+    // tally. (Consent-gated, same as pushSessionId's other callers.)
+    if (sessionId) pushSessionId(sessionId)
+    track('decision_completed', { path: 'done' }, { sessionId })
     setSubPhase('done')
   }
 
@@ -342,9 +363,24 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
             Actually, convene the Council
           </button>
           <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginTop: -4 }}>About a minute</div>
-          <button style={{ ...secondaryBtn, border: 'none', color: 'var(--text-4)' }} onClick={() => window.location.reload()}>
-            Start a new decision
-          </button>
+        </div>
+
+        {/* Phase 1: replaces the faint "Start a new decision" reload link.
+            Council stays the primary action above (deliberate -- see the
+            note on the Convene button); this block is the continuity layer:
+            tally, why another decision helps, park/bring-it-now, and the
+            soft "keep my record" card. */}
+        <div style={{ width: '100%', maxWidth: 340, marginTop: 12 }}>
+          <NextDecisionPrompt
+            surface="done_screen"
+            emphasis="secondary"
+            sessionId={sessionId}
+            onBringNow={(t) => {
+              if (onNewDecision) { onNewDecision(t); return }
+              setDecisionPrefill(t)
+              window.location.reload()
+            }}
+          />
         </div>
       </div>
     )

@@ -36,7 +36,11 @@ import type { DimPattern } from '@/components/RecurringConditionCard'
 import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
 import type { MirrorStatus, ChatDecisionState } from '@/lib/types'
-import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import { isUnifiedSessionEnabled, isWatchlistEnabled } from '@/lib/feature-flags'
+import WatchlistSection from '@/components/WatchlistSection'   // Phase 1: parked items need a visible home
+import { getAuthHeaders } from '@/lib/auth-headers'   // Phase 0: send the token so chat_intakes/sessions get user_id
+import { track } from '@/lib/track'                     // Phase 0: first-party events
+import { takeDecisionPrefill } from '@/lib/prefill'    // Phase 1: "Bring it now" hand-off
 import { buildLeanChoices, matchSavedLean, PRIORITIES } from '@/lib/chat-intake-lean'
 import type { LeanChoice } from '@/lib/chat-intake-lean'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
@@ -132,7 +136,14 @@ export default function ChatIntake({
   // own separate /api/mirror/status call the way it used to.
   const hasEmail       = !!userEmail
   const mirrorUnlocked = mirrorStatus?.gateState === 'unlocked'
-  const sessionCount   = mirrorStatus?.sessionCount ?? 0
+  // Phase 0 fix: an anonymous visitor's mirrorStatus is null (or gateState
+  // 'auth' with sessionCount 0), so this used to read 0 even with decisions on
+  // the device -- the Memory Engine card then said "0 sessions" while hero-card
+  // eligibility (computed in NaturalIntakeClient from history) said otherwise.
+  // Fall back to the locally-known history count.
+  const sessionCount   = mirrorStatus && mirrorStatus.gateState !== 'auth'
+    ? mirrorStatus.sessionCount
+    : historySessions.length
 
   // True once the user has sent at least one message — switches the screen
   // from the branded "front door" hero (headline + example chips) into the
@@ -143,6 +154,18 @@ export default function ChatIntake({
     setInput(text)
     inputRef.current?.focus()
   }
+
+  // Phase 1: text handed over from a post-decision screen ("Bring it now").
+  // Only for a brand-new chat; a resumed chat already has its own thread.
+  useEffect(() => {
+    if (chatIntakeId) return
+    const pending = takeDecisionPrefill()
+    if (pending) {
+      setInput(pending)
+      setTimeout(() => inputRef.current?.focus(), 60)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Load the conversation this screen should show ──────────────────────────
   // Two cases share one effect, both mount-only (chatIntakeId is read at the
@@ -202,7 +225,10 @@ export default function ChatIntake({
     try {
       const res = await fetch('/api/chat-intake', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // Phase 0 fix: previously no Authorization header here, so chat_intakes
+        // (and, via the checkpoint, sessions) were created with user_id = null
+        // even for signed-in people.
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
         body: JSON.stringify({
           chatIntakeId,
           message:        trimmed,
@@ -213,7 +239,10 @@ export default function ChatIntake({
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Chat failed')
 
-      if (!chatIntakeId) onChatIntakeId(data.chatIntakeId)
+      if (!chatIntakeId) {
+        onChatIntakeId(data.chatIntakeId)
+        track('decision_started', { entry: 'chat' })
+      }
       setExchangeCount(data.exchangeCount)
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
 
@@ -393,7 +422,10 @@ export default function ChatIntake({
         }}>
           {mirrorStatus && mirrorStatus.gateState !== 'auth' && mirrorStatus.sessionCount > 0
             ? `${mirrorStatus.sessionCount} decision${mirrorStatus.sessionCount === 1 ? '' : 's'}`
-            : hasEmail ? 'Mirror' : 'Sign in'}
+            : hasEmail ? 'Mirror'
+            // Phase 0: an anonymous visitor with decisions on this device
+            // used to see a bare "Sign in" -- say what signing in keeps.
+            : historySessions.length > 0 ? 'Keep my record' : 'Sign in'}
         </Link>
       </div>
 
@@ -571,6 +603,7 @@ export default function ChatIntake({
                 Tell me what's going on. I'll find the decision underneath it.
               </p>
               <p style={{ fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.5, margin: '6px auto 0', maxWidth: 360 }}>
+                For the big calls, and the smaller ones you keep circling.
                 Full Council comes in once we know the decision.
               </p>
             </div>
@@ -652,6 +685,19 @@ export default function ChatIntake({
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {/* Phase 1 — Watchlist, back in the chat front door for signed-in
+              people (it only ever existed in the classic HomeClient). Pulled
+              forward from the Phase 2 plan because "Park it for later" at the
+              end of a decision writes here; without a visible list that would
+              feel like a black hole. Graduating an item drops its text into
+              the chat input; the normal chat -> Council path takes it from
+              there. Flag-gated and bearer-only, exactly as in HomeClient. */}
+          {isWatchlistEnabled() && authToken && (
+            <div style={{ width: '100%', maxWidth: 440, marginTop: 16, textAlign: 'left' }}>
+              <WatchlistSection authToken={authToken} onGraduate={handleStarterPick} />
             </div>
           )}
 

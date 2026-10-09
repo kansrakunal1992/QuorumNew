@@ -38,6 +38,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
+import { sanitizeReturnTo } from '@/lib/return-to'   // Phase 0: send people back where they were
 
 export async function POST(req: Request) {
   const rlResult = checkLimit(getClientIP(req), LIMITS.auth)
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
     utmSource?:   string
     utmCampaign?: string
     utmContent?:  string
+    returnTo?:    string | null   // Phase 0
   }
   try { body = await req.json() }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
@@ -90,6 +92,10 @@ export async function POST(req: Request) {
   if (body.utmSource)   params.set('us', body.utmSource)
   if (body.utmCampaign) params.set('uc', body.utmCampaign)
   if (body.utmContent)  params.set('ct', body.utmContent)
+  // Phase 0: ?rt= carries a same-origin path (validated) so a link opened in a
+  // different browser still lands on the page the person signed in from.
+  const returnTo = sanitizeReturnTo(body.returnTo)
+  if (returnTo) params.set('rt', returnTo)
 
   const query = params.toString()
   const emailRedirectTo = `${baseUrl}/auth/callback${query ? `?${query}` : ''}`

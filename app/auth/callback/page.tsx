@@ -23,6 +23,9 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getStoredSessionIds, storeUserEmail, getStoredDeviceId } from '@/lib/storage'
+import { sanitizeReturnTo, readReturnTo, clearReturnTo } from '@/lib/return-to'   // Phase 0: return to where they were
+import { readPendingParks, setPendingParks } from '@/lib/pending-park'             // Phase 1: file parked items after sign-in
+import { track } from '@/lib/track'                                                 // Phase 0: first-party events
 import { trackMetaEvent } from '@/lib/meta-pixel'
 
 // ── Inner component — reads URL params (requires Suspense parent) ─────────────
@@ -185,7 +188,41 @@ function CallbackHandler() {
           }),
         })
 
+        // ── Phase 1: file anything parked while anonymous ─────────────────────
+        // "Park it for later" needs an account; the text waited in
+        // localStorage (lib/pending-park.ts). Failures stay queued for next time.
+        try {
+          const pending = readPendingParks()
+          if (pending.length) {
+            const failed: string[] = []
+            for (const text of pending) {
+              try {
+                const r = await fetch('/api/watchlist', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                  body:    JSON.stringify({ text }),
+                })
+                if (!r.ok && r.status !== 404) failed.push(text)   // 404 = Watchlist flag off: drop, do not retry forever
+              } catch { failed.push(text) }
+            }
+            setPendingParks(failed)
+          }
+        } catch { /* non-fatal */ }
+
+        track('auth_completed', { provider: authMethod, new_registration: isNewRegistration })
+
         setStatus('done')
+
+        // ── Phase 0: send people back where they signed in from ───────────────
+        // ?rt= (magic link, survives a different browser) wins over the
+        // localStorage value (Google OAuth / same-browser). Both are validated
+        // same-origin paths. Home stays the default.
+        const returnTo = sanitizeReturnTo(searchParams.get('rt')) ?? readReturnTo()
+        clearReturnTo()
+        if (returnTo) {
+          router.replace(`${returnTo}${returnTo.includes('?') ? '&' : '?'}linked=1`)
+          return
+        }
         // Encode email into the redirect URL so any browser (Chrome main, Custom Tab,
         // Safari, etc.) can pick up the identity — localStorage is isolated per browser
         // context on mobile, so we cannot rely on storeUserEmail reaching the right one.

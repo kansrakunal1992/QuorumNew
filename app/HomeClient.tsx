@@ -787,7 +787,7 @@ export default function Home() {
             ⚙
           </Link>
         </div>
-        <span className="nav-tagline">Decision Intelligence for high-stakes calls</span>
+        <span className="nav-tagline">Decision Intelligence for the calls that matter</span>
       </nav>
 
       {/* ── Main ─────────────────────────────────────────── */}

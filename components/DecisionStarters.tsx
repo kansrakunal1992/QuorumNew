@@ -60,12 +60,32 @@ const CATEGORIES: { label: string; items: string[] }[] = [
   ] },
 ]
 
+// Phase 1 (retention work): decision supply is the retention limit -- people
+// assume Quorum is only for life-changing decisions, so they have nothing to
+// bring on a second visit. This chip is the explicit "smaller calls are
+// welcome" signal. Only the compact (chat hero) strip shows it; the classic
+// HomeClient six-category strip above is unchanged. Items are phrased so the
+// normal chat -> checkpoint -> Council path still fits them (no promise of a
+// shortcut).
+const SMALL_CALLS: { label: string; items: string[] } = {
+  label: 'Small calls',
+  items: [
+    'Should I reply to this today?',
+    'Which of these two should I do first?',
+    'Should I keep this or return it?',
+    'Should I say yes to this invite?',
+    'Should I raise this with them or let it go?',
+  ],
+}
+
 export default function DecisionStarters({ onPick, compact = false, label = 'Or start with a decision' }: Props) {
   const [open, setOpen] = useState<string | null>(null)
-  // Compact mode (the chat hero) shows four tabs, not the full six — "not a
-  // big product tour," but "Career / Business / Money" alone was felt to be
-  // too narrow, so Personal joins the compact set.
-  const categories = compact ? CATEGORIES.slice(0, 4) : CATEGORIES
+  // Compact mode (the chat hero) used to show only Career / Business / Money /
+  // Personal -- which hid Relationships and Everyday and told every visitor
+  // this was for big decisions only. Phase 1: Relationships comes back and
+  // "Small calls" replaces Everyday. Six chips wrap to two rows on a phone; if
+  // that feels crowded, drop Relationships first.
+  const categories = compact ? [...CATEGORIES.slice(0, 5), SMALL_CALLS] : CATEGORIES
 
   return (
     <div style={{ margin: compact ? '0' : '10px 0 16px' }}>

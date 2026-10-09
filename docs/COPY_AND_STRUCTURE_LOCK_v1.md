@@ -72,3 +72,44 @@ out of v1.
 `--bg-void`, `--bg-card`, `--bg-inset`, `--border-dim`, `--border-mid`,
 `--text-1` through `--text-4`, `--gold`, `--gold-bright`, `--gold-dim`,
 `--font-body`, `--font-display`.
+
+## Phase 1 additions (retention work) -- copy and structure
+
+Same convention: this section is the source of truth; code follows it.
+None of these lines use internal terms (Council, Examiner, Mirror-as-feature
+names) except where the existing screen already did.
+
+### Front door positioning (replaces "high-stakes" on free surfaces)
+- Hero sub-line (`ChatIntake`): **"For the big calls, and the smaller ones you keep circling. Full Council comes in once we know the decision."**
+- Meta / OG / JSON-LD descriptions (`app/layout.tsx`, `app/page.tsx`): "...for the big calls, and the smaller ones you keep circling."
+- Classic nav tagline (`HomeClient`): **"Decision Intelligence for the calls that matter"**
+- Do NOT promise speed or a lighter path -- the full flow is unchanged.
+- Paid / Mirror / methodology / terms copy keeps its high-stakes framing on purpose.
+
+### Starters (compact chat hero only)
+Chips: Career, Business, Money, Personal, Relationships, **Small calls**.
+Small calls items: "Should I reply to this today?" / "Which of these two should I do first?" / "Should I keep this or return it?" / "Should I say yes to this invite?" / "Should I raise this with them or let it go?"
+
+### Top-bar label (`ChatIntake`)
+Anonymous visitor with decisions on the device: **"Keep my record"** (was "Sign in").
+
+### Post-decision continuity block (`NextDecisionPrompt`)
+Shown on the "I'm done" ending, the Council page (once the decision is locked), and the record page.
+- Tally (only once a prediction outcome exists): "Quorum has guessed right 1 of 2 so far." / "You've surprised Quorum on your first one."
+- Why another decision helps (by count): 1 -> "Quorum learns how you decide by comparing decisions. Two are enough for a first comparison." / 2 -> "A third decision gives Quorum its first real look at how you decide." / 3+ -> "Each new decision sharpens what Quorum can see in how you decide."
+- Field label: **"Anything else you're going back and forth on?"**
+- Buttons: **"Bring me another decision ->"** (becomes **"Bring this one now ->"** once text is typed); **"Park it for later"** (only with text, only when the Watchlist flag is on).
+- Parked confirmation: "Parked on your Watchlist." (signed in) / "Parked." (anonymous, then the connect card opens).
+- The "I'm done" ending keeps "Actually, convene the Council" as the primary action; the button above is the outline/secondary style there.
+
+### Soft connect card (`ConnectCard`, mode `d1_soft`)
+- Collapsed line, by context:
+  - parked item: "Parked. Quorum will hold "..." and bring it back to you. Where should it reach you?"
+  - review date known: "Quorum will bring this decision back to you on {date}. Where should it reach you?"
+  - otherwise: "Quorum can remember your decisions and tell you when it finds something. Where should it reach you?"
+- Buttons: **"Keep my record"** (expands), **"Not now"** (hides for 72 hours).
+- Expanded: Continue with Google, then "or", then email field + **"Email me a link"**. Footnote: "No password. Just a link, or Google."
+- After sending: "Check your inbox." / "The link brings you back here with your decisions connected."
+
+### Review date (`PredictionReveal`)
+Quick-pick chips: **In 3 days / In 1 week / In 1 month** plus the existing date picker. The date stays required.

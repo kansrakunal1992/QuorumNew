@@ -17,15 +17,23 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import SessionComposer from '@/components/SessionComposer'
+import { track } from '@/lib/track'   // Phase 1: first-party events
 
 interface Props {
   sessionId:             string
   authToken:             string | null
   predictedChoice:       string | null
   initialInstinctLabel?: string | null
-  onDecided?:            () => void
+  /** Phase 1: now also reports the review date that was just saved. */
+  onDecided?:            (info?: { reviewDate: string }) => void
+  /**
+   * Phase 1: starting review date, in days. Callers pass a shorter default for
+   * low-stakes decisions (a 30-day check on "should I reply to this?" is too
+   * slow to ever feel relevant). Ignored once the person has picked a date.
+   */
+  defaultReviewDays?:    number
   alreadyDecided?:       boolean
   initialMatched?:       boolean | null
 }
@@ -42,12 +50,20 @@ function todayPlusDays(days: number): string {
 }
 
 export default function PredictionReveal({
-  sessionId, authToken, predictedChoice, initialInstinctLabel, onDecided, alreadyDecided, initialMatched,
+  sessionId, authToken, predictedChoice, initialInstinctLabel, onDecided, alreadyDecided, initialMatched, defaultReviewDays,
 }: Props) {
   // 'compose' -> 'review' -> locked (reveal shown)
   const [phase, setPhase]           = useState<'compose' | 'review'>('compose')
   const [draftDecision, setDraft]   = useState('')
-  const [reviewDate, setReviewDate] = useState(todayPlusDays(30))
+  const [reviewDate, setReviewDate] = useState(todayPlusDays(defaultReviewDays ?? 30))
+  // Phase 1: true once the person picks a chip or edits the date -- after that
+  // a late-arriving defaultReviewDays (stakes tags land asynchronously) must
+  // not overwrite their choice.
+  const reviewTouched = useRef(false)
+  const reviewViaChip = useRef(false)
+  useEffect(() => {
+    if (!reviewTouched.current && defaultReviewDays) setReviewDate(todayPlusDays(defaultReviewDays))
+  }, [defaultReviewDays])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [reveal, setReveal]         = useState<RevealState | null>(
@@ -86,7 +102,11 @@ export default function PredictionReveal({
       }).catch(() => {})
 
       setReveal({ predictionMatched: data.predictionMatched, patternCount: data.patternCount })
-      onDecided?.()
+      track('review_date_chosen', {
+        days_out: Math.max(0, Math.round((new Date(`${reviewDate}T12:00:00`).getTime() - Date.now()) / 86_400_000)),
+        via_chip: reviewViaChip.current,
+      }, { sessionId })
+      onDecided?.({ reviewDate })
     } catch (e) {
       setError(e instanceof Error && e.message === 'Final decision already recorded for this session'
         ? 'You already locked a decision for this session.'
@@ -181,11 +201,37 @@ export default function PredictionReveal({
       <label style={{ display: 'block', fontSize: 11.5, color: 'var(--text-3)', margin: '12px 0 6px' }}>
         When should Quorum bring this back to you? (required)
       </label>
+      {/* Phase 1: quick picks. A small decision resolves in days, not a month. */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '0 0 8px' }}>
+        {[
+          { label: 'In 3 days',  days: 3  },
+          { label: 'In 1 week',  days: 7  },
+          { label: 'In 1 month', days: 30 },
+        ].map(opt => {
+          const selected = reviewDate === todayPlusDays(opt.days)
+          return (
+            <button
+              key={opt.days}
+              type="button"
+              onClick={() => { reviewTouched.current = true; reviewViaChip.current = true; setReviewDate(todayPlusDays(opt.days)) }}
+              style={{
+                padding: '8px 14px', fontSize: 12.5, borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+                border: `1px solid ${selected ? 'var(--gold)' : 'var(--border-dim)'}`,
+                background: selected ? 'rgba(201,168,76,0.1)' : 'var(--bg-inset)',
+                color: selected ? 'var(--gold)' : 'var(--text-3)',
+                minHeight: 38,
+              }}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
       <input
         type="date"
         value={reviewDate}
         min={todayPlusDays(1)}
-        onChange={e => setReviewDate(e.target.value)}
+        onChange={e => { reviewTouched.current = true; reviewViaChip.current = false; setReviewDate(e.target.value) }}
         style={{
           fontSize:     16,
           padding:      '9px 10px',

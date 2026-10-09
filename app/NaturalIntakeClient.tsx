@@ -25,6 +25,8 @@ import {
 } from '@/lib/storage'
 import { createClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import { track } from '@/lib/track'   // Phase 0: first-party events
+import { setDecisionPrefill } from '@/lib/prefill'   // Phase 1
 import { eligibleHeroCards } from '@/lib/hero-cards'
 import type { MirrorStatus } from '@/lib/types'
 import type { DimPattern } from '@/components/RecurringConditionCard'
@@ -62,6 +64,12 @@ export default function NaturalIntakeClient() {
   const [patternDimensions, setPatternDimensions] = useState<DimPattern[]>([])
   const [historySessions, setHistorySessions]     = useState<HistorySession[]>([])
   const [showProfileCapture, setShowProfileCapture] = useState(false)
+  // Phase 1: bumped when a new decision starts so the home history (and the
+  // counts derived from it) refetch instead of staying frozen at page load.
+  const [historyVersion, setHistoryVersion] = useState(0)
+
+  // Phase 0: one landing_view per mount of the front door.
+  useEffect(() => { track('landing_view', { surface: 'natural_intake' }) }, [])
 
   useEffect(() => {
     setUserEmail(getStoredUserEmail())
@@ -118,7 +126,7 @@ export default function NaturalIntakeClient() {
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authToken])
+  }, [authToken, historyVersion])
 
   const sessionCount   = mirrorStatus?.sessionCount ?? historySessions.length
   const mirrorUnlocked = mirrorStatus?.gateState === 'unlocked'
@@ -184,6 +192,17 @@ export default function NaturalIntakeClient() {
     router.push(`/session/${sessionId}`)
   }
 
+  // Phase 1: "Bring me another decision" from the "I'm done" ending. A real
+  // state reset instead of window.location.reload(): fresh chat, fresh history.
+  function handleNewDecision(prefill: string) {
+    setDecisionPrefill(prefill)
+    setChatIntakeId(null)
+    setGrantExtra(false)
+    setPhase('chat')
+    setHistoryVersion(v => v + 1)
+    try { window.scrollTo(0, 0) } catch {}
+  }
+
   return (
     <main
       style={{
@@ -218,6 +237,7 @@ export default function NaturalIntakeClient() {
           chatIntakeId={chatIntakeId}
           onBackToChat={handleBackToChat}
           onSessionCreated={handleSessionCreated}
+          onNewDecision={handleNewDecision}
         />
       )}
 
