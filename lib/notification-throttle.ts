@@ -28,7 +28,7 @@ import { createServiceClient } from './supabase'
 
 export const SHARED_NUDGE_GATE_DAYS = 3
 
-export type NudgeSource = 'daily_nudge' | 'validation_nudge'
+export type NudgeSource = 'daily_nudge' | 'validation_nudge' | 'weekly_brief' | 'pattern_notice'
 
 /**
  * True if this user has NOT received a nudge combo (any gated source) within

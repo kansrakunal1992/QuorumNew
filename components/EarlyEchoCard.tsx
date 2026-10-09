@@ -56,24 +56,33 @@ interface Props {
 // that threshold ever changes, update both places.
 const PATTERN_MEMORY_THRESHOLD = 5
 
-function getSignal(count: number): { headline: string; sub: string } | null {
+// Phase 2 (retention work): one visible target at a time. The pips fill toward
+// the NEXT milestone -- 3 (Quorum's first look, the Mirror teaser) and then 5
+// (pattern memory) -- instead of one flat "5 more" that made the first two
+// decisions feel like they had achieved nothing. The progress is real: every
+// recorded decision counts, whatever its size.
+interface Signal { headline: string; sub: string; target: number }
+
+function getSignal(count: number): Signal | null {
   if (count < 2 || count >= 5) return null
-  const remaining = 5 - count
   switch (count) {
     case 2:
       return {
         headline: 'Second decision recorded.',
-        sub:      `${remaining} more and Quorum begins recognising structural patterns across your decisions.`,
+        sub:      'One more gives Quorum its first look at how you decide. Five lets the Council start connecting them.',
+        target:   3,
       }
     case 3:
       return {
         headline: 'Three decisions in.',
-        sub:      `${remaining} more to activate pattern memory. Your judgment record is building.`,
+        sub:      "Quorum's first look is ready in your Mirror. Two more activate pattern memory.",
+        target:   5,
       }
     case 4:
       return {
         headline: 'Four decisions recorded.',
         sub:      'One more to unlock structural pattern recognition — the Council will start connecting your decisions.',
+        target:   5,
       }
     default:
       return null
@@ -81,7 +90,8 @@ function getSignal(count: number): { headline: string; sub: string } | null {
 }
 
 export default function EarlyEchoCard({ sessionId, authToken }: Props) {
-  const [signal,  setSignal]  = useState<{ headline: string; sub: string } | null>(null)
+  const [signal,  setSignal]  = useState<Signal | null>(null)
+  const [filled,  setFilled]  = useState(0)
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -97,6 +107,7 @@ export default function EarlyEchoCard({ sessionId, authToken }: Props) {
       if (!result) return
 
       setSignal(result)
+      setFilled(count)
       setVisible(true)
 
       // Item C (dimension upgrade, session 3+) + bug fix (count verification,
@@ -126,6 +137,7 @@ export default function EarlyEchoCard({ sessionId, authToken }: Props) {
               const dateClause = data.matchDate ? ` in ${data.matchDate}` : ''
               setSignal({
                 headline: result.headline,
+                target:   result.target,
                 sub: `This decision shares ${data.dimensionLabel} with one you brought${dateClause}. ${5 - count} more to let the Council connect these directly.`,
               })
             }
@@ -178,6 +190,16 @@ export default function EarlyEchoCard({ sessionId, authToken }: Props) {
           }}>
             {signal.headline}
           </p>
+          {/* Phase 2: progress toward the next milestone. */}
+          <div aria-label={`${filled} of ${signal.target} decisions toward the next milestone`}
+               style={{ display: 'flex', gap: 5, margin: '0 0 6px' }}>
+            {Array.from({ length: signal.target }).map((_, i) => (
+              <span key={i} style={{
+                width: 18, height: 4, borderRadius: 2,
+                background: i < filled ? 'var(--gold)' : 'var(--border-mid, rgba(255,255,255,0.12))',
+              }} />
+            ))}
+          </div>
           <p style={{
             fontSize:   12,
             color:      'var(--text-4)',

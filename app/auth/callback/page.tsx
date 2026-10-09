@@ -25,6 +25,7 @@ import { createClient } from '@/lib/supabase'
 import { getStoredSessionIds, storeUserEmail, getStoredDeviceId } from '@/lib/storage'
 import { sanitizeReturnTo, readReturnTo, clearReturnTo } from '@/lib/return-to'   // Phase 0: return to where they were
 import { readPendingParks, setPendingParks } from '@/lib/pending-park'             // Phase 1: file parked items after sign-in
+import { readHabitPrefs } from '@/lib/habit-prefs'                                 // Phase 2: file the D2 cue + cadence after sign-in
 import { track } from '@/lib/track'                                                 // Phase 0: first-party events
 import { trackMetaEvent } from '@/lib/meta-pixel'
 
@@ -208,6 +209,20 @@ function CallbackHandler() {
             setPendingParks(failed)
           }
         } catch { /* non-fatal */ }
+
+        // ── Phase 2: file the cue + cadence chosen while anonymous ───────────
+        // The local copy is kept on purpose -- it is also what stops the D2
+        // card from asking again on this device.
+        try {
+          const hp = readHabitPrefs()
+          if (hp && (hp.cue || hp.cadence)) {
+            await fetch('/api/preferences/habit', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+              body:    JSON.stringify({ cue: hp.cue, cadence: hp.cadence }),
+            })
+          }
+        } catch { /* non-fatal; HabitSetupCard retries nothing, but the choice stays local */ }
 
         track('auth_completed', { provider: authMethod, new_registration: isNewRegistration })
 

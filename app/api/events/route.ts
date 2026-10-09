@@ -28,6 +28,12 @@ const ALLOWED_EVENTS = new Set([
   'auth_skipped',
   'auth_completed',
   'review_date_chosen',
+  // Phase 2/3
+  'gate_arm_assigned',
+  'observation_seen',
+  'habit_saved',
+  'install_prompt_seen',
+  'install_prompt_accepted',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

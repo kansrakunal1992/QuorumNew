@@ -30,6 +30,7 @@ import {
 } from '@/lib/chat-intake-state'
 import { generateFollowUpReply, OPENING_LINE } from '@/lib/chat-intake-reply'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
+import { getGateMode, resolveArm, GATE_AFTER } from '@/lib/auth-gate'   // Phase 3: optional connect-before-next-decision gate
 
 async function resolveUserId(req: Request): Promise<string | null> {
   const authHeader = req.headers.get('Authorization')
@@ -92,6 +93,27 @@ export async function POST(req: Request) {
       priorState    = (intakeRow.decision_state as ChatDecisionState | null) ?? null
       existingCount = intakeRow.exchange_count ?? 0
     } else {
+      // -- Phase 3: optional "connect before the next decision" gate ----------
+      // OFF unless NEXT_PUBLIC_AUTH_GATE_MODE is set (lib/auth-gate.ts). Only
+      // applies to a brand-new chat from a device with no signed-in user. The
+      // arm is derived from the device id, identically to the client, so the
+      // UI and this check cannot disagree. A device with no id (no cookie
+      // consent) cannot be gated server-side -- accepted, same as clearing storage.
+      const gateMode = getGateMode()
+      if (gateMode !== 'off' && !serverUserId && typeof deviceId === 'string' && deviceId) {
+        const arm   = resolveArm(gateMode, deviceId)
+        const after = arm ? GATE_AFTER[arm] : null
+        if (arm && after !== null) {
+          const { count } = await supabase
+            .from('sessions')
+            .select('*', { count: 'exact', head: true })
+            .eq('device_id', deviceId)
+          if ((count ?? 0) >= after) {
+            return NextResponse.json({ error: 'auth_required', arm, decisionCount: count ?? 0 }, { status: 403 })
+          }
+        }
+      }
+
       const { data: created, error: createErr } = await supabase
         .from('chat_intakes')
         .insert({

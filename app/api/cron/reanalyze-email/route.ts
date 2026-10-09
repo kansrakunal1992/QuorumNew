@@ -179,6 +179,12 @@ function buildEmailHtml({
       Log what happened &rarr;
     </a>
 
+    <!-- Phase 2: one quiet line, not a second button -- the milestone email
+         is about the decision it names; this just leaves the door open. -->
+    <p style="margin:20px 0 0;font-size:13px;color:#888;line-height:1.6">
+      Got another one on your mind? <a href="${appUrl}/q" style="color:#8a6d1f">Bring it to Quorum</a>.
+    </p>
+
     <!-- Footer -->
     <p style="color:#bbb;font-size:11px;margin:48px 0 0;line-height:1.7">
       One nudge per milestone. No further reminders for this decision.<br>
@@ -262,6 +268,12 @@ function buildReviewDateEmailHtml({
               letter-spacing:0.04em">
       Log what happened &rarr;
     </a>
+
+    <!-- Phase 2: one quiet line, not a second button -- the milestone email
+         is about the decision it names; this just leaves the door open. -->
+    <p style="margin:20px 0 0;font-size:13px;color:#888;line-height:1.6">
+      Got another one on your mind? <a href="${appUrl}/q" style="color:#8a6d1f">Bring it to Quorum</a>.
+    </p>
 
     <!-- Footer -->
     <p style="color:#bbb;font-size:11px;margin:48px 0 0;line-height:1.7">

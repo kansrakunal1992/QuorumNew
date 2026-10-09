@@ -19,6 +19,7 @@ import { encrypt, decrypt }        from '@/lib/encryption'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { countMatchingPastPattern } from '@/lib/prediction-engine'
 import { evaluateSessionReflections } from '@/lib/stakeholder-network'   // Phase 5, v3
+import { loadDecisionRows } from '@/lib/decision-history'                 // Phase 2: device-aware history
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -62,7 +63,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, user_id, initial_instinct, optimization_priority, quorum_predicted_choice, final_decision')
+    .select('id, user_id, device_id, initial_instinct, optimization_priority, quorum_predicted_choice, final_decision')
     .eq('id', sessionId)
     .single()
 
@@ -90,24 +91,25 @@ export async function POST(req: Request, { params }: Params) {
     predicted.split(/\s+/).filter((w: string) => w.length > 3).some((word: string) => finalLower.includes(word))
   )
 
-  // ── Pattern callback ──
+  // -- Pattern callback --
+  // Phase 2: also compares against rows that only share this session's
+  // device_id. Before this, an anonymous person's D2 always got patternCount 0
+  // (no user id to look history up by), and a signed-in person's chat-flow
+  // history from before the Phase 0 auth-header fix was invisible to it.
+  // device_id comes from the session row in the database, never from the caller.
   const effectiveUserId = session.user_id ?? userId
   let patternCount = 0
-  if (effectiveUserId && session.optimization_priority && session.initial_instinct) {
-    const { data: pastRows } = await supabase
-      .from('sessions')
-      .select('optimization_priority, initial_instinct, final_decision')
-      .eq('user_id', effectiveUserId)
-      .not('final_decision', 'is', null)
-      .neq('id', sessionId)
-      .order('final_decision_locked_at', { ascending: false })
-      .limit(12)
-
-    if (pastRows) {
+  if ((effectiveUserId || session.device_id) && session.optimization_priority && session.initial_instinct) {
+    const pastRows = await loadDecisionRows(
+      supabase,
+      { userId: effectiveUserId, deviceId: session.device_id },
+      { limit: 12, excludeId: sessionId, requireFinal: true },
+    )
+    if (pastRows.length) {
       const history = pastRows.map(r => ({
         optimization_priority: r.optimization_priority,
         initial_instinct:      r.initial_instinct,
-        final_decision_plain:  decrypt(r.final_decision as string) ?? '',
+        final_decision_plain:  r.final_decision_plain ?? '',
       }))
       const trackedInitial = trackedInstinctLocal(session.initial_instinct, finalDecision)
       patternCount = countMatchingPastPattern(history, session.optimization_priority, trackedInitial)

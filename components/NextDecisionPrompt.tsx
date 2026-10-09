@@ -31,6 +31,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ConnectCard from '@/components/ConnectCard'
 import PredictionTally from '@/components/PredictionTally'
+import HabitSetupCard from '@/components/HabitSetupCard'   // Phase 2
+import type { HabitPrefs } from '@/lib/habit-prefs'
 import { getStoredSessionIds } from '@/lib/storage'
 import { getAuthHeaders } from '@/lib/auth-headers'
 import { isWatchlistEnabled } from '@/lib/feature-flags'
@@ -72,6 +74,9 @@ export default function NextDecisionPrompt({
   const [linked,    setLinked]    = useState<boolean | null>(null)
   const [parkState, setParkState] = useState<ParkState>('idle')
   const [parkedText, setParkedText] = useState<string | null>(null)
+  // Phase 2: cross-decision observation (D2 and later) and the habit answer.
+  const [obs, setObs] = useState<{ line: string; kind: string } | null>(null)
+  const [habit, setHabit] = useState<HabitPrefs | null>(null)
 
   const canPark = isWatchlistEnabled()
 
@@ -85,6 +90,27 @@ export default function NextDecisionPrompt({
     })()
     return () => { cancelled = true }
   }, [])
+
+  // Phase 2: one deterministic observation across the person's decisions
+  // (/api/session/[id]/cross-decision). Nothing is shown for a first decision;
+  // when nothing overlaps yet the server says so honestly.
+  useEffect(() => {
+    if (!showExplainer || !sessionId || count < 2) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/session/${sessionId}/cross-decision`, { cache: 'no-store' })
+        if (!res.ok) return
+        const d = await res.json()
+        if (!cancelled && d?.line) {
+          setObs({ line: d.line, kind: d.kind })
+          track('observation_seen', { kind: d.kind, n: d.decisionCount ?? count, surface })
+        }
+      } catch { /* the explainer line stays */ }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, count, showExplainer, refreshKey])
 
   const trimmed = text.trim()
 
@@ -133,9 +159,22 @@ export default function NextDecisionPrompt({
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <PredictionTally refreshKey={refreshKey} sessionId={sessionId} surface={surface} />
 
-      {showExplainer && (
+      {showExplainer && obs && count === 2 && (
+        // The second decision is the first time Quorum can say something about
+        // the person rather than the decision -- give it its own small card.
+        <div style={{
+          width: '100%', boxSizing: 'border-box', textAlign: 'left', padding: '14px 16px',
+          background: 'var(--bg-card)', border: '1px solid var(--gold-dim)', borderRadius: 12,
+        }}>
+          <p style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-4)', margin: '0 0 6px' }}>
+            Across your two decisions
+          </p>
+          <p style={{ fontSize: 14.5, color: 'var(--text-1)', lineHeight: 1.5, margin: 0 }}>{obs.line}</p>
+        </div>
+      )}
+      {showExplainer && (!obs || count !== 2) && (
         <p style={{ fontSize: 13.5, color: 'var(--text-3)', lineHeight: 1.55, margin: 0, textAlign: 'center' }}>
-          {explainer(count)}
+          {obs ? obs.line : explainer(count)}
         </p>
       )}
 
@@ -195,13 +234,23 @@ export default function NextDecisionPrompt({
         </div>
       )}
 
+      {/* Phase 2: cue + cadence, once, under the second decision. Order is
+          deliberate: the way to the next decision (field + button) stays
+          directly under the observation; this is optional and below it. */}
+      {showExplainer && count === 2 && linked !== null && (
+        <HabitSetupCard surface={surface} linked={linked} onSaved={setHabit} />
+      )}
+
       {linked === false && (
         <ConnectCard
-          mode="d1_soft"
+          mode={count >= 2 ? 'd2_earned' : 'd1_soft'}
           surface={surface}
           reviewDate={reviewDate}
           parkedText={parkState === 'parked_pending' ? parkedText : null}
           sessionId={sessionId}
+          lead={habit?.cadence === 'weekly'
+            ? 'Weekly needs somewhere to send it. Where should Quorum reach you?'
+            : null}
         />
       )}
     </div>

@@ -9,8 +9,15 @@
 //   - a parked decision Quorum will hold and bring back,
 //   - a record that survives a cleared browser / a new device.
 //
-// Mode 'd1_soft' (this phase): skippable. Later phases add 'd2_earned' and
-// 'd3_gate' using the same shell.
+// Modes (same shell, different ask):
+//   d1_soft    after the first decision. Skippable. Tied to the review date or
+//              a parked item.
+//   d2_earned  after the second decision, right under the cross-decision
+//              observation. Skippable.
+//   d3_gate    Phase 3, behind NEXT_PUBLIC_AUTH_GATE_MODE (lib/auth-gate.ts).
+//              NOT skippable: replaces the chat input once the person has
+//              enough decisions. Existing records stay open -- only starting
+//              the next decision needs a linked email.
 //
 // Collapsed by default (one line + one button) so it never competes with the
 // "next decision" prompt above it; expands to Google + email link on tap, or
@@ -28,7 +35,7 @@ import { getAuthHeaders } from '@/lib/auth-headers'
 import { currentPathAsReturnTo, setReturnTo } from '@/lib/return-to'
 import { track } from '@/lib/track'
 
-export type ConnectMode = 'd1_soft'
+export type ConnectMode = 'd1_soft' | 'd2_earned' | 'd3_gate'
 
 interface Props {
   mode?: ConnectMode
@@ -42,6 +49,12 @@ interface Props {
   defaultExpanded?: boolean
   /** Include this session in the ids sent with the magic link. */
   sessionId?: string | null
+  /** d3_gate: how many decisions the person already has. */
+  decisionCount?: number
+  /** d3_gate / experiments: analytics only. */
+  arm?: string | null
+  /** d2_earned: overrides the default sentence (e.g. to reference the cadence they chose). */
+  lead?: string | null
 }
 
 type SendState = 'idle' | 'sending' | 'sent' | 'wrong_provider' | 'error'
@@ -63,9 +76,11 @@ function shorten(text: string, n = 60): string {
 
 export default function ConnectCard({
   mode = 'd1_soft', surface, reviewDate, parkedText, defaultExpanded = false, sessionId,
+  decisionCount, arm, lead,
 }: Props) {
+  const skippable = mode !== 'd3_gate'
   const [visible,  setVisible]  = useState(false)
-  const [expanded, setExpanded] = useState(defaultExpanded || !!parkedText)
+  const [expanded, setExpanded] = useState(defaultExpanded || !!parkedText || mode === 'd3_gate')
   const [email,    setEmail]    = useState('')
   const [state,    setState]    = useState<SendState>('idle')
   const [error,    setError]    = useState('')
@@ -78,12 +93,12 @@ export default function ConnectCard({
       try {
         if (getStoredUserEmail()) return
         const until = Number(localStorage.getItem(DISMISS_KEY) ?? '0')
-        if (until && until > Date.now() && !parkedText) return
+        if (skippable && until && until > Date.now() && !parkedText) return
         if (sessionStorage.getItem(PENDING_KEY)) { if (!cancelled) { setVisible(true); setState('sent') } ; return }
         const auth = await getAuthHeaders()
         if (cancelled || auth.Authorization) return
         setVisible(true)
-        track('auth_prompt_seen', { stage: mode, surface, has_review_date: !!reviewDate, has_parked: !!parkedText })
+        track('auth_prompt_seen', { stage: mode, surface, has_review_date: !!reviewDate, has_parked: !!parkedText, arm: arm ?? null })
       } catch { /* storage unavailable -- do not show */ }
     })()
     return () => { cancelled = true }
@@ -96,7 +111,11 @@ export default function ConnectCard({
   if (!visible) return null
 
   const formattedDate = reviewDate ? formatReviewDate(reviewDate) : null
-  const line = parkedText
+  const line = mode === 'd3_gate'
+    ? `Your record has ${decisionCount ?? 'several'} decision${decisionCount === 1 ? '' : 's'}. Connect to keep going. Quorum will hold your record, remind you on your review dates, and tell you when it finds something.`
+    : mode === 'd2_earned'
+    ? (lead || 'Keep your record connected and Quorum can tell you when it finds something. Where should it reach you?')
+    : parkedText
     ? `Parked. Quorum will hold \u201C${shorten(parkedText)}\u201D and bring it back to you. Where should it reach you?`
     : formattedDate
       ? `Quorum will bring this decision back to you on ${formattedDate}. Where should it reach you?`
@@ -113,7 +132,7 @@ export default function ConnectCard({
     if (!trimmed || !trimmed.includes('@')) { setError('Enter a valid email address.'); return }
     setError('')
     setState('sending')
-    track('magic_link_requested', { stage: mode, surface })
+    track('magic_link_requested', { stage: mode, surface, arm: arm ?? null })
     try {
       const deviceId = getOrCreateDeviceId()
       const stored   = getStoredSessionIds()
@@ -175,12 +194,12 @@ export default function ConnectCard({
         <p style={{ ...small, marginBottom: 10 }}>
           <strong style={{ color: 'var(--text-2)' }}>{email}</strong> signed up with Google. Use that to get back in.
         </p>
-        <GoogleSignInButton variant="compact" onStart={() => track('auth_started', { stage: mode, surface, method: 'google' })} />
+        <GoogleSignInButton variant="compact" onStart={() => track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null })} />
       </div>
     )
   }
 
-  if (!expanded) {
+  if (!expanded && skippable) {
     return (
       <div style={card}>
         <p style={{ ...small, marginBottom: 10 }}>{line}</p>
@@ -202,7 +221,7 @@ export default function ConnectCard({
     <div style={card}>
       <p style={{ ...small, marginBottom: 12 }}>{line}</p>
 
-      <GoogleSignInButton variant="primary" onStart={() => track('auth_started', { stage: mode, surface, method: 'google' })} />
+      <GoogleSignInButton variant="primary" onStart={() => track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null })} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
         <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
@@ -238,8 +257,10 @@ export default function ConnectCard({
       {error && <p style={{ fontSize: 11.5, color: 'var(--danger-text, #e07a7a)', margin: '8px 0 0' }}>{error}</p>}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-        <span style={{ fontSize: 11, color: 'var(--text-5)' }}>No password. Just a link, or Google.</span>
-        <button style={linkBtn} onClick={dismiss}>Not now</button>
+        <span style={{ fontSize: 11, color: 'var(--text-5)' }}>
+          {mode === 'd3_gate' ? 'No password. Your existing records stay open.' : 'No password. Just a link, or Google.'}
+        </span>
+        {skippable && <button style={linkBtn} onClick={dismiss}>Not now</button>}
       </div>
     </div>
   )

@@ -31,6 +31,11 @@ export type TrackEventName =
   | 'auth_skipped'
   | 'auth_completed'
   | 'review_date_chosen'
+  | 'gate_arm_assigned'
+  | 'observation_seen'
+  | 'habit_saved'
+  | 'install_prompt_seen'
+  | 'install_prompt_accepted'
 
 export type TrackProps = Record<string, string | number | boolean | null>
 

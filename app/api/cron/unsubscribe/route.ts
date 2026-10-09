@@ -30,10 +30,14 @@ import { verifyUnsubToken }    from '@/lib/nudge-token'
 
 // ── HTML responses ────────────────────────────────────────────────────────────
 
-function confirmedHtml(appUrl: string, type: 'daily' | 'validation'): string {
+function confirmedHtml(appUrl: string, type: 'daily' | 'validation' | 'weekly' | 'pattern'): string {
   const message = type === 'validation'
     ? "You won&rsquo;t receive validation check-in nudges anymore."
-    : "You won&rsquo;t receive daily nudges anymore."
+    : type === 'weekly'
+      ? "You won&rsquo;t receive the weekly decision brief anymore."
+      : type === 'pattern'
+        ? "You won&rsquo;t receive &ldquo;Quorum noticed something&rdquo; emails anymore."
+        : "You won&rsquo;t receive daily nudges anymore."
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -119,7 +123,11 @@ export async function GET(req: Request) {
   // touched for this user yet.
   const supabase = createServiceClient()
 
-  const column = type === 'validation' ? 'validation_nudge_opted_out' : 'daily_nudge_opted_out'
+  const column =
+    type === 'validation' ? 'validation_nudge_opted_out'
+    : type === 'weekly'   ? 'weekly_brief_opted_out'
+    : type === 'pattern'  ? 'pattern_notice_opted_out'
+    :                       'daily_nudge_opted_out'
 
   const { error } = await supabase
     .from('user_preferences')

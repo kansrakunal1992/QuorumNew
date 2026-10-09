@@ -19,6 +19,7 @@ import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
+const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })   // Phase 2: was only mounted in HomeClient
 import DecisionStarters from '@/components/DecisionStarters'
 import FAQModal from '@/components/FAQModal'
 import BehaviorAlerts from '@/components/BehaviorAlerts'           // item 6 plan, Phase 1
@@ -38,6 +39,10 @@ import type { HeroCardId } from '@/lib/hero-cards'
 import type { MirrorStatus, ChatDecisionState } from '@/lib/types'
 import { isUnifiedSessionEnabled, isWatchlistEnabled } from '@/lib/feature-flags'
 import WatchlistSection from '@/components/WatchlistSection'   // Phase 1: parked items need a visible home
+import ConnectCard from '@/components/ConnectCard'                 // Phase 3: optional connect-before-next-decision gate
+import AddToHomeScreenPrompt from '@/components/AddToHomeScreenPrompt'   // Phase 3
+import { getGateMode, resolveArm, isGated } from '@/lib/auth-gate'        // Phase 3
+import { getStoredSessionIds } from '@/lib/storage'                       // Phase 3
 import { getAuthHeaders } from '@/lib/auth-headers'   // Phase 0: send the token so chat_intakes/sessions get user_id
 import { track } from '@/lib/track'                     // Phase 0: first-party events
 import { takeDecisionPrefill } from '@/lib/prefill'    // Phase 1: "Bring it now" hand-off
@@ -150,6 +155,30 @@ export default function ChatIntake({
   // scrolling conversation thread. Same underlying bubbles array either way.
   const started = bubbles.some(b => b.role === 'user')
 
+  // -- Phase 3: optional "connect before the next decision" gate -------------
+  // OFF unless NEXT_PUBLIC_AUTH_GATE_MODE is set (lib/auth-gate.ts). Never
+  // applies mid-chat, to signed-in people, or to people with no device id (no
+  // cookie consent -- we do not assign experiment arms without it). The server
+  // (POST /api/chat-intake) enforces the same rule, so this is a UX layer, not
+  // the only check; serverGated covers a device that slipped past the client.
+  const [serverGated, setServerGated]       = useState(false)
+  const [localDecisionCount, setLocalCount] = useState(0)
+  const gateMode = getGateMode()
+  const gateArm  = gateMode === 'off' || !deviceId ? null : resolveArm(gateMode, deviceId)
+  useEffect(() => {
+    try { setLocalCount(Math.max(historySessions.length, getStoredSessionIds().length)) } catch {}
+  }, [historySessions.length])
+  const gated = !started && !authToken && !userEmail && (serverGated || isGated(localDecisionCount, gateArm))
+  useEffect(() => {
+    if (!gateArm) return
+    try {
+      if (localStorage.getItem('quorum_gate_arm_reported') === gateArm) return
+      localStorage.setItem('quorum_gate_arm_reported', gateArm)
+    } catch { return }
+    track('gate_arm_assigned', { arm: gateArm, mode: gateMode })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateArm])
+
   function handleStarterPick(text: string) {
     setInput(text)
     inputRef.current?.focus()
@@ -160,10 +189,20 @@ export default function ChatIntake({
   useEffect(() => {
     if (chatIntakeId) return
     const pending = takeDecisionPrefill()
-    if (pending) {
-      setInput(pending)
-      setTimeout(() => inputRef.current?.focus(), 60)
-    }
+    // Phase 3: /q (and the weekly email's CTA) lands here as /?q=1 -- focus the
+    // input, then tidy the URL so a refresh does not re-trigger it.
+    let focusRequested = false
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('q') === '1') {
+        focusRequested = true
+        params.delete('q')
+        const qs = params.toString()
+        window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''))
+      }
+    } catch {}
+    if (pending) setInput(pending)
+    if (pending || focusRequested) setTimeout(() => inputRef.current?.focus(), 60)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -237,6 +276,16 @@ export default function ChatIntake({
         }),
       })
       const data = await res.json()
+      // Phase 3: the server says this device needs a linked email before a
+      // new decision. Roll the optimistic bubble back and show the gate; the
+      // typed text is put back so nothing is lost.
+      if (res.status === 403 && data?.error === 'auth_required') {
+        setBubbles(prev => prev.slice(0, -1))
+        setInput(trimmed)
+        setServerGated(true)
+        if (typeof data.decisionCount === 'number') setLocalCount(c => Math.max(c, data.decisionCount))
+        return
+      }
       if (!res.ok) throw new Error(data?.error || 'Chat failed')
 
       if (!chatIntakeId) {
@@ -608,6 +657,18 @@ export default function ChatIntake({
               </p>
             </div>
 
+            {gated && (
+              <div style={{ width: '100%', maxWidth: 440 }}>
+                <ConnectCard
+                  mode="d3_gate"
+                  surface="chat_hero"
+                  decisionCount={localDecisionCount}
+                  arm={gateArm}
+                />
+              </div>
+            )}
+
+            {!gated && (
             <div style={{ width: '100%', maxWidth: 440 }}>
               <DecisionStarters compact label="Not sure where to start?" onPick={handleStarterPick} />
               {/* Grey helper text (requested): make explicit that these chips
@@ -619,6 +680,7 @@ export default function ChatIntake({
                 choosing, or what's making it hard.
               </p>
             </div>
+            )}
 
             {/* Item 6 plan, round 2 — the input moves up to right after the
                 starter chips, instead of being pinned to the screen bottom
@@ -629,9 +691,11 @@ export default function ChatIntake({
                 is now the first actionable thing after the headline, and
                 everything else — AuthPanel included — reads as optional,
                 below it. */}
+            {!gated && (
             <div style={{ width: '100%', maxWidth: 440 }}>
               {inputForm}
             </div>
+            )}
 
             <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>
               Private · nothing is shared without your permission
@@ -695,6 +759,20 @@ export default function ChatIntake({
               feel like a black hole. Graduating an item drops its text into
               the chat input; the normal chat -> Council path takes it from
               there. Flag-gated and bearer-only, exactly as in HomeClient. */}
+          {/* Phase 2/3 — reminders and the home-screen icon, both only once there
+              are two decisions to remind about. PushEnablePrompt hides itself
+              unless notifications are actually available and not dismissed. */}
+          {authToken && sessionCount >= 2 && (
+            <div style={{ width: '100%', maxWidth: 440, marginTop: 16, textAlign: 'left' }}>
+              <PushEnablePrompt authToken={authToken} />
+            </div>
+          )}
+          {!started && sessionCount >= 2 && (
+            <div style={{ width: '100%', maxWidth: 440, marginTop: 16 }}>
+              <AddToHomeScreenPrompt decisionCount={sessionCount} signedIn={!!authToken} />
+            </div>
+          )}
+
           {isWatchlistEnabled() && authToken && (
             <div style={{ width: '100%', maxWidth: 440, marginTop: 16, textAlign: 'left' }}>
               <WatchlistSection authToken={authToken} onGraduate={handleStarterPick} />

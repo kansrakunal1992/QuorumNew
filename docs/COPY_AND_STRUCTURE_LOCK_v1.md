@@ -113,3 +113,37 @@ Shown on the "I'm done" ending, the Council page (once the decision is locked), 
 
 ### Review date (`PredictionReveal`)
 Quick-pick chips: **In 3 days / In 1 week / In 1 month** plus the existing date picker. The date stays required.
+
+## Phase 2 + 3 additions (retention work) -- copy and structure
+
+### Cross-decision observation (`NextDecisionPrompt`, from the second decision on)
+Deterministic, counts-only lines (`lib/cross-decision-observations.ts`). Second decision shows it in a small card headed **"Across your two decisions"**; later decisions show it as the one-liner that replaces the explainer.
+- "Both times, you put {priority} first." / "You put {priority} first in {k} of your last {n} decisions."
+- "You went with your first instinct both times." / "...in {k} of {n} decisions." / "You overrode your first instinct in all {n} decisions."
+- Nothing overlaps: **"No overlap yet. Each new decision gives Quorum more to compare."** Never invent a pattern.
+
+### Habit card (`HabitSetupCard`, once, under the second decision)
+- "Next time you catch yourself going back and forth, where will you bring it?" -> Before I buy something / When I'm stalling on a message / Sunday planning / When I notice I'm stuck
+- "How should Quorum bring decisions back to you?" -> Weekly / Only when I'm stuck / Only for big decisions
+- Buttons: **Save**, **Not now**. Weekly is the only choice that triggers email.
+
+### Connect card modes (`ConnectCard`)
+- `d2_earned` (under the second decision's observation): "Keep your record connected and Quorum can tell you when it finds something. Where should it reach you?" -- or, when they chose Weekly while anonymous: "Weekly needs somewhere to send it. Where should Quorum reach you?"
+- `d3_gate` (Phase 3, only when `NEXT_PUBLIC_AUTH_GATE_MODE` is on): "Your record has {n} decisions. Connect to keep going. Quorum will hold your record, remind you on your review dates, and tell you when it finds something." Footnote: "No password. Your existing records stay open." No "Not now".
+
+### Progress pips (`EarlyEchoCard`, decisions 2-4)
+- 2: "Second decision recorded." / "One more gives Quorum its first look at how you decide. Five lets the Council start connecting them." (pips to 3)
+- 3: "Three decisions in." / "Quorum's first look is ready in your Mirror. Two more activate pattern memory." (pips to 5)
+- 4: unchanged copy, pips to 5.
+
+### Emails
+- Weekly brief -- subject/lead **"Anything you're weighing this week?"**; optional line "You said you'd bring one here {when}. This is that moment, if it has come up."; list label "On your list"; CTA **"Bring me one"** -> `/q`; footer "Stop the weekly brief".
+- Pattern notice -- subject **"Quorum noticed something across your decisions"**; lead "Quorum noticed something across your decisions."; detail = the observation line; CTA **"See what Quorum noticed"** -> `/mirror`; footer "Stop these emails".
+- Review-date emails: one quiet line under the button, "Got another one on your mind? Bring it to Quorum." (link, not a second button).
+
+### Home-screen prompt (`AddToHomeScreenPrompt`, from the second decision)
+- Android/desktop: "Keep Quorum one tap away for the next time you catch yourself going back and forth." [Add to home screen] [Not now]
+- iOS (people PushEnablePrompt does not already cover): "Keep Quorum one tap away: in Safari, tap Share, then Add to Home Screen." [Got it]
+
+### `/q`
+Short door that opens the app with the chat input focused (`/?q=1`).
