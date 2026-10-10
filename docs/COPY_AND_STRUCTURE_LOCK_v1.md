@@ -147,3 +147,16 @@ Deterministic, counts-only lines (`lib/cross-decision-observations.ts`). Second 
 
 ### `/q`
 Short door that opens the app with the chat input focused (`/?q=1`).
+
+## Phase 4 additions (retention work) -- copy and structure
+
+### Settings -> Notifications (`/settings/notifications`, 4th settings tab)
+- Title: **Notifications**.
+- Card **"How should Quorum bring decisions back to you?"** (same three choices as the second-decision card):
+  - **Weekly** -- "A short note on Sundays: anything you're weighing, plus what you've parked."
+  - **Only when I'm stuck** -- "No weekly note. Quorum still checks in if a decision stalls or you've been away for a while."
+  - **Only for big decisions** -- "No weekly note and no "you've been away" nudges. Reminders for review dates you set still arrive."
+- Card **"Other emails"** (switch on = you receive them): **When Quorum notices something** / **Check-ins on past decisions** / **Nudges when you've been away**.
+- After a one-click unsubscribe from the weekly note: "You unsubscribed from the weekly note. Choosing Weekly turns it back on."
+- Signed out: card "Sign in to manage notifications" -> "Connect your email".
+- Review-date reminders are deliberately not listed (each is tied to a date chosen for a specific decision).

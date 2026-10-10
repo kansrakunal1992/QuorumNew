@@ -127,7 +127,7 @@ export async function POST(req: Request) {
         listLabel:  items.length ? 'On your list' : null,
         listItems:  items,
         ctaLabel:   'Bring me one',
-        ctaUrl:     `${appUrl}/q`,
+        ctaUrl:     `${appUrl}/q?n=weekly_brief`,
         appUrl,
         unsubUrl,
         unsubLabel: 'Stop the weekly brief',
@@ -139,7 +139,7 @@ export async function POST(req: Request) {
       sendPushToUser(userId, {
         title: "Anything you're weighing this week?",
         body:  items.length ? `${items.length} on your list. Bring one to Quorum.` : 'Bring one to Quorum.',
-        url:   `${appUrl}/q`,
+        url:   `${appUrl}/q?n=weekly_brief`,
       }).catch(err => console.error('[WeeklyBrief] Push failed:', err))
 
       await recordNudge(userId, 'weekly_brief')

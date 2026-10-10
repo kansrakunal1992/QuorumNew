@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react'
+import { track } from '@/lib/track'   // Phase 4: first-party events
 
 const DISMISS_KEY   = 'quorum_push_dismissed_at'
 const SUBSCRIBED_KEY = 'quorum_push_subscribed'
@@ -138,6 +139,7 @@ export default function PushEnablePrompt({ authToken }: Props) {
       }
 
       localStorage.setItem(SUBSCRIBED_KEY, '1')
+      track('notification_opted_in', { channel: 'push', linked: !!authToken })   // Phase 4
       setState('done')
 
       // Auto-hide after 3s

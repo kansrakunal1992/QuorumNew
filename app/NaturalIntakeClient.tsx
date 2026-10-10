@@ -22,6 +22,7 @@ import {
   getOrCreateDeviceId,
   getStoredUserEmail,
   getStoredSessionIds,
+  getStoredDeviceId,
 } from '@/lib/storage'
 import { createClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
@@ -71,6 +72,23 @@ export default function NaturalIntakeClient() {
   // Phase 0: one landing_view per mount of the front door.
   useEffect(() => { track('landing_view', { surface: 'natural_intake' }) }, [])
 
+  // Phase 4: return_visit -- someone who already has decisions on this device
+  // comes back after 12+ hours. localStorage timestamp only, and only when a
+  // device id already exists (i.e. functional-cookie consent was given).
+  useEffect(() => {
+    try {
+      if (!getStoredDeviceId()) return
+      const KEY = 'quorum_last_visit_at'
+      const last = Number(localStorage.getItem(KEY) ?? '0')
+      const now  = Date.now()
+      localStorage.setItem(KEY, String(now))
+      const decisions = getStoredSessionIds().length
+      if (last && decisions > 0 && now - last > 12 * 3_600_000) {
+        track('return_visit', { hours_since: Math.round((now - last) / 3_600_000), decisions })
+      }
+    } catch {}
+  }, [])
+
   useEffect(() => {
     setUserEmail(getStoredUserEmail())
     let cancelled = false
@@ -116,7 +134,11 @@ export default function NaturalIntakeClient() {
     ;(async () => {
       try {
         const ids = getStoredSessionIds()
-        if (!ids.length) return
+        // Phase 4: /api/history already merges in everything linked to the token's
+        // user_id (its header says so), but this guard returned before ever calling
+        // it -- so a signed-in person on a NEW device, with no local ids, saw no
+        // history, no counts and no hero cards. Signed-in people now always ask.
+        if (!ids.length && !authToken) return
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (authToken) headers['Authorization'] = `Bearer ${authToken}`
         const res  = await fetch('/api/history', { method: 'POST', headers, body: JSON.stringify({ ids }) })

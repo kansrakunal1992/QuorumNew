@@ -172,7 +172,7 @@ function buildEmailHtml({
     </p>
 
     <!-- CTA -->
-    <a href="${appUrl}/record/${sessionId}"
+    <a href="${appUrl}/record/${sessionId}?n=review_date"
        style="display:inline-block;background:#c9a84c;color:#0a0a12;text-decoration:none;
               padding:13px 28px;border-radius:8px;font-size:14px;font-weight:700;
               letter-spacing:0.04em">
@@ -182,7 +182,7 @@ function buildEmailHtml({
     <!-- Phase 2: one quiet line, not a second button -- the milestone email
          is about the decision it names; this just leaves the door open. -->
     <p style="margin:20px 0 0;font-size:13px;color:#888;line-height:1.6">
-      Got another one on your mind? <a href="${appUrl}/q" style="color:#8a6d1f">Bring it to Quorum</a>.
+      Got another one on your mind? <a href="${appUrl}/q?n=review_date" style="color:#8a6d1f">Bring it to Quorum</a>.
     </p>
 
     <!-- Footer -->
@@ -262,7 +262,7 @@ function buildReviewDateEmailHtml({
     </p>
 
     <!-- CTA -->
-    <a href="${appUrl}/record/${sessionId}"
+    <a href="${appUrl}/record/${sessionId}?n=review_date"
        style="display:inline-block;background:#c9a84c;color:#0a0a12;text-decoration:none;
               padding:13px 28px;border-radius:8px;font-size:14px;font-weight:700;
               letter-spacing:0.04em">
@@ -272,7 +272,7 @@ function buildReviewDateEmailHtml({
     <!-- Phase 2: one quiet line, not a second button -- the milestone email
          is about the decision it names; this just leaves the door open. -->
     <p style="margin:20px 0 0;font-size:13px;color:#888;line-height:1.6">
-      Got another one on your mind? <a href="${appUrl}/q" style="color:#8a6d1f">Bring it to Quorum</a>.
+      Got another one on your mind? <a href="${appUrl}/q?n=review_date" style="color:#8a6d1f">Bring it to Quorum</a>.
     </p>
 
     <!-- Footer -->

@@ -251,7 +251,7 @@ export async function POST(req: Request) {
   // ── 3. Pull sequence state + opt-out for every active user in one query ───
   const { data: prefRows } = await supabase
     .from('user_preferences')
-    .select('user_id, daily_nudge_opted_out, lapse_sequence_step, lapse_anchor_session_at')
+    .select('user_id, daily_nudge_opted_out, brief_cadence, lapse_sequence_step, lapse_anchor_session_at')
     .in('user_id', allUserIds)
 
   const prefsByUser = new Map(
@@ -266,6 +266,9 @@ export async function POST(req: Request) {
     const pref = prefsByUser.get(userId)
 
     if (pref?.daily_nudge_opted_out) continue
+    // Phase 4: "Only for big decisions" (chosen in the second-decision card or
+    // /settings/notifications) means no "you've been away" nudges either.
+    if (pref?.brief_cadence === 'big_only') continue
 
     const lastSessionDate = userLastSession.get(userId)!
     const daysSinceSession = Math.floor((now.getTime() - lastSessionDate.getTime()) / DAY_MS)

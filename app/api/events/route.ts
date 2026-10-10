@@ -34,6 +34,12 @@ const ALLOWED_EVENTS = new Set([
   'habit_saved',
   'install_prompt_seen',
   'install_prompt_accepted',
+  // Phase 4
+  'notification_opted_in',
+  'notification_opened',
+  'notification_to_decision',
+  'mirror_viewed',
+  'return_visit',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

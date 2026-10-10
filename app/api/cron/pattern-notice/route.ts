@@ -103,7 +103,7 @@ export async function POST(req: Request) {
         lead:       'Quorum noticed something across your decisions.',
         detail:     finding.line,
         ctaLabel:   'See what Quorum noticed',
-        ctaUrl:     `${appUrl}/mirror`,
+        ctaUrl:     `${appUrl}/mirror?n=pattern_notice`,
         appUrl,
         unsubUrl:   `${appUrl}/api/cron/unsubscribe?token=${encodeURIComponent(unsubToken)}`,
         unsubLabel: 'Stop these emails',
@@ -131,7 +131,7 @@ export async function POST(req: Request) {
       sendPushToUser(userId, {
         title: 'Quorum noticed something',
         body:  finding.line,
-        url:   `${appUrl}/mirror`,
+        url:   `${appUrl}/mirror?n=pattern_notice`,
       }).catch(err => console.error('[PatternNotice] Push failed:', err))
 
       await recordNudge(userId, 'pattern_notice')

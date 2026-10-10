@@ -24,6 +24,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react'
+import { track } from '@/lib/track'   // Phase 4: first-party events
 import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
 import { getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
@@ -1928,6 +1929,16 @@ export default function MirrorPage() {
       const res  = await fetch('/api/mirror/status', { headers })
       const data = await res.json() as MirrorStatus
       setStatus(data)
+      // Phase 4: mirror_viewed, once per tab session per gate state
+      // (auth / locked / teaser / unlocked), so re-fetches after unlocking
+      // are counted as the new state but never repeated within one.
+      try {
+        const k = `quorum_mirror_viewed_${data.gateState}`
+        if (!sessionStorage.getItem(k)) {
+          sessionStorage.setItem(k, '1')
+          track('mirror_viewed', { gate_state: data.gateState, sessions: data.sessionCount ?? 0 })
+        }
+      } catch {}
 
       // Fetch timeline for teaser and unlocked states
       if (data.gateState === 'teaser' || data.gateState === 'unlocked') {

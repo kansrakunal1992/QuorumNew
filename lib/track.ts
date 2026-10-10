@@ -36,6 +36,11 @@ export type TrackEventName =
   | 'habit_saved'
   | 'install_prompt_seen'
   | 'install_prompt_accepted'
+  | 'notification_opted_in'
+  | 'notification_opened'
+  | 'notification_to_decision'
+  | 'mirror_viewed'
+  | 'return_visit'
 
 export type TrackProps = Record<string, string | number | boolean | null>
 

@@ -45,6 +45,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto                         from 'crypto'
 import { createServiceClient }        from '@/lib/supabase'
 import type { SubscriptionPlan }      from '@/lib/types'
+import { trackServer } from '@/lib/track-server'   // Phase 4: paid_conversion / mirror_unlocked
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -160,6 +161,14 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[webhook] Mirror activated | user: ${userId} | plan: ${plan}${founding ? ' (founding)' : ''} | expires: ${expiresAt}`)
+
+    // Phase 4: the two events only the server can witness. Best effort and
+    // awaited only so they are not dropped when the function returns -- trackServer
+    // never throws, so the webhook response (and Razorpay's retry behaviour) is
+    // unchanged whatever happens to the analytics write.
+    await trackServer(supabase, 'paid_conversion',  { userId, props: { plan: String(plan), founding: !!founding } })
+    await trackServer(supabase, 'mirror_unlocked',  { userId, props: { via: 'subscription' } })
+
     return NextResponse.json({ ok: true })
   }
 

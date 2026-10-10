@@ -15,16 +15,20 @@
 
 import Link from 'next/link'
 
-export default function SettingsNav({ active }: { active: 'personalization' | 'privacy' | 'security' }) {
+export default function SettingsNav({ active }: { active: 'personalization' | 'notifications' | 'privacy' | 'security' }) {
   return (
     <div style={{
       display: 'flex', gap: 4,
       background: 'var(--bg-card)',
       border: '1px solid var(--border-dim)',
       borderRadius: 10, padding: 4,
+      // Phase 4: four tabs now -- let the strip scroll sideways on a narrow
+      // phone instead of squeezing the labels.
+      overflowX: 'auto',
     }}>
       {([
         { href: '/settings/personalization', label: 'Personalization', key: 'personalization' },
+        { href: '/settings/notifications',    label: 'Notifications',   key: 'notifications' },
         { href: '/settings/privacy',         label: 'Privacy Center',  key: 'privacy'  },
         { href: '/settings/security',        label: 'Security Center', key: 'security' },
       ] as const).map(tab => (
@@ -33,7 +37,7 @@ export default function SettingsNav({ active }: { active: 'personalization' | 'p
           href={tab.href}
           style={{
             flex: 1, textAlign: 'center',
-            padding: '8px 16px', borderRadius: 7,
+            padding: '8px 14px', borderRadius: 7, whiteSpace: 'nowrap',
             fontSize: 12.5, fontWeight: active === tab.key ? 600 : 400,
             color: active === tab.key ? 'var(--text-1)' : 'var(--text-4)',
             background: active === tab.key ? 'var(--bg-card-alt)' : 'none',

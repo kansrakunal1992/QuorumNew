@@ -94,6 +94,17 @@ export async function POST(req: Request) {
         linkedByDevice++
         console.log(`[LinkSessions] device_id=${did}: sweep complete`)
       }
+
+      // Phase 4: chat_intakes carry the same device_id and the same missing
+      // user_id (this sweep only ever covered `sessions`). Linking them keeps a
+      // half-finished chat attached to the person who started it. Best effort:
+      // a failure here must not fail the sign-in.
+      const { error: ciErr } = await supabase
+        .from('chat_intakes')
+        .update({ user_id: userId, user_email: userEmail ?? null })
+        .eq('device_id', did)
+        .is('user_id', null)
+      if (ciErr) console.warn(`[LinkSessions] chat_intakes sweep failed for ${did} (non-fatal):`, ciErr.message)
     }
 
     // ── 3. Email session sweep ────────────────────────────────────────────────

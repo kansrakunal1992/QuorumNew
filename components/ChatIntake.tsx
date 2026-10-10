@@ -290,7 +290,17 @@ export default function ChatIntake({
 
       if (!chatIntakeId) {
         onChatIntakeId(data.chatIntakeId)
-        track('decision_started', { entry: 'chat' })
+        // Phase 4: if this visit began from one of our emails (?n= was captured by
+        // NotificationLandingTracker), the decision is attributable to it.
+        let fromNotification: string | null = null
+        try {
+          fromNotification = sessionStorage.getItem('quorum_from_notification')
+          if (fromNotification && !sessionStorage.getItem('quorum_notif_converted')) {
+            sessionStorage.setItem('quorum_notif_converted', '1')
+            track('notification_to_decision', { source: fromNotification })
+          }
+        } catch {}
+        track('decision_started', { entry: 'chat', from_notification: fromNotification })
       }
       setExchangeCount(data.exchangeCount)
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])

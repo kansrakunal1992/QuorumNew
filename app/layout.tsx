@@ -7,6 +7,7 @@ import AppFooter from '@/components/AppFooter'
 import UpdateBanner from '@/components/UpdateBanner'
 import InstitutionModeBadge from '@/components/InstitutionModeBadge'   // Institutional Sprint 5
 import PlanBadge from '@/components/PlanBadge'                         // Free/Elite plan identifier
+import NotificationLandingTracker from '@/components/NotificationLandingTracker'   // Phase 4: ?n= email-link attribution
 import VisitorCounter from '@/components/VisitorCounter'               // "N people already here" social-proof pill
 import MetaPixel from '@/components/MetaPixel'                         // Free-tier acquisition funnel tracking
 
@@ -153,6 +154,8 @@ export default function RootLayout({
         {/* Free/Elite plan identifier — in-flow strip, renders null when
             signed out. Stacks below InstitutionModeBadge's strip when both apply. */}
         <PlanBadge />
+        {/* Phase 4 — logs notification_opened when a visit arrives from one of our emails (?n=). Renders nothing. */}
+        <NotificationLandingTracker />
         {children}
         {/* S2-04 — legal footer on every page */}
         <AppFooter />

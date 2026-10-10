@@ -53,6 +53,8 @@ export default function HabitSetupCard({ surface, linked, onSaved }: Props) {
     const prefs: HabitPrefs = { cue, cadence }
     writeHabitPrefs(prefs)
     track('habit_saved', { cue, cadence, linked: !!linked, surface })
+    // Phase 4: choosing Weekly is the explicit opt-in to the weekly brief.
+    if (cadence === 'weekly') track('notification_opted_in', { channel: 'email_weekly', linked: !!linked, surface })
     if (linked) {
       try {
         const res = await fetch('/api/preferences/habit', {
