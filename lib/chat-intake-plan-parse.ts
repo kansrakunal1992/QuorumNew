@@ -11,6 +11,9 @@ import type { ChatDecisionState } from '@/lib/types'
 import { parseJSONLoose } from './json-repair'
 import { isDecisionKind } from './chat-intake-brief'
 
+// A "fact" that is really a shrug is not a fact (same rule the turn logic applies).
+export const NON_ANSWER = /^\s*(unknown|unclear|unspecified|not (mentioned|specified|stated|provided|known|sure|given|discussed)|none given|no (info|information|answer)|n\/?a|tbd|\?+|-+)\s*\.?\s*$/i
+
 export interface PlannerOutput {
   /** Content fields only — server-owned bookkeeping (phase, askCounts, chips...) is never taken from the model. */
   notes:               Partial<ChatDecisionState>
@@ -84,7 +87,8 @@ export function parsePlannerOutput(raw: string): PlannerOutput | null {
     const facts: Record<string, string> = {}
     for (const [k, v] of Object.entries(n.facts as Record<string, unknown>)) {
       const val = str(v, 160)
-      if (val && /^[a-z_]{2,32}$/.test(k)) facts[k] = val
+      // A placeholder like "not mentioned" is the model shrugging, not an answer.
+      if (val && /^[a-z_]{2,32}$/.test(k) && !NON_ANSWER.test(val)) facts[k] = val
     }
     if (Object.keys(facts).length) notes.facts = facts
   }

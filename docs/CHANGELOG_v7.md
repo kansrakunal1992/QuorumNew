@@ -90,3 +90,35 @@ into `context_text` for the ontology tagger and Council.
   against the real provider before rollout.
 - Chip and question copy is first-pass; worth a pass from whoever owns voice.
 - `docs/COPY_AND_STRUCTURE_LOCK_v1.md` Screen 2 updated to match.
+
+## v7.1 — fix: chat ended after one question (found live, Oct 2026)
+
+**Symptom.** "Should I take this job offer?" → one question (title and pay) →
+straight to the playback, with "what you'd give up", "what's holding you back",
+"their deadline" and "other routes" all shown as "Not sure yet", though the
+person never said so and was never asked.
+
+**Root cause.** The turn logic trusted the model's `unknownFacts` / `naSlots`.
+A model that marks every slot it hasn't heard about as unknown makes the brief
+read "complete" after one answer, so the chat wrapped with the specifics never
+asked. The v7 principle was "the model proposes, the server decides" — it wasn't
+being applied to these two fields. The prompt wording ("haven't worked out")
+invited it.
+
+**Fix.**
+- A model-proposed *unknown* is accepted only if the person's own message says
+  they don't know / haven't decided (and at most 2 per turn). The pending
+  question's "not sure" tap is still handled directly, as before.
+- *Not applicable* is an explicit per-slot opt-in (`naOk`, currently only "who
+  it affects" for a move), at most one per turn. Deadlines, specifics and
+  "what's holding you back" can never be skipped this way.
+- Placeholder "facts" ("not mentioned", "unknown", "n/a") are dropped, in the
+  parser and in the turn logic.
+- Prompt: unknown means the person said so; unasked is not unknown.
+- The server logs `ignored N model-proposed unknown / n.a. slot(s)` whenever it
+  overrides the model — grep for it in production logs to see how often the
+  model does this.
+
+**Tests.** The exact failing conversation is pinned, plus a full replay of a
+job-offer chat against a model that flags every open slot as unknown on every
+turn: all five required specifics must still be asked.

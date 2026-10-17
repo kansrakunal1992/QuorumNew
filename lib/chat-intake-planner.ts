@@ -100,7 +100,8 @@ THIS IS EXCHANGE ${inp.exchangeCount} OF UP TO ${inp.ceiling}.
 RULES FOR THE NOTE:
 - "facts" maps a slot key to a SHORT phrase in the person's own words (under 140 characters), only when the conversation actually answers it. Never guess. One message can fill several slots — fill them all.
 - "alternatives" counts only a real route beyond the two obvious ones (e.g. negotiate, trial it, ask for a change). Staying put and doing the thing do NOT count. If they say there is no other route, fill it with that.
-- "unknownFacts": slot keys the person said they don't know or haven't worked out. "naSlots": slot keys that clearly don't apply to them (e.g. who_moves if they live alone).
+- "unknownFacts": ONLY a slot the person themselves said, in THIS conversation, that they don't know or haven't decided. A slot that simply hasn't come up yet is NOT unknown — leave it out and it will be asked about. Never mark slots unknown to move things along. "naSlots": only a low-stakes slot their own words show doesn't apply (e.g. who_moves when they said they live alone). When unsure, leave both lists empty.
+- Never write placeholders like "not mentioned", "unknown" or "n/a" as a fact. If the conversation hasn't answered a slot, omit it from "facts".
 - "options" are the real choices, including passive ones (stay, wait, test first) — they feed a later screen. Keep every option label under 40 characters.
 - "initialReaction" is set only from the very first message and never overwritten. "gutFeeling" and "successPicture": fill only if the person volunteers them — never ask for them.
 - Use the person's specifics (the city, the role, the amount) rather than generic labels.

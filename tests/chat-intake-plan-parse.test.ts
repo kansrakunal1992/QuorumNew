@@ -35,4 +35,8 @@ describe('parsePlannerOutput', () => {
     expect(parsePlannerOutput('I could not do that')).toBeNull()
     expect(parsePlannerOutput('')).toBeNull()
   })
+  it('drops placeholder "facts" like "not mentioned" instead of treating them as answers', () => {
+    const out = parsePlannerOutput(JSON.stringify({ notes: { facts: { deadline: 'Not mentioned', leaving: 'N/A', offer: '38 LPA' } } }))
+    expect(out?.notes.facts).toEqual({ offer: '38 LPA' })
+  })
 })

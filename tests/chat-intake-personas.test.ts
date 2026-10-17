@@ -40,7 +40,7 @@ function fakePlanner(p: Persona, pre: ChatDecisionState, text: string, first: bo
 
 interface Run { exchanges: number; questions: number; askedSlots: string[]; final: ChatDecisionState; first: TurnResult; last: TurnResult }
 
-function simulate(p: Persona): Run {
+function simulate(p: Persona, opts: { overEager?: boolean } = {}): Run {
   let state: ChatDecisionState = {}
   let text = p.opening
   let meta: QuickReplyMeta | null = null
@@ -53,8 +53,14 @@ function simulate(p: Persona): Run {
     exchanges += 1
     if (exchanges > 25) throw new Error(`${p.id}: did not terminate`)
     const pre = preprocessTurn(state, text, meta, { firstMessage: exchanges === 1, walkthrough: p.walkthrough, closingLine: 'CLOSE' })
+    const planned = pre.shortCircuit ? null : fakePlanner(p, pre.state, text, exchanges === 1)
+    // An over-eager model: every turn it flags every still-open slot as "unknown" (the live failure).
+    if (planned && opts.overEager) {
+      planned.notes.unknownFacts = rankMissing(mergeNotes(pre.state, planned.notes)).map(x => x.key)
+      planned.notes.naSlots      = planned.notes.unknownFacts
+    }
     const result = pre.shortCircuit ?? decideTurn(pre.state, {
-      planner: fakePlanner(p, pre.state, text, exchanges === 1),
+      planner: planned,
       userText: text, dontKnow: pre.dontKnow, exchangeCount: exchanges, ceiling: CEILING, closingLine: 'CLOSE',
     })
     state = result.state
@@ -140,5 +146,17 @@ describe('persona conversations', () => {
     const run = simulate(PERSONAS.find(p => p.id === 'walkthrough-novice')!)
     expect(run.final.walkthrough).toBe(true)
     expect(run.final.richness).toBe('sparse')
+  })
+
+  it('REGRESSION (live, Oct 2026): a model that marks every unasked slot "unknown" cannot make the chat end after one question', () => {
+    const p   = PERSONAS.find(x => x.id === 'novice-job-offer')!
+    const run = simulate(p, { overEager: true })
+    // every required specific of a job offer is actually asked, in the person's own conversation
+    expect(run.askedSlots).toEqual(expect.arrayContaining(['offer', 'leaving', 'hesitation', 'deadline', 'alternatives']))
+    expect(run.exchanges).toBeGreaterThanOrEqual(6)
+    // and what they said is kept as facts, not buried under "not sure yet"
+    expect(run.final.facts?.offer).toMatch(/38 LPA/)
+    expect(run.final.facts?.deadline).toBe('In a week or two')
+    expect(run.final.unknownFacts ?? []).toEqual([])
   })
 })

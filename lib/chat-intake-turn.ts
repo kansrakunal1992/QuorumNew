@@ -20,15 +20,16 @@
 // never runs past its ceiling; a playback always precedes a normal wrap.
 
 import type {
-  ChatDecisionState, ChatPendingTurn, ChatQuickReplies, DecisionKind,
+  ChatDecisionState, ChatPendingTurn, ChatQuickReplies,
 } from '@/lib/types'
 import {
   CHANGE_MIND_SLOT, PLAYBACK_NO, PLAYBACK_YES,
   briefStatus, buildPlaybackFallback, clipText, finalizeBrief, isAffirmative,
-  isDecisionKind, isDontKnow, isNegative, isNotApplicable, isResolved,
+  isDecisionKind, isDontKnow, isKnown, isNegative, isNotApplicable, isResolved,
   markNotApplicable, markUnknown, rankMissing, sanitizeChips, scoreRichness,
   setFact, slotSpec, slotsFor,
 } from './chat-intake-brief'
+import { NON_ANSWER } from './chat-intake-plan-parse'
 import type { PlannerOutput } from './chat-intake-plan-parse'
 
 // ── Public shapes ────────────────────────────────────────────────────────────
@@ -74,14 +75,22 @@ const union = (a: string[] | undefined, b: string[] | undefined, max = 12): stri
   return out.length ? out.slice(0, max) : undefined
 }
 
-const canBeNotApplicable = (kind: DecisionKind | null | undefined, key: string): boolean => {
-  const spec = slotSpec(kind, key)
-  return !!spec && spec.weight < 80 && spec.key !== 'alternatives'
-}
-
 // ── Folding the model's notes into the state ─────────────────────────────────
 
-export function mergeNotes(prior: ChatDecisionState, notes: PlannerOutput['notes']): ChatDecisionState {
+// Evidence that the PERSON said they don't know / haven't decided something.
+// "Unasked" is not "unknown": a model that marks every slot it hasn't heard about
+// as unknown makes the brief look complete after one question, and the chat wraps
+// abruptly with the real specifics never asked (seen live, Oct 2026: a job-offer
+// chat ended after one question with four required slots "Not sure yet").
+const DECLARED_UNKNOWN = /\b(don'?t know|do not know|dunno|idk|not sure|unsure|no idea|can'?t say|not decided|undecided|haven'?t (thought|decided|figured|worked|sorted)|yet to (decide|figure|work)|still (figuring|deciding|working))\b/i
+const MAX_MODEL_UNKNOWNS_PER_TURN = 2
+const MAX_MODEL_NA_PER_TURN       = 1
+
+export function mergeNotes(
+  prior: ChatDecisionState,
+  notes: PlannerOutput['notes'],
+  opts:  { userText?: string } = {},
+): ChatDecisionState {
   let s: ChatDecisionState = { ...prior }
 
   if (notes.decisionStatement) s.decisionStatement = notes.decisionStatement
@@ -105,11 +114,34 @@ export function mergeNotes(prior: ChatDecisionState, notes: PlannerOutput['notes
     s.stakeholders = [...(s.stakeholders ?? []), ...notes.stakeholders.filter(x => !have.has(x.name.toLowerCase()))].slice(0, 8)
   }
 
-  // Brief facts — only keys that are real slots for this kind of decision.
+  // Brief facts — only keys that are real slots for this kind of decision, and only real answers.
   const valid = (key: string) => key === CHANGE_MIND_SLOT.key || !!slotsFor(s.decisionKind).some(x => x.key === key)
-  for (const [k, v] of Object.entries(notes.facts ?? {})) if (valid(k)) s = setFact(s, k, v)
-  for (const k of notes.unknownFacts ?? []) if (valid(k)) s = markUnknown(s, k)
-  for (const k of notes.naSlots ?? [])      if (valid(k) && canBeNotApplicable(s.decisionKind, k)) s = markNotApplicable(s, k)
+  for (const [k, v] of Object.entries(notes.facts ?? {})) {
+    if (valid(k) && !NON_ANSWER.test(v)) s = setFact(s, k, v)
+  }
+
+  // Unknown: accepted only if the person's own message says they don't know. The pending
+  // slot's "I don't know" is already handled deterministically in preprocessTurn.
+  const said = DECLARED_UNKNOWN.test((opts.userText ?? '').replace(/\u2019/g, "'"))
+  let unknownTaken = 0, dropped = 0
+  for (const k of notes.unknownFacts ?? []) {
+    if (!valid(k) || isKnown(s, k)) continue
+    if (said && unknownTaken < MAX_MODEL_UNKNOWNS_PER_TURN) { s = markUnknown(s, k); unknownTaken += 1 }
+    else dropped += 1
+  }
+
+  // Not applicable: only slots that can genuinely not apply (spec.naOk), at most one per turn.
+  // Never "their deadline" or "what's holding you back" — those apply to everyone.
+  let naTaken = 0
+  for (const k of notes.naSlots ?? []) {
+    if (!valid(k) || isKnown(s, k)) continue
+    const spec = slotSpec(s.decisionKind, k)
+    if (spec?.naOk && naTaken < MAX_MODEL_NA_PER_TURN) {
+      s = markNotApplicable(s, k); naTaken += 1
+    } else dropped += 1
+  }
+
+  if (dropped > 0) console.warn(`[ChatIntake] ignored ${dropped} model-proposed unknown / n.a. slot(s) the person never said (kept them open)`)
   return s
 }
 
@@ -187,7 +219,7 @@ export interface DecideInput {
 export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult {
   const { planner, userText, dontKnow, exchangeCount, ceiling, closingLine } = inp
   const pending = pre.pending ?? null
-  let s: ChatDecisionState = planner ? mergeNotes(pre, planner.notes) : { ...pre }
+  let s: ChatDecisionState = planner ? mergeNotes(pre, planner.notes, { userText }) : { ...pre }
 
   // The person asked about Quorum itself: answer, keep whatever was pending.
   if (planner?.aboutQuorum && inp.faqReply) {

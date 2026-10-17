@@ -89,6 +89,23 @@ export const PERSONAS: Persona[] = [
     maxQuestions: 7, maxExchanges: 9,
   },
   {
+    id: 'novice-job-offer',
+    opening: 'Should I take this job offer?',
+    kind: 'job_offer',
+    statement: 'Whether to take this job offer',
+    volunteered: {},
+    answers: {
+      offer: 'Senior Project Manager, 38 LPA vs my current 42 LPA',
+      leaving: 'a team I like and a bigger bonus',
+      hesitation: 'the pay cut',
+      deadline: 'In a week or two',
+      alternatives: 'Negotiate pay',
+    },
+    behavior: 'normal',
+    smartQuestion: 'What would make the lower pay worth it?',
+    maxQuestions: 7, maxExchanges: 9,
+  },
+  {
     id: 'novice-vague-move',
     opening: 'Should I move to a different city',
     kind: 'relocation',

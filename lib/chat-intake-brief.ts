@@ -58,6 +58,8 @@ export interface SlotSpec {
   required: boolean
   /** If the person doesn't know, this becomes a "find out" to-do on the brief. */
   findOut?: string
+  /** Only slots that can genuinely not apply (e.g. "who moves with you" when they live alone) may be marked not applicable. */
+  naOk?: boolean
 }
 
 const WHY_NOW: SlotSpec = {
@@ -107,7 +109,7 @@ const KIND_SLOTS: Record<DecisionKind, SlotSpec[]> = {
       chips: ['Same job, remote', 'New job lined up', 'Not sorted yet'], weight: 70, required: true,
       findOut: 'Work out how you\u2019d earn there' },
     { key: 'who_moves', label: 'Who it affects', ask: 'Would anyone move with you, or be affected by the move?',
-      chips: ['Just me', 'A partner', 'Kids or family'], weight: 60, required: true },
+      chips: ['Just me', 'A partner', 'Kids or family'], weight: 60, required: true, naOk: true },
     WHY_NOW,
     alt('Is there a middle route \u2014 like trying the city for a few months first?',
       ['Trial it first', 'Visit first', 'Change something else']),

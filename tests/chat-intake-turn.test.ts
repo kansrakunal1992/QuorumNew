@@ -177,3 +177,44 @@ describe('when to stop', () => {
     expect(r.state.askCounts?.runway ?? 0).toBe(0)
   })
 })
+
+describe('REGRESSION: "unasked" is not "unknown"', () => {
+  const offer: ChatDecisionState = {
+    decisionKind: 'job_offer', richness: 'sparse', phase: 'gathering',
+    askCounts: { offer: 1 }, pending: { kind: 'ask', slotKey: 'offer', chips: [] },
+  }
+  const overEager = planner({
+    notes: { facts: { offer: 'Senior Project Manager, 38 LPA (current 42 LPA)' }, unknownFacts: ['leaving', 'hesitation', 'deadline', 'alternatives'] },
+    answeredPending: true,
+  })
+
+  it('a model that flags every unasked slot as unknown does NOT end the chat after one question', () => {
+    const r = decide(offer, 'Exact title is Senior Project Manager, Comp is 38LPA less than my current 42 LPA', overEager)
+    expect(r.action).toBe('ask')
+    expect(r.readyToReflect).toBe(false)
+    expect(r.state.unknownFacts ?? []).toEqual([])
+    expect(r.state.facts?.offer).toMatch(/38 LPA/)
+  })
+  it('accepts a model-flagged unknown when the person really said they do not know', () => {
+    const r = decide(offer, 'Offer is 38 LPA. Not sure about the deadline yet.', planner({
+      notes: { facts: { offer: '38 LPA' }, unknownFacts: ['deadline'] }, answeredPending: true,
+    }))
+    expect(r.state.unknownFacts).toEqual(['deadline'])
+  })
+  it('accepts at most two model-flagged unknowns per turn, even when the person said "not sure"', () => {
+    const r = decide(offer, 'Offer is 38 LPA, not sure about the rest', planner({
+      notes: { facts: { offer: '38 LPA' }, unknownFacts: ['leaving', 'hesitation', 'deadline', 'alternatives'] }, answeredPending: true,
+    }))
+    expect(r.state.unknownFacts).toHaveLength(2)
+    expect(r.action).toBe('ask')
+  })
+  it('lets only an opt-in slot (who it affects) be "not applicable" — never a core specific or a deadline', () => {
+    const s = mergeNotes({ decisionKind: 'relocation' }, { naSlots: ['from_to', 'who_moves', 'timeline', 'work_plan'] })
+    expect(s.naSlots).toEqual(['who_moves'])
+  })
+  it('does not treat "not mentioned" style placeholders as facts', () => {
+    const s = mergeNotes(offer, { facts: { deadline: 'Not mentioned', leaving: 'unknown', hesitation: 'n/a', offer: '38 LPA' } })
+    expect(s.facts).toEqual({ offer: '38 LPA' })
+  })
+})
+
