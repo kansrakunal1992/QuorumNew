@@ -25,9 +25,16 @@ import {
   SUCCESS_LINE_PREFIX,
 } from '@/lib/chat-intake-context'
 import { priorityLabel, preserveChipFields } from '@/lib/chat-intake-lean'
+import { briefContextLines } from '@/lib/chat-intake-brief'
+import { parseJSONLoose } from '@/lib/json-repair'
 
-// ── Chat length (locked, Sept 2026) ──────────────────────────────────────────
-export const DEFAULT_MAX_EXCHANGES  = 6
+// ── Chat length ──────────────────────────────────────────────────────────────
+// v7: raised from 6 to 9. The ceiling is a backstop, not a target — the chat now
+// ends when the decision brief is filled (lib/chat-intake-brief.ts), which for a
+// detailed first message is a couple of exchanges. The headroom exists for the
+// person who needs to be walked through it: opener, up to five easy questions,
+// one "sharp friend" check, then the playback and the confirming tap.
+export const DEFAULT_MAX_EXCHANGES  = 9
 export const KEEP_THINKING_EXTRA    = 3   // "Let me add more" grants this many additional exchanges, once
 export const ABSOLUTE_MAX_EXCHANGES = DEFAULT_MAX_EXCHANGES + KEEP_THINKING_EXTRA   // hard server-side ceiling regardless of client requests
 
@@ -71,6 +78,11 @@ ${transcript.map(m => `${m.role === 'user' ? 'PERSON' : 'ASSISTANT'}: ${m.conten
 UPDATED JSON:`.trim()
 
 /**
+ * v7: no longer the main path — lib/chat-intake-planner.ts now does extraction,
+ * readiness and the next question in ONE call. This stays as the fallback the
+ * route uses when the planner call fails, so a model hiccup still yields a
+ * decision statement and options (the lean chips are built from them).
+ *
  * Runs the lightweight per-turn extraction. Cheap/fast tier by design — this
  * fires after every single message, unlike the checkpoint's one-time premium
  * ontology-tagger call. Never blocks the chat reply on failure: on any error
@@ -82,12 +94,16 @@ export async function extractDecisionState(
   transcript: ChatIntakeMessage[],
 ): Promise<ChatDecisionState> {
   try {
-    const raw   = await createCompletion(EXTRACTION_PROMPT(priorState, transcript), 500, { provider: 'deepseek' })
-    const clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-    const parsed = JSON.parse(clean)
-    if (parsed && typeof parsed === 'object') {
-      return preserveChipFields(priorState, parsed as ChatDecisionState)
+    // v7 hardening: 500 -> 1200 tokens (the carried-forward state grows every turn,
+    // and a truncated reply used to fail JSON.parse and silently keep the OLD state),
+    // and parseJSONLoose instead of a bare JSON.parse so fences, preamble and
+    // trailing commas no longer throw the whole turn's extraction away.
+    const raw    = await createCompletion(EXTRACTION_PROMPT(priorState, transcript), 1200, { provider: 'deepseek' })
+    const parsed = parseJSONLoose<ChatDecisionState>(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return preserveChipFields(priorState, parsed)
     }
+    console.error('[ChatIntake] extractDecisionState: unparseable output, keeping prior state')
     return priorState ?? {}
   } catch (err) {
     console.error('[ChatIntake] extractDecisionState failed:', err)
@@ -118,6 +134,12 @@ export async function extractDecisionState(
  * separate hardcoded priority list that could say something different from
  * what this function is actually checking.
  */
+// v7 NOTE: scoreCompleteness / shouldStopEarly below are the LEGACY checklist and
+// are no longer what decides when the chat ends or what it asks. They were
+// domain-blind (the same ten generic dimensions for a job and a house), counted
+// an inferred status quo as a real option, and spent most questions on feelings.
+// The decision brief (lib/chat-intake-brief.ts) replaced them. Kept exported
+// because the numbers are still a handy cross-check in tests and ad-hoc scripts.
 interface CompletenessDimension {
   label: string
   weight: number
@@ -207,6 +229,10 @@ export function assembleSessionInput(
   }
   if (state.gutFeeling?.trim())     contextParts.push(`${GUT_LINE_PREFIX}${state.gutFeeling.trim()}`)
   if (state.successPicture?.trim()) contextParts.push(`${SUCCESS_LINE_PREFIX}${state.successPicture.trim()}`)
+  // v7 — the decision brief: kind of decision, the concrete facts the person gave,
+  // what is still unknown, and the "find out" to-dos. This is the substance the
+  // old chat never captured, and it feeds the ontology tagger and the Council.
+  contextParts.push(...briefContextLines(state))
   if (state.stakeholders?.length) {
     contextParts.push(`People involved: ${state.stakeholders.map(s => s.role ? `${s.name} (${s.role})` : s.name).join('; ')}`)
   }

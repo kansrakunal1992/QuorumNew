@@ -188,6 +188,33 @@ export interface ChatStakeholderMention {
   consultReason?: 'expertise' | 'challenge' | 'approval' | 'affected' | 'trust' | null
 }
 
+// ── Natural Intake (v7): adaptive decision brief ──────────────────────────────
+// The chat no longer works through a fixed checklist. It fills a "brief" whose
+// slots depend on the KIND of decision (see lib/chat-intake-brief.ts), and
+// each slot ends up known, explicitly unknown, or not applicable.
+export type DecisionKind =
+  | 'career_exit' | 'job_offer' | 'relocation' | 'money' | 'business'
+  | 'relationship' | 'education' | 'purchase' | 'other'
+
+export type ChatRichness = 'rich' | 'medium' | 'sparse'
+export type ChatPhase    = 'gathering' | 'playback' | 'done'
+
+// What the last Quorum message is waiting on — lets the next turn map a
+// short answer or tapped chip onto the right slot, and lets a resumed chat
+// show the same chips again.
+export interface ChatPendingTurn {
+  kind:     'ask' | 'smart_friend' | 'playback' | 'correct'
+  slotKey?: string | null
+  chips:    string[]
+}
+
+// Returned to the client with every reply.
+export interface ChatQuickReplies {
+  kind:     'ask' | 'playback' | 'none'
+  slotKey?: string | null
+  chips:    string[]
+}
+
 // The running notes state a fast, cheap model updates after every chat turn.
 // Every field is optional by design (section 4C of the plan: "only what has
 // evidence" gets filled in — no field is required to progress the chat).
@@ -224,6 +251,19 @@ export interface ChatDecisionState {
   chosenLean?:           'accept' | 'reject' | 'unsure' | null
   chosenLeanLabel?:      string | null
   optimizationPriority?: string | null
+  // ── v7: adaptive decision brief (all written by the server, never the client) ──
+  decisionKind?:          DecisionKind | null
+  facts?:                 Record<string, string>   // slot key -> the person's own words, short
+  unknownFacts?:          string[]                 // slot keys the person said they don't know
+  naSlots?:               string[]                 // slot keys that don't apply to this person
+  todos?:                 string[]                 // "find out" items created from unknowns
+  askCounts?:             Record<string, number>   // slot key -> times asked (never more than 2)
+  richness?:              ChatRichness | null      // how much the first message already told us
+  walkthrough?:           boolean                  // person chose "Walk me through it"
+  phase?:                 ChatPhase
+  playbackShown?:         number
+  smartFriendAsked?:      boolean
+  pending?:               ChatPendingTurn | null
 }
 
 export interface ChatIntake {

@@ -16,21 +16,41 @@ pass on this product.
 
 Fixed string, no AI call (`OPENING_LINE` in `lib/chat-intake-reply.ts`).
 
-## Screen 2 — Chat turns
-Generated per-turn (`generateFollowUpReply`), under 30 words, at most one
-question, never re-asking something already known. Priority order when a
-question is genuinely useful (never more than one per turn):
-1. Name it gently if two decisions seem tangled together.
-2. Invite real options if none are named yet — including waiting, doing
-   nothing, or testing something small first.
-3. Ask why a named stakeholder matters (expertise / challenge / approval /
-   affected / trust) — only if it changes what happens next.
-4. Ask what would actually change their mind, if that hasn't come up.
-5. Otherwise, deepen whatever's most alive in what they just said.
+## Screen 2 — Chat turns (updated for v7 — adaptive decision brief)
+Generated per-turn by the planner (`lib/chat-intake-planner.ts`), one question
+at most, plain words, under 35 words, using the person's own specifics ("Delhi",
+not "your city"). Questions come from the **decision brief** for the kind of
+decision (`lib/chat-intake-brief.ts`), not a generic checklist:
+- Job exit: the role, what comes next, money runway, what set it off, other routes.
+- Move: which city from and to, work there, who it affects, what set it off, other routes.
+- (Job offer, money, business, relationship, study, purchase, other each have their own.)
 
-Closing turn (last exchange before the reflection): no new question — a
-short line signalling the handoff, e.g. *"Okay — I think I've got a clear
-picture. Let me reflect it back to you."*
+Rules:
+1. Ask the one open fact whose answer would most change the advice. Skip any that couldn't.
+2. A vague opener gets "What happened recently that made this come up?" unless a
+   higher-value concrete specific (e.g. which city) is open.
+3. For "other routes", name one or two the person hasn't mentioned, as tap-answers.
+4. Never ask how they feel or what success looks like (the sharpening step asks those).
+5. A detailed first message is not interrogated: fill what it answers, ask only what's open.
+6. Every question with a choice-shaped answer offers 2–4 tap-answers; typing always works.
+   "Not sure" is always available and is remembered (never re-asked; becomes a to-do).
+7. A slot is asked at most twice.
+
+Before wrapping: one "what would a sharp friend still ask?" question (if any), then
+a one-line playback — **"Here's what I've got: … Did I get that right?"** with
+**Yes, that's right / Not quite**. A typed correction is accepted too.
+
+Always available: **"That's enough — show me"** (wraps now; open items flagged as
+"not sure yet"). At the start, optional: **"Not sure what to say? Walk me through it"**
+(one easy step at a time, tap-answers throughout).
+
+Live panel (collapsed by default): **"What I've got so far"** — a dot meter and a
+plain sentence ("Getting the picture" / "Filling in the picture" / "I've got the
+picture"), never a number. Tapping a row starts "About …:" in the input to correct it.
+
+Closing turn (after the confirming tap): no new question — a short hand-off line,
+e.g. *"Okay — I think I've got a clear picture. Two quick taps below, then I'll show
+you what I think you'll choose."*
 
 ## Screen 3 — Reflection
 > **Here's the decision I think you're actually making**

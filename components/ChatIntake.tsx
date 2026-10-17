@@ -36,7 +36,12 @@ import type { JudgmentRecordSession } from '@/components/JudgmentRecordStrip'
 import type { DimPattern } from '@/components/RecurringConditionCard'
 import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
-import type { MirrorStatus, ChatDecisionState } from '@/lib/types'
+import type { MirrorStatus, ChatDecisionState, ChatQuickReplies } from '@/lib/types'
+import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
+import {
+  ENOUGH_LABEL, WALKTHROUGH_LABEL, WALKTHROUGH_LINE,
+  UNKNOWN_CHIP_LABEL, UNKNOWN_REPLY_TEXT, PLAYBACK_YES,
+} from '@/lib/chat-intake-brief'
 import { isUnifiedSessionEnabled, isWatchlistEnabled } from '@/lib/feature-flags'
 import WatchlistSection from '@/components/WatchlistSection'   // Phase 1: parked items need a visible home
 import ConnectCard from '@/components/ConnectCard'                 // Phase 3: optional connect-before-next-decision gate
@@ -124,6 +129,14 @@ export default function ChatIntake({
   const unified = isUnifiedSessionEnabled()
   const leanChoices = useMemo(() => (closing ? buildLeanChoices(closing.state.options) : []), [closing])
   const [exchangeCount, setExchangeCount] = useState(0)
+  // v7 — adaptive brief. `quick` is the tap-answers under Quorum's latest message
+  // (typing is always still available); `briefState` feeds the live brief panel;
+  // `walkthrough` is the optional "Walk me through it" start for people who don't
+  // know what to say. quickRef lets a failed send put the chips back.
+  const [quick, setQuick]             = useState<ChatQuickReplies | null>(null)
+  const [briefState, setBriefState]   = useState<ChatDecisionState | null>(null)
+  const [walkthrough, setWalkthrough] = useState(false)
+  const quickRef = useRef<ChatQuickReplies | null>(null)
   const [faqOpen, setFaqOpen]   = useState(false)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -242,6 +255,16 @@ export default function ChatIntake({
         if (typeof d.intake?.exchange_count === 'number') {
           setExchangeCount(d.intake.exchange_count)
         }
+        // v7: bring back the brief and whatever Quorum was waiting on.
+        const st = (d.intake?.decision_state ?? null) as ChatDecisionState | null
+        if (st) {
+          setBriefState(st)
+          const p = st.pending
+          if (p && st.phase !== 'done') {
+            if (p.kind === 'playback')                          setQuick({ kind: 'playback', chips: p.chips })
+            else if (p.kind === 'ask' || p.kind === 'smart_friend') setQuick({ kind: 'ask', slotKey: p.slotKey ?? null, chips: p.chips })
+          }
+        }
       })
       .catch(() => { /* worst case: hero shows briefly, chat still works from here */ })
       .finally(() => { if (!cancelled) inputRef.current?.focus() })
@@ -253,12 +276,21 @@ export default function ChatIntake({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [bubbles, sending, closing])
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (
+    text: string,
+    meta?: { kind: 'chip' | 'unknown' | 'playback_yes' | 'playback_no'; slotKey?: string | null },
+    opts?: { enough?: boolean },
+  ) => {
     const trimmed = text.trim()
-    if (!trimmed || sending || transitioning) return
+    const enough  = !!opts?.enough
+    if ((!trimmed && !enough) || sending || transitioning) return
 
-    setBubbles(prev => [...prev, { role: 'user', content: trimmed }])
-    setInput('')
+    if (!enough) {
+      setBubbles(prev => [...prev, { role: 'user', content: trimmed }])
+      setInput('')
+    }
+    quickRef.current = quick
+    setQuick(null)
     setSending(true)
 
     try {
@@ -270,9 +302,13 @@ export default function ChatIntake({
         headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
         body: JSON.stringify({
           chatIntakeId,
-          message:        trimmed,
+          message:        enough ? undefined : trimmed,
           deviceId,
           extraExchanges: grantExtraExchanges,
+          quickReply:     meta,
+          action:         enough ? 'enough' : undefined,
+          // Only meaningful on the very first message of a brand-new chat.
+          walkthrough:    !chatIntakeId && walkthrough ? true : undefined,
         }),
       })
       const data = await res.json()
@@ -280,8 +316,7 @@ export default function ChatIntake({
       // new decision. Roll the optimistic bubble back and show the gate; the
       // typed text is put back so nothing is lost.
       if (res.status === 403 && data?.error === 'auth_required') {
-        setBubbles(prev => prev.slice(0, -1))
-        setInput(trimmed)
+        if (!enough) { setBubbles(prev => prev.slice(0, -1)); setInput(trimmed) }
         setServerGated(true)
         if (typeof data.decisionCount === 'number') setLocalCount(c => Math.max(c, data.decisionCount))
         return
@@ -304,6 +339,9 @@ export default function ChatIntake({
       }
       setExchangeCount(data.exchangeCount)
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
+      setBriefState((data.state ?? null) as ChatDecisionState | null)
+      const qr = data.quickReplies as ChatQuickReplies | undefined
+      setQuick(!data.readyToReflect && qr && qr.kind !== 'none' ? qr : null)
 
       if (data.readyToReflect) {
         // v4: no timer. The closing line stays on screen with the lean /
@@ -320,12 +358,33 @@ export default function ChatIntake({
       }
     } catch (err) {
       console.error('[ChatIntake] send failed:', err)
+      setQuick(quickRef.current)   // put the tap-answers back so nothing is lost
       setBubbles(prev => [...prev, { role: 'quorum', content: "Sorry — something slipped. Try that again?" }])
     } finally {
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [chatIntakeId, deviceId, grantExtraExchanges, sending, transitioning, onChatIntakeId])
+  }, [chatIntakeId, deviceId, grantExtraExchanges, sending, transitioning, onChatIntakeId, quick, walkthrough])
+
+  // v7 — tap-answers. A chip is a complete answer; "Not sure" is data, not a failure.
+  function tapChip(label: string) {
+    if (!quick) return
+    if (quick.kind === 'playback') {
+      send(label, { kind: label === PLAYBACK_YES ? 'playback_yes' : 'playback_no' })
+    } else {
+      send(label, { kind: 'chip', slotKey: quick.slotKey ?? null })
+    }
+  }
+  function tapNotSure() {
+    send(UNKNOWN_REPLY_TEXT, { kind: 'unknown', slotKey: quick?.slotKey ?? null })
+  }
+  function tapEnough() {
+    send('', undefined, { enough: true })
+  }
+  function editBriefRow(label: string) {
+    setInput(`About ${label.toLowerCase()}: `)
+    inputRef.current?.focus()
+  }
 
   const canContinue = unified ? (!!leanPick && !!priorityPick && !savingLean) : !savingLean
 
@@ -394,7 +453,12 @@ export default function ChatIntake({
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
         }}
-        placeholder={transitioning ? 'Tap your answers above…' : started ? 'Type here…' : 'What\'s on your mind?'}
+        placeholder={
+          transitioning ? 'Tap your answers above…'
+          : started ? (quick?.chips.length ? 'Or type your own answer…' : 'Type here…')
+          : walkthrough ? 'In a sentence — what\'s the decision?'
+          : 'What\'s on your mind?'
+        }
         rows={1}
         disabled={transitioning}
         style={{
@@ -494,7 +558,7 @@ export default function ChatIntake({
           appears once the conversation is actually under way. */}
       {started && (
         <div style={{ display: 'flex', gap: 5, justifyContent: 'center', padding: '14px 0 4px' }}>
-          {Array.from({ length: Math.min(exchangeCount + 1, 6) }).map((_, i) => (
+          {Array.from({ length: Math.min(exchangeCount + 1, 9) }).map((_, i) => (
             <div
               key={i}
               style={{
@@ -506,6 +570,9 @@ export default function ChatIntake({
           ))}
         </div>
       )}
+
+      {/* v7 — the decision brief, filling in as we talk. Collapsed by default. */}
+      {started && <DecisionBriefPanel state={briefState} onEditRow={editBriefRow} />}
 
       {started ? (
         <div
@@ -541,6 +608,41 @@ export default function ChatIntake({
                 }} />
               ))}
             </div>
+          )}
+
+          {/* v7 — tap-answers under Quorum's latest message. Each chip is a complete
+              answer; typing stays available; "Not sure" is recorded as an unknown (and
+              turned into a to-do) rather than re-asked. */}
+          {quick && quick.chips.length > 0 && !sending && !closing && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignSelf: 'flex-start', maxWidth: '92%' }}>
+              {quick.chips.map(c => (
+                <button key={c} type="button" onClick={() => tapChip(c)} style={chipStyle(false)}>{c}</button>
+              ))}
+              {quick.kind === 'ask' && (
+                <button type="button" onClick={tapNotSure} style={{ ...chipStyle(false), color: 'var(--text-3)', borderStyle: 'dashed' }}>
+                  {UNKNOWN_CHIP_LABEL}
+                </button>
+              )}
+            </div>
+          )}
+          {/* "Not sure" is also offered on questions that have no tap-answers of their own. */}
+          {quick && quick.kind === 'ask' && quick.chips.length === 0 && !sending && !closing && (
+            <button type="button" onClick={tapNotSure} style={{ ...chipStyle(false), alignSelf: 'flex-start', color: 'var(--text-3)', borderStyle: 'dashed' }}>
+              {UNKNOWN_CHIP_LABEL}
+            </button>
+          )}
+          {/* Always-available exit for people who've said what they have to say. */}
+          {exchangeCount >= 1 && !sending && !closing && quick?.kind !== 'playback' && (
+            <button
+              type="button"
+              onClick={tapEnough}
+              style={{
+                alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0,
+                fontSize: 13, color: 'var(--text-4)', cursor: 'pointer', textDecoration: 'underline',
+              }}
+            >
+              {ENOUGH_LABEL}
+            </button>
           )}
 
           {/* v4 — end-of-chat panel: the lean + priority taps that used to be
@@ -690,6 +792,24 @@ export default function ChatIntake({
                 choosing, or what's making it hard.
               </p>
             </div>
+            )}
+
+            {/* v7 — optional guided start for people who don't know what to say.
+                Power users just type; nothing here is in their way. */}
+            {!gated && (
+              <div style={{ width: '100%', maxWidth: 440, marginTop: -6 }}>
+                {walkthrough ? (
+                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5, margin: 0 }}>{WALKTHROUGH_LINE}</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setWalkthrough(true); inputRef.current?.focus() }}
+                    style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, color: 'var(--text-3)', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    {WALKTHROUGH_LABEL}
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Item 6 plan, round 2 — the input moves up to right after the

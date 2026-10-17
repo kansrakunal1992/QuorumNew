@@ -1,5 +1,5 @@
 /**
- * QUORUM — Chat Intake Route (Natural Intake v1)
+ * QUORUM — Chat Intake Route (Natural Intake v1, adaptive brief v7)
  *
  * The pre-session chat: "What's going on?" through to "I think I've got
  * enough." No `sessions` row exists yet while this runs — see
@@ -7,11 +7,12 @@
  * app/api/chat-intake/checkpoint/route.ts for where a real session finally
  * gets created, through the EXISTING POST /api/session, unchanged.
  *
- * Two things happen on every turn:
- *   1. A silent, cheap structural extraction (lib/chat-intake-state.ts) —
- *      never shown to the user, never gates the conversation.
- *   2. A short conversational reply (lib/chat-intake-reply.ts) in Quorum's
- *      own voice.
+ * v7: ONE model call per turn (lib/chat-intake-planner.ts) returns the updated
+ * notes, the next question with tap-answers, a playback line and a "sharp
+ * friend" check. lib/chat-intake-turn.ts — pure, tested — decides what to do
+ * with it: ask the most useful open slot of the decision brief, play back what
+ * was understood, or wrap. Short replies (a tapped chip, "I don't know",
+ * "yes, that's right", "that's enough") are understood without the model.
  *
  * Entirely inert unless NEXT_PUBLIC_NATURAL_INTAKE_ENABLED is on.
  */
@@ -23,12 +24,16 @@ import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-lim
 import { isNaturalIntakeEnabled } from '@/lib/feature-flags'
 import {
   extractDecisionState,
-  shouldStopEarly,
-  scoreCompleteness,
   DEFAULT_MAX_EXCHANGES,
   ABSOLUTE_MAX_EXCHANGES,
 } from '@/lib/chat-intake-state'
-import { generateFollowUpReply, OPENING_LINE } from '@/lib/chat-intake-reply'
+import { generateAboutQuorumReply, closingLine, OPENING_LINE } from '@/lib/chat-intake-reply'
+import { planTurn } from '@/lib/chat-intake-planner'
+import { parsePlannerOutput } from '@/lib/chat-intake-plan-parse'
+import type { PlannerOutput } from '@/lib/chat-intake-plan-parse'
+import { decideTurn, preprocessTurn } from '@/lib/chat-intake-turn'
+import type { QuickReplyKind, QuickReplyMeta, TurnResult } from '@/lib/chat-intake-turn'
+import { fetchIntakeBackground } from '@/lib/chat-intake-memory'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
 import { getGateMode, resolveArm, GATE_AFTER } from '@/lib/auth-gate'   // Phase 3: optional connect-before-next-decision gate
 
@@ -63,15 +68,31 @@ export async function POST(req: Request) {
       userEmail,
       deviceId,
       extraExchanges,
+      quickReply,
+      walkthrough,
+      action,
     } = (await req.json()) as {
       chatIntakeId?:    string
       message?:         string
       userEmail?:       string
       deviceId?:        string
       extraExchanges?:  boolean   // "Let me add more" tap at the reflection step
+      quickReply?:      { kind?: string; slotKey?: string | null }   // a tapped chip / "not sure" / playback answer
+      walkthrough?:     boolean   // person chose "Walk me through it" on the first message
+      action?:          'enough'  // "That's enough, show me" — wrap now, no new message
     }
 
-    if (!message?.trim()) {
+    const QUICK_KINDS: QuickReplyKind[] = ['chip', 'unknown', 'playback_yes', 'playback_no', 'enough']
+    const quick: QuickReplyMeta | null =
+      action === 'enough' ? { kind: 'enough' }
+      : quickReply && QUICK_KINDS.includes(quickReply.kind as QuickReplyKind)
+        ? { kind: quickReply.kind as QuickReplyKind, slotKey: typeof quickReply.slotKey === 'string' ? quickReply.slotKey.slice(0, 40) : null }
+        : null
+    const isEnough = quick?.kind === 'enough'
+
+    if (isEnough) {
+      if (!chatIntakeId) return NextResponse.json({ error: 'chatIntakeId is required' }, { status: 400 })
+    } else if (!message?.trim()) {
       return NextResponse.json({ error: 'message is required' }, { status: 400 })
     }
 
@@ -154,52 +175,75 @@ export async function POST(req: Request) {
       content: decrypt(m.content) ?? '', turn_order: m.turn_order, created_at: '',
     }))
 
-    const userOrder = transcriptSoFar.length
-    const { error: insertUserErr } = await supabase.from('chat_intake_messages').insert({
-      chat_intake_id: resolvedIntakeId,
-      role:           'user',
-      content:        encrypt(message.trim()),
-      turn_order:     userOrder,
-    })
-    if (insertUserErr) {
-      console.error('[ChatIntake] insert user turn failed:', insertUserErr)
-      return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
+    const userText  = message?.trim() ?? ''
+    let   nextOrder = transcriptSoFar.length
+    let   transcriptWithUser = transcriptSoFar
+
+    // "That's enough, show me" is a button, not a message — nothing to store for the user's side.
+    if (!isEnough) {
+      const { error: insertUserErr } = await supabase.from('chat_intake_messages').insert({
+        chat_intake_id: resolvedIntakeId,
+        role:           'user',
+        content:        encrypt(userText),
+        turn_order:     nextOrder,
+      })
+      if (insertUserErr) {
+        console.error('[ChatIntake] insert user turn failed:', insertUserErr)
+        return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
+      }
+      transcriptWithUser = [...transcriptSoFar, {
+        id: '', chat_intake_id: resolvedIntakeId, role: 'user', content: userText,
+        turn_order: nextOrder, created_at: '',
+      }]
+      nextOrder += 1
     }
 
-    const userTurn: ChatIntakeMessage = {
-      id: '', chat_intake_id: resolvedIntakeId, role: 'user', content: message.trim(),
-      turn_order: userOrder, created_at: '',
-    }
-    const transcriptWithUser = [...transcriptSoFar, userTurn]
-
-    // ── Depth A: silent structured extraction ───────────────────────────────────
-    const updatedState = await extractDecisionState(priorState, transcriptWithUser)
     const exchangeCount = existingCount + 1
+    const ceiling       = Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES)
+    const closing       = closingLine()
+    const state0        = priorState ?? {}
 
-    // First-turn gut reaction is captured but never surfaced back to the
-    // user as a question (missing piece #1) — extractDecisionState sets
-    // initialReaction from turn one only and never overwrites it afterward.
+    // ── 1. Read the reply (chips, "I don't know", yes / no, "enough") — no model ─
+    const pre = preprocessTurn(state0, userText, quick, {
+      firstMessage: transcriptSoFar.length === 0,
+      walkthrough:  !!walkthrough,
+      closingLine:  closing,
+    })
 
-    const ceiling      = Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES)
-    const readyToReflect = shouldStopEarly(updatedState, exchangeCount) || exchangeCount >= ceiling
+    let result: TurnResult
+    if (pre.shortCircuit) {
+      result = pre.shortCircuit
+    } else {
+      // ── 2. ONE planner call: notes + next question + playback + sharp-friend check
+      const decisionHint = pre.state.decisionStatement || transcriptWithUser.find(m => m.role === 'user')?.content || userText
+      const background   = await fetchIntakeBackground(serverUserId, decisionHint, exchangeCount)
+      let planner: PlannerOutput | null = await planTurn({
+        state: pre.state, transcript: transcriptWithUser, exchangeCount, ceiling, background,
+      })
 
-    // Same weighted framework shouldStopEarly() just checked against — its
-    // "missing" list feeds the follow-up prompt below so the next question
-    // targets a real, named gap in this specific decision instead of a
-    // generic hardcoded priority list that could disagree with what
-    // actually determined whether the conversation was ready to wrap.
-    const { missing: missingDimensions } = scoreCompleteness(updatedState)
+      // Planner down? Fall back to the (hardened) legacy extraction so we still get a
+      // decision statement and options, then let the turn logic ask from the slot list.
+      if (!planner) {
+        const legacy = await extractDecisionState(pre.state, transcriptWithUser)
+        planner = parsePlannerOutput(JSON.stringify({ notes: legacy }))
+      }
 
-    // ── Conversational reply ─────────────────────────────────────────────────
-    const quorumReply = readyToReflect
-      ? await generateFollowUpReply(updatedState, transcriptWithUser, exchangeCount, ceiling, true, missingDimensions)
-      : await generateFollowUpReply(updatedState, transcriptWithUser, exchangeCount, ceiling, false, missingDimensions)
+      // The person asked about Quorum itself mid-chat: answer from the FAQ, keep the question pending.
+      const faqReply = planner?.aboutQuorum ? await generateAboutQuorumReply(transcriptWithUser) : null
+
+      // ── 3. Decide: ask / sharp-friend check / playback / wrap ─────────────────
+      result = decideTurn(pre.state, {
+        planner, userText, dontKnow: pre.dontKnow, exchangeCount, ceiling, closingLine: closing, faqReply,
+      })
+    }
+
+    const updatedState = result.state
 
     const { error: insertQuorumErr } = await supabase.from('chat_intake_messages').insert({
       chat_intake_id: resolvedIntakeId,
       role:           'quorum',
-      content:        encrypt(quorumReply),
-      turn_order:     userOrder + 1,
+      content:        encrypt(result.reply),
+      turn_order:     nextOrder,
     })
     if (insertQuorumErr) {
       console.error('[ChatIntake] insert quorum turn failed:', insertQuorumErr)
@@ -216,11 +260,13 @@ export async function POST(req: Request) {
       .eq('id', resolvedIntakeId)
 
     return NextResponse.json({
-      chatIntakeId: resolvedIntakeId,
-      quorumReply,
-      state:           updatedState,
+      chatIntakeId:   resolvedIntakeId,
+      quorumReply:    result.reply,
+      state:          updatedState,
       exchangeCount,
-      readyToReflect,
+      readyToReflect: result.readyToReflect,
+      quickReplies:   result.quickReplies,
+      action:         result.action,
     })
   } catch (err) {
     console.error('[ChatIntake] POST error:', err)
