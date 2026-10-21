@@ -138,6 +138,7 @@ export default function ChatIntake({
   const [walkthrough, setWalkthrough] = useState(false)
   const quickRef = useRef<ChatQuickReplies | null>(null)
   const [faqOpen, setFaqOpen]   = useState(false)
+  const [examplesOpen, setExamplesOpen] = useState(false)   // landing: starter chips live behind "See examples"
   const inputRef  = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const router    = useRouter() // only used by MemoryEngineStatus's onScrollToHistory below
@@ -195,6 +196,16 @@ export default function ChatIntake({
   function handleStarterPick(text: string) {
     setInput(text)
     inputRef.current?.focus()
+  }
+  // Only the landing-page example chips are measured; WatchlistSection also
+  // calls handleStarterPick (graduating a watched item) and must not count.
+  function handleExamplePick(text: string) {
+    track('starter_picked')
+    handleStarterPick(text)
+  }
+  function toggleExamples() {
+    if (!examplesOpen) track('starter_opened')
+    setExamplesOpen(o => !o)
   }
 
   // Phase 1: text handed over from a post-decision screen ("Bring it now").
@@ -446,6 +457,7 @@ export default function ChatIntake({
         borderTop: started ? '1px solid var(--border-dim)' : 'none',
       }}
     >
+      <div style={{ position: 'relative' }}>
       <textarea
         ref={inputRef}
         value={input}
@@ -457,25 +469,34 @@ export default function ChatIntake({
           transitioning ? 'Tap your answers above…'
           : started ? (quick?.chips.length ? 'Or type your own answer…' : 'Type here…')
           : walkthrough ? 'In a sentence — what\'s the decision?'
-          : 'Tell me what you\'re trying to decide…'
+          : 'Tell me what you\'re trying to decide… a rough version is fine'
         }
-        rows={1}
+        rows={started ? 1 : 3}
         disabled={transitioning}
         style={{
-          width: '100%', resize: 'none', maxHeight: 120, padding: '11px 14px',
+          width: '100%', resize: 'none', maxHeight: 120,
+          padding: started ? '11px 14px' : '11px 62px 11px 14px',
           borderRadius: 14, border: '1px solid var(--border-mid)',
           background: 'var(--bg-inset)', color: 'var(--text-1)',
           fontSize: 16, fontFamily: 'var(--font-body)',
           opacity: transitioning ? 0.6 : 1,
         }}
       />
+      {/* Landing: the mic sits inside the box's corner (frees the button row so
+          the CTA can be full width). In the thread it stays beside the button. */}
+      {!started && (
+        <div style={{ position: 'absolute', right: 8, bottom: 8 }}>
+          <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
+        </div>
+      )}
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
+        {started && <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />}
         <button
           type="submit"
           disabled={sending || transitioning || !input.trim()}
           style={{
-            flex: 1, maxWidth: started ? 140 : 190, whiteSpace: 'nowrap', padding: '11px 18px', borderRadius: 14, border: 'none',
+            flex: 1, maxWidth: started ? 140 : 'none', whiteSpace: 'nowrap', padding: '11px 18px', borderRadius: 14, border: 'none',
             background: input.trim() && !transitioning ? 'var(--gold)' : 'var(--border-dim)',
             color: input.trim() && !transitioning ? 'var(--bg-void)' : 'var(--text-4)',
             fontWeight: 600, fontSize: 15, cursor: input.trim() && !transitioning ? 'pointer' : 'default',
@@ -761,10 +782,7 @@ export default function ChatIntake({
                 What's the decision you're circling?
               </h1>
               <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 360 }}>
-                Tell me what's going on. I'll uncover the decision, help weigh your options, and challenge what you might be missing.
-              </p>
-              <p style={{ fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.5, margin: '6px auto 0', maxWidth: 360 }}>
-                For the big calls, and the smaller ones you keep circling.
+                I'll uncover the decision, weigh your options, and challenge what you might be missing.
               </p>
             </div>
 
@@ -779,51 +797,57 @@ export default function ChatIntake({
               </div>
             )}
 
-            {!gated && (
-            <div style={{ width: '100%', maxWidth: 440 }}>
-              <DecisionStarters compact label="Not sure where to start?" onPick={handleStarterPick} />
-              {/* Grey helper text (requested): make explicit that these chips
-                  are only a nudge, never the whole input — and hint at what
-                  turns a generic example into something Quorum can actually
-                  work with. */}
-              <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: '10px auto 0', maxWidth: 360 }}>
-                Or type anything — just tell me who's involved, what you're
-                choosing, or what's making it hard.
-              </p>
-            </div>
-            )}
-
-            {/* v7 — optional guided start for people who don't know what to say.
-                Power users just type; nothing here is in their way. */}
-            {!gated && (
-              <div style={{ width: '100%', maxWidth: 440, marginTop: -6 }}>
-                {walkthrough ? (
-                  <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5, margin: 0 }}>{WALKTHROUGH_LINE}</p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => { setWalkthrough(true); inputRef.current?.focus() }}
-                    style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, color: 'var(--text-3)', cursor: 'pointer', textDecoration: 'underline' }}
-                  >
-                    {WALKTHROUGH_LABEL}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Item 6 plan, round 2 — the input moves up to right after the
-                starter chips, instead of being pinned to the screen bottom
-                the way it is once the thread starts. Previously, a
-                brand-new anonymous visitor saw AuthPanel and a "Sign in"
-                link before ever reaching the input — this is the actual
-                fix for that (not a separate move of AuthPanel): the input
-                is now the first actionable thing after the headline, and
-                everything else — AuthPanel included — reads as optional,
-                below it. */}
+            {/* Landing simplification — input first, everything else one tap away:
+                input -> "Not sure what to say? Walk me through it · See examples".
+                The six category chips, the "or type anything" hint and the
+                "big calls and smaller ones" line now live in the examples panel. */}
             {!gated && (
             <div style={{ width: '100%', maxWidth: 440 }}>
               {inputForm}
             </div>
+            )}
+
+            {!gated && (
+              <div style={{ width: '100%', maxWidth: 440, marginTop: -6 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'baseline', justifyContent: 'center', flexWrap: 'wrap',
+                  gap: '4px 8px', fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5,
+                }}>
+                  {walkthrough ? (
+                    <span>{WALKTHROUGH_LINE}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setWalkthrough(true); inputRef.current?.focus() }}
+                      style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, color: 'var(--text-3)', cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      {WALKTHROUGH_LABEL}
+                    </button>
+                  )}
+                  <span aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    onClick={toggleExamples}
+                    aria-expanded={examplesOpen}
+                    style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, color: 'var(--text-3)', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    {examplesOpen ? 'Hide examples' : 'See examples'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!gated && examplesOpen && (
+              <div style={{ width: '100%', maxWidth: 440, marginTop: -6 }}>
+                <p style={{ fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.5, margin: '0 auto 10px', maxWidth: 360 }}>
+                  For the big calls, and the smaller ones you keep circling.
+                </p>
+                <DecisionStarters compact label="Start from an example" onPick={handleExamplePick} />
+                <p style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5, margin: '10px auto 0', maxWidth: 360 }}>
+                  Or type anything — just tell me who's involved, what you're
+                  choosing, or what's making it hard.
+                </p>
+              </div>
             )}
 
             <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>

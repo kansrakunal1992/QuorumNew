@@ -16,6 +16,8 @@ import { checkLimit, getClientIP, LIMITS } from '@/lib/rate-limit'
 const ALLOWED_EVENTS = new Set([
   'landing_view',
   'decision_started',
+  'starter_opened',
+  'starter_picked',
   'decision_checkpointed',
   'decision_completed',
   'another_decision_clicked',

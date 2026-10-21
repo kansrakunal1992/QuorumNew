@@ -19,6 +19,8 @@ import { getAuthHeaders } from '@/lib/auth-headers'
 export type TrackEventName =
   | 'landing_view'
   | 'decision_started'
+  | 'starter_opened'
+  | 'starter_picked'
   | 'decision_checkpointed'
   | 'decision_completed'
   | 'another_decision_clicked'
