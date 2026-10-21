@@ -457,7 +457,7 @@ export default function ChatIntake({
           transitioning ? 'Tap your answers above…'
           : started ? (quick?.chips.length ? 'Or type your own answer…' : 'Type here…')
           : walkthrough ? 'In a sentence — what\'s the decision?'
-          : 'What\'s on your mind?'
+          : 'Tell me what you\'re trying to decide…'
         }
         rows={1}
         disabled={transitioning}
@@ -475,13 +475,13 @@ export default function ChatIntake({
           type="submit"
           disabled={sending || transitioning || !input.trim()}
           style={{
-            flex: 1, maxWidth: 140, padding: '11px 18px', borderRadius: 14, border: 'none',
+            flex: 1, maxWidth: started ? 140 : 190, whiteSpace: 'nowrap', padding: '11px 18px', borderRadius: 14, border: 'none',
             background: input.trim() && !transitioning ? 'var(--gold)' : 'var(--border-dim)',
             color: input.trim() && !transitioning ? 'var(--bg-void)' : 'var(--text-4)',
             fontWeight: 600, fontSize: 15, cursor: input.trim() && !transitioning ? 'pointer' : 'default',
           }}
         >
-          Send
+          {started ? 'Send' : 'Help me decide →'}
         </button>
       </div>
       {/* Item 6 plan, Phase 1 — the classic home page's live bias detector
@@ -758,14 +758,13 @@ export default function ChatIntake({
                 fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
                 color: 'var(--text-1)', margin: '0 0 10px', maxWidth: 440,
               }}>
-                What's going on?
+                What's the decision you're circling?
               </h1>
               <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 360 }}>
-                Tell me what's going on. I'll find the decision underneath it.
+                Tell me what's going on. I'll uncover the decision, help weigh your options, and challenge what you might be missing.
               </p>
               <p style={{ fontSize: 11.5, color: 'var(--text-4)', lineHeight: 1.5, margin: '6px auto 0', maxWidth: 360 }}>
                 For the big calls, and the smaller ones you keep circling.
-                Full Council comes in once we know the decision.
               </p>
             </div>
 
