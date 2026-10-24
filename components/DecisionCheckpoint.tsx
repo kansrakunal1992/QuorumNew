@@ -37,6 +37,8 @@ import { createClient } from '@/lib/supabase'
 import { getAuthHeaders } from '@/lib/auth-headers'      // Phase 0: send the token on checkpoint
 import { pushSessionId } from '@/lib/storage'            // Phase 0: "I'm done" sessions must reach local history
 import { track } from '@/lib/track'                      // Phase 0: first-party events
+import { briefRows } from '@/lib/chat-intake-brief'          // v8: "what Quorum understands" rows
+import { intakeReadiness } from '@/lib/chat-intake-cards'    // v8: readiness marker
 import NextDecisionPrompt from '@/components/NextDecisionPrompt'  // Phase 1: continuity ending
 import { setDecisionPrefill } from '@/lib/prefill'
 import StakeholderOutreach from '@/components/StakeholderOutreach'   // Phase 2/3, v2
@@ -115,6 +117,8 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [subPhase, setSubPhase]     = useState<SubPhase>('loading')
   const [state, setState]           = useState<ChatDecisionState>({})
   const [editedText, setEditedText] = useState('')
+  const [original, setOriginal]       = useState('')    // v8: the person's own first words, shown beside the refined decision
+  const summaryTracked = useRef(false)
   const [sessionId, setSessionId]   = useState<string | null>(null)
   const [questions, setQuestions]   = useState<ExaminerQuestion[]>([])
   const [answers, setAnswers]       = useState<Record<number, string>>({})
@@ -159,7 +163,22 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         const s = (d.intake?.decision_state ?? {}) as ChatDecisionState
         setState(s)
         setEditedText(s.decisionStatement ?? '')
+        const firstUser = ((d.messages ?? []) as { role: string; content: string }[]).find(m => m.role === 'user')?.content?.trim() ?? ''
+        setOriginal(firstUser)
         setSubPhase('reflect')
+        // v8 marker: the refined-decision summary was shown. Ids / counts only.
+        if (!summaryTracked.current) {
+          summaryTracked.current = true
+          const r = intakeReadiness(s)
+          track('intake_summary_shown', {
+            chat_intake_id:    chatIntakeId,
+            readiness_state:   r.state,
+            decision_category: s.decisionKind ?? 'other',
+            unknown_count:     r.unknownCount,
+            has_tension:       !!s.contradictions?.length,
+            changed_from_original: !!firstUser && !!s.decisionStatement && firstUser !== s.decisionStatement,
+          })
+        }
       })
       .catch(() => setSubPhase('reflect'))
   }, [chatIntakeId])
@@ -393,15 +412,31 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   }
 
   if (subPhase === 'reflect' || subPhase === 'editing') {
+    // v8: a short, honest list of what the person actually told us (their own words / taps) — never Quorum's inference.
+    const understood = briefRows(state).filter(r => r.status === 'known' && r.value).slice(0, 5)
     return (
       <div style={container}>
         <div style={{ color: 'var(--text-3)', fontSize: 13.5, letterSpacing: 0.3 }}>Here's the decision I think you're actually making</div>
 
         {subPhase === 'reflect' ? (
           <div style={cardStyle}>
+            {!!original && original !== editedText && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>You started with</div>
+                <div style={{ fontSize: 14.5, color: 'var(--text-2)', fontStyle: 'italic' }}>{'\u201C'}{original.length > 200 ? `${original.slice(0, 197)}\u2026` : original}{'\u201D'}</div>
+              </div>
+            )}
             <div style={{ fontSize: 18, fontFamily: 'var(--font-display)', color: 'var(--text-1)', marginBottom: 14 }}>
               {editedText || 'The decision, once I have enough to name it'}
             </div>
+            {understood.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>What I understand so far</div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14.5, color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {understood.map(r => <li key={r.key}>{r.label}: {r.value}</li>)}
+                </ul>
+              </div>
+            )}
             {!!state.options?.length && (
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Options on the table</div>
@@ -414,6 +449,12 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
                 <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.unknowns[0]}</div>
               </div>
             )}
+            {!!state.contradictions?.length && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>A possible tension (my reading — tell me if it's off)</div>
+                <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.contradictions[0]}</div>
+              </div>
+            )}
             {!!state.stakeholders?.length && (
               <div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Who's involved</div>
@@ -423,6 +464,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
           </div>
         ) : (
           <textarea
+            aria-label="The decision, in your words"
             value={editedText}
             onChange={e => setEditedText(e.target.value)}
             rows={3}
@@ -436,13 +478,20 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
-          <button style={primaryBtn} onClick={() => subPhase === 'editing' ? confirmAndCreateSession(editedText) : confirmAndCreateSession()}>
+          {subPhase === 'reflect' && (
+            <div style={{ fontSize: 13, color: 'var(--text-3)' }}>This is my current understanding. Correct anything that doesn{'\u2019'}t feel right.</div>
+          )}
+          <button style={primaryBtn} onClick={() => {
+            track('intake_summary_action', { chat_intake_id: chatIntakeId, action: 'confirm', edited: subPhase === 'editing' && editedText.trim() !== (state.decisionStatement ?? '').trim() })
+            if (subPhase === 'editing') confirmAndCreateSession(editedText)
+            else confirmAndCreateSession()
+          }}>
             {subPhase === 'editing' ? 'That\'s right' : 'That\'s right'}
           </button>
           {subPhase === 'reflect' && (
-            <button style={secondaryBtn} onClick={() => setSubPhase('editing')}>Not quite — let me fix it</button>
+            <button style={secondaryBtn} onClick={() => { track('intake_summary_action', { chat_intake_id: chatIntakeId, action: 'edit' }); setSubPhase('editing') }}>Not quite — let me fix it</button>
           )}
-          <button style={{ ...secondaryBtn, border: 'none', color: 'var(--text-4)' }} onClick={onBackToChat}>
+          <button style={{ ...secondaryBtn, border: 'none', color: 'var(--text-4)' }} onClick={() => { track('intake_summary_action', { chat_intake_id: chatIntakeId, action: 'add_more' }); onBackToChat() }}>
             Let me add more first
           </button>
         </div>

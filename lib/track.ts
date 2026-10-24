@@ -43,6 +43,14 @@ export type TrackEventName =
   | 'notification_to_decision'
   | 'mirror_viewed'
   | 'return_visit'
+  // v8 — Natural Intake cards. Additive: every earlier event above still fires exactly as before.
+  // Props are stable ids / counts / booleans only — never option wording, never free text.
+  | 'intake_card_group_shown'
+  | 'intake_card_answered'
+  | 'intake_card_freetext_opened'
+  | 'intake_council_ready'
+  | 'intake_summary_shown'
+  | 'intake_summary_action'
 
 export type TrackProps = Record<string, string | number | boolean | null>
 

@@ -77,16 +77,17 @@ export async function POST(req: Request) {
       userEmail?:       string
       deviceId?:        string
       extraExchanges?:  boolean   // "Let me add more" tap at the reflection step
-      quickReply?:      { kind?: string; slotKey?: string | null }   // a tapped chip / "not sure" / playback answer
+      quickReply?:      { kind?: string; slotKey?: string | null; card?: unknown }   // a tapped chip / card answer / "not sure" / playback answer
       walkthrough?:     boolean   // person chose "Walk me through it" on the first message
       action?:          'enough'  // "That's enough, show me" — wrap now, no new message
     }
 
-    const QUICK_KINDS: QuickReplyKind[] = ['chip', 'unknown', 'playback_yes', 'playback_no', 'enough']
+    const QUICK_KINDS: QuickReplyKind[] = ['chip', 'cards', 'unknown', 'declined', 'playback_yes', 'playback_no', 'enough']
     const quick: QuickReplyMeta | null =
       action === 'enough' ? { kind: 'enough' }
       : quickReply && QUICK_KINDS.includes(quickReply.kind as QuickReplyKind)
-        ? { kind: quickReply.kind as QuickReplyKind, slotKey: typeof quickReply.slotKey === 'string' ? quickReply.slotKey.slice(0, 40) : null }
+        // v8: `card` is untrusted client data — preprocessTurn re-validates it against the card group stored server-side.
+        ? { kind: quickReply.kind as QuickReplyKind, slotKey: typeof quickReply.slotKey === 'string' ? quickReply.slotKey.slice(0, 40) : null, card: (quickReply.card ?? null) as QuickReplyMeta['card'] }
         : null
     const isEnough = quick?.kind === 'enough'
 
@@ -208,6 +209,7 @@ export async function POST(req: Request) {
       firstMessage: transcriptSoFar.length === 0,
       walkthrough:  !!walkthrough,
       closingLine:  closing,
+      exchange:     exchangeCount,
     })
 
     let result: TurnResult
@@ -218,7 +220,7 @@ export async function POST(req: Request) {
       const decisionHint = pre.state.decisionStatement || transcriptWithUser.find(m => m.role === 'user')?.content || userText
       const background   = await fetchIntakeBackground(serverUserId, decisionHint, exchangeCount)
       let planner: PlannerOutput | null = await planTurn({
-        state: pre.state, transcript: transcriptWithUser, exchangeCount, ceiling, background,
+        state: pre.state, transcript: transcriptWithUser, exchangeCount, ceiling, background, cardNote: pre.cardNote ?? null,
       })
 
       // Planner down? Fall back to the (hardened) legacy extraction so we still get a

@@ -130,39 +130,41 @@ describe('mergeNotes', () => {
 })
 
 describe('when to stop', () => {
-  it('a filled brief gets the one "sharp friend" question, once, then a playback', () => {
+  it('a filled brief gets the one "sharp friend" question, once, then wraps', () => {
     const first = decide(ready(job), 'ok', planner({ smartFriendQuestion: 'What would make you stay?' }))
     expect(first.action).toBe('smart_friend')
     expect(first.state.smartFriendAsked).toBe(true)
     const second = decide(first.state, 'a raise and a new manager', planner({ smartFriendQuestion: 'Anything else?' }))
-    expect(second.action).toBe('playback')
+    expect(second.action).toBe('close')
+    expect(second.readyToReflect).toBe(true)
     expect(second.state.evidence).toContain('a raise and a new manager')
   })
   it('skips the sharp-friend question when nothing material is missing', () => {
-    expect(decide(ready(job), 'ok', planner()).action).toBe('playback')
+    expect(decide(ready(job), 'ok', planner()).action).toBe('close')
   })
-  it('a playback always comes before a normal wrap and offers yes / not quite', () => {
+  it('v8: a ready brief wraps straight to the summary screen — no separate in-chat "did I get that right?"', () => {
     const r = decide({ ...ready(job), smartFriendAsked: true }, 'ok', planner())
-    expect(r.action).toBe('playback')
-    expect(r.readyToReflect).toBe(false)
-    expect(r.quickReplies).toEqual({ kind: 'playback', chips: [PLAYBACK_YES, PLAYBACK_NO] })
-    expect(r.state.playbackShown).toBe(1)
+    expect(r.action).toBe('close')
+    expect(r.readyToReflect).toBe(true)
+    expect(r.quickReplies.chips).toEqual([])
+    expect(r.state.playbackShown ?? 0).toBe(0)
+    expect(r.state.phase).toBe('done')
   })
-  it('near the ceiling it plays back and flags whatever is still open', () => {
+  it('near the ceiling it wraps and flags whatever is still open', () => {
     const r = decide(job, 'ok', planner(), { exchangeCount: 8 })
-    expect(r.action).toBe('playback')
+    expect(r.action).toBe('close')
     expect(briefStatus(r.state).ready).toBe(true)
   })
   it('at the ceiling it wraps no matter what', () => {
     const r = decide(job, 'ok', planner(), { exchangeCount: 9 })
     expect(r.readyToReflect).toBe(true)
   })
-  it('a correction after the playback shows it again, then stops after two', () => {
+  it('a chat saved mid-playback before v8 still works: the correction is kept and the chat wraps', () => {
     const pb: ChatDecisionState = { ...ready(job), smartFriendAsked: true, playbackShown: 1, pending: { kind: 'playback', chips: [] } }
     const again = decide(pb, 'actually my partner is not coming', planner())
-    expect(again.action).toBe('playback')
+    expect(again.action).toBe('close')
+    expect(again.readyToReflect).toBe(true)
     expect(again.state.userCorrections).toContain('actually my partner is not coming')
-    expect(decide(again.state, 'and I have a second offer', planner()).readyToReflect).toBe(true)
   })
   it('adding something after the chat already wrapped just wraps again, no second playback', () => {
     expect(decide({ ...ready(job), phase: 'done' }, 'one more thing', planner()).readyToReflect).toBe(true)

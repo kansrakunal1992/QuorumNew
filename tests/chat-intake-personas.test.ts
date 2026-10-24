@@ -99,8 +99,8 @@ describe('persona conversations', () => {
         expect(run.final.phase).toBe('done')
         expect(run.last.readyToReflect).toBe(true)
       })
-      it('a playback is always shown before the chat wraps', () => {
-        expect(run.final.playbackShown ?? 0).toBeGreaterThanOrEqual(1)
+      it('v8: the chat wraps without a separate in-chat confirmation (the summary screen is the one confirmation)', () => {
+        expect(run.final.playbackShown ?? 0).toBe(0)
       })
     })
   }
@@ -108,7 +108,7 @@ describe('persona conversations', () => {
   it('POWER USER: a detailed opener skips straight past the specifics', () => {
     const run = simulate(PERSONAS.find(p => p.id === 'power-user-job-offer')!)
     expect(run.askedSlots).toEqual([])               // no specifics asked at all
-    expect(run.first.action).toBe('smart_friend')    // one probe, then playback
+    expect(run.first.action).toBe('smart_friend')    // one probe, then wrap
   })
 
   it('NOVICE (vague job exit): the very first question is the trigger, then the real specifics', () => {

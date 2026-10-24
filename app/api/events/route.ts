@@ -42,6 +42,13 @@ const ALLOWED_EVENTS = new Set([
   'notification_to_decision',
   'mirror_viewed',
   'return_visit',
+  // v8 — Natural Intake cards (additive; see docs/decision-intake-analytics-marker-review.md)
+  'intake_card_group_shown',
+  'intake_card_answered',
+  'intake_card_freetext_opened',
+  'intake_council_ready',
+  'intake_summary_shown',
+  'intake_summary_action',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

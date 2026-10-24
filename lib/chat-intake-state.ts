@@ -26,6 +26,7 @@ import {
 } from '@/lib/chat-intake-context'
 import { priorityLabel, preserveChipFields } from '@/lib/chat-intake-lean'
 import { briefContextLines } from '@/lib/chat-intake-brief'
+import { cardContextLines } from '@/lib/chat-intake-cards'
 import { parseJSONLoose } from '@/lib/json-repair'
 
 // ── Chat length ──────────────────────────────────────────────────────────────
@@ -215,6 +216,11 @@ export function assembleSessionInput(
     || ''
 
   const contextParts: string[] = []
+  // v8 — the person's own first words, kept separate from Quorum's refined decision above.
+  const original = transcript.find(m => m.role === 'user')?.content?.trim()
+  if (original && original !== decisionText) {
+    contextParts.push(`Original wording (the person\u2019s first message): ${original.length > 300 ? `${original.slice(0, 297)}\u2026` : original}`)
+  }
   if (state.options?.length) {
     contextParts.push(`${OPTIONS_LINE_PREFIX}${state.options.map(o => o.label).join('; ')}`)
   }
@@ -233,6 +239,8 @@ export function assembleSessionInput(
   // what is still unknown, and the "find out" to-dos. This is the substance the
   // old chat never captured, and it feeds the ontology tagger and the Council.
   contextParts.push(...briefContextLines(state))
+  // v8 — how each detail was captured (tapped / own words / skipped / inferred) and how ready the intake was.
+  contextParts.push(...cardContextLines(state))
   if (state.stakeholders?.length) {
     contextParts.push(`People involved: ${state.stakeholders.map(s => s.role ? `${s.name} (${s.role})` : s.name).join('; ')}`)
   }

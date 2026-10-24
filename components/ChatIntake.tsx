@@ -36,7 +36,10 @@ import type { JudgmentRecordSession } from '@/components/JudgmentRecordStrip'
 import type { DimPattern } from '@/components/RecurringConditionCard'
 import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
-import type { MirrorStatus, ChatDecisionState, ChatQuickReplies } from '@/lib/types'
+import type { MirrorStatus, ChatDecisionState, ChatQuickReplies, ChatCardGroup as CardGroupSpec, ChatCardResponseMeta } from '@/lib/types'
+import ChatCardGroup from '@/components/ChatCardGroup'   // v8: selectable answer cards inside the chat
+import { cardAnsweredProps, cardShownProps, intakeReadiness, metaFor, serializeSelection } from '@/lib/chat-intake-cards'
+import type { CardSelection } from '@/lib/chat-intake-cards'
 import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
 import {
   ENOUGH_LABEL, WALKTHROUGH_LABEL, WALKTHROUGH_LINE,
@@ -137,6 +140,11 @@ export default function ChatIntake({
   const [briefState, setBriefState]   = useState<ChatDecisionState | null>(null)
   const [walkthrough, setWalkthrough] = useState(false)
   const quickRef = useRef<ChatQuickReplies | null>(null)
+  // v8 analytics: when the current card group appeared, and when this chat's first message was sent.
+  const cardShownAt   = useRef<number>(0)
+  const chatStartedAt = useRef<number>(0)
+  const cardGroupsAnswered = useRef<number>(0)
+  const retrySel = useRef<CardSelection | null>(null)   // last card answer, restored if the send fails
   const [faqOpen, setFaqOpen]   = useState(false)
   const [examplesOpen, setExamplesOpen] = useState(false)   // landing: starter chips live behind "See examples"
   const inputRef  = useRef<HTMLTextAreaElement>(null)
@@ -273,7 +281,7 @@ export default function ChatIntake({
           const p = st.pending
           if (p && st.phase !== 'done') {
             if (p.kind === 'playback')                          setQuick({ kind: 'playback', chips: p.chips })
-            else if (p.kind === 'ask' || p.kind === 'smart_friend') setQuick({ kind: 'ask', slotKey: p.slotKey ?? null, chips: p.chips })
+            else if (p.kind === 'ask' || p.kind === 'smart_friend') setQuick({ kind: 'ask', slotKey: p.slotKey ?? null, chips: p.chips, card: p.card ?? null })
           }
         }
       })
@@ -287,9 +295,18 @@ export default function ChatIntake({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [bubbles, sending, closing])
 
+  // v8: a card group appeared (once per question per turn). Ids and shape only — never wording.
+  const shownKey = quick?.card ? `${quick.card.questionId}#${exchangeCount}` : null
+  useEffect(() => {
+    if (!shownKey || !quick?.card) return
+    cardShownAt.current = Date.now()
+    track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownKey])
+
   const send = useCallback(async (
     text: string,
-    meta?: { kind: 'chip' | 'unknown' | 'playback_yes' | 'playback_no'; slotKey?: string | null },
+    meta?: { kind: 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no'; slotKey?: string | null; card?: ChatCardResponseMeta },
     opts?: { enough?: boolean },
   ) => {
     const trimmed = text.trim()
@@ -301,6 +318,12 @@ export default function ChatIntake({
       setInput('')
     }
     quickRef.current = quick
+    // v8: typed (not tapped) while cards were showing — still an answer; record that they bypassed the cards.
+    if (!enough && !meta && quick?.card) {
+      track('intake_card_answered', { ...cardAnsweredProps(quick.card, { questionId: quick.card.questionId, responseType: 'free_text_only', selectedIds: [], usedFreeText: true }, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null })
+      cardGroupsAnswered.current += 1
+    }
+    if (!chatStartedAt.current) chatStartedAt.current = Date.now()
     setQuick(null)
     setSending(true)
 
@@ -348,6 +371,7 @@ export default function ChatIntake({
         } catch {}
         track('decision_started', { entry: 'chat', from_notification: fromNotification })
       }
+      retrySel.current = null
       setExchangeCount(data.exchangeCount)
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
       setBriefState((data.state ?? null) as ChatDecisionState | null)
@@ -361,6 +385,19 @@ export default function ChatIntake({
         // Preselects any earlier tap, so someone who came back via "Let me
         // add more first" doesn't have to pick everything again.
         const st      = (data.state ?? {}) as ChatDecisionState
+        // v8 marker: the decision is ready for the Council. Stable ids and counts only — no wording.
+        const ready = intakeReadiness(st)
+        track('intake_council_ready', {
+          chat_intake_id:      data.chatIntakeId ?? chatIntakeId ?? null,
+          readiness_state:     ready.state,
+          unknown_count:       ready.unknownCount,
+          decision_category:   st.decisionKind ?? 'other',
+          intake_step:         data.exchangeCount ?? null,
+          card_groups_answered: cardGroupsAnswered.current,
+          skipped_count:       st.skippedSlots?.length ?? 0,
+          has_tension:         !!st.contradictions?.length,
+          ms_to_ready:         chatStartedAt.current ? Date.now() - chatStartedAt.current : null,
+        })
         const choices = buildLeanChoices(st.options)
         setLeanPick(matchSavedLean(choices, st.chosenLean, st.chosenLeanLabel))
         setPriorityPick(st.optimizationPriority ?? null)
@@ -388,6 +425,17 @@ export default function ChatIntake({
   }
   function tapNotSure() {
     send(UNKNOWN_REPLY_TEXT, { kind: 'unknown', slotKey: quick?.slotKey ?? null })
+  }
+  // v8 — a card group answer: the labels (+ their own words) become the chat message; the structured
+  // selection travels beside it so Quorum keeps both. Analytics gets ids and counts only.
+  function submitCards(group: CardGroupSpec, sel: CardSelection) {
+    const card = metaFor(group, sel)
+    retrySel.current = sel
+    track('intake_card_answered', { ...cardAnsweredProps(group, card, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null })
+    cardGroupsAnswered.current += 1
+    const kind = card.responseType === 'not_sure' ? 'unknown'
+      : card.responseType === 'prefer_not' || card.responseType === 'skip' ? 'declined' : 'cards'
+    send(serializeSelection(group, sel), { kind, slotKey: group.slotKey, card })
   }
   function tapEnough() {
     send('', undefined, { enough: true })
@@ -634,7 +682,16 @@ export default function ChatIntake({
           {/* v7 — tap-answers under Quorum's latest message. Each chip is a complete
               answer; typing stays available; "Not sure" is recorded as an unknown (and
               turned into a to-do) rather than re-asked. */}
-          {quick && quick.chips.length > 0 && !sending && !closing && (
+          {quick?.card && !sending && !closing && (
+            <ChatCardGroup
+              key={`${quick.card.questionId}-${exchangeCount}`}
+              group={quick.card}
+              initial={retrySel.current}
+              onSubmit={sel => submitCards(quick.card as CardGroupSpec, sel)}
+              onFreeTextOpen={() => track('intake_card_freetext_opened', { question_id: quick.card!.questionId, slot_key: quick.card!.slotKey, chat_intake_id: chatIntakeId ?? null })}
+            />
+          )}
+          {quick && !quick.card && quick.chips.length > 0 && !sending && !closing && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignSelf: 'flex-start', maxWidth: '92%' }}>
               {quick.chips.map(c => (
                 <button key={c} type="button" onClick={() => tapChip(c)} style={chipStyle(false)}>{c}</button>
@@ -647,7 +704,7 @@ export default function ChatIntake({
             </div>
           )}
           {/* "Not sure" is also offered on questions that have no tap-answers of their own. */}
-          {quick && quick.kind === 'ask' && quick.chips.length === 0 && !sending && !closing && (
+          {quick && !quick.card && quick.kind === 'ask' && quick.chips.length === 0 && !sending && !closing && (
             <button type="button" onClick={tapNotSure} style={{ ...chipStyle(false), alignSelf: 'flex-start', color: 'var(--text-3)', borderStyle: 'dashed' }}>
               {UNKNOWN_CHIP_LABEL}
             </button>

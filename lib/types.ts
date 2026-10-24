@@ -206,6 +206,8 @@ export interface ChatPendingTurn {
   kind:     'ask' | 'smart_friend' | 'playback' | 'correct'
   slotKey?: string | null
   chips:    string[]
+  /** v8: the card group shown for this question, so a resumed chat shows the same cards. */
+  card?:    ChatCardGroup | null
 }
 
 // Returned to the client with every reply.
@@ -213,6 +215,74 @@ export interface ChatQuickReplies {
   kind:     'ask' | 'playback' | 'none'
   slotKey?: string | null
   chips:    string[]
+  /** v8: when present the client renders selectable cards instead of plain chips. `chips` stays populated as a fallback for older clients. */
+  card?:    ChatCardGroup | null
+}
+
+// ── Natural Intake (v8): card groups inside the chat ─────────────────────────
+// A card group is ONE brief slot's question shown as selectable cards. The slot
+// list (lib/chat-intake-brief.ts) is still what decides what is asked and when
+// the chat is done; cards only change how an answer is given. Typing always
+// works. Built by lib/chat-intake-cards.ts (approved templates + model
+// adaptation + validation); never hand-built by the model.
+export type ChatCardResponseType =
+  | 'cards'            // one or more cards selected (free text optional)
+  | 'free_text_only'   // ignored the cards and typed
+  | 'none_fit'         // "None of these fit" + their own words
+  | 'not_sure'
+  | 'prefer_not'
+  | 'skip'
+
+export interface ChatCardOption {
+  /** Stable analytics id. Approved templates: "why_now.burnout". Model-adapted options: "why_now.a1". */
+  id:           string
+  label:        string
+  description?: string
+  /** "Nothing really" style options: selecting one clears the others (and vice versa). */
+  exclusive?:   boolean
+}
+
+export interface ChatCardGroup {
+  questionId:               string          // stable: "<kind>.<slotKey>"
+  slotKey:                  string
+  decisionCategory:         string          // a DecisionKind, or "other"
+  title:                    string          // the question — used as the group's accessible name
+  instruction:              string          // "Choose at least one. Select as many as apply."
+  options:                  ChatCardOption[]
+  minSelections:            number
+  maxSelections:            number | null   // null = no maximum
+  allowSelectAll:           boolean
+  essential:                boolean
+  allowSkip:                boolean
+  allowNotSure:             boolean
+  allowNoneOfThese:         boolean
+  allowPreferNotToSay:      boolean
+  freeTextCanSatisfyMinimum: boolean
+  freeTextLabel:            string
+  freeTextPlaceholder:      string
+  freeTextMaxLength:        number
+  sensitivity:              'normal' | 'sensitive'
+  adaptive:                 boolean         // true when any option was adapted by the model
+}
+
+/** What the client reports about a card answer. Never contains free text — that travels as the chat message. */
+export interface ChatCardResponseMeta {
+  questionId:      string
+  responseType:    ChatCardResponseType
+  selectedIds:     string[]
+  usedFreeText:    boolean
+}
+
+/** What is kept in decision_state about a card answer: ids and labels only, never the person's free text. */
+export interface ChatCardAnswer {
+  questionId:     string
+  slotKey:        string
+  responseType:   ChatCardResponseType
+  selectedIds:    string[]
+  selectedLabels: string[]
+  usedFreeText:   boolean
+  selectedAll:    boolean
+  exchange:       number
 }
 
 // The running notes state a fast, cheap model updates after every chat turn.
@@ -264,6 +334,10 @@ export interface ChatDecisionState {
   playbackShown?:         number
   smartFriendAsked?:      boolean
   pending?:               ChatPendingTurn | null
+  // ── v8: cards ─────────────────────────────────────────────────────────────
+  cardAnswers?:           Record<string, ChatCardAnswer>   // slot key -> how it was answered (ids / labels only)
+  skippedSlots?:          string[]                         // slots the person skipped or preferred not to answer (no to-do is made)
+  contradictions?:        string[]                         // tensions the model noticed — Quorum's reading, NOT confirmed by the person
 }
 
 export interface ChatIntake {

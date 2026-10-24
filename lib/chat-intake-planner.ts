@@ -24,6 +24,7 @@
 import { createCompletion } from '@/lib/ai-client'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
 import { rankMissing, slotCatalogForPrompt, slotSpec } from '@/lib/chat-intake-brief'
+import { approvedOptionsForPrompt } from '@/lib/chat-intake-cards'
 import { parsePlannerOutput } from '@/lib/chat-intake-plan-parse'
 import type { PlannerOutput } from '@/lib/chat-intake-plan-parse'
 
@@ -40,6 +41,8 @@ export interface PlannerInput {
   ceiling:       number
   /** Background for returning users — see lib/chat-intake-memory.ts. '' for anonymous / first-time. */
   background:    string
+  /** v8: a one-line note about how the last answer was given (e.g. every card ticked). null/undefined = nothing special. */
+  cardNote?:     string | null
 }
 
 // Fields of ChatDecisionState the model is allowed to read and write.
@@ -47,7 +50,7 @@ const CONTENT_KEYS = [
   'decisionStatement', 'decisionKind', 'options', 'leaningOptionType', 'stakeholders',
   'deadline', 'reversibility', 'assumptions', 'unknowns', 'evidence', 'decisionThreshold',
   'initialReaction', 'gutFeeling', 'successPicture', 'userCorrections',
-  'facts', 'unknownFacts', 'naSlots',
+  'facts', 'unknownFacts', 'naSlots', 'contradictions',
 ] as const
 
 function contentView(state: ChatDecisionState): Record<string, unknown> {
@@ -65,7 +68,8 @@ const PROMPT = (inp: PlannerInput): string => {
   const ranked    = rankMissing(state)
   const missing   = ranked.map(s => {
     const asked = state.askCounts?.[s.key] ?? 0
-    return `${s.key} — ${s.label}${asked ? ` (already asked ${asked}x: ask it more simply or differently)` : ''}`
+    const approved = approvedOptionsForPrompt(state.decisionKind, s.key)
+    return `${s.key} — ${s.label}${asked ? ` (already asked ${asked}x: ask it more simply or differently)` : ''}${approved ? `\n    APPROVED OPTIONS: ${approved}` : ''}`
   })
 
   const pendingLine = pending && (pending.kind === 'ask' || pending.kind === 'smart_friend') && pending.slotKey
@@ -93,7 +97,7 @@ ${JSON.stringify(contentView(state))}
 ${missing.length ? `STILL OPEN (required slots, most useful first):\n${missing.map(m => `- ${m}`).join('\n')}` : 'STILL OPEN: nothing — every required slot is covered.'}
 
 ${pendingLine}
-${mode}
+${inp.cardNote ? `${inp.cardNote}\n` : ''}${mode}
 ${inp.background ? `\nKNOWN BACKGROUND about this person from earlier (use it so they are not asked what you already know; when you rely on it, put "(from earlier)" in front of that fact so they can correct it):\n${inp.background}\n` : ''}
 THIS IS EXCHANGE ${inp.exchangeCount} OF UP TO ${inp.ceiling}.
 
@@ -105,24 +109,26 @@ RULES FOR THE NOTE:
 - "options" are the real choices, including passive ones (stay, wait, test first) — they feed a later screen. Keep every option label under 40 characters.
 - "initialReaction" is set only from the very first message and never overwritten. "gutFeeling" and "successPicture": fill only if the person volunteers them — never ask for them.
 - Use the person's specifics (the city, the role, the amount) rather than generic labels.
+- "decisionStatement" is the REFINED decision as one specific question in plain words, built from what they have told you ("Should I leave my job now to recover and start building X, or ..."). Sharpen it each turn as you learn more; never invent facts to make it more specific. Their original wording is stored separately — don't try to preserve it here.
+- "contradictions": at most one or two places where the person's own answers materially pull in different directions AND resolving it would change your advice (e.g. "wants to build this for years" vs "would stay if the job were manageable"). One short neutral sentence each. Omit it when there is no real tension; never use it to criticise.
 
 RULES FOR THE NEXT QUESTION ("next"):
 - Choose ONE slot from STILL OPEN: the one whose answer would most change the advice for THIS person. Skip a slot if the answer could not change what you'd say.
 - Plain words, a human voice, under 35 words, exactly one question. Name their specifics (e.g. "Delhi" not "your city"). No therapy-speak, no jargon, and never the words Examiner, Council, ontology, checkpoint, slot or brief.
 - Ask about facts and situation, not feelings or "what would success look like".
-- "chips": 2–4 short tap-answers (under 28 characters each) that could each stand as a full answer, or [] if it needs free text. Never include "not sure" — the app adds it.
+- "chips" become tappable cards. If the slot lists APPROVED OPTIONS, use them: keep the wording verbatim where an option fits this person, drop the ones that clearly do not apply to their situation, and add at most two options of your own that use their specifics. If the slot says several can apply at once, give 3–6 options that can each be true together; if it says pick one, give 2–5 options where exactly one would be true. With no approved options, give 2–4 short tap-answers that could each stand as a full answer, or [] if it needs free text. Every option under 40 characters, plain words, no duplicates. Never include "not sure", "none of these", "something else" or "prefer not to say" — the app adds those.
 - For "alternatives": name one or two plausible routes they have NOT mentioned, as chips, so they can widen their thinking.
 - If nothing is open, set "next" to null.
 
 PLAYBACK ("playback"): 1–2 sentences, "Here's what I've got — …", using their concrete specifics and ending with "Did I get that right?". Mention anything you took from KNOWN BACKGROUND.
 
-SMART FRIEND ("smartFriendQuestion"): if you had to advise this person right now, what ONE fact would you still ask for that changes your advice? One short question, or null if nothing material is missing.
+SMART FRIEND ("smartFriendQuestion"): if you had to advise this person right now, what ONE fact would you still ask for that changes your advice? One short question, or null if nothing material is missing. If "contradictions" holds a tension that would change your advice, make this the question that asks the person which side is closer to the truth (neutral wording, no judgement).
 
 If the latest message is a question about Quorum itself (privacy, pricing, how it works) rather than about their decision, set "aboutQuorum" to true and leave "next" as null.
 
 Return ONLY this JSON object, nothing else:
 {
-  "notes": { "decisionStatement": string, "decisionKind": string, "options": [{"label": string, "type": "act"|"dont_act"|"wait"|"gather_info"|"experiment"}], "leaningOptionType": string, "stakeholders": [{"name": string, "role": string, "consultReason": "expertise"|"challenge"|"approval"|"affected"|"trust"}], "deadline": string, "reversibility": "reversible"|"somewhat_reversible"|"irreversible", "assumptions": [string], "unknowns": [string], "evidence": [string], "decisionThreshold": string, "initialReaction": string, "gutFeeling": string, "successPicture": string, "userCorrections": [string], "facts": { "<slot key>": string }, "unknownFacts": [string], "naSlots": [string] },
+  "notes": { "decisionStatement": string, "decisionKind": string, "options": [{"label": string, "type": "act"|"dont_act"|"wait"|"gather_info"|"experiment"}], "leaningOptionType": string, "stakeholders": [{"name": string, "role": string, "consultReason": "expertise"|"challenge"|"approval"|"affected"|"trust"}], "deadline": string, "reversibility": "reversible"|"somewhat_reversible"|"irreversible", "assumptions": [string], "unknowns": [string], "evidence": [string], "decisionThreshold": string, "initialReaction": string, "gutFeeling": string, "successPicture": string, "userCorrections": [string], "facts": { "<slot key>": string }, "unknownFacts": [string], "naSlots": [string], "contradictions": [string] },
   "answeredPending": boolean,
   "aboutQuorum": boolean,
   "next": { "slotKey": string, "question": string, "chips": [string] } | null,

@@ -82,6 +82,7 @@ export function parsePlannerOutput(raw: string): PlannerOutput | null {
   const unknowns = strList(n.unknowns);                  if (unknowns?.length) notes.unknowns = unknowns
   const evidence = strList(n.evidence);                  if (evidence?.length) notes.evidence = evidence
   const corrections = strList(n.userCorrections);        if (corrections?.length) notes.userCorrections = corrections
+  const tensions = strList(n.contradictions, 3, 200);    if (tensions?.length) notes.contradictions = tensions
 
   if (n.facts && typeof n.facts === 'object' && !Array.isArray(n.facts)) {
     const facts: Record<string, string> = {}
