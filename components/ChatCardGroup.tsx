@@ -40,6 +40,10 @@ interface Props {
   onFreeTextOpen?: () => void
   /** Restores what the person had entered if sending failed (so a network blip never costs them their typing). */
   initial?:        CardSelection | null
+  /** v9: show the question as a visible heading (used for the second group of a combined step, whose question is not in the chat bubble). */
+  showTitle?:      boolean
+  /** v9: fired on every card tap / special button (analytics counts effort — never what was tapped). */
+  onTap?:          () => void
 }
 
 const visuallyHidden: CSSProperties = {
@@ -47,7 +51,7 @@ const visuallyHidden: CSSProperties = {
   clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
 }
 
-export default function ChatCardGroup({ group, onSubmit, onFreeTextOpen, initial }: Props) {
+export default function ChatCardGroup({ group, onSubmit, onFreeTextOpen, initial, showTitle, onTap }: Props) {
   const uid = useId()
   const single = group.maxSelections === 1
   const [selected, setSelected]   = useState<string[]>(initial?.special ? [] : (initial?.selectedIds ?? []))
@@ -70,6 +74,7 @@ export default function ChatCardGroup({ group, onSubmit, onFreeTextOpen, initial
 
   function toggle(id: string, pointer: boolean) {
     setError(null)
+    onTap?.()
     const has = selected.includes(id)
     let next: string[]
     if (has) next = selected.filter(x => x !== id)
@@ -95,10 +100,12 @@ export default function ChatCardGroup({ group, onSubmit, onFreeTextOpen, initial
   function pickNoneFit() {
     setError(null)
     if (special === 'none_fit') { setSpecial(null); return }
+    onTap?.()
     setSelected([]); setSpecial('none_fit'); openText(true)
   }
 
   function immediate(kind: Exclude<CardSpecial, 'none_fit' | null>) {
+    onTap?.()
     onSubmit({ selectedIds: [], freeText: '', special: kind })
   }
 
@@ -144,7 +151,7 @@ export default function ChatCardGroup({ group, onSubmit, onFreeTextOpen, initial
       aria-describedby={`${hintId} ${error ? errId : ''}`.trim()}
       style={{ border: 'none', margin: 0, padding: 0, minWidth: 0, alignSelf: 'stretch', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}
     >
-      <legend style={visuallyHidden}>{group.title}</legend>
+      <legend style={showTitle ? { fontSize: 15, fontWeight: 500, color: 'var(--text-1)', padding: 0, marginBottom: 2 } : visuallyHidden}>{group.title}</legend>
       <p id={hintId} style={{ margin: 0, fontSize: 13.5, color: 'var(--text-3)' }}>{group.instruction}</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))', gap: 8 }}>

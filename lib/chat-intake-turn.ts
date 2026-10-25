@@ -23,13 +23,16 @@ import type {
   ChatCardGroup, ChatCardResponseMeta, ChatDecisionState, ChatPendingTurn, ChatQuickReplies,
 } from '@/lib/types'
 import {
-  CHANGE_MIND_SLOT, PLAYBACK_NO, PLAYBACK_YES,
-  briefStatus, clipText, finalizeBrief, isAffirmative,
+  CHANGE_MIND_SLOT,
+  clipText, isAffirmative,
   isDecisionKind, isDontKnow, isKnown, isNegative, isNotApplicable, isResolved,
-  markNotApplicable, markUnknown, rankMissing, sanitizeChips, scoreRichness,
+  markNotApplicable, markUnknown, sanitizeChips, scoreRichness,
   setFact, slotSpec, slotsFor,
 } from './chat-intake-brief'
 import { allSelectedNote, buildCardGroup, recordCardAnswer, sanitizeCardMeta } from './chat-intake-cards'
+import { criticalOpen, duplicatesKnown, effectiveStakes, finalizeForCouncil, gapIsOpen, isSmartFriendGap } from './chat-intake-depth'
+import type { SmartFriendGap } from './chat-intake-depth'
+import { composeReply, validateReflection } from './chat-intake-reflection'
 import { NON_ANSWER } from './chat-intake-plan-parse'
 import type { PlannerOutput } from './chat-intake-plan-parse'
 
@@ -37,7 +40,11 @@ import type { PlannerOutput } from './chat-intake-plan-parse'
 
 // v8: 'cards' = a card group answer; 'declined' = "Prefer not to say" / "Skip for now" (resolved, no to-do made).
 export type QuickReplyKind = 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no' | 'enough'
-export interface QuickReplyMeta { kind: QuickReplyKind; slotKey?: string | null; card?: ChatCardResponseMeta | null }
+export interface QuickReplyMeta {
+  kind: QuickReplyKind; slotKey?: string | null; card?: ChatCardResponseMeta | null
+  /** v9: the answer to the second card group shown in the same step. `text` is exactly what was appended to the chat message. */
+  companion?: { text: string; card?: ChatCardResponseMeta | null } | null
+}
 
 export type TurnAction = 'ask' | 'smart_friend' | 'playback' | 'correct' | 'close' | 'faq'
 
@@ -47,6 +54,8 @@ export interface TurnResult {
   reply:          string
   quickReplies:   ChatQuickReplies
   readyToReflect: boolean
+  /** v9: whether a grounded reflection went out above the question, and if not, why not (for analytics — never the text). */
+  reflection?:    { shown: boolean; reason: string | null }
 }
 
 export const MAX_ASKS_PER_SLOT = 2
@@ -57,7 +66,7 @@ const NO_CHIPS: ChatQuickReplies = { kind: 'none', chips: [] }
 function quickFromPending(p: ChatPendingTurn | null | undefined): ChatQuickReplies {
   if (!p) return NO_CHIPS
   if (p.kind === 'playback') return { kind: 'playback', chips: p.chips }
-  if (p.kind === 'ask' || p.kind === 'smart_friend') return { kind: 'ask', slotKey: p.slotKey ?? null, chips: p.chips, card: p.card ?? null }
+  if (p.kind === 'ask' || p.kind === 'smart_friend') return { kind: 'ask', slotKey: p.slotKey ?? null, chips: p.chips, card: p.card ?? null, companion: p.companion ?? null }
   return NO_CHIPS
 }
 
@@ -100,6 +109,7 @@ export function mergeNotes(
   if (notes.deadline)          s.deadline          = notes.deadline
   if (notes.decisionThreshold) s.decisionThreshold = notes.decisionThreshold
   if (notes.reversibility)     s.reversibility     = notes.reversibility
+  if (notes.stakes)            s.stakes            = notes.stakes
   if (notes.leaningOptionType) s.leaningOptionType = notes.leaningOptionType
   if (notes.gutFeeling)        s.gutFeeling        = notes.gutFeeling
   if (notes.successPicture)    s.successPicture    = notes.successPicture
@@ -157,12 +167,19 @@ export interface PreResult {
   dontKnow:  boolean
   /** v8: one line for the planner when the card answer needs special reading (e.g. every option ticked). */
   cardNote?: string | null
+  /** v9: the message with the companion answer removed — what the generic "never lose an answer" capture should store for the primary slot. */
+  primaryText?: string
   /** Set when the reply needs no model at all (playback yes/no, "that's enough"). */
   shortCircuit?: TurnResult
 }
 
-export function closeTurn(state: ChatDecisionState, closingLine: string): TurnResult {
-  const s: ChatDecisionState = { ...finalizeBrief(state), phase: 'done', pending: null }
+/**
+ * Wraps the chat. Critical gaps become "unknown" (with a find-out to-do) and are remembered as gaps; slots that
+ * were not material are recorded as "not asked". The route swaps `reply` for the readiness copy that matches.
+ */
+export function closeTurn(state: ChatDecisionState, closingLine: string, closedBy?: 'ready' | 'ceiling' | 'user'): TurnResult {
+  const by = closedBy ?? (criticalOpen(state).length ? 'ceiling' : 'ready')
+  const s: ChatDecisionState = { ...finalizeForCouncil(state, markUnknown, by), phase: 'done', pending: null }
   return { state: s, action: 'close', reply: closingLine, quickReplies: NO_CHIPS, readyToReflect: true }
 }
 
@@ -185,7 +202,7 @@ export function preprocessTurn(
   const pending = s.pending ?? null
 
   if (quick?.kind === 'enough') {
-    return { state: s, dontKnow: false, shortCircuit: closeTurn(s, ctx.closingLine) }
+    return { state: s, dontKnow: false, shortCircuit: closeTurn(s, ctx.closingLine, 'user') }
   }
 
   if (pending?.kind === 'playback') {
@@ -204,6 +221,25 @@ export function preprocessTurn(
 
   let dontKnow = false
   let cardNote: string | null = null
+  let primaryText = userText
+
+  // v9: the second card group answered in the same step. Recorded deterministically here so it is never lost,
+  // whatever the model extracts; the primary answer is what the generic capture below sees.
+  const comp: ChatCardGroup | null = pending?.kind === 'ask' ? (pending.companion ?? null) : null
+  if (comp && quick?.companion) {
+    const raw   = String(quick.companion.text ?? '')
+    const ctext = clipText(raw, 900)
+    const cmeta = sanitizeCardMeta(quick.companion.card, comp)
+    if (raw && userText.endsWith(raw)) primaryText = userText.slice(0, userText.length - raw.length).trim()
+    if (cmeta) {
+      const exchange = ctx.exchange ?? 0
+      s = recordCardAnswer(s, comp, cmeta, exchange)
+      if (cmeta.responseType === 'not_sure') s = markUnknown(s, comp.slotKey)
+      else if (cmeta.responseType !== 'prefer_not' && cmeta.responseType !== 'skip' && ctext.trim().length >= 2 && !isResolved(s, comp.slotKey)) s = setFact(s, comp.slotKey, ctext)
+      const label = slotSpec(s.decisionKind, comp.slotKey)?.label ?? comp.slotKey
+      cardNote = `In the same message they also answered a second question, "${label}": ${ctext}. Treat that as answered.`
+    }
+  }
 
   // v8: a card answer (or a typed reply to a question that was showing cards).
   const card: ChatCardGroup | null = pending?.kind === 'ask' ? (pending.card ?? null) : null
@@ -212,20 +248,20 @@ export function preprocessTurn(
     const exchange = ctx.exchange ?? 0
     if (meta) {
       s = recordCardAnswer(s, card, meta, exchange)
-      cardNote = allSelectedNote(card, meta)
+      cardNote = [cardNote, allSelectedNote(card, meta)].filter(Boolean).join(' ') || null
       // "Prefer not to say" / "Skip for now": resolved without a to-do — handled in recordCardAnswer; the planner must not capture it either.
       if (meta.responseType === 'prefer_not' || meta.responseType === 'skip') dontKnow = true
-    } else if (quick?.kind !== 'unknown' && !isDontKnow(userText)) {
+    } else if (quick?.kind !== 'unknown' && !isDontKnow(primaryText)) {
       // Ignored the cards and typed: still a real answer, recorded as such.
       s = recordCardAnswer(s, card, { questionId: card.questionId, responseType: 'free_text_only', selectedIds: [], usedFreeText: true }, exchange)
     }
   }
 
-  if ((pending?.kind === 'ask' || pending?.kind === 'smart_friend') && (quick?.kind === 'unknown' || isDontKnow(userText))) {
+  if ((pending?.kind === 'ask' || pending?.kind === 'smart_friend') && (quick?.kind === 'unknown' || isDontKnow(primaryText))) {
     dontKnow = true
     if (pending.kind === 'ask' && pending.slotKey) s = markUnknown(s, pending.slotKey)
   }
-  return { state: s, dontKnow, cardNote }
+  return { state: s, dontKnow, cardNote, primaryText }
 }
 
 // ── Step 2 + 3: fold the model's output in, then decide ──────────────────────
@@ -239,6 +275,10 @@ export interface DecideInput {
   closingLine:   string
   /** Pre-written answer when the person asked about Quorum itself (route generates it). */
   faqReply?:     string | null
+  /** v9: text to store for the pending slot when it differs from `userText` (PreResult.primaryText). */
+  captureText?:  string
+  /** v9: Quorum's earlier messages, so the extra question never repeats one. */
+  asked?:        string[]
 }
 
 export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult {
@@ -252,27 +292,27 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
   }
 
   // Never lose an answer because extraction missed it.
-  let capturedRaw = false
-  const text = userText.trim()
+  const text = (inp.captureText ?? userText).trim()
   if (pending?.kind === 'ask' && pending.slotKey && !dontKnow && !isResolved(s, pending.slotKey) && text.length >= 2
       && (!planner || planner.answeredPending !== false)) {
     s = setFact(s, pending.slotKey, text)
-    capturedRaw = true
   }
   if (pending?.kind === 'smart_friend' && !dontKnow && text.length >= 2) {
     s = pending.slotKey === CHANGE_MIND_SLOT.key
       ? setFact(s, CHANGE_MIND_SLOT.key, text)
       : { ...s, evidence: union(s.evidence, [clipText(text, 200)], 16) }
-    capturedRaw = true
+    // v9: answering a question about a tension settles it — the person's own words now outrank Quorum's earlier reading.
+    if (pending.gap === 'tension' && s.contradictions?.length) {
+      s = { ...s, contradictions: undefined, userCorrections: union(s.userCorrections, [`Clarified: ${clipText(text, 180)}`]) }
+    }
   }
   const correcting = pending?.kind === 'correct' || pending?.kind === 'playback'
   if (correcting && text && !(planner?.notes.userCorrections?.length)) {
     s = { ...s, userCorrections: union(s.userCorrections, [clipText(text, 200)]) }
-    capturedRaw = true
   }
 
   // Nagging protection: a slot asked twice and still open is flagged unknown.
-  for (const slot of briefStatus(s).missing) {
+  for (const slot of slotsFor(s.decisionKind).filter(x => x.required && !isResolved(s, x.key))) {
     if ((s.askCounts?.[slot.key] ?? 0) >= MAX_ASKS_PER_SLOT) s = markUnknown(s, slot.key)
   }
 
@@ -281,50 +321,88 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
 
   // Someone added a thing after the chat had already wrapped ("Add one more thing first").
   if (pre.phase === 'done') return closeTurn(s, closingLine)
-  if (atCeiling)            return closeTurn(s, closingLine)
+  if (atCeiling)            return closeTurn(s, closingLine, 'ceiling')
 
   // v8: no separate "did I get that right?" step. The refined decision is confirmed ONCE, on the summary
-  // screen that follows the lean taps (components/DecisionCheckpoint.tsx), where the person can confirm, edit,
-  // add more, or go back. Chats saved before this change may still be waiting on a playback answer — that
-  // path is handled in preprocessTurn and below.
+  // screen (components/DecisionCheckpoint.tsx), where the person can confirm, edit, add more, or go back.
+  // Chats saved before that change may still be waiting on a playback answer -- handled in preprocessTurn.
   const wrap = (state: ChatDecisionState): TurnResult => closeTurn(state, closingLine)
 
   if (correcting) return wrap(s)   // a correction to a pre-v8 playback: keep it, then wrap
 
-  const status = briefStatus(s)
+  // v9: "ready" means nothing ESSENTIAL is missing (lib/chat-intake-depth.ts) — not that every slot was asked.
+  const ready = criticalOpen(s).length === 0
 
-  if (status.ready || nearCeiling) {
-    // Last look before wrapping: the one thing a sharp friend would still ask.
-    if (status.ready && !nearCeiling && !s.smartFriendAsked) {
-      const q = smartFriendQuestion(s, planner)
+  // v9: the reflection that goes above the next question, if the model's is good enough. Never substituted.
+  const labels = Object.values(s.cardAnswers ?? {}).filter(a => a.exchange === exchangeCount).flatMap(a => a.selectedLabels)
+  const verdict = validateReflection(planner?.reflection, { userText, selectedLabels: labels, onFile: Object.values(s.facts ?? {}) })
+  const reflection = verdict.ok ? verdict.text : null
+  const reflectionMeta = { shown: verdict.ok, reason: verdict.ok ? null : verdict.reason }
+  const noteReflection = (state: ChatDecisionState): ChatDecisionState => verdict.ok
+    ? { ...state, reflectionCount: (state.reflectionCount ?? 0) + 1, turnsSinceReflection: 0 }
+    : { ...state, turnsSinceReflection: (state.turnsSinceReflection ?? 0) + 1 }
+
+  if (ready || nearCeiling) {
+    // Last look before wrapping: ONE extra question, only for a critical, still-open, non-deferrable gap.
+    if (ready && !nearCeiling && !s.smartFriendAsked) {
+      const q = smartFriendGate(s, planner, inp.asked ?? [])
       s = { ...s, smartFriendAsked: true }
       if (q) {
-        const next: ChatDecisionState = { ...s, phase: 'gathering', pending: { kind: 'smart_friend', slotKey: q.slotKey, chips: [] } }
-        return { state: next, action: 'smart_friend', reply: q.question, quickReplies: { kind: 'ask', slotKey: q.slotKey, chips: [] }, readyToReflect: false }
+        const next: ChatDecisionState = noteReflection({ ...s, phase: 'gathering', pending: { kind: 'smart_friend', slotKey: q.slotKey, chips: [], gap: q.gap } })
+        return { state: next, action: 'smart_friend', reply: composeReply(reflection, q.question), quickReplies: { kind: 'ask', slotKey: q.slotKey, chips: [] }, readyToReflect: false, reflection: reflectionMeta }
       }
     }
     return wrap(s)
   }
 
-  return askNext(s, planner, closingLine)
+  const asked = askNext(s, planner, closingLine, reflection)
+  return asked.action === 'ask' ? { ...asked, state: noteReflection(asked.state), reflection: reflectionMeta } : asked
 }
 
-function smartFriendQuestion(s: ChatDecisionState, planner: PlannerOutput | null): { question: string; slotKey: string | null } | null {
-  if (planner) {
-    return usableQuestion(planner.smartFriendQuestion) ? { question: planner.smartFriendQuestion!.trim(), slotKey: null } : null
+/**
+ * The one extra question (v9 gate). It may only be asked when ALL hold:
+ *   • the decision is not low-stakes;
+ *   • the planner names a gap from a fixed list (tension, validation, feasibility, who_affected, reversibility, timing);
+ *   • that gap is genuinely still open given every fact, card answer and earlier answer on file (and not a slot the
+ *     path made non-material);
+ *   • the question does not repeat something already asked or already known.
+ * If the planner failed, the only fallback is the change-of-mind probe, and only on a high-stakes decision.
+ */
+function smartFriendGate(s: ChatDecisionState, planner: PlannerOutput | null, asked: string[]): { question: string; slotKey: string | null; gap: SmartFriendGap | 'change_mind' } | null {
+  if (effectiveStakes(s) === 'low') return null
+  if (!planner) {
+    return effectiveStakes(s) === 'high' && !s.contradictions?.length && !isResolved(s, CHANGE_MIND_SLOT.key) && !duplicatesKnown(CHANGE_MIND_SLOT.ask, s, asked)
+      ? { question: CHANGE_MIND_SLOT.ask, slotKey: CHANGE_MIND_SLOT.key, gap: 'change_mind' }
+      : null
   }
-  // Planner failed: fall back to the one probe every decision benefits from.
-  return isResolved(s, CHANGE_MIND_SLOT.key) ? null : { question: CHANGE_MIND_SLOT.ask, slotKey: CHANGE_MIND_SLOT.key }
+  const q = planner.smartFriendQuestion
+  if (!usableQuestion(q)) return null
+  const gap = planner.smartFriendGap
+  if (!isSmartFriendGap(gap)) return null
+  if (!gapIsOpen(s, gap)) return null
+  if (duplicatesKnown(q, s, asked)) return null
+  return { question: q.trim(), slotKey: null, gap }
 }
 
-function askNext(s: ChatDecisionState, planner: PlannerOutput | null, closingLine: string): TurnResult {
-  const ranked = rankMissing(s).filter(x => (s.askCounts?.[x.key] ?? 0) < MAX_ASKS_PER_SLOT)
+/** A second, related card group to open in the SAME message once the first is answered (progressive; never a form). */
+function pickCompanion(s: ChatDecisionState, slotKey: string): ChatCardGroup | null {
+  if (s.walkthrough) return null     // step-by-step mode: one small thing at a time
+  const rest = criticalOpen(s).filter(x => x.key !== slotKey && (s.askCounts?.[x.key] ?? 0) < MAX_ASKS_PER_SLOT && !isNotApplicable(s, x.key))
+  for (const cand of rest.slice(0, 2)) {
+    const g = buildCardGroup({ kind: s.decisionKind, slot: cand, question: cand.ask })
+    if (g) return g
+  }
+  return null
+}
+
+function askNext(s: ChatDecisionState, planner: PlannerOutput | null, closingLine: string, reflection: string | null): TurnResult {
+  const ranked = criticalOpen(s).filter(x => (s.askCounts?.[x.key] ?? 0) < MAX_ASKS_PER_SLOT)
   const proposed = planner?.next && !isNotApplicable(s, planner.next.slotKey)
     ? ranked.find(x => x.key === planner.next!.slotKey) ?? null
     : null
   const slot = proposed ?? ranked[0]
 
-  // Nothing askable is left (every open slot has been asked twice and flagged unknown).
+  // Nothing askable is left (every essential slot has been asked twice and flagged unknown).
   if (!slot) {
     return closeTurn(s, closingLine)
   }
@@ -333,15 +411,23 @@ function askNext(s: ChatDecisionState, planner: PlannerOutput | null, closingLin
   const question = useModelWording ? planner!.next!.question.trim() : slot.ask
   const chips    = sanitizeChips(useModelWording ? planner!.next!.chips : slot.chips, slot.chips ?? [])
 
-  // v8: the same question as selectable cards (approved template + the planner's adaptation, validated).
-  // No usable options -> null -> the question is asked exactly as in v7. A card problem never blocks a question.
+  // Cards: approved template + the planner's adaptation, validated. No usable options -> asked as plain text.
   const card = buildCardGroup({ kind: s.decisionKind, slot, question, modelChips: useModelWording ? planner!.next!.chips : undefined })
   const shownChips = card ? card.options.map(o => o.label) : chips
 
+  // v9: a related second group in the same step (only next to a real card group, and only for a still-essential slot).
+  const companion = card ? pickCompanion(s, slot.key) : null
+
+  const askCounts = { ...(s.askCounts ?? {}), [slot.key]: (s.askCounts?.[slot.key] ?? 0) + 1 }
+  if (companion) askCounts[companion.slotKey] = (askCounts[companion.slotKey] ?? 0) + 1
+
   const next: ChatDecisionState = {
-    ...s, phase: 'gathering',
-    askCounts: { ...(s.askCounts ?? {}), [slot.key]: (s.askCounts?.[slot.key] ?? 0) + 1 },
-    pending:   { kind: 'ask', slotKey: slot.key, chips: shownChips, card },
+    ...s, phase: 'gathering', askCounts,
+    pending:   { kind: 'ask', slotKey: slot.key, chips: shownChips, card, companion },
   }
-  return { state: next, action: 'ask', reply: question, quickReplies: { kind: 'ask', slotKey: slot.key, chips: shownChips, card }, readyToReflect: false }
+  return {
+    state: next, action: 'ask', reply: composeReply(reflection, question),
+    quickReplies: { kind: 'ask', slotKey: slot.key, chips: shownChips, card, companion },
+    readyToReflect: false,
+  }
 }

@@ -23,7 +23,8 @@
 
 import { createCompletion } from '@/lib/ai-client'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
-import { rankMissing, slotCatalogForPrompt, slotSpec } from '@/lib/chat-intake-brief'
+import { slotCatalogForPrompt, slotSpec } from '@/lib/chat-intake-brief'
+import { criticalOpen } from '@/lib/chat-intake-depth'
 import { approvedOptionsForPrompt } from '@/lib/chat-intake-cards'
 import { parsePlannerOutput } from '@/lib/chat-intake-plan-parse'
 import type { PlannerOutput } from '@/lib/chat-intake-plan-parse'
@@ -43,6 +44,8 @@ export interface PlannerInput {
   background:    string
   /** v8: a one-line note about how the last answer was given (e.g. every card ticked). null/undefined = nothing special. */
   cardNote?:     string | null
+  /** v9: a grounded reflection is due this turn (at most one question turn in a row may go out without one). */
+  reflectionDue?: boolean
 }
 
 // Fields of ChatDecisionState the model is allowed to read and write.
@@ -50,7 +53,7 @@ const CONTENT_KEYS = [
   'decisionStatement', 'decisionKind', 'options', 'leaningOptionType', 'stakeholders',
   'deadline', 'reversibility', 'assumptions', 'unknowns', 'evidence', 'decisionThreshold',
   'initialReaction', 'gutFeeling', 'successPicture', 'userCorrections',
-  'facts', 'unknownFacts', 'naSlots', 'contradictions',
+  'facts', 'unknownFacts', 'naSlots', 'contradictions', 'stakes',
 ] as const
 
 function contentView(state: ChatDecisionState): Record<string, unknown> {
@@ -65,7 +68,8 @@ function contentView(state: ChatDecisionState): Record<string, unknown> {
 const PROMPT = (inp: PlannerInput): string => {
   const { state } = inp
   const pending   = state.pending
-  const ranked    = rankMissing(state)
+  // v9: only what the Council needs before it can start (see lib/chat-intake-depth.ts) — not every slot of the decision type.
+  const ranked    = criticalOpen(state)
   const missing   = ranked.map(s => {
     const asked = state.askCounts?.[s.key] ?? 0
     const approved = approvedOptionsForPrompt(state.decisionKind, s.key)
@@ -86,7 +90,7 @@ const PROMPT = (inp: PlannerInput): string => {
         ? 'MODE: their first message was short and vague. Be concrete and easy: simple words, tap-answers wherever the answer is a choice.'
         : 'MODE: normal.'
 
-  return `You are Quorum's intake planner. Someone is talking through a decision. After EVERY message you do four jobs in one JSON reply: update a private note, say what to ask next, summarise what you understand, and say what a sharp friend would still need. You never talk to the person outside the "question", "playback" and "smartFriendQuestion" strings.
+  return `You are Quorum's intake planner. Someone is talking through a decision. After EVERY message you do four jobs in one JSON reply: update a private note, say what to ask next, summarise what you understand, and say what a sharp friend would still need. You never talk to the person outside the "reflection", "question" and "smartFriendQuestion" strings.
 
 KINDS OF DECISION and their slots (* = required). Pick the one that fits in "decisionKind":
 ${slotCatalogForPrompt()}
@@ -97,7 +101,7 @@ ${JSON.stringify(contentView(state))}
 ${missing.length ? `STILL OPEN (required slots, most useful first):\n${missing.map(m => `- ${m}`).join('\n')}` : 'STILL OPEN: nothing — every required slot is covered.'}
 
 ${pendingLine}
-${inp.cardNote ? `${inp.cardNote}\n` : ''}${mode}
+${inp.cardNote ? `${inp.cardNote}\n` : ''}${inp.reflectionDue ? 'REFLECTION DUE: write a grounded reflection for this turn (see REFLECTION).\n' : ''}${mode}
 ${inp.background ? `\nKNOWN BACKGROUND about this person from earlier (use it so they are not asked what you already know; when you rely on it, put "(from earlier)" in front of that fact so they can correct it):\n${inp.background}\n` : ''}
 THIS IS EXCHANGE ${inp.exchangeCount} OF UP TO ${inp.ceiling}.
 
@@ -120,20 +124,23 @@ RULES FOR THE NEXT QUESTION ("next"):
 - For "alternatives": name one or two plausible routes they have NOT mentioned, as chips, so they can widen their thinking.
 - If nothing is open, set "next" to null.
 
-PLAYBACK ("playback"): 1–2 sentences, "Here's what I've got — …", using their concrete specifics and ending with "Did I get that right?". Mention anything you took from KNOWN BACKGROUND.
+REFLECTION ("reflection"): one short line, shown ABOVE your next question, that gives something back. Use it for ONE of: a useful distinction between two things they said; a connection between two of their answers; a possible tension; or why the next question matters to the advice. Rules: 8–40 words; built only from what THEY said or tapped (their own specifics, not generic wisdom); provisional wording ("may", "sounds like", "could be", "I can't tell yet"); never a question; never advice or a recommendation; never guess their feelings or motives; never just repeat the options they tapped; never start with an acknowledgement ("Got it", "Thanks", "Makes sense"). If REFLECTION DUE says it is due, you MUST write one. If you have nothing grounded to say, return null — a missing reflection is better than a vague one.
 
-SMART FRIEND ("smartFriendQuestion"): if you had to advise this person right now, what ONE fact would you still ask for that changes your advice? One short question, or null if nothing material is missing. If "contradictions" holds a tension that would change your advice, make this the question that asks the person which side is closer to the truth (neutral wording, no judgement).
+STAKES ("notes.stakes"): "low" (easily undone, small money, few people affected), "medium", or "high" (hard to undo, large money or income, other people depend on it). Judge it from the first message and revise only if they tell you something that changes it. It sets how many questions are worth asking, so do not inflate it.
+
+SMART FRIEND ("smartFriendQuestion"): if you had to advise this person right now, what ONE fact would you still ask for that changes your advice? One short question, or null if nothing material is missing. Also set "smartFriendGap" to exactly one of: "tension", "validation", "feasibility", "who_affected", "reversibility", "timing". Only ask when that gap is genuinely still open and would change the advice — never about something they already told you or already answered by tapping. If "contradictions" holds a tension that would change your advice, make this the question that asks the person which side is closer to the truth (neutral wording, no judgement).
 
 If the latest message is a question about Quorum itself (privacy, pricing, how it works) rather than about their decision, set "aboutQuorum" to true and leave "next" as null.
 
 Return ONLY this JSON object, nothing else:
 {
-  "notes": { "decisionStatement": string, "decisionKind": string, "options": [{"label": string, "type": "act"|"dont_act"|"wait"|"gather_info"|"experiment"}], "leaningOptionType": string, "stakeholders": [{"name": string, "role": string, "consultReason": "expertise"|"challenge"|"approval"|"affected"|"trust"}], "deadline": string, "reversibility": "reversible"|"somewhat_reversible"|"irreversible", "assumptions": [string], "unknowns": [string], "evidence": [string], "decisionThreshold": string, "initialReaction": string, "gutFeeling": string, "successPicture": string, "userCorrections": [string], "facts": { "<slot key>": string }, "unknownFacts": [string], "naSlots": [string], "contradictions": [string] },
+  "notes": { "decisionStatement": string, "decisionKind": string, "options": [{"label": string, "type": "act"|"dont_act"|"wait"|"gather_info"|"experiment"}], "leaningOptionType": string, "stakeholders": [{"name": string, "role": string, "consultReason": "expertise"|"challenge"|"approval"|"affected"|"trust"}], "deadline": string, "stakes": "low"|"medium"|"high", "reversibility": "reversible"|"somewhat_reversible"|"irreversible", "assumptions": [string], "unknowns": [string], "evidence": [string], "decisionThreshold": string, "initialReaction": string, "gutFeeling": string, "successPicture": string, "userCorrections": [string], "facts": { "<slot key>": string }, "unknownFacts": [string], "naSlots": [string], "contradictions": [string] },
   "answeredPending": boolean,
   "aboutQuorum": boolean,
   "next": { "slotKey": string, "question": string, "chips": [string] } | null,
-  "playback": string,
-  "smartFriendQuestion": string | null
+  "reflection": string | null,
+  "smartFriendQuestion": string | null,
+  "smartFriendGap": "tension" | "validation" | "feasibility" | "who_affected" | "reversibility" | "timing" | null
 }
 (Omit any "notes" field that has no evidence yet.)
 

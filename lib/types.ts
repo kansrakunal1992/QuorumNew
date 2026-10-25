@@ -208,6 +208,10 @@ export interface ChatPendingTurn {
   chips:    string[]
   /** v8: the card group shown for this question, so a resumed chat shows the same cards. */
   card?:    ChatCardGroup | null
+  /** v9: a second, related card group shown in the SAME message (progressive: it opens after the first is answered). */
+  companion?: ChatCardGroup | null
+  /** v9: what the extra (smart-friend) question was about, so the answer can settle the right thing. */
+  gap?:       string | null
 }
 
 // Returned to the client with every reply.
@@ -217,6 +221,8 @@ export interface ChatQuickReplies {
   chips:    string[]
   /** v8: when present the client renders selectable cards instead of plain chips. `chips` stays populated as a fallback for older clients. */
   card?:    ChatCardGroup | null
+  /** v9: second related group in the same step (see ChatPendingTurn.companion). */
+  companion?: ChatCardGroup | null
 }
 
 // ── Natural Intake (v8): card groups inside the chat ─────────────────────────
@@ -338,6 +344,15 @@ export interface ChatDecisionState {
   cardAnswers?:           Record<string, ChatCardAnswer>   // slot key -> how it was answered (ids / labels only)
   skippedSlots?:          string[]                         // slots the person skipped or preferred not to answer (no to-do is made)
   contradictions?:        string[]                         // tensions the model noticed — Quorum's reading, NOT confirmed by the person
+  // ── v9: depth, readiness, reflection ─────────────────────────────────────
+  stakes?:                'low' | 'medium' | 'high'        // model's read of the decision's weight (see lib/chat-intake-depth.ts effectiveStakes)
+  deferredSlots?:         string[]                         // required slots deliberately NOT asked because they were not material — handed to the Council as "not asked"
+  gapSlots?:              string[]                         // CRITICAL slots still unresolved when the chat had to stop (ceiling / "that's enough")
+  closedBy?:              'ready' | 'ceiling' | 'user'
+  reflectionCount?:       number                           // reflections shown (counts only; the text lives in the transcript)
+  turnsSinceReflection?:  number                           // consecutive question turns without a grounded reflection
+  flowVersion?:           string                           // intake flow identifier, for historical comparison (lib/chat-intake-depth.ts INTAKE_FLOW_VERSION)
+  userEditedDecision?:    string                           // the person's own rewrite of the decision — authoritative over every Quorum inference
 }
 
 export interface ChatIntake {

@@ -174,3 +174,94 @@ Queries for all of the above: `supabase/analytics_intake_cards_v1.sql` (read-onl
 3. After deploy, run `supabase/analytics_intake_cards_v1.sql` queries 1–3 and sanity-check one chat end-to-end
    (`chat_intake_id` ↔ `chat_intakes` ↔ `sessions` ↔ `synthesis_versions`).
 4. Decide Q3/Q4, then compare median turns and Council reach (`analytics_council_funnel_v4.sql`) for pre/post cohorts.
+
+---
+
+# v9 update — progressive cards, essential-only questions, single confirmation
+
+Everything above still describes the pre-v9 (v8) instrumentation. This section records what v9 changed, what it depends on,
+and what is **still unverified**. Evidence labels: **[code]** read in the repository, **[scripted]** exercised by tests with
+a scripted planner, **[live]** needs the real model, **[prod]** needs production data. Nothing here is [live] or [prod] yet.
+
+## v9.1 Flow-version identifier (historical comparison)
+
+* `INTAKE_FLOW_VERSION = 'v9_progressive_cards'` (`lib/chat-intake-depth.ts`). **[code]**
+* Stamped on `chat_intakes.decision_state.flowVersion` at the first turn (`app/api/chat-intake/route.ts`), so DB-derived funnels
+  (`chat_intakes` → `sessions` → `synthesis_versions`) can be split by flow without any event: chats **without** the key are v8 or earlier.
+* Added as the `flow_version` prop on `decision_started`, the `intake_*` events and `council_launch_requested`. (Adding a prop to
+  `decision_started` is additive; no existing prop was changed.)
+
+## v9.2 Event changes
+
+| Event | Status | Notes |
+|---|---|---|
+| `landing_view`, `return_visit`, `starter_*`, `gate_arm_assigned`, `decision_checkpointed`, `decision_completed`, `notification_*` | **unchanged** | `decision_checkpointed` still fires when the session is created (`DecisionCheckpoint.tsx`), now after the lean/priority save |
+| `decision_started` | prop added | `flow_version` |
+| `intake_card_group_shown` | prop added | `flow_version`, `companion` (true for the second group of a step) |
+| `intake_card_answered` | prop added | `flow_version`; one event per group, so a combined step emits two |
+| `intake_council_ready` | props added | `user_submissions`, `card_taps`, `flow_version`, `stakes`, `deferred_count`, `gap_count`, `reflections_shown`; `readiness_state` now one of `ready · ready_with_unknowns · closed_with_gaps · needs_more` (v8 emitted only the first three-ish values) |
+| `intake_summary_shown` / `intake_summary_action` | prop added | `flow_version`; the summary now also holds lean + priority |
+| **new** `intake_reflection_shown` | new | `shown`, `reason` (rejection code: `none, too_short, too_long, is_a_question, generic_ack, jargon, recommends, mind_reading, not_provisional, no_distinction, not_grounded, repeats_labels`), `intake_step`, `flow_version`. Never the text |
+| **new** `intake_step_shown` | new | `group_count` (1 or 2), `intake_step`, `flow_version` |
+| **new** `intake_checkpoint_error` | new | session creation / lean save failed on the summary screen |
+| **new** `council_launch_requested` | new | Convene tapped (`DecisionCheckpoint.tsx`): `derived_answers, typed_answers, derived_reviewed_on_reveal, lean_saved`. **Proves a request, not an execution** |
+| **new** `council_execution_started` | new | `PersonaPanel.tsx`, once per session per page load, immediately before the first `/api/persona` request. `requested − started` = hand-offs that failed or were abandoned before the Council ran |
+
+All new names are registered in **both** `lib/track.ts` and `ALLOWED_EVENTS` in `app/api/events/route.ts`. Deploy them together.
+No event carries free text, option wording, amounts or names. **[code]**; `tests/chat-intake-cards.test.ts` pins the card props.
+
+## v9.3 Effort is reported in four separate numbers
+
+`intake_council_ready` carries `user_submissions` (messages + card steps) and `card_taps` (every card tap or special button).
+The summary-screen taps (lean, priority, confirm) and Convene are visible as `intake_summary_action` / `council_launch_requested`.
+Model calls are not logged client-side: planner calls = one per submission (`app/api/chat-intake/route.ts`), plus the post-chat
+calls listed in §v9.5. Elapsed time: `ms_to_ready` (chat start → wrap) only. **End-to-end elapsed time to Council execution is not
+measured by any existing event**; derive it as `council_execution_started.created_at − decision_started.created_at` per
+`session_id` / `chat_intake_id` once both exist. **[prod]**
+
+## v9.4 What changed in the data a downstream consumer sees
+
+* `exchange_count` (one per submission) falls because two related answers now travel in one submission. A drop is expected.
+* The message transcript of new chats has **no** "Did I get that right?" pair (removed in v8) and may contain a reflection
+  paragraph above Quorum's question (`\n\n` separated in one `chat_intake_messages` row).
+* `decision_state` gains `stakes, deferredSlots, gapSlots, closedBy, reflectionCount, turnsSinceReflection, flowVersion, userEditedDecision`
+  (counts / ids / the person's own edit — **no** reflection text, no free text). `userEditedDecision` is the person's own words,
+  stored with the same exposure as the checkpoint's existing `editedDecisionText` (which goes into `sessions.decision_text`).
+* New unresolved-state semantics in the Council context (`context_text`): "Essential details still open when the intake stopped"
+  (gaps) vs "Not asked in intake" (deferred). Anything parsing `context_text` by prefix is unaffected (existing prefixes kept; verified
+  for `lib/examiner-derive.ts`'s lean/priority/gut/success lines — **not** re-read for the other prompt consumers). **[code]**
+
+## v9.5 Council execution path — what was verified (read-only, v8 code) and what remains
+
+| Check | Finding | Evidence |
+|---|---|---|
+| Session creation | `POST /api/chat-intake/checkpoint` creates the session by calling `POST /api/session` server-to-server with the caller's `Authorization`; `NEXT_PUBLIC_APP_URL` falls back to `http://localhost:3000` if unset | `checkpoint/route.ts` **[code]** |
+| Duplicate-click protection | Client: the screen swaps to "creating" on the first click (v9 adds an in-flight ref). Server: the "already checkpointed" check is check-then-act, **not atomic** — two truly concurrent requests can each create a session. v9 makes a *retry* safe (returns the existing `session_id`), but does **not** close the concurrent window; closing it needs a conditional update/claim column (migration) — **left for Sprint 2** | `checkpoint/route.ts`, `DecisionCheckpoint.tsx` **[code]** |
+| Retry behaviour (before) | If the server finished but the client threw afterwards, the retry hit `409 Already checkpointed` with no session id and the UI silently returned to the same screen — a dead end with no message. v9: idempotent resume + a visible error + `intake_checkpoint_error` | **[code]** fixed, **[scripted]** none (needs an integration test) |
+| Auth / payment gates | The checkpoint forwards the caller's `Authorization` header to `/api/session`. I did **not** trace auth, rate-limit or paid-tier gates on session creation, on `middleware.ts`, or on `/api/persona` in this pass | **[unable to verify]** — needs a signed-out and a free-tier run |
+| Does synthesis start? | After "Convene" the client calls `onSessionCreated` and `NaturalIntakeClient` navigates to `/session/[id]`. The first advisor request is fired by `PersonaPanel`; v9 marks it with `council_execution_started`. Whether synthesis then completes depends on `SessionView`'s Examiner-readiness gate (`NOT_READY` when a critical Examiner rule is unresolved) | **[code]** partly; **[live]** needed |
+| Examiner questions | **Not removed.** Pre-answered ("derived") questions are still written with `derived_from_chat = true` only when the person taps Convene with those answers on screen (reveal). Unanswerable critical rules (R2/R3) still block the Council exactly as before. Nothing is derived or written server-side | **[code]** |
+
+## v9.6 Examiner integrity (prediction, calibration, scorers)
+
+* `examiner_responses.derived_from_chat` exists and is written (`DecisionCheckpoint.tsx` `submitExaminer`), **but no downstream
+  engine reads it**: the three engines (bias-scorer, independence-score, contradiction-detector) read `response_text` by `rule_id`
+  and treat a derived row exactly like a typed one. This was already true before v9. **v9 does not change those semantics and does
+  not fabricate rows:** a derived answer is still only recorded after the person has seen it and tapped Convene.
+* If a later sprint ever derives answers *without* that tap, they must be labelled inferred (e.g. a new `confirmation` value) **and** the
+  three engines must be taught to weigh/skip them — otherwise scoring silently changes. That is explicitly **not** done in Sprint 1.
+* Open item: `submitExaminer` swallows a failed POST and the Council still launches, so a network failure can silently drop the
+  derived rows. Surface it or retry (Sprint 2).
+
+## v9.7 Dependencies and unresolved gaps
+
+1. External dashboards reading `events` / `chat_intakes` are unknown (Q1 above). `readiness_state` gained `closed_with_gaps`;
+   any dashboard with a fixed enum list needs the new value.
+2. `intake_council_ready` fires when the chat wraps; with v9 the summary screen opens immediately after it. If a dashboard measured
+   "wrap → summary" dwell via the old lean-panel screen, that screen no longer exists.
+3. The two-group step means `intake_step` (turn counter) no longer equals "questions asked". Use `intake_card_group_shown` counts for questions.
+4. `council_execution_started` is only emitted by the persona stream's first request on a fresh page load; a session resumed
+   mid-run in a new tab emits it again (once per page load). Dedupe on `session_id` when counting launches.
+5. Concurrent-click race on checkpoint (see §v9.5) — residual until a claim column exists.
+6. Live-model behaviour (reflection acceptance rate, `smartFriendGap` honesty, stakes calibration, card relevance) is **unmeasured**.
+   Use the `intake_reflection_shown.reason` distribution and `intake_card_answered.response_type` to measure it after release.

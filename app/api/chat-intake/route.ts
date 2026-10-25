@@ -34,6 +34,8 @@ import type { PlannerOutput } from '@/lib/chat-intake-plan-parse'
 import { decideTurn, preprocessTurn } from '@/lib/chat-intake-turn'
 import type { QuickReplyKind, QuickReplyMeta, TurnResult } from '@/lib/chat-intake-turn'
 import { fetchIntakeBackground } from '@/lib/chat-intake-memory'
+import { INTAKE_FLOW_VERSION, ceilingFor, councilReadiness, readinessLine } from '@/lib/chat-intake-depth'
+import { reflectionDue } from '@/lib/chat-intake-reflection'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
 import { getGateMode, resolveArm, GATE_AFTER } from '@/lib/auth-gate'   // Phase 3: optional connect-before-next-decision gate
 
@@ -49,6 +51,14 @@ async function resolveUserId(req: Request): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+/** v9: the second card group's answer. Untrusted client input: shape-checked here, ids re-validated in preprocessTurn. */
+function cleanCompanion(raw: unknown): QuickReplyMeta['companion'] {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.text !== 'string' || !r.text.trim()) return null
+  return { text: r.text.slice(0, 900), card: (r.card ?? null) as NonNullable<QuickReplyMeta['companion']>['card'] }
 }
 
 export async function POST(req: Request) {
@@ -77,7 +87,7 @@ export async function POST(req: Request) {
       userEmail?:       string
       deviceId?:        string
       extraExchanges?:  boolean   // "Let me add more" tap at the reflection step
-      quickReply?:      { kind?: string; slotKey?: string | null; card?: unknown }   // a tapped chip / card answer / "not sure" / playback answer
+      quickReply?:      { kind?: string; slotKey?: string | null; card?: unknown; companion?: unknown }   // a tapped chip / card answer / "not sure" / playback answer
       walkthrough?:     boolean   // person chose "Walk me through it" on the first message
       action?:          'enough'  // "That's enough, show me" — wrap now, no new message
     }
@@ -87,7 +97,7 @@ export async function POST(req: Request) {
       action === 'enough' ? { kind: 'enough' }
       : quickReply && QUICK_KINDS.includes(quickReply.kind as QuickReplyKind)
         // v8: `card` is untrusted client data — preprocessTurn re-validates it against the card group stored server-side.
-        ? { kind: quickReply.kind as QuickReplyKind, slotKey: typeof quickReply.slotKey === 'string' ? quickReply.slotKey.slice(0, 40) : null, card: (quickReply.card ?? null) as QuickReplyMeta['card'] }
+        ? { kind: quickReply.kind as QuickReplyKind, slotKey: typeof quickReply.slotKey === 'string' ? quickReply.slotKey.slice(0, 40) : null, card: (quickReply.card ?? null) as QuickReplyMeta['card'], companion: cleanCompanion(quickReply.companion) }
         : null
     const isEnough = quick?.kind === 'enough'
 
@@ -200,9 +210,10 @@ export async function POST(req: Request) {
     }
 
     const exchangeCount = existingCount + 1
-    const ceiling       = Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES)
+    // v9: the ceiling is a SAFETY limit that scales with stakes (5 / 7 / 9) — never a number of questions to ask.
+    const state0: ChatDecisionState = { ...(priorState ?? {}), flowVersion: priorState?.flowVersion ?? INTAKE_FLOW_VERSION }
+    const ceiling       = ceilingFor(state0, Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES))
     const closing       = closingLine()
-    const state0        = priorState ?? {}
 
     // ── 1. Read the reply (chips, "I don't know", yes / no, "enough") — no model ─
     const pre = preprocessTurn(state0, userText, quick, {
@@ -221,6 +232,7 @@ export async function POST(req: Request) {
       const background   = await fetchIntakeBackground(serverUserId, decisionHint, exchangeCount)
       let planner: PlannerOutput | null = await planTurn({
         state: pre.state, transcript: transcriptWithUser, exchangeCount, ceiling, background, cardNote: pre.cardNote ?? null,
+        reflectionDue: reflectionDue(exchangeCount, pre.state.turnsSinceReflection),
       })
 
       // Planner down? Fall back to the (hardened) legacy extraction so we still get a
@@ -236,9 +248,15 @@ export async function POST(req: Request) {
       // ── 3. Decide: ask / sharp-friend check / playback / wrap ─────────────────
       result = decideTurn(pre.state, {
         planner, userText, dontKnow: pre.dontKnow, exchangeCount, ceiling, closingLine: closing, faqReply,
+        captureText: pre.primaryText,
+        asked: transcriptSoFar.filter(m => m.role === 'quorum').map(m => m.content),
       })
     }
 
+    // v9: when the chat wraps, say so honestly — enough for the Council, or stopped with essential gaps — instead of one fixed line.
+    if (result.action === 'close') {
+      result = { ...result, reply: readinessLine(councilReadiness(result.state)) }
+    }
     const updatedState = result.state
 
     const { error: insertQuorumErr } = await supabase.from('chat_intake_messages').insert({
@@ -269,6 +287,10 @@ export async function POST(req: Request) {
       readyToReflect: result.readyToReflect,
       quickReplies:   result.quickReplies,
       action:         result.action,
+      // v9 — for analytics and the summary screen: counts and ids only, never wording.
+      readiness:      councilReadiness(updatedState).state,
+      reflection:     result.reflection ?? null,
+      flowVersion:    updatedState.flowVersion ?? null,
     })
   } catch (err) {
     console.error('[ChatIntake] POST error:', err)

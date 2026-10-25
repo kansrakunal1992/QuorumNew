@@ -49,6 +49,12 @@ const ALLOWED_EVENTS = new Set([
   'intake_council_ready',
   'intake_summary_shown',
   'intake_summary_action',
+  // v9 — progressive cards + single confirmation (additive)
+  'intake_reflection_shown',
+  'intake_step_shown',
+  'intake_checkpoint_error',
+  'council_launch_requested',
+  'council_execution_started',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

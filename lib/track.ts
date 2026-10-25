@@ -51,6 +51,12 @@ export type TrackEventName =
   | 'intake_council_ready'
   | 'intake_summary_shown'
   | 'intake_summary_action'
+  // v9 — progressive cards + single confirmation. Counts / ids only, never wording.
+  | 'intake_reflection_shown'
+  | 'intake_step_shown'
+  | 'intake_checkpoint_error'
+  | 'council_launch_requested'      // the person asked for the Council (Convene tapped / launch confirmed) — NOT proof it started
+  | 'council_execution_started'     // the session page actually began running the Council (first advisor request fired)
 
 export type TrackProps = Record<string, string | number | boolean | null>
 

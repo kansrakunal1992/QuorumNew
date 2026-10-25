@@ -90,6 +90,10 @@ const KIND_SLOTS: Record<DecisionKind, SlotSpec[]> = {
       ['Ask for a new role', 'Negotiate terms', 'Take a long break']),
     { key: 'people', label: 'Who depends on you', ask: 'Does anyone depend on your income?',
       chips: ['Just me', 'A partner', 'Kids or family'], weight: 40, required: false },
+    // v9: only asked when the path is "build something of my own" (see lib/chat-intake-depth.ts, BECOMES_CRITICAL).
+    { key: 'validation', label: 'Has the idea been tested', ask: 'Has anyone outside your own head seen or tried the idea yet?',
+      chips: ['Not yet', 'A few conversations', 'Early users or customers'], weight: 50, required: false,
+      findOut: 'Test the idea with a few real people before committing' },
     { key: 'timeline', label: 'Timing', ask: 'Is there a date this has to be decided by?',
       chips: ['This month', 'In 1\u20133 months', 'No deadline'], weight: 30, required: false },
   ],
@@ -211,8 +215,11 @@ export function isUnknown(state: ChatDecisionState, key: string): boolean {
 export function isNotApplicable(state: ChatDecisionState, key: string): boolean {
   return !!state.naSlots?.includes(key)
 }
+export function isDeferred(state: ChatDecisionState, key: string): boolean {
+  return !!state.deferredSlots?.includes(key)
+}
 export function isResolved(state: ChatDecisionState, key: string): boolean {
-  return isKnown(state, key) || isUnknown(state, key) || isNotApplicable(state, key)
+  return isKnown(state, key) || isUnknown(state, key) || isNotApplicable(state, key) || isDeferred(state, key)
 }
 
 export interface BriefStatus {
@@ -295,7 +302,7 @@ export interface BriefRow {
 export function briefRows(state: ChatDecisionState): BriefRow[] {
   const rows: BriefRow[] = []
   for (const s of slotsFor(state.decisionKind)) {
-    if (isNotApplicable(state, s.key)) continue
+    if (isNotApplicable(state, s.key) || isDeferred(state, s.key)) continue   // deferred = not asked; listed separately, never shown as "unknown"
     const known = isKnown(state, s.key)
     if (!s.required && !known) continue            // optional slots only show once they have content
     rows.push({

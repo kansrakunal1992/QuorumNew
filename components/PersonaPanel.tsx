@@ -10,6 +10,16 @@ import { PERSONAS_WITH_STRUCTURAL_CONTEXT } from '@/lib/structural-dims'
 import LeanBadge, { LEAN_LABELS } from './LeanBadge'
 import PersonaIcon from './PersonaIcon'
 import { splitHighlight } from '@/lib/persona-highlight'
+import { track } from '@/lib/track'
+
+// v9 analytics: "Council launch requested" (Convene tapped) is NOT "Council running". This fires once per session per page
+// load, when the first advisor request actually goes out, so a failed hand-off shows up as requested-but-never-started.
+const councilExecutionMarked = new Set<string>()
+function markCouncilExecutionStarted(sid: string): void {
+  if (!sid || councilExecutionMarked.has(sid)) return
+  councilExecutionMarked.add(sid)
+  track('council_execution_started', {}, { sessionId: sid })
+}
 
 // LEAN_LABELS above now lives in LeanBadge.tsx (Council redesign, Sprint 2)
 // — same wording as before ("Shifted after pushback → now leaning
@@ -600,6 +610,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     }
 
     try {
+      markCouncilExecutionStarted(sessionId)   // v9: the Council is actually running now (first advisor request fired)
       const res = await fetch('/api/persona', {
         method: 'POST',
         headers: {

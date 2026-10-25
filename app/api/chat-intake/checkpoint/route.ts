@@ -44,7 +44,7 @@ export async function POST(req: Request) {
 
     const { data: intakeRow, error: intakeErr } = await supabase
       .from('chat_intakes')
-      .select('id, decision_state, status, user_id, user_email, device_id')
+      .select('id, decision_state, status, user_id, user_email, device_id, session_id')
       .eq('id', chatIntakeId)
       .single()
 
@@ -52,6 +52,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Chat not found' }, { status: 404 })
     }
     if (intakeRow.status === 'checkpointed') {
+      // v9: idempotent. A retry after a dropped response (or a second tab) gets the session that already exists
+      // instead of an error the client cannot recover from. Only a chat with no session recorded is a real conflict.
+      const existing = (intakeRow as { session_id?: string | null }).session_id
+      if (existing) {
+        const st = (intakeRow.decision_state as ChatDecisionState | null) ?? {}
+        return NextResponse.json({ sessionId: existing, leanSaved: !!(st.chosenLean && st.optimizationPriority), resumed: true })
+      }
       return NextResponse.json({ error: 'Already checkpointed' }, { status: 409 })
     }
 
@@ -66,9 +73,12 @@ export async function POST(req: Request) {
     }))
 
     const state = (intakeRow.decision_state as ChatDecisionState | null) ?? {}
-    const { decisionText, contextText } = assembleSessionInput(state, transcript)
+    // v9: the person's own rewrite of the decision is authoritative — it goes into the session context with a note
+    // that it supersedes Quorum's earlier framing, and is remembered on the chat (so a retry/resume keeps it).
+    const edited = editedDecisionText?.trim().slice(0, 600) || ''
+    const { decisionText, contextText } = assembleSessionInput(state, transcript, { editedDecision: edited || null })
 
-    const finalDecisionText = editedDecisionText?.trim() || decisionText
+    const finalDecisionText = edited || decisionText
     if (!finalDecisionText) {
       return NextResponse.json({ error: 'Nothing to checkpoint yet' }, { status: 400 })
     }
@@ -124,7 +134,10 @@ export async function POST(req: Request) {
 
     await supabase
       .from('chat_intakes')
-      .update({ status: 'checkpointed', session_id: sessionId })
+      .update({
+        status: 'checkpointed', session_id: sessionId,
+        ...(edited ? { decision_state: { ...state, userEditedDecision: edited } } : {}),
+      })
       .eq('id', chatIntakeId)
 
     // leanSaved tells the client whether the prediction can start right away

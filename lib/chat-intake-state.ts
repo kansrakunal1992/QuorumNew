@@ -210,8 +210,12 @@ export function shouldStopEarly(state: ChatDecisionState, exchangeCount: number)
 export function assembleSessionInput(
   state: ChatDecisionState,
   transcript: ChatIntakeMessage[],
+  /** v9: the person's own rewrite of the decision (from the summary screen). Authoritative over every Quorum inference. */
+  opts: { editedDecision?: string | null } = {},
 ): { decisionText: string; contextText: string } {
-  const decisionText = state.decisionStatement?.trim()
+  const edited = (opts.editedDecision ?? state.userEditedDecision ?? '').trim()
+  const decisionText = edited
+    || state.decisionStatement?.trim()
     || transcript.find(m => m.role === 'user')?.content?.trim()
     || ''
 
@@ -220,6 +224,12 @@ export function assembleSessionInput(
   const original = transcript.find(m => m.role === 'user')?.content?.trim()
   if (original && original !== decisionText) {
     contextParts.push(`Original wording (the person\u2019s first message): ${original.length > 300 ? `${original.slice(0, 297)}\u2026` : original}`)
+  }
+  if (edited) {
+    contextParts.push('The person rewrote Quorum\u2019s framing of this decision, so the decision above is THEIR wording and is authoritative. Where Quorum\u2019s earlier readings below (kind of decision, routes, main unknown, possible tension) conflict with it, the person\u2019s wording wins.')
+    if (state.decisionStatement?.trim() && state.decisionStatement.trim() !== edited) {
+      contextParts.push(`Quorum\u2019s earlier framing (superseded by the person\u2019s wording): ${state.decisionStatement.trim()}`)
+    }
   }
   if (state.options?.length) {
     contextParts.push(`${OPTIONS_LINE_PREFIX}${state.options.map(o => o.label).join('; ')}`)

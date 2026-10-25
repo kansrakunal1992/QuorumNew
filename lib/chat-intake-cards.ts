@@ -31,8 +31,10 @@ import type {
   ChatCardAnswer, ChatCardGroup, ChatCardOption, ChatCardResponseMeta,
   ChatCardResponseType, ChatDecisionState, DecisionKind,
 } from '@/lib/types'
-import { UNKNOWN_REPLY_TEXT, isKnown, slotSpec, slotsFor } from '@/lib/chat-intake-brief'
+import { UNKNOWN_REPLY_TEXT, isKnown, slotSpec } from '@/lib/chat-intake-brief'
 import type { SlotSpec } from '@/lib/chat-intake-brief'
+import { councilReadiness } from '@/lib/chat-intake-depth'
+import type { CouncilReadiness } from '@/lib/chat-intake-depth'
 
 // ── Copy that the UI and the serialiser share ────────────────────────────────
 
@@ -123,6 +125,10 @@ export const CARD_PRESETS: Partial<Record<DecisionKind, Record<string, CardPrese
       options: [['just_me', 'Just me', true], ['partner', 'A partner'], ['kids', 'Kids'], ['family', 'Parents or other family']],
     },
     timeline: { mode: 'single', options: [['this_month', 'This month'], ['one_three', 'In 1\u20133 months'], ['none', 'No deadline']] },
+    validation: {
+      mode: 'single',
+      options: [['not_yet', 'Not yet'], ['few_talks', 'A few conversations'], ['early_users', 'Early users or customers']],
+    },
   },
   job_offer: {
     hesitation: {
@@ -480,30 +486,29 @@ export function allSelectedNote(group: ChatCardGroup, meta: ChatCardResponseMeta
 
 // ── Readiness (the "is this enough for the Council?" function) ───────────────
 
-export type IntakeReadiness = 'ready' | 'ready_with_unknowns' | 'needs_more'
+export type IntakeReadiness = CouncilReadiness
 
 export interface ReadinessResult {
   state:           IntakeReadiness
-  openRequired:    string[]     // slot keys still unresolved
-  unknownCount:    number       // required slots resolved as unknown / skipped
+  openRequired:    string[]     // ESSENTIAL slot keys still unresolved
+  unknownCount:    number       // essential details unknown / skipped / left open when the chat stopped
+  deferredCount:   number       // slots not asked because they were not material
   total:           number
 }
 
 /**
- * Council-first: only an unresolved REQUIRED slot blocks. Unknown, skipped and
- * declined slots are legitimate states the Council can work with (they go into
- * its brief as unknowns). Thin wrapper over the brief so there is one definition
- * of "enough".
+ * Thin, analytics-friendly view of lib/chat-intake-depth.ts#councilReadiness (the single definition of "enough
+ * for the Council"). Only an unresolved ESSENTIAL slot blocks; unknown, skipped and not-material slots are states
+ * the Council works with and are handed to it as such.
  */
 export function intakeReadiness(state: ChatDecisionState): ReadinessResult {
-  const required = slotsFor(state.decisionKind).filter(s => s.required)
-  const open     = required.filter(s => !isKnown(state, s.key) && !(state.unknownFacts ?? []).includes(s.key) && !(state.naSlots ?? []).includes(s.key))
-  const unknown  = required.filter(s => !isKnown(state, s.key) && (state.unknownFacts ?? []).includes(s.key))
+  const r = councilReadiness(state)
   return {
-    state: open.length ? 'needs_more' : unknown.length ? 'ready_with_unknowns' : 'ready',
-    openRequired: open.map(s => s.key),
-    unknownCount: unknown.length,
-    total: required.length,
+    state: r.state,
+    openRequired: r.criticalOpen,
+    unknownCount: r.unknown.length + r.gaps.length,
+    deferredCount: r.deferred.length,
+    total: r.criticalOpen.length + r.unknown.length + r.gaps.length,
   }
 }
 
@@ -518,8 +523,14 @@ const labelOf = (state: ChatDecisionState, key: string): string => slotSpec(stat
  */
 export function cardContextLines(state: ChatDecisionState): string[] {
   const out: string[] = []
-  const r = intakeReadiness(state)
-  out.push(`Intake readiness: ${r.state === 'ready' ? 'every question answered' : r.state === 'ready_with_unknowns' ? `ready, ${r.unknownCount} detail${r.unknownCount === 1 ? '' : 's'} still unknown` : 'incomplete'}`)
+  const r = councilReadiness(state)
+  out.push(`Intake readiness: ${
+    r.state === 'ready' ? 'every essential question answered'
+    : r.state === 'ready_with_unknowns' ? 'enough to start; some details unknown or not asked (listed below)'
+    : r.state === 'closed_with_gaps' ? 'stopped with essential details still open (listed below) \u2014 do not assume them'
+    : 'incomplete'}`)
+  if (r.gaps.length) out.push(`Essential details still open when the intake stopped: ${r.gaps.map(k => labelOf(state, k)).join('; ')}`)
+  if (r.deferred.length) out.push(`Not asked in intake (judged not material to this decision \u2014 explore only if it changes the answer): ${r.deferred.map(k => labelOf(state, k)).join('; ')}`)
 
   const chosen = Object.values(state.cardAnswers ?? {}).filter(a => a.responseType === 'cards' && a.selectedLabels.length)
   if (chosen.length) {
@@ -531,6 +542,9 @@ export function cardContextLines(state: ChatDecisionState): string[] {
   if (skipped.length) out.push(`Skipped or preferred not to say: ${skipped.map(k => labelOf(state, k)).join('; ')}`)
   if (state.contradictions?.length) {
     out.push(`Possible tension Quorum noticed (Quorum\u2019s reading, not confirmed by the person): ${state.contradictions.join('; ')}`)
+  }
+  if (state.userCorrections?.length) {
+    out.push(`The person corrected or clarified (their words outrank anything inferred): ${state.userCorrections.join('; ')}`)
   }
   out.push('Source key: "Chosen from options" = tapped by the person; "Key facts" = the person\u2019s own words or taps; "Kind of decision" and "Possible tension" = Quorum\u2019s inference; the transcript below is verbatim.')
   return out

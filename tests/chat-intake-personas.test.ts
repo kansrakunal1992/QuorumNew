@@ -10,7 +10,8 @@ import { describe, it, expect } from 'vitest'
 import { decideTurn, mergeNotes, preprocessTurn } from '../lib/chat-intake-turn'
 import type { QuickReplyMeta, TurnResult } from '../lib/chat-intake-turn'
 import type { PlannerOutput } from '../lib/chat-intake-plan-parse'
-import { PLAYBACK_YES, UNKNOWN_REPLY_TEXT, briefStatus, rankMissing, slotSpec } from '../lib/chat-intake-brief'
+import { PLAYBACK_YES, UNKNOWN_REPLY_TEXT, briefStatus, slotSpec } from '../lib/chat-intake-brief'
+import { criticalOpen } from '../lib/chat-intake-depth'
 import type { ChatDecisionState } from '../lib/types'
 import { PERSONAS } from './fixtures/chat-intake-personas'
 import type { Persona } from './fixtures/chat-intake-personas'
@@ -29,16 +30,25 @@ function fakePlanner(p: Persona, pre: ChatDecisionState, text: string, first: bo
   }
   // 'emotional': the model extracts nothing from a vent — the turn logic must still progress.
   const after = mergeNotes(pre, notes)
-  const top   = rankMissing(after)[0]
+  const top   = criticalOpen(after)[0]
   return {
     notes, answeredPending: null, aboutQuorum: false,
     next: top ? { slotKey: top.key, question: slotSpec(after.decisionKind, top.key)!.ask, chips: top.chips ?? [] } : null,
     playback: null,
     smartFriendQuestion: p.smartQuestion && !pre.smartFriendAsked ? p.smartQuestion : null,
+    smartFriendGap: 'reversibility',      // v9: the extra question must name a real, still-open gap
   }
 }
 
 interface Run { exchanges: number; questions: number; askedSlots: string[]; final: ChatDecisionState; first: TurnResult; last: TurnResult }
+
+// v9: a person who answers BOTH card groups of a combined step in one submission.
+function withCompanion(state: ChatDecisionState, answer: string, responseType: 'free_text_only' | 'not_sure', meta: QuickReplyMeta, appendToText: (t: string) => void): void {
+  const comp = state.pending?.companion
+  if (!comp) return
+  meta.companion = { text: answer, card: { questionId: comp.questionId, responseType, selectedIds: [], usedFreeText: responseType === 'free_text_only' } }
+  appendToText(answer)
+}
 
 function simulate(p: Persona, opts: { overEager?: boolean } = {}): Run {
   let state: ChatDecisionState = {}
@@ -47,24 +57,27 @@ function simulate(p: Persona, opts: { overEager?: boolean } = {}): Run {
   let exchanges = 0, questions = 0
   const askedSlots: string[] = []
   let first: TurnResult | null = null
+  let pendingCompanionSlot: string | undefined
   let last!: TurnResult
 
   for (;;) {
     exchanges += 1
     if (exchanges > 25) throw new Error(`${p.id}: did not terminate`)
-    const pre = preprocessTurn(state, text, meta, { firstMessage: exchanges === 1, walkthrough: p.walkthrough, closingLine: 'CLOSE' })
-    const planned = pre.shortCircuit ? null : fakePlanner(p, pre.state, text, exchanges === 1)
+    const pre = preprocessTurn(state, text, meta, { firstMessage: exchanges === 1, walkthrough: p.walkthrough, closingLine: 'CLOSE', exchange: exchanges })
+    const planned = pre.shortCircuit ? null : fakePlanner(p, pre.state, pre.primaryText ?? text, exchanges === 1)
     // An over-eager model: every turn it flags every still-open slot as "unknown" (the live failure).
     if (planned && opts.overEager) {
-      planned.notes.unknownFacts = rankMissing(mergeNotes(pre.state, planned.notes)).map(x => x.key)
+      planned.notes.unknownFacts = criticalOpen(mergeNotes(pre.state, planned.notes)).map(x => x.key)
       planned.notes.naSlots      = planned.notes.unknownFacts
     }
     const result = pre.shortCircuit ?? decideTurn(pre.state, {
       planner: planned,
-      userText: text, dontKnow: pre.dontKnow, exchangeCount: exchanges, ceiling: CEILING, closingLine: 'CLOSE',
+      userText: text, dontKnow: pre.dontKnow, exchangeCount: exchanges, ceiling: CEILING, closingLine: 'CLOSE', captureText: pre.primaryText,
     })
     state = result.state
     last = result
+    // a companion group counts as asked only when the person actually answers it (typing past it leaves it open, to be asked once more)
+    const shownCompanion = result.state.pending?.companion?.slotKey
     first ??= result
 
     if (result.action === 'ask')          { questions += 1; askedSlots.push(result.state.pending!.slotKey!) }
@@ -73,11 +86,17 @@ function simulate(p: Persona, opts: { overEager?: boolean } = {}): Run {
 
     // the persona's reply
     meta = null
+    pendingCompanionSlot = shownCompanion
     if (result.action === 'playback') { text = PLAYBACK_YES; meta = { kind: 'playback_yes' } }
-    else if (p.behavior === 'evasive')   { text = UNKNOWN_REPLY_TEXT; meta = { kind: 'unknown', slotKey: state.pending?.slotKey } }
+    else if (p.behavior === 'evasive')   { text = UNKNOWN_REPLY_TEXT; meta = { kind: 'unknown', slotKey: state.pending?.slotKey }; withCompanion(state, UNKNOWN_REPLY_TEXT, 'not_sure', meta, (t) => { text = `${text}\n${t}` }) }
     else if (p.behavior === 'emotional') { text = 'I just cannot take it anymore, everything feels so heavy right now' }
     else if (result.action === 'smart_friend') { text = 'a real raise and a different manager' }
-    else { text = p.answers[state.pending?.slotKey ?? ''] ?? 'not much to add'; meta = { kind: 'chip', slotKey: state.pending?.slotKey } }
+    else {
+      text = p.answers[state.pending?.slotKey ?? ''] ?? 'not much to add'; meta = { kind: 'chip', slotKey: state.pending?.slotKey }
+      const comp = state.pending?.companion
+      if (comp) withCompanion(state, p.answers[comp.slotKey] ?? 'not much to add', 'free_text_only', meta, (t) => { text = `${text}\n${t}` })
+    }
+    if (meta?.companion && pendingCompanionSlot) askedSlots.push(pendingCompanionSlot)
   }
   return { exchanges, questions, askedSlots, final: state, first: first!, last }
 }
@@ -153,7 +172,8 @@ describe('persona conversations', () => {
     const run = simulate(p, { overEager: true })
     // every required specific of a job offer is actually asked, in the person's own conversation
     expect(run.askedSlots).toEqual(expect.arrayContaining(['offer', 'leaving', 'hesitation', 'deadline', 'alternatives']))
-    expect(run.exchanges).toBeGreaterThanOrEqual(6)
+    // v9 combines related questions into one step, so the chat is shorter than one-question-per-turn — but it must not collapse to a single turn
+    expect(run.exchanges).toBeGreaterThanOrEqual(3)
     // and what they said is kept as facts, not buried under "not sure yet"
     expect(run.final.facts?.offer).toMatch(/38 LPA/)
     expect(run.final.facts?.deadline).toBe('In a week or two')

@@ -22,6 +22,10 @@ export interface PlannerOutput {
   next:                { slotKey: string; question: string; chips: unknown } | null
   playback:            string | null
   smartFriendQuestion: string | null
+  /** v9: what the extra question is about — must be one of SMART_FRIEND_GAPS, or the question is dropped. */
+  smartFriendGap?:     string | null
+  /** v9: one grounded, provisional line shown above the next question (validated in lib/chat-intake-reflection.ts). */
+  reflection?:         string | null
 }
 
 
@@ -36,6 +40,7 @@ const strList = (v: unknown, max = 12, each = 200): string[] | undefined =>
 const OPTION_TYPES = ['act', 'dont_act', 'wait', 'gather_info', 'experiment']
 const CONSULT      = ['expertise', 'challenge', 'approval', 'affected', 'trust']
 const REVERSIBLE   = ['reversible', 'somewhat_reversible', 'irreversible']
+const STAKES       = ['low', 'medium', 'high']
 
 /** Turns whatever the model returned into a safe PlannerOutput, or null if it is unusable. Exported for tests. */
 export function parsePlannerOutput(raw: string): PlannerOutput | null {
@@ -60,6 +65,7 @@ export function parsePlannerOutput(raw: string): PlannerOutput | null {
   if (OPTION_TYPES.includes(n.leaningOptionType as string)) notes.leaningOptionType = n.leaningOptionType as 'act'
   if (OPTION_TYPES.includes(n.initialReaction as string))   notes.initialReaction   = n.initialReaction as 'act'
   if (REVERSIBLE.includes(n.reversibility as string))       notes.reversibility     = n.reversibility as 'reversible'
+  if (STAKES.includes(n.stakes as string))                  notes.stakes            = n.stakes as 'low'
 
   if (Array.isArray(n.stakeholders)) {
     const st = n.stakeholders
@@ -112,6 +118,8 @@ export function parsePlannerOutput(raw: string): PlannerOutput | null {
     next,
     playback:            str(j.playback, 500),
     smartFriendQuestion: str(j.smartFriendQuestion, 240),
+    smartFriendGap:      str(j.smartFriendGap, 30),
+    reflection:          str(j.reflection, 400),
   }
 }
 

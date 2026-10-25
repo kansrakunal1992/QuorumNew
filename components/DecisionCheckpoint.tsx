@@ -30,14 +30,16 @@
 // this component's copy — see docs/COPY_AND_STRUCTURE_LOCK_v1.md.
 
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { ChatDecisionState } from '@/lib/types'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { createClient } from '@/lib/supabase'
 import { getAuthHeaders } from '@/lib/auth-headers'      // Phase 0: send the token on checkpoint
 import { pushSessionId } from '@/lib/storage'            // Phase 0: "I'm done" sessions must reach local history
 import { track } from '@/lib/track'                      // Phase 0: first-party events
-import { briefRows } from '@/lib/chat-intake-brief'          // v8: "what Quorum understands" rows
+import { buildLeanChoices, matchSavedLean, PRIORITIES } from '@/lib/chat-intake-lean'   // v9: lean + priority now live on this screen
+import type { LeanChoice } from '@/lib/chat-intake-lean'
+import { INTAKE_FLOW_VERSION, councilReadiness, readinessLine, summaryProvenance } from '@/lib/chat-intake-depth'   // v9: readiness + provenance
 import { intakeReadiness } from '@/lib/chat-intake-cards'    // v8: readiness marker
 import NextDecisionPrompt from '@/components/NextDecisionPrompt'  // Phase 1: continuity ending
 import { setDecisionPrefill } from '@/lib/prefill'
@@ -119,6 +121,13 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [editedText, setEditedText] = useState('')
   const [original, setOriginal]       = useState('')    // v8: the person's own first words, shown beside the refined decision
   const summaryTracked = useRef(false)
+  // v9: lean + priority were an extra panel at the end of the chat; they are part of this one confirmation now.
+  const unified = isUnifiedSessionEnabled()
+  const [leanPick, setLeanPick]         = useState<LeanChoice | null>(null)
+  const [priorityPick, setPriorityPick] = useState<string | null>(null)
+  const [launchError, setLaunchError]   = useState<string | null>(null)
+  const [derivedReview, setDerivedReview] = useState(false)   // chat-covered Examiner answers are shown on the reveal screen, confirmed by Convene
+  const confirmInFlight = useRef(false)                         // a second tap / double-click can never start a second creation
   const [sessionId, setSessionId]   = useState<string | null>(null)
   const [questions, setQuestions]   = useState<ExaminerQuestion[]>([])
   const [answers, setAnswers]       = useState<Record<number, string>>({})
@@ -165,6 +174,8 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         setEditedText(s.decisionStatement ?? '')
         const firstUser = ((d.messages ?? []) as { role: string; content: string }[]).find(m => m.role === 'user')?.content?.trim() ?? ''
         setOriginal(firstUser)
+        setLeanPick(matchSavedLean(buildLeanChoices(s.options), s.chosenLean, s.chosenLeanLabel))
+        setPriorityPick(s.optimizationPriority ?? null)
         setSubPhase('reflect')
         // v8 marker: the refined-decision summary was shown. Ids / counts only.
         if (!summaryTracked.current) {
@@ -172,6 +183,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
           const r = intakeReadiness(s)
           track('intake_summary_shown', {
             chat_intake_id:    chatIntakeId,
+            flow_version:      s.flowVersion ?? null,
             readiness_state:   r.state,
             decision_category: s.decisionKind ?? 'other',
             unknown_count:     r.unknownCount,
@@ -267,11 +279,54 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       const qs = await fetchExaminerQuestions(data.sessionId)
       setQuestions(qs)
 
-      // Nothing left to ask → skip the quick-check step entirely.
-      setSubPhase(qs.length > 0 ? 'examine' : 'reveal')
+      // Nothing left to ask: skip the quick-check step entirely.
+      // v9: if the chat already covered EVERY question, show those answers on the reveal screen instead of a separate
+      // step. They stay labelled "from chat" (derived_from_chat) and are only recorded when the person taps Convene
+      // with them in view - the same one-tap confirmation as before, never recorded silently.
+      const covered = qs.length > 0 && qs.every(q => q.derived && (q.derivedAnswer ?? '').trim())
+      if (covered) {
+        setConfirmed(Object.fromEntries(qs.map(q => [q.order, true])))
+        setDerivedReview(true)
+        setSubPhase('reveal')
+      } else {
+        setSubPhase(qs.length > 0 ? 'examine' : 'reveal')
+      }
     } catch (err) {
       console.error('[DecisionCheckpoint] session creation failed:', err)
+      track('intake_checkpoint_error', { chat_intake_id: chatIntakeId, flow_version: state.flowVersion ?? INTAKE_FLOW_VERSION })
+      setLaunchError('That didn\u2019t go through. Tap again \u2014 nothing you entered is lost.')
       setSubPhase('reflect')
+    }
+  }
+
+  // v9: one entry point for "That's right": saves the lean + priority (needed by the prediction), then creates the session.
+  // Guarded so a double-tap or a retry can never run two creations at once; the server also resumes an existing session.
+  async function onConfirm(overrideText?: string) {
+    if (confirmInFlight.current) return
+    confirmInFlight.current = true
+    setLaunchError(null)
+    try {
+      if (unified && leanPick && priorityPick) {
+        const res = await fetch('/api/chat-intake/lean', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatIntakeId,
+            initialInstinct:      leanPick.value,
+            optimizationPriority: priorityPick,
+            label:                leanPick.isUnsure ? null : leanPick.fullLabel,
+          }),
+        })
+        if (!res.ok) throw new Error('lean save failed')
+      }
+      await confirmAndCreateSession(overrideText)
+    } catch (err) {
+      console.error('[DecisionCheckpoint] confirm failed:', err)
+      track('intake_checkpoint_error', { chat_intake_id: chatIntakeId, flow_version: state.flowVersion ?? INTAKE_FLOW_VERSION })
+      setLaunchError('That didn\u2019t save. Tap again \u2014 nothing you entered is lost.')
+      setSubPhase('reflect')
+    } finally {
+      confirmInFlight.current = false
     }
   }
 
@@ -319,6 +374,16 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       setSubPhase('examine')
       return
     }
+    // v9: the Council was REQUESTED. Whether it actually started is reported separately by the session page
+    // (council_execution_started), so a failed hand-off is visible in the funnel instead of looking like a launch.
+    track('council_launch_requested', {
+      chat_intake_id:   chatIntakeId,
+      flow_version:     state.flowVersion ?? null,
+      derived_answers:  questions.filter(q => q.derived && confirmed[q.order]).length,
+      typed_answers:    questions.filter(q => !q.derived && (answers[q.order] ?? '').trim()).length,
+      derived_reviewed_on_reveal: derivedReview,
+      lean_saved:       !!leanPick,
+    }, { sessionId: sessionId ?? undefined })
     setSubPhase('submitting')
     // Let a still-running prediction land first (capped, so a slow search
     // can never trap someone on this screen) — the session page then loads
@@ -413,13 +478,28 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
 
   if (subPhase === 'reflect' || subPhase === 'editing') {
     // v8: a short, honest list of what the person actually told us (their own words / taps) — never Quorum's inference.
-    const understood = briefRows(state).filter(r => r.status === 'known' && r.value).slice(0, 5)
+    const prov      = summaryProvenance(state)
+    const readiness = councilReadiness(state)
+    const canConfirm = !unified || (!!leanPick && !!priorityPick)
+    const chip = (sel: boolean): CSSProperties => ({
+      padding: '9px 14px', borderRadius: 999, fontSize: 14.5, lineHeight: 1.3, textAlign: 'left', cursor: 'pointer',
+      border: sel ? '2px solid var(--gold)' : '1px solid var(--border-mid)',
+      background: sel ? 'var(--gold-dim)' : 'var(--bg-card)', color: sel ? 'var(--text-1)' : 'var(--text-2)',
+    })
+    const block = (title: string, children: ReactNode) => (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>{title}</div>
+        {children}
+      </div>
+    )
+    const ul: CSSProperties = { margin: 0, paddingLeft: 18, fontSize: 14.5, color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 2 }
     return (
       <div style={container}>
         <div style={{ color: 'var(--text-3)', fontSize: 13.5, letterSpacing: 0.3 }}>Here's the decision I think you're actually making</div>
 
         {subPhase === 'reflect' ? (
           <div style={cardStyle}>
+            <div role="status" style={{ fontSize: 14, color: 'var(--text-1)', marginBottom: 12 }}>{readinessLine(readiness)}</div>
             {!!original && original !== editedText && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>You started with</div>
@@ -429,32 +509,20 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
             <div style={{ fontSize: 18, fontFamily: 'var(--font-display)', color: 'var(--text-1)', marginBottom: 14 }}>
               {editedText || 'The decision, once I have enough to name it'}
             </div>
-            {understood.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>What I understand so far</div>
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14.5, color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {understood.map(r => <li key={r.key}>{r.label}: {r.value}</li>)}
-                </ul>
-              </div>
-            )}
-            {!!state.options?.length && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Options on the table</div>
-                <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.options.map(o => o.label).join(' · ')}</div>
-              </div>
-            )}
-            {!!state.unknowns?.length && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>The main thing still unclear</div>
-                <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.unknowns[0]}</div>
-              </div>
-            )}
-            {!!state.contradictions?.length && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>A possible tension (my reading — tell me if it's off)</div>
-                <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.contradictions[0]}</div>
-              </div>
-            )}
+            {prov.youTold.length > 0 && block('What you told me', (
+              <ul style={ul}>{prov.youTold.map((r, i) => <li key={`t${i}`}>{r.label}: {r.value}</li>)}</ul>
+            ))}
+            {prov.youChose.length > 0 && block('What you chose', (
+              <ul style={ul}>{prov.youChose.map((r, i) => <li key={`c${i}`}>{r.label}: {r.values.join('; ')}{r.addedWords ? ' (plus your own words)' : ''}</li>)}</ul>
+            ))}
+            {prov.myReading.length > 0 && block('My reading \u2014 provisional, correct anything that\u2019s off', (
+              <ul style={ul}>{prov.myReading.map((r, i) => <li key={`m${i}`}>{r}</li>)}</ul>
+            ))}
+            {prov.notKnown.length > 0 && block('Still open', (
+              <ul style={ul}>{prov.notKnown.map((r, i) => (
+                <li key={`n${i}`}>{r.label}{r.why === 'not_asked' ? ' \u2014 not asked; I\u2019ll flag it to the Council' : r.why === 'skipped' ? ' \u2014 you skipped this' : r.why === 'gap' ? ' \u2014 still open, I won\u2019t guess' : ' \u2014 not known yet'}</li>
+              ))}</ul>
+            ))}
             {!!state.stakeholders?.length && (
               <div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Who's involved</div>
@@ -481,12 +549,41 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
           {subPhase === 'reflect' && (
             <div style={{ fontSize: 13, color: 'var(--text-3)' }}>This is my current understanding. Correct anything that doesn{'\u2019'}t feel right.</div>
           )}
-          <button style={primaryBtn} onClick={() => {
-            track('intake_summary_action', { chat_intake_id: chatIntakeId, action: 'confirm', edited: subPhase === 'editing' && editedText.trim() !== (state.decisionStatement ?? '').trim() })
-            if (subPhase === 'editing') confirmAndCreateSession(editedText)
-            else confirmAndCreateSession()
-          }}>
-            {subPhase === 'editing' ? 'That\'s right' : 'That\'s right'}
+          {unified && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
+              <div role="group" aria-labelledby="lean-q">
+                <div id="lean-q" style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-1)', marginBottom: 8 }}>Where are you leaning?</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {buildLeanChoices(state.options).map((c, i) => (
+                    <button key={`${i}-${c.fullLabel}`} type="button" title={c.fullLabel} aria-pressed={leanPick?.fullLabel === c.fullLabel}
+                      onClick={() => setLeanPick(c)} style={chip(leanPick?.fullLabel === c.fullLabel)}>{c.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div role="group" aria-labelledby="prio-q">
+                <div id="prio-q" style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-1)', marginBottom: 8 }}>What matters most here?</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {PRIORITIES.map(pr => (
+                    <button key={pr.value} type="button" aria-pressed={priorityPick === pr.value}
+                      onClick={() => setPriorityPick(pr.value)} style={chip(priorityPick === pr.value)}>{pr.label}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {launchError && <div role="alert" style={{ fontSize: 13.5, color: 'var(--text-1)' }}>{launchError}</div>}
+          <button
+            style={{ ...primaryBtn, ...(canConfirm ? {} : { background: 'var(--border-dim)', color: 'var(--text-4)', cursor: 'default' }) }}
+            aria-disabled={!canConfirm}
+            onClick={() => {
+              if (!canConfirm) { setLaunchError('Pick where you\u2019re leaning and what matters most \u2014 it helps me predict, and it\u2019s saved before you see my read.'); return }
+              const edited = subPhase === 'editing' && editedText.trim() !== (state.decisionStatement ?? '').trim()
+              track('intake_summary_action', { chat_intake_id: chatIntakeId, flow_version: state.flowVersion ?? null, action: 'confirm', edited })
+              if (subPhase === 'editing') onConfirm(editedText)
+              else onConfirm()
+            }}
+          >
+            That{'\u2019'}s right
           </button>
           {subPhase === 'reflect' && (
             <button style={secondaryBtn} onClick={() => { track('intake_summary_action', { chat_intake_id: chatIntakeId, action: 'edit' }); setSubPhase('editing') }}>Not quite — let me fix it</button>
@@ -630,6 +727,18 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
             stakes" early read flipped "I'm done" to primary, which is where
             people left before the Council ever ran. A low-stakes read is
             still shown above; it just doesn't change which button is loudest. */}
+        {derivedReview && questions.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Taken from what you told me (not asked again)</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {questions.map(q => <li key={q.order}>{q.derivedAnswer}</li>)}
+            </ul>
+            <button type="button" onClick={() => { setDerivedReview(false); setConfirmed({}); setSubPhase('examine') }}
+              style={{ background: 'none', border: 'none', padding: '6px 0', fontSize: 13, color: 'var(--text-3)', textDecoration: 'underline', cursor: 'pointer' }}>
+              Change any of these
+            </button>
+          </div>
+        )}
         <button style={primaryBtn} onClick={handleConveneCouncil}>
           {councilBlocked ? 'Answer one quick question first' : 'Convene the Council'}
         </button>

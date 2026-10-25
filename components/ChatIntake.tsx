@@ -37,8 +37,9 @@ import type { DimPattern } from '@/components/RecurringConditionCard'
 import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
 import type { MirrorStatus, ChatDecisionState, ChatQuickReplies, ChatCardGroup as CardGroupSpec, ChatCardResponseMeta } from '@/lib/types'
-import ChatCardGroup from '@/components/ChatCardGroup'   // v8: selectable answer cards inside the chat
+import ChatCardStep from '@/components/ChatCardStep'   // v9: one chat step = one card group, or two related groups that open in place
 import { cardAnsweredProps, cardShownProps, intakeReadiness, metaFor, serializeSelection } from '@/lib/chat-intake-cards'
+import { INTAKE_FLOW_VERSION } from '@/lib/chat-intake-depth'
 import type { CardSelection } from '@/lib/chat-intake-cards'
 import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
 import {
@@ -54,7 +55,7 @@ import { getStoredSessionIds } from '@/lib/storage'                       // Pha
 import { getAuthHeaders } from '@/lib/auth-headers'   // Phase 0: send the token so chat_intakes/sessions get user_id
 import { track } from '@/lib/track'                     // Phase 0: first-party events
 import { takeDecisionPrefill } from '@/lib/prefill'    // Phase 1: "Bring it now" hand-off
-import { buildLeanChoices, matchSavedLean, PRIORITIES } from '@/lib/chat-intake-lean'
+import { buildLeanChoices, PRIORITIES } from '@/lib/chat-intake-lean'
 import type { LeanChoice } from '@/lib/chat-intake-lean'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
 
@@ -145,6 +146,9 @@ export default function ChatIntake({
   const chatStartedAt = useRef<number>(0)
   const cardGroupsAnswered = useRef<number>(0)
   const retrySel = useRef<CardSelection | null>(null)   // last card answer, restored if the send fails
+  const retrySel2 = useRef<CardSelection | null>(null)  // ...and the second group's, for a combined step
+  const submissionsRef = useRef(0)                       // user submissions (messages + card steps), for effort reporting
+  const tapsRef        = useRef(0)                       // individual card taps / special buttons
   const [faqOpen, setFaqOpen]   = useState(false)
   const [examplesOpen, setExamplesOpen] = useState(false)   // landing: starter chips live behind "See examples"
   const inputRef  = useRef<HTMLTextAreaElement>(null)
@@ -300,13 +304,14 @@ export default function ChatIntake({
   useEffect(() => {
     if (!shownKey || !quick?.card) return
     cardShownAt.current = Date.now()
-    track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null })
+    track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
+    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: quick.companion ? 2 : 1, flow_version: INTAKE_FLOW_VERSION })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownKey])
 
   const send = useCallback(async (
     text: string,
-    meta?: { kind: 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no'; slotKey?: string | null; card?: ChatCardResponseMeta },
+    meta?: { kind: 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no'; slotKey?: string | null; card?: ChatCardResponseMeta; companion?: { text: string; card: ChatCardResponseMeta } },
     opts?: { enough?: boolean },
   ) => {
     const trimmed = text.trim()
@@ -324,6 +329,7 @@ export default function ChatIntake({
       cardGroupsAnswered.current += 1
     }
     if (!chatStartedAt.current) chatStartedAt.current = Date.now()
+    if (!enough) submissionsRef.current += 1
     setQuick(null)
     setSending(true)
 
@@ -369,14 +375,25 @@ export default function ChatIntake({
             track('notification_to_decision', { source: fromNotification })
           }
         } catch {}
-        track('decision_started', { entry: 'chat', from_notification: fromNotification })
+        track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION })
       }
       retrySel.current = null
+      retrySel2.current = null
       setExchangeCount(data.exchangeCount)
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
       setBriefState((data.state ?? null) as ChatDecisionState | null)
       const qr = data.quickReplies as ChatQuickReplies | undefined
       setQuick(!data.readyToReflect && qr && qr.kind !== 'none' ? qr : null)
+      // v9: was a grounded reflection shown above the question? (ids only: shown + the rejection reason, never the text)
+      if (data.reflection && (data.action === 'ask' || data.action === 'smart_friend')) {
+        track('intake_reflection_shown', {
+          chat_intake_id: data.chatIntakeId ?? chatIntakeId ?? null,
+          shown:          !!data.reflection.shown,
+          reason:         data.reflection.reason ?? null,
+          intake_step:    data.exchangeCount ?? null,
+          flow_version:   data.flowVersion ?? INTAKE_FLOW_VERSION,
+        })
+      }
 
       if (data.readyToReflect) {
         // v4: no timer. The closing line stays on screen with the lean /
@@ -397,12 +414,18 @@ export default function ChatIntake({
           skipped_count:       st.skippedSlots?.length ?? 0,
           has_tension:         !!st.contradictions?.length,
           ms_to_ready:         chatStartedAt.current ? Date.now() - chatStartedAt.current : null,
+          // v9: effort, reported separately so fewer chat turns can never disguise unchanged work.
+          user_submissions:    submissionsRef.current,
+          card_taps:           tapsRef.current,
+          flow_version:        data.flowVersion ?? INTAKE_FLOW_VERSION,
+          stakes:              st.stakes ?? null,
+          deferred_count:      st.deferredSlots?.length ?? 0,
+          gap_count:           st.gapSlots?.length ?? 0,
+          reflections_shown:   st.reflectionCount ?? 0,
         })
-        const choices = buildLeanChoices(st.options)
-        setLeanPick(matchSavedLean(choices, st.chosenLean, st.chosenLeanLabel))
-        setPriorityPick(st.optimizationPriority ?? null)
-        setLeanError(null)
-        setClosing({ chatIntakeId: data.chatIntakeId ?? chatIntakeId!, state: st })
+        // v9: no separate end-of-chat panel. The summary screen is the ONE confirmation and now also holds the lean +
+        // priority taps, so the chat hands over straight away (the readiness line is stated there, in the same words).
+        onReadyToReflect(data.chatIntakeId ?? chatIntakeId!)
       }
     } catch (err) {
       console.error('[ChatIntake] send failed:', err)
@@ -428,15 +451,28 @@ export default function ChatIntake({
   }
   // v8 — a card group answer: the labels (+ their own words) become the chat message; the structured
   // selection travels beside it so Quorum keeps both. Analytics gets ids and counts only.
-  function submitCards(group: CardGroupSpec, sel: CardSelection) {
+  function submitCards(group: CardGroupSpec, sel: CardSelection, companion?: CardGroupSpec | null, companionSel?: CardSelection | null) {
     const card = metaFor(group, sel)
     retrySel.current = sel
-    track('intake_card_answered', { ...cardAnsweredProps(group, card, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null })
+    retrySel2.current = companionSel ?? null
+    track('intake_card_answered', { ...cardAnsweredProps(group, card, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
     cardGroupsAnswered.current += 1
     const kind = card.responseType === 'not_sure' ? 'unknown'
       : card.responseType === 'prefer_not' || card.responseType === 'skip' ? 'declined' : 'cards'
-    send(serializeSelection(group, sel), { kind, slotKey: group.slotKey, card })
+    let message = serializeSelection(group, sel)
+    let comp: { text: string; card: ChatCardResponseMeta } | undefined
+    if (companion && companionSel) {
+      // v9: both answers travel as ONE reply: the primary text, then the second group's text on its own line.
+      const ctext = serializeSelection(companion, companionSel)
+      const cmeta = metaFor(companion, companionSel)
+      comp = { text: ctext, card: cmeta }
+      message = `${message}\n${ctext}`
+      track('intake_card_answered', { ...cardAnsweredProps(companion, cmeta, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
+      cardGroupsAnswered.current += 1
+    }
+    send(message, { kind, slotKey: group.slotKey, card, ...(comp ? { companion: comp } : {}) })
   }
+
   function tapEnough() {
     send('', undefined, { enough: true })
   }
@@ -658,6 +694,7 @@ export default function ChatIntake({
                 borderRadius: 16,
                 fontSize:   15.5,
                 lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',   // v9: a reflection sits on its own paragraph above the question
                 background: b.role === 'user' ? 'var(--gold-dim)' : 'var(--bg-card)',
                 color:      'var(--text-1)',
                 border:     b.role === 'quorum' ? '1px solid var(--border-dim)' : 'none',
@@ -683,12 +720,16 @@ export default function ChatIntake({
               answer; typing stays available; "Not sure" is recorded as an unknown (and
               turned into a to-do) rather than re-asked. */}
           {quick?.card && !sending && !closing && (
-            <ChatCardGroup
+            <ChatCardStep
               key={`${quick.card.questionId}-${exchangeCount}`}
-              group={quick.card}
-              initial={retrySel.current}
-              onSubmit={sel => submitCards(quick.card as CardGroupSpec, sel)}
-              onFreeTextOpen={() => track('intake_card_freetext_opened', { question_id: quick.card!.questionId, slot_key: quick.card!.slotKey, chat_intake_id: chatIntakeId ?? null })}
+              primary={quick.card}
+              companion={quick.companion ?? null}
+              initialPrimary={retrySel.current}
+              initialCompanion={retrySel2.current}
+              onTap={() => { tapsRef.current += 1 }}
+              onSubmit={(sel, sel2) => submitCards(quick.card as CardGroupSpec, sel, quick.companion ?? null, sel2)}
+              onFreeTextOpen={g => track('intake_card_freetext_opened', { question_id: g.questionId, slot_key: g.slotKey, chat_intake_id: chatIntakeId ?? null })}
+              onCompanionShown={g => track('intake_card_group_shown', { ...cardShownProps(g, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION, companion: true })}
             />
           )}
           {quick && !quick.card && quick.chips.length > 0 && !sending && !closing && (

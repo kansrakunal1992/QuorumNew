@@ -131,10 +131,10 @@ describe('mergeNotes', () => {
 
 describe('when to stop', () => {
   it('a filled brief gets the one "sharp friend" question, once, then wraps', () => {
-    const first = decide(ready(job), 'ok', planner({ smartFriendQuestion: 'What would make you stay?' }))
+    const first = decide(ready(job), 'ok', planner({ smartFriendQuestion: 'What would make you stay?', smartFriendGap: 'timing' }))
     expect(first.action).toBe('smart_friend')
     expect(first.state.smartFriendAsked).toBe(true)
-    const second = decide(first.state, 'a raise and a new manager', planner({ smartFriendQuestion: 'Anything else?' }))
+    const second = decide(first.state, 'a raise and a new manager', planner({ smartFriendQuestion: 'Anything else?', smartFriendGap: 'timing' }))
     expect(second.action).toBe('close')
     expect(second.readyToReflect).toBe(true)
     expect(second.state.evidence).toContain('a raise and a new manager')
