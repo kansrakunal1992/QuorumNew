@@ -586,3 +586,9 @@ export function cardAnsweredProps(group: ChatCardGroup, meta: ChatCardResponseMe
     ms_to_answer:      Math.max(0, Math.min(3_600_000, Math.round(msToAnswer))),
   }
 }
+
+/** "mobile" / "desktop" for the completion split in analytics. A coarse bucket on purpose — not a device fingerprint. */
+export function viewportBucket(): 'mobile' | 'desktop' | 'unknown' {
+  if (typeof window === 'undefined' || !Number.isFinite(window.innerWidth)) return 'unknown'
+  return window.innerWidth < 640 ? 'mobile' : 'desktop'
+}

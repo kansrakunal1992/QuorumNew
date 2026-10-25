@@ -10,6 +10,7 @@
 // existing yet) must never surface to the person using the product.
 
 import { NextResponse } from 'next/server'
+import { sanitizeIntakeProps } from '@/lib/event-props'
 import { createClient, createServiceClient } from '@/lib/supabase'
 import { checkLimit, getClientIP, LIMITS } from '@/lib/rate-limit'
 
@@ -55,6 +56,7 @@ const ALLOWED_EVENTS = new Set([
   'intake_checkpoint_error',
   'council_launch_requested',
   'council_execution_started',
+  'intake_summary_feedback',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -111,7 +113,7 @@ export async function POST(req: Request) {
       session_id:     sessionId,
       decision_index: idx,
       identity_state: identityState,
-      props:          cleanProps(body.props),
+      props:          sanitizeIntakeProps(String(body.event), cleanProps(body.props)),   // v9: intake events keep ids/counts only (lib/event-props.ts)
     })
     if (error) console.warn('[api/events] insert skipped:', error.message)
   } catch (err) {

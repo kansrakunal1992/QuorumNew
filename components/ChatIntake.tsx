@@ -38,7 +38,7 @@ import { heroCardSummary } from '@/lib/hero-cards'
 import type { HeroCardId } from '@/lib/hero-cards'
 import type { MirrorStatus, ChatDecisionState, ChatQuickReplies, ChatCardGroup as CardGroupSpec, ChatCardResponseMeta } from '@/lib/types'
 import ChatCardStep from '@/components/ChatCardStep'   // v9: one chat step = one card group, or two related groups that open in place
-import { cardAnsweredProps, cardShownProps, intakeReadiness, metaFor, serializeSelection } from '@/lib/chat-intake-cards'
+import { cardAnsweredProps, cardShownProps, intakeReadiness, metaFor, serializeSelection, viewportBucket } from '@/lib/chat-intake-cards'
 import { INTAKE_FLOW_VERSION } from '@/lib/chat-intake-depth'
 import type { CardSelection } from '@/lib/chat-intake-cards'
 import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
@@ -305,7 +305,7 @@ export default function ChatIntake({
     if (!shownKey || !quick?.card) return
     cardShownAt.current = Date.now()
     track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
-    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: quick.companion ? 2 : 1, flow_version: INTAKE_FLOW_VERSION })
+    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: quick.companion ? 2 : 1, flow_version: INTAKE_FLOW_VERSION, viewport: viewportBucket() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownKey])
 
@@ -418,6 +418,7 @@ export default function ChatIntake({
           user_submissions:    submissionsRef.current,
           card_taps:           tapsRef.current,
           flow_version:        data.flowVersion ?? INTAKE_FLOW_VERSION,
+          viewport:            viewportBucket(),
           stakes:              st.stakes ?? null,
           deferred_count:      st.deferredSlots?.length ?? 0,
           gap_count:           st.gapSlots?.length ?? 0,

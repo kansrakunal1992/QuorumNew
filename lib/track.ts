@@ -56,6 +56,7 @@ export type TrackEventName =
   | 'intake_step_shown'
   | 'intake_checkpoint_error'
   | 'council_launch_requested'      // the person asked for the Council (Convene tapped / launch confirmed) — NOT proof it started
+  | 'intake_summary_feedback'        // one-tap "did this capture it?" on the summary: captured = yes | partly | no
   | 'council_execution_started'     // the session page actually began running the Council (first advisor request fired)
 
 export type TrackProps = Record<string, string | number | boolean | null>

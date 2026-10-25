@@ -39,7 +39,8 @@ import { pushSessionId } from '@/lib/storage'            // Phase 0: "I'm done" 
 import { track } from '@/lib/track'                      // Phase 0: first-party events
 import { buildLeanChoices, matchSavedLean, PRIORITIES } from '@/lib/chat-intake-lean'   // v9: lean + priority now live on this screen
 import type { LeanChoice } from '@/lib/chat-intake-lean'
-import { INTAKE_FLOW_VERSION, councilReadiness, readinessLine, summaryProvenance } from '@/lib/chat-intake-depth'   // v9: readiness + provenance
+import { INTAKE_FLOW_VERSION, councilReadiness, readinessLine, summaryProvenance } from '@/lib/chat-intake-depth'
+import { viewportBucket } from '@/lib/chat-intake-cards'   // v9: readiness + provenance
 import { intakeReadiness } from '@/lib/chat-intake-cards'    // v8: readiness marker
 import NextDecisionPrompt from '@/components/NextDecisionPrompt'  // Phase 1: continuity ending
 import { setDecisionPrefill } from '@/lib/prefill'
@@ -127,6 +128,8 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [priorityPick, setPriorityPick] = useState<string | null>(null)
   const [launchError, setLaunchError]   = useState<string | null>(null)
   const [derivedReview, setDerivedReview] = useState(false)   // chat-covered Examiner answers are shown on the reveal screen, confirmed by Convene
+  const [saveFailed, setSaveFailed]   = useState(false)         // the Examiner save failed 3 times: offer "continue anyway"
+  const [feedback, setFeedback]       = useState<string | null>(null)
   const confirmInFlight = useRef(false)                         // a second tap / double-click can never start a second creation
   const [sessionId, setSessionId]   = useState<string | null>(null)
   const [questions, setQuestions]   = useState<ExaminerQuestion[]>([])
@@ -184,6 +187,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
           track('intake_summary_shown', {
             chat_intake_id:    chatIntakeId,
             flow_version:      s.flowVersion ?? null,
+            viewport:          viewportBucket(),
             readiness_state:   r.state,
             decision_category: s.decisionKind ?? 'other',
             unknown_count:     r.unknownCount,
@@ -242,18 +246,26 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   async function confirmAndCreateSession(overrideText?: string) {
     setSubPhase('creating')
     try {
-      const res = await fetch('/api/chat-intake/checkpoint', {
-        method:  'POST',
-        // Phase 0 fix: the checkpoint route forwards this header to
-        // POST /api/session, which derives user_id from it. Without it the
-        // session was created with user_id = null even for signed-in people.
-        headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
-        body:    JSON.stringify({ chatIntakeId, editedDecisionText: overrideText }),
-      })
-      const data = await res.json()
+      const headers = { 'Content-Type': 'application/json', ...(await getAuthHeaders()) }   // Phase 0 fix: forwarded to POST /api/session so user_id is set for signed-in people
+      let res: Response
+      let data: { sessionId?: string; leanSaved?: boolean; resumed?: boolean; error?: string; inProgress?: boolean }
+      // v9: if another request (a double-tap, a second tab) is mid-creation for this same decision, wait and ask again —
+      // the server then resumes that session instead of making a second one.
+      for (let attempt = 0; ; attempt++) {
+        res  = await fetch('/api/chat-intake/checkpoint', { method: 'POST', headers, body: JSON.stringify({ chatIntakeId, editedDecisionText: overrideText }) })
+        data = await res.json().catch(() => ({}))
+        if (res.status === 409 && data?.inProgress && attempt < 4) { await new Promise(r => setTimeout(r, 1500)); continue }
+        break
+      }
+      if (res.status === 429) {
+        track('intake_checkpoint_error', { chat_intake_id: chatIntakeId, flow_version: state.flowVersion ?? INTAKE_FLOW_VERSION, stage: 'rate_limited' })
+        setLaunchError(data?.error ?? 'Too many requests just now \u2014 give it a minute and tap again.')
+        setSubPhase('reflect')
+        return
+      }
       if (!res.ok || !data.sessionId) throw new Error(data?.error || 'Failed to create session')
       setSessionId(data.sessionId)
-      track('decision_checkpointed', { signed_in: !!authToken }, { sessionId: data.sessionId })
+      if (!data.resumed) track('decision_checkpointed', { signed_in: !!authToken, flow_version: state.flowVersion ?? null }, { sessionId: data.sessionId })
 
       // Everything below is fired in parallel, not awaited one after another.
       // The prediction starts the instant the session exists (its lean and
@@ -330,6 +342,9 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     }
   }
 
+  // v9: fetch() does not throw on a 429 / 500, so the old version reported success whenever the network was up — a
+  // failed save was invisible, and the scorers and the session page's readiness gate then worked from missing rows.
+  // Now: the response is checked, a failed save is retried with a short back-off, and the caller is told the truth.
   async function submitExaminer(): Promise<boolean> {
     if (!sessionId) return false
     const responses = questions.map(q => ({
@@ -341,18 +356,22 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       criticality:         q.criticality,
       derived_from_chat:   !!(q.derived && confirmed[q.order]),
     }))
-
-    try {
-      await fetch('/api/examiner', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ sessionId, responses }),
-      })
-      return true
-    } catch (err) {
-      console.error('[DecisionCheckpoint] examiner submit failed:', err)
-      return false
+    if (responses.length === 0) return true
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch('/api/examiner', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ sessionId, responses }),
+        })
+        if (res.ok) return true
+        console.error('[DecisionCheckpoint] examiner submit returned', res.status)
+      } catch (err) {
+        console.error('[DecisionCheckpoint] examiner submit failed:', err)
+      }
+      if (attempt < 2) await new Promise(r => setTimeout(r, 600 * (attempt + 1)))
     }
+    return false
   }
 
   // One tap on the quick-check screen confirms every answer the chat already
@@ -391,7 +410,15 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     if (predictionInFlight.current) {
       await Promise.race([predictionInFlight.current, new Promise(r => setTimeout(r, 15000))])
     }
-    await submitExaminer()
+    const saved = await submitExaminer()
+    if (!saved) {
+      // Don't launch on rows that were never saved: the scorers and the session page's readiness gate read them.
+      track('intake_checkpoint_error', { chat_intake_id: chatIntakeId, flow_version: state.flowVersion ?? INTAKE_FLOW_VERSION, stage: 'examiner_save' })
+      setLaunchError('I couldn\u2019t save your answers just now. Tap again to retry \u2014 or continue and I\u2019ll ask anything still open on the next screen.')
+      setSaveFailed(true)
+      setSubPhase('reveal')
+      return
+    }
     onSessionCreated(sessionId!)
   }
 
@@ -571,6 +598,17 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
               </div>
             </div>
           )}
+          {/* one-tap quality signal: did this capture what they are really deciding? (an id, never text) */}
+          <div role="group" aria-label="Did this capture what you are really deciding?" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--text-3)' }}>
+            <span>Did this capture what you{'\u2019'}re really deciding?</span>
+            {(['yes', 'partly', 'no'] as const).map(v => (
+              <button key={v} type="button" aria-pressed={feedback === v} disabled={feedback !== null}
+                onClick={() => { setFeedback(v); track('intake_summary_feedback', { chat_intake_id: chatIntakeId, flow_version: state.flowVersion ?? null, captured: v }) }}
+                style={{ ...chip(feedback === v), padding: '6px 12px', fontSize: 13.5, opacity: feedback !== null && feedback !== v ? 0.5 : 1 }}>
+                {v === 'yes' ? 'Yes' : v === 'partly' ? 'Partly' : 'Not really'}
+              </button>
+            ))}
+          </div>
           {launchError && <div role="alert" style={{ fontSize: 13.5, color: 'var(--text-1)' }}>{launchError}</div>}
           <button
             style={{ ...primaryBtn, ...(canConfirm ? {} : { background: 'var(--border-dim)', color: 'var(--text-4)', cursor: 'default' }) }}
@@ -730,8 +768,13 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         {derivedReview && questions.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Taken from what you told me (not asked again)</div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {questions.map(q => <li key={q.order}>{q.derivedAnswer}</li>)}
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {questions.map(q => (
+                <li key={q.order}>
+                  <span style={{ display: 'block', color: 'var(--text-3)', fontSize: 13 }}>{q.text}</span>
+                  {q.derivedAnswer}
+                </li>
+              ))}
             </ul>
             <button type="button" onClick={() => { setDerivedReview(false); setConfirmed({}); setSubPhase('examine') }}
               style={{ background: 'none', border: 'none', padding: '6px 0', fontSize: 13, color: 'var(--text-3)', textDecoration: 'underline', cursor: 'pointer' }}>
@@ -739,9 +782,16 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
             </button>
           </div>
         )}
+        {launchError && <div role="alert" style={{ fontSize: 13.5, color: 'var(--text-1)', marginBottom: 10 }}>{launchError}</div>}
         <button style={primaryBtn} onClick={handleConveneCouncil}>
           {councilBlocked ? 'Answer one quick question first' : 'Convene the Council'}
         </button>
+        {saveFailed && (
+          <button type="button" onClick={() => { track('intake_checkpoint_error', { chat_intake_id: chatIntakeId, flow_version: state.flowVersion ?? INTAKE_FLOW_VERSION, stage: 'examiner_save_continue' }); onSessionCreated(sessionId!) }}
+            style={{ ...secondaryBtn, marginTop: 8 }}>
+            Continue anyway
+          </button>
+        )}
         <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5, textAlign: 'center' }}>
           {councilBlocked
             ? 'The Council needs that one answer before it can run.'

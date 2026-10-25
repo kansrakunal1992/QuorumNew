@@ -21,6 +21,34 @@ import { assembleSessionInput } from '@/lib/chat-intake-state'
 import { decrypt } from '@/lib/encryption'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
 
+const CLAIM_STALE_MS = 90_000
+
+/** 'claimed' = we hold it; 'held' = someone else is mid-creation; 'unavailable' = column missing / unexpected error (proceed unclaimed). */
+async function claimCheckpoint(supabase: ReturnType<typeof createServiceClient>, chatIntakeId: string): Promise<'claimed' | 'held' | 'unavailable'> {
+  try {
+    const staleBefore = new Date(Date.now() - CLAIM_STALE_MS).toISOString()
+    const { data, error } = await supabase
+      .from('chat_intakes')
+      .update({ checkpoint_claimed_at: new Date().toISOString() })
+      .eq('id', chatIntakeId)
+      .or(`checkpoint_claimed_at.is.null,checkpoint_claimed_at.lt.${staleBefore}`)
+      .select('id')
+    if (error) {
+      console.warn('[ChatIntake Checkpoint] claim unavailable (is sprint_intake_v9_claim.sql applied?):', error.message)
+      return 'unavailable'
+    }
+    return data && data.length > 0 ? 'claimed' : 'held'
+  } catch (e) {
+    console.warn('[ChatIntake Checkpoint] claim threw:', e)
+    return 'unavailable'
+  }
+}
+
+/** Best-effort: lets an immediate retry through after a failed creation instead of waiting out the stale window. */
+async function releaseClaim(supabase: ReturnType<typeof createServiceClient>, chatIntakeId: string): Promise<void> {
+  try { await supabase.from('chat_intakes').update({ checkpoint_claimed_at: null }).eq('id', chatIntakeId) } catch { /* best-effort */ }
+}
+
 export async function POST(req: Request) {
   if (!isNaturalIntakeEnabled()) {
     return NextResponse.json({ error: 'Not enabled' }, { status: 404 })
@@ -83,18 +111,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nothing to checkpoint yet' }, { status: 400 })
     }
 
+    // ── v9: claim this checkpoint so two concurrent requests can't each create a session ───────────────────────
+    // Conditional write on chat_intakes.checkpoint_claimed_at (supabase/sprint_intake_v9_claim.sql). A claim older than
+    // CLAIM_STALE_MS is treated as abandoned. If the column has not been migrated yet the claim is skipped (logged), so
+    // deploying this file before the migration cannot break launches — it just leaves the old (unclaimed) behaviour.
+    const claim = await claimCheckpoint(supabase, chatIntakeId)
+    if (claim === 'held') {
+      return NextResponse.json({ error: 'This decision is already being set up — one moment.', inProgress: true }, { status: 409 })
+    }
+
     // ── Create the session through the EXISTING route ───────────────────────────
     // Same-origin server-to-server call, forwarding the caller's own auth —
     // identical to how a signed-in user's browser would call this route
     // directly. No internal secret needed (unlike fireOntologyTagger's
     // fire-and-forget sub-call in app/api/session/route.ts) since this is a
     // normal, awaited request the checkpoint response depends on.
+    //
+    // v9 fix (code-verified): /api/session rate-limits by client IP (20 per 15 min, lib/rate-limit.ts getClientIP).
+    // This internal call used to forward only Authorization, so the limiter saw the SERVER's address (or "unknown")
+    // for every launch — one shared bucket for all users, so the 21st launch in 15 minutes got a 429 whatever
+    // person it was. Forward the real client's address so the limit applies per person, as intended.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const fwdFor  = req.headers.get('x-forwarded-for')
+    const realIp  = req.headers.get('x-real-ip')
     const sessionRes = await fetch(`${baseUrl}/api/session`, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(req.headers.get('Authorization') ? { Authorization: req.headers.get('Authorization')! } : {}),
+        ...(fwdFor ? { 'x-forwarded-for': fwdFor } : {}),
+        ...(realIp ? { 'x-real-ip': realIp } : {}),
       },
       body: JSON.stringify({
         decision_text:  finalDecisionText,
@@ -107,9 +153,14 @@ export async function POST(req: Request) {
       }),
     })
 
-    const sessionJson = await sessionRes.json()
+    const sessionJson = await sessionRes.json().catch(() => null)
     if (!sessionRes.ok || !sessionJson?.id) {
-      console.error('[ChatIntake Checkpoint] session creation failed:', sessionJson)
+      console.error('[ChatIntake Checkpoint] session creation failed:', sessionRes.status, sessionJson)
+      await releaseClaim(supabase, chatIntakeId)
+      // A rate limit is not "something broke": say so, so the screen can ask the person to wait instead of retrying blindly.
+      if (sessionRes.status === 429) {
+        return NextResponse.json({ error: sessionJson?.error ?? 'Too many requests — please wait a moment and try again.', rateLimited: true }, { status: 429 })
+      }
       return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
     }
     const sessionId = sessionJson.id as string
