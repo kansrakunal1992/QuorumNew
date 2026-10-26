@@ -245,6 +245,11 @@ export default function NextDecisionPrompt({
         <ConnectCard
           mode={count >= 2 ? 'd2_earned' : 'd1_soft'}
           surface={surface}
+          // Record page: show Google / email sign-in outright. Behind a "Keep my record" button
+          // people never found it (and the onboarding tour had nothing to point at). Other
+          // surfaces keep the soft, collapsed card.
+          defaultExpanded={surface === 'record_page'}
+          tourId={surface === 'record_page' ? 'record-signin' : undefined}
           reviewDate={reviewDate}
           parkedText={parkState === 'parked_pending' ? parkedText : null}
           sessionId={sessionId}

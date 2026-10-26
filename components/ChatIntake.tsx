@@ -40,6 +40,7 @@ import type { MirrorStatus, ChatDecisionState, ChatQuickReplies, ChatCardGroup a
 import ChatCardStep from '@/components/ChatCardStep'   // v9: one chat step = one card group, or two related groups that open in place
 import { cardAnsweredProps, cardShownProps, intakeReadiness, metaFor, serializeSelection, viewportBucket } from '@/lib/chat-intake-cards'
 import { INTAKE_FLOW_VERSION } from '@/lib/chat-intake-depth'
+import { parkText, dependencyParkText } from '@/lib/park-client'   // Examiner-in-chat: the "park this until I've decided that" gate outcome
 import type { CardSelection } from '@/lib/chat-intake-cards'
 import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
 import {
@@ -139,6 +140,7 @@ export default function ChatIntake({
   // know what to say. quickRef lets a failed send put the chips back.
   const [quick, setQuick]             = useState<ChatQuickReplies | null>(null)
   const [briefState, setBriefState]   = useState<ChatDecisionState | null>(null)
+  const parkedForDependencyRef = useRef(false)   // dependency-gate park fires once per chat
   const [walkthrough, setWalkthrough] = useState(false)
   const quickRef = useRef<ChatQuickReplies | null>(null)
   // v8 analytics: when the current card group appeared, and when this chat's first message was sent.
@@ -382,6 +384,16 @@ export default function ChatIntake({
       setExchangeCount(data.exchangeCount)
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
       setBriefState((data.state ?? null) as ChatDecisionState | null)
+      // The person chose "park this until I've decided that" at the dependency gate: file it on the Watchlist.
+      // Once only (ref), and never blocks the reply — a failed park just means it isn't on the list yet.
+      if (data.action === 'park') {
+        const stPark = (data.state ?? {}) as ChatDecisionState
+        if (stPark.dependency?.text && !parkedForDependencyRef.current) {
+          parkedForDependencyRef.current = true
+          void parkText(dependencyParkText(stPark.decisionStatement, stPark.dependency.text))
+            .then(r => track('park_saved', { surface: 'chat_intake_gate', linked: r === 'saved' }))
+        }
+      }
       const qr = data.quickReplies as ChatQuickReplies | undefined
       setQuick(!data.readyToReflect && qr && qr.kind !== 'none' ? qr : null)
       // v9: was a grounded reflection shown above the question? (ids only: shown + the rejection reason, never the text)

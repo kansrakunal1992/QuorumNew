@@ -62,6 +62,7 @@ import { checkR7Resolvable }     from '@/lib/examiner-resolvability-check'  // A
 import { forwardTierHeaders }    from '@/lib/tier-forward'
 import { runLocalContextLookup } from '@/lib/web-context-lookup'  // PR2 — local/regulatory/market context
 import { checkChatCoverage }     from '@/lib/examiner-derive'      // Natural Intake v1 — derive-and-confirm
+import { readCoverageFromContext } from '@/lib/chat-intake-gates'   // Examiner-in-chat: what the chat already recorded
 import { isNaturalIntakeEnabled } from '@/lib/feature-flags'       // Natural Intake v1
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -483,6 +484,20 @@ export async function GET(req: Request) {
       }
     }
 
+    // Examiner-in-chat: the chat now asks "does this hinge on another decision?" while the person is still
+    // talking (lib/chat-intake-gates.ts). If they already answered "keep going", blocking synthesis a second
+    // time here, after the Council has run, would override a choice they made on purpose. Downgrade R1 to
+    // GATE (the dependency stays on record in context_text and reaches the Council as an open unknown). A
+    // dependency the chat never resolved (no recorded choice) is left to this block exactly as before.
+    if (ruleResult.mode === 'REDIRECT' && redirectRule === 'R1'
+        && (sessionRes.data as { intake_mode?: string } | null)?.intake_mode === 'chat') {
+      const chatDep = readCoverageFromContext(contextText).dependency
+      if (chatDep?.choice === 'keep_going') {
+        effectiveMode = 'GATE'
+        console.log(`[Examiner GET] R1 downgraded REDIRECT->GATE for session ${sessionId}: person chose to keep going in chat (${chatDep.text})`)
+      }
+    }
+
     // ── SB-2: S0 trigger — thin brief only (context paste no longer suppresses) ─
     // S0 and context_text serve different purposes:
     //   context_text = background material the user pasted in (emails, term sheets)
@@ -636,8 +651,13 @@ export async function GET(req: Request) {
     // behavioural change for them, flag on or off.
     const intakeMode = (sessionRes.data as { intake_mode?: string } | null)?.intake_mode ?? 'classic'
     if (isNaturalIntakeEnabled() && intakeMode === 'chat' && contextText) {
+      // Deterministic first: the chat records its answers as labelled lines in context_text, so for E0 / C0 a
+      // present line IS the evidence: no model call, no fuzzy match, no chance of a false "covered".
+      const recorded = readCoverageFromContext(contextText)
       await Promise.all(
         questions.map(async q => {
+          const exact = q.rule_id === 'E0' ? recorded.gut : q.rule_id === 'C0' ? recorded.success : undefined
+          if (exact) { q.derived = true; q.derivedAnswer = exact; return }
           const result = await checkChatCoverage(q.text, contextText)
           if (result.covered) {
             q.derived       = true

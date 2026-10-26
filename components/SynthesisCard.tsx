@@ -8,6 +8,7 @@ import WhatChangedDrawer from './WhatChangedDrawer'            // P1
 import ResearchVideoCard from './ResearchVideoCard'           // Video 2 — research explainer
 import type { PersonaRelevanceMap } from '@/lib/persona-relevance'  // S2-02
 import type { SynthesisVersionSnapshot } from '@/lib/synthesis-diff'  // P1
+import { buildAdvisorBlock } from '@/lib/synthesis-input'
 import { getOrCreateDeviceId } from '@/lib/storage'                  // S2-01
 import { parseBriefInline, briefLineHeader, briefLineIsBullet, briefBulletContent, briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 
@@ -420,6 +421,8 @@ export default function SynthesisCard({
   // P1: What Changed drawer state — one snapshot per completed synthesis version.
   const [versionHistory, setVersionHistory] = useState<SynthesisVersionSnapshot[]>(initialSynthesisVersions)
   const versionHistoryRef = useRef(versionHistory)
+  // prop `version` (this mount's regeneration counter) → persisted snapshot number
+  const snapshotNumberRef = useRef<Map<number, number>>(new Map())
   const personaLeansRef = useRef(personaLeans)
 
   useEffect(() => { responsesRef.current       = personaResponses }, [personaResponses])
@@ -477,9 +480,14 @@ export default function SynthesisCard({
 
     const run = async () => {
       const latest = responsesRef.current
-      const personaBlock = Object.entries(latest)
-        .map(([k, v]) => `[${k.toUpperCase().replace(/_/g, ' ')}]\n${v.slice(0, 800)}`)
-        .join('\n\n---\n\n')
+      // ROOT CAUSE FIX ("Disagree / follow-up doesn't update the synthesis"): this used to be
+      // `v.slice(0, 800)` per advisor. An advisor's stored content is [original analysis] +
+      // [pushbacks] + [updates]; the original alone is longer than 800 characters, so every
+      // challenge and every reassessment was cut off before the model ever saw it — synthesis
+      // re-ran on identical input. buildAdvisorBlock keeps each advisor's position / real cost /
+      // lean, a slice of the original, and — with priority — all later exchanges plus the
+      // advisor's CURRENT lean (lib/synthesis-input.ts).
+      const personaBlock = buildAdvisorBlock(latest, personaLeansRef.current as Record<string, string>)
       const ctx = contextRef.current ? `\nCONTEXT:\n${contextRef.current}\n` : ''
       // C0 (JTBD intent) + rule answers from Examiner — lifted out as framing block
       // so synthesis reasons from the user's stated intent, not assumed goals
@@ -702,8 +710,23 @@ export default function SynthesisCard({
         // (resolvedWeights, a local var — reading fetchedWeights state here
         // would be stale within this same closure).
         const snapshotVerdict = fv?.[1]?.trim() || verdictAccRef.current || ''
+        // ROOT CAUSE FIX ("version stuck at V2"): `version` is SessionView's in-memory counter and
+        // restarts at 0 on every mount (reload, or back-navigation from the record page), but the
+        // synthesis_versions table already holds v0..vN from earlier visits. The next run after a
+        // remount therefore reused number 1 and the upsert (and the filter below) OVERWROTE the
+        // existing v1 — history never grew past two entries. Number new snapshots against what
+        // is actually persisted; the same prop-version always maps to the same number so a retry
+        // of one run still upserts rather than minting a phantom version.
+        const snapshotVersion = (() => {
+          const known = snapshotNumberRef.current.get(version)
+          if (known !== undefined) return known
+          const maxExisting = versionHistoryRef.current.reduce((m, v) => Math.max(m, v.version), -1)
+          const n = version > maxExisting ? version : maxExisting + 1
+          snapshotNumberRef.current.set(version, n)
+          return n
+        })()
         const snapshot: SynthesisVersionSnapshot = {
-          version,
+          version: snapshotVersion,
           verdictText: snapshotVerdict,
           // P1 fix: verdictLean (proceed|wait|mixed) drives the "did the verdict
           // actually change" comparison in the diff — verdictText alone was
@@ -714,7 +737,7 @@ export default function SynthesisCard({
           weights:     resolvedWeights ?? {},
           leans:       personaLeansRef.current,
         }
-        setVersionHistory(prev => [...prev.filter(v => v.version !== version), snapshot])
+        setVersionHistory(prev => [...prev.filter(v => v.version !== snapshotVersion), snapshot].sort((a, b) => a.version - b.version))
         fetch(`/api/session/${sessionIdRef.current}/synthesis-version`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },

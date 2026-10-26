@@ -55,6 +55,8 @@ interface Props {
   arm?: string | null
   /** d2_earned: overrides the default sentence (e.g. to reference the cadence they chose). */
   lead?: string | null
+  /** Optional onboarding-tour anchor (data-tour-id) — set on whichever state the card is rendering. */
+  tourId?: string
 }
 
 type SendState = 'idle' | 'sending' | 'sent' | 'wrong_provider' | 'error'
@@ -76,8 +78,9 @@ function shorten(text: string, n = 60): string {
 
 export default function ConnectCard({
   mode = 'd1_soft', surface, reviewDate, parkedText, defaultExpanded = false, sessionId,
-  decisionCount, arm, lead,
+  decisionCount, arm, lead, tourId,
 }: Props) {
+  const tourAttr = tourId ? { 'data-tour-id': tourId } : {}
   const skippable = mode !== 'd3_gate'
   const [visible,  setVisible]  = useState(false)
   const [expanded, setExpanded] = useState(defaultExpanded || !!parkedText || mode === 'd3_gate')
@@ -175,7 +178,7 @@ export default function ConnectCard({
 
   if (state === 'sent') {
     return (
-      <div style={card}>
+      <div style={card} {...tourAttr}>
         <p style={{ ...small, color: 'var(--gold)', fontWeight: 600, marginBottom: 4 }}>Check your inbox.</p>
         <p style={small}>
           The link brings you back here with your decisions connected.
@@ -190,7 +193,7 @@ export default function ConnectCard({
 
   if (state === 'wrong_provider') {
     return (
-      <div style={card}>
+      <div style={card} {...tourAttr}>
         <p style={{ ...small, marginBottom: 10 }}>
           <strong style={{ color: 'var(--text-2)' }}>{email}</strong> signed up with Google. Use that to get back in.
         </p>
@@ -201,7 +204,7 @@ export default function ConnectCard({
 
   if (!expanded && skippable) {
     return (
-      <div style={card}>
+      <div style={card} {...tourAttr}>
         <p style={{ ...small, marginBottom: 10 }}>{line}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <button
@@ -218,7 +221,7 @@ export default function ConnectCard({
   }
 
   return (
-    <div style={card}>
+    <div style={card} {...tourAttr}>
       <p style={{ ...small, marginBottom: 12 }}>{line}</p>
 
       <GoogleSignInButton variant="primary" onStart={() => track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null })} />

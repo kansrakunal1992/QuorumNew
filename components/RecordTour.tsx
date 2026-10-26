@@ -18,6 +18,7 @@ import { useState, useEffect } from 'react'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import OnboardingTour, { buildPWAInstallStep } from './OnboardingTour'
 import type { TourStep } from './OnboardingTour'
+import { buildRecordTourSteps, waitForSelector, SEL } from '@/lib/record-tour-steps'
 
 interface Props {
   /** P0 fix: real cross-session decision count, resolved server-side in
@@ -65,24 +66,6 @@ const RECORD_STEPS_BASE: TourStep[] = [
   },
 ]
 
-// Two-step email-link sequence — only for first-time users with no linked email.
-const EMAIL_LINK_STEPS: TourStep[] = [
-  {
-    id:               'record-email-link',
-    targetSelector:   '[data-tour-id="record-email-link"]',
-    heading:          'Lock in your decisions',
-    body:             'Right now your decisions are tied to this device only. Sign in with Google for instant, one-click access — or enter your email for a one-time link instead. Either way, your entire record travels with you across devices.',
-    preferredSide:    'bottom',
-  },
-  {
-    id:               'record-email-after',
-    targetSelector:   null,
-    heading:          'You\'re set either way',
-    body:             'Chose Google? You\'re already linked — nothing else to do. Used email instead? Just click the link when it lands in your inbox and you\'ll come straight back here, fully synced.',
-    preferredSide:    'bottom',
-  },
-]
-
 export default function RecordTour({ totalSessionCount, tourDone = false }: Props) {
   const [active, setActive] = useState(false)
   const [steps,  setSteps]  = useState<TourStep[]>(RECORD_STEPS_BASE)
@@ -92,38 +75,33 @@ export default function RecordTour({ totalSessionCount, tourDone = false }: Prop
     // was never enough to tell "new user" from "established user, new device".
     if (tourDone) return
     if ((totalSessionCount ?? 0) > 1) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const done = localStorage.getItem('quorum_tour.record')
-      // Product decision (2026-08): the three tours (home, council, record)
-      // are independent — dismissing one must not suppress the others. This
-      // used to also check `quorum_tour.home === 'skip'` and bail out if the
-      // home tour had been explicitly skipped, which meant a user who
-      // skipped the home tour would silently never see this one either.
-      // Now this tour only ever looks at its own dismissal state
-      // (`quorum_tour.record`).
-      if (!done) {
-        // ── Build dynamic step list ──────────────────────────────────────────
-        const hasEmail = !!localStorage.getItem('quorum_user_email')
+      // Product decision (2026-08): the three tours (home, council, record) are
+      // independent — this one only looks at its own dismissal state.
+      if (localStorage.getItem('quorum_tour.record')) return
+      const hasEmail = !!localStorage.getItem('quorum_user_email')
 
-        const dynamicSteps: TourStep[] = [...RECORD_STEPS_BASE]
-
-        if (!hasEmail) {
-          // User hasn't linked email → show the two email-link tutorial steps.
-          // Do NOT append PWA step yet (requires email to be linked first).
-          dynamicSteps.push(...EMAIL_LINK_STEPS)
-        } else {
-          // User has email → check if a PWA install step is appropriate.
-          const pwaStep = buildPWAInstallStep()
-          if (pwaStep) dynamicSteps.push(pwaStep)
-        }
-
+      ;(async () => {
+        // ConnectCard (the sign-in block) mounts AFTER an async auth check, so a fixed
+        // delay raced it. Wait for it — but only people who might actually see it, so a
+        // linked person isn't held up. If it never appears, that step is simply omitted.
+        if (!hasEmail) await waitForSelector(SEL.signin, 2500)
+        if (cancelled) return
+        // The DOM is the source of truth: only steps whose target exists are shown
+        // (see lib/record-tour-steps.ts).
+        const dynamicSteps = buildRecordTourSteps({
+          baseSteps: RECORD_STEPS_BASE,
+          present:   sel => !!document.querySelector(sel),
+          pwaStep:   hasEmail ? buildPWAInstallStep() : null,
+        })
         setSteps(dynamicSteps)
-
-        // Delay to let the record page fully paint before overlay appears
-        const t = setTimeout(() => setActive(true), 700)
-        return () => clearTimeout(t)
-      }
+        // Let the page finish painting before the overlay appears.
+        timer = setTimeout(() => { if (!cancelled) setActive(true) }, 400)
+      })()
     } catch {}
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
   }, [tourDone, totalSessionCount])
 
   if (!active) return null

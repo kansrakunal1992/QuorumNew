@@ -41,6 +41,7 @@ import DecisionGraph        from './DecisionGraph'        // S1-07: Graph teaser
 import GraphNudgeLine       from './GraphNudgeLine'        // QW-3: Graph nudge (sessions 6+)
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
 import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesis tension beat
+import { buildNewInfoMessage, parsePersonaContent } from '@/lib/persona-history'  // challenge broadcast + thread parsing
 import EarlyEchoCard        from './EarlyEchoCard'         // Sprint: second-use early signal, sessions 2-4
 import MirrorEchoCard       from './MirrorEchoCard'        // Sprint: live in-session Mirror signal, sessions 5+
 import type { Lean }        from './TensionInterstitial'
@@ -503,6 +504,13 @@ export default function SessionView({ session: initialSession, initialMessages =
   // S3-01: per-persona lean classification (proceed/wait/mixed), parsed from each
   // persona's raw <lean> header tag in handlePersonaComplete.
   const [personaLeans, setPersonaLeans] = useState<Record<string, Lean>>({})
+  // Ref mirror: handleShareContext is a stable useCallback([]) and needs each advisor's CURRENT lean
+  // to anchor the polarity of its reassessment (see buildNewInfoMessage).
+  const personaLeansRef = useRef<Record<string, Lean>>({})
+  useEffect(() => { personaLeansRef.current = personaLeans }, [personaLeans])
+  // Monotonic id for challenge broadcasts so two challenges with identical wording still
+  // register as two different "new information" messages in PersonaPanel's effect.
+  const shareSeqRef = useRef(0)
   // Council redesign (Sprint 2), point C — which persona cards are currently
   // expanded (collapsed === false), keyed by PersonaKey. Populated via each
   // PersonaPanel's onCollapseChange, including its initial-mount call, so
@@ -944,7 +952,7 @@ export default function SessionView({ session: initialSession, initialMessages =
   // truth for the actual batch bookkeeping.
   const [pendingAdvisorUpdates, setPendingAdvisorUpdates] = useState(0)
 
-  const handlePersonaComplete = useCallback((personaKey: string, content: string) => {
+  const handlePersonaComplete = useCallback((personaKey: string, content: string, meta?: { silent?: boolean }) => {
     // P0 fix: defense-in-depth against the "N of 6" overcount bug — completedResponses
     // is keyed by personaKey and its size drives every "X of 6" display (CouncilStatusBar,
     // SynthesisCard). initialMessages seeding is already filtered to PERSONA_ORDER keys
@@ -973,6 +981,21 @@ export default function SessionView({ session: initialSession, initialMessages =
     // handleLeanUpdate call), and every later completion leaves personaLeans
     // alone, matching the comment's original intent.
     const isUpdate = personaKey in completedResponsesRef.current
+    // Keep the ref current SYNCHRONOUSLY. It used to be refreshed by an effect after render,
+    // so two completions for the same advisor inside one tick both looked like "first".
+    completedResponsesRef.current = { ...completedResponsesRef.current, [personaKey]: content }
+    // ROOT CAUSE FIX (version bump): this bump used to live INSIDE the setCompletedResponses
+    // updater below. Updaters run lazily during render — by then handleExaminerUpdateComplete
+    // had already removed this advisor from shareContextPendingRef (PersonaPanel calls
+    // onComplete and then onExaminerUpdateComplete in the same tick), so every advisor in a
+    // batch looked "outside the batch" and bumped on its own: up to 7 synthesis re-runs per
+    // challenge (all but the last aborted client-side but still hitting the rate limiter),
+    // and the bump was a side effect inside a reducer (double-fired under StrictMode).
+    // Decide here, synchronously, while the pending set is still accurate. `silent` marks
+    // content-neutral updates (structural-echo enrichment) that must not mint a new verdict.
+    if (isUpdate && !meta?.silent && !shareContextPendingRef.current.has(personaKey)) {
+      setSynthesisVersion(v => v + 1)
+    }
     if (!isUpdate) {
       const leanMatch = content.match(/<lean>([\s\S]*?)<\/lean>/)
       if (leanMatch) {
@@ -984,20 +1007,7 @@ export default function SessionView({ session: initialSession, initialMessages =
     }
 
     setCompletedResponses(prev => {
-      const isUpdate = personaKey in prev
-      // Automatic percolation: every challenge now broadcasts to the whole
-      // council (the challenged advisor + the other 5), and each of the 6
-      // completes independently. Previously (and still, if this check is
-      // ever bypassed) each one bumped synthesisVersion here — triggering,
-      // then immediately aborting, up to 5 redundant synthesis re-runs
-      // before the real final one. When this completion is part of a
-      // pending broadcast batch, defer to handleExaminerUpdateComplete,
-      // which bumps exactly once after the whole batch has landed (with a
-      // timeout safety net in handleShareContext in case one advisor's
-      // update fails).
-      if (isUpdate && !shareContextPendingRef.current.has(personaKey)) {
-        setSynthesisVersion(v => v + 1)
-      }
+      // (version bump moved out of this updater — see above)
       const next = { ...prev, [personaKey]: content }
 
       if (!isUpdate && Object.keys(next).length >= PERSONA_ORDER.length) {
@@ -1197,7 +1207,23 @@ export default function SessionView({ session: initialSession, initialMessages =
     // advisor's take on it. Explicitly permits moving in any direction
     // (including not moving at all) so a non-move reads as a genuine
     // independent judgment, not a failure to engage.
-    const examinerMsg = `New information has surfaced during this review:\n\n"${text}"\n\nReassess it independently through your own lens — you may keep, strengthen, weaken, or reverse your position based on it. Provide a concise update (under 200 words) either way: state plainly whether this changes your view, and why.`
+    // Message text now comes from buildNewInfoMessage (lib/persona-history.ts) so the
+    // wording, the "New information…" prefix the record/reload code keys on, and the
+    // per-advisor LEAN ANCHOR live in one place. Root cause of the bogus "6 advisors
+    // shifted Wait → Proceed" pill: advisors were re-asked for a <lean> with no memory of
+    // their previous one, so polarity drifted ("proceed" = quit? = stay?) even when their
+    // prose said "this strengthens my position". Those phantom flips were then fed to
+    // synthesis as `leanShifts`.
+    shareSeqRef.current += 1
+    const seq = shareSeqRef.current
+    const leanOf = (key: string): string | undefined => {
+      const live = personaLeansRef.current[key]
+      if (live) return live
+      const original = completedResponsesRef.current[key]
+      const m = original ? parsePersonaContent(original).initial.match(/<lean>([\s\S]*?)<\/lean>/) : null
+      const v = m?.[1].trim().toLowerCase()
+      return v === 'proceed' || v === 'wait' || v === 'mixed' ? v : undefined
+    }
     const allKeys   = PERSONA_ORDER as string[]
     const otherKeys = allKeys.filter(k => k !== originPersonaKey)
 
@@ -1223,17 +1249,21 @@ export default function SessionView({ session: initialSession, initialMessages =
     // window. The reference-equality check no-ops this if the batch already
     // completed normally, or if a newer share-context batch has since
     // replaced this one.
+    // 60 s (was 25 s): six parallel ~200-word streams on a rate-limited tier regularly take
+    // longer than 25 s; firing early re-synthesized on a half-updated council AND let every
+    // late finisher bump again. PersonaPanel now also reports failures immediately, so this
+    // timer is only a last-resort net.
     setTimeout(() => {
       if (shareContextPendingRef.current === thisBatch && shareContextPendingRef.current.size > 0) {
         shareContextPendingRef.current = new Set()
         setPendingAdvisorUpdates(0)
         setSynthesisVersion(v => v + 1)
       }
-    }, 25000)
+    }, 60000)
     setExaminerContextByPersona(prev => {
       const next = { ...prev }
       for (const key of otherKeys) {
-        next[key] = examinerMsg
+        next[key] = buildNewInfoMessage(text, leanOf(key), seq)
       }
       return next
     })

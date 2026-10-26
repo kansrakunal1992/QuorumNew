@@ -28,6 +28,7 @@ import { priorityLabel, preserveChipFields } from '@/lib/chat-intake-lean'
 import { briefContextLines } from '@/lib/chat-intake-brief'
 import { cardContextLines } from '@/lib/chat-intake-cards'
 import { parseJSONLoose } from '@/lib/json-repair'
+import { dependencyContextLine } from '@/lib/chat-intake-gates'
 
 // ── Chat length ──────────────────────────────────────────────────────────────
 // v7: raised from 6 to 9. The ceiling is a backstop, not a target — the chat now
@@ -245,6 +246,10 @@ export function assembleSessionInput(
   }
   if (state.gutFeeling?.trim())     contextParts.push(`${GUT_LINE_PREFIX}${state.gutFeeling.trim()}`)
   if (state.successPicture?.trim()) contextParts.push(`${SUCCESS_LINE_PREFIX}${state.successPicture.trim()}`)
+  // The upstream decision this one hinges on + what the person chose (lib/chat-intake-gates.ts). The Examiner
+  // reads it so it never blocks the person a second time on a dependency they already answered here.
+  const depLine = dependencyContextLine(state.dependency)
+  if (depLine) contextParts.push(depLine)
   // v7 — the decision brief: kind of decision, the concrete facts the person gave,
   // what is still unknown, and the "find out" to-dos. This is the substance the
   // old chat never captured, and it feeds the ontology tagger and the Council.

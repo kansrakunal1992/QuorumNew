@@ -29,6 +29,10 @@ import {
   markNotApplicable, markUnknown, sanitizeChips, scoreRichness,
   setFact, slotSpec, slotsFor,
 } from './chat-intake-brief'
+import {
+  DEPENDENCY_CHIPS, OUTLOOK_ASK, OUTLOOK_KEY, applyOutlookAnswer, dependencyQuestion, detectUpstreamDecision,
+  outlookCovered, parkedReply, parseDependencyChoice,
+} from './chat-intake-gates'
 import { allSelectedNote, buildCardGroup, recordCardAnswer, sanitizeCardMeta } from './chat-intake-cards'
 import { criticalOpen, duplicatesKnown, effectiveStakes, finalizeForCouncil, gapIsOpen, isSmartFriendGap } from './chat-intake-depth'
 import type { SmartFriendGap } from './chat-intake-depth'
@@ -46,7 +50,7 @@ export interface QuickReplyMeta {
   companion?: { text: string; card?: ChatCardResponseMeta | null } | null
 }
 
-export type TurnAction = 'ask' | 'smart_friend' | 'playback' | 'correct' | 'close' | 'faq'
+export type TurnAction = 'ask' | 'smart_friend' | 'playback' | 'correct' | 'close' | 'faq' | 'park'
 
 export interface TurnResult {
   state:          ChatDecisionState
@@ -287,6 +291,8 @@ export interface DecideInput {
   captureText?:  string
   /** v9: Quorum's earlier messages, so the extra question never repeats one. */
   asked?:        string[]
+  /** Examiner-in-chat experiment (lib/feature-flags.ts). Off => behaviour is identical to before it existed. */
+  examinerInChat?: boolean
 }
 
 export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult {
@@ -305,7 +311,8 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
       && (!planner || planner.answeredPending !== false)) {
     s = setFact(s, pending.slotKey, text)
   }
-  if (pending?.kind === 'smart_friend' && !dontKnow && text.length >= 2) {
+  const gateAnswer = !!inp.examinerInChat && pending?.kind === 'smart_friend' && (pending.gap === 'dependency' || pending.slotKey === OUTLOOK_KEY)
+  if (pending?.kind === 'smart_friend' && !dontKnow && text.length >= 2 && !gateAnswer) {
     s = pending.slotKey === CHANGE_MIND_SLOT.key
       ? setFact(s, CHANGE_MIND_SLOT.key, text)
       : { ...s, evidence: union(s.evidence, [clipText(text, 200)], 16) }
@@ -313,6 +320,24 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
     if (pending.gap === 'tension' && s.contradictions?.length) {
       s = { ...s, contradictions: undefined, userCorrections: union(s.userCorrections, [`Clarified: ${clipText(text, 180)}`]) }
     }
+  }
+  // -- Oct 2026: the two Examiner questions that now live inside the chat (lib/chat-intake-gates.ts) --
+  // E0 + C0: one free-text answer fills BOTH anchors, so the Examiner only has to ask for a one-tap confirm.
+  if (inp.examinerInChat && pending?.kind === 'smart_friend' && pending.slotKey === OUTLOOK_KEY && !dontKnow && text.length >= 2) {
+    s = applyOutlookAnswer(s, text)
+  }
+  // R1: the person answers the "this hinges on another decision" gate (a don't-know defaults to keep-going,
+  // never to a block). 'park' ends the chat here; the client files it on the Watchlist.
+  if (inp.examinerInChat && pending?.kind === 'smart_friend' && pending.gap === 'dependency' && s.dependency) {
+    const choice = parseDependencyChoice(text) ?? 'keep_going'
+    s = { ...s, dependency: { ...s.dependency, choice }, pending: null }
+    if (choice === 'park_this') {
+      return { state: s, action: 'park', reply: parkedReply(s.dependency!.text), quickReplies: NO_CHIPS, readyToReflect: false }
+    }
+  } else if (inp.examinerInChat && !s.dependency) {
+    // Caught the moment it is said (not after the Council has run). Only ever raised once.
+    const dep = detectUpstreamDecision(userText)
+    if (dep) s = { ...s, dependency: { text: dep } }
   }
   const correcting = pending?.kind === 'correct' || pending?.kind === 'playback'
   if (correcting && text && !(planner?.notes.userCorrections?.length)) {
@@ -353,11 +378,11 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
   if (ready || nearCeiling) {
     // Last look before wrapping: ONE extra question, only for a critical, still-open, non-deferrable gap.
     if (ready && !nearCeiling && !s.smartFriendAsked) {
-      const q = smartFriendGate(s, planner, inp.asked ?? [])
+      const q = smartFriendGate(s, planner, inp.asked ?? [], !!inp.examinerInChat)
       s = { ...s, smartFriendAsked: true }
       if (q) {
-        const next: ChatDecisionState = noteReflection({ ...s, phase: 'gathering', pending: { kind: 'smart_friend', slotKey: q.slotKey, chips: [], gap: q.gap } })
-        return { state: next, action: 'smart_friend', reply: composeReply(reflection, q.question), quickReplies: { kind: 'ask', slotKey: q.slotKey, chips: [] }, readyToReflect: false, reflection: reflectionMeta }
+        const next: ChatDecisionState = noteReflection({ ...s, phase: 'gathering', pending: { kind: 'smart_friend', slotKey: q.slotKey, chips: q.chips ?? [], gap: q.gap } })
+        return { state: next, action: 'smart_friend', reply: composeReply(reflection, q.question), quickReplies: { kind: 'ask', slotKey: q.slotKey, chips: q.chips ?? [] }, readyToReflect: false, reflection: reflectionMeta }
       }
     }
     return wrap(s)
@@ -376,7 +401,29 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
  *   • the question does not repeat something already asked or already known.
  * If the planner failed, the only fallback is the change-of-mind probe, and only on a high-stakes decision.
  */
-function smartFriendGate(s: ChatDecisionState, planner: PlannerOutput | null, asked: string[]): { question: string; slotKey: string | null; gap: SmartFriendGap | 'change_mind' } | null {
+type GateQuestion = { question: string; slotKey: string | null; gap: SmartFriendGap | 'change_mind' | 'dependency' | 'outlook'; chips?: string[] }
+
+/**
+ * Still exactly ONE extra question at most (the v9 contract) -- this only decides WHICH one. Priority:
+ *   1. an unresolved upstream decision the person named (Examiner R1): it changes what the Council can honestly say;
+ *   2. the model's own sharp-friend gap, or the change-of-mind probe (unchanged v9 behaviour);
+ *   3. the combined outlook probe (Examiner E0 + C0) -- only when neither anchor is on file and nothing sharper applies.
+ * Low-stakes decisions never get an extra question.
+ */
+function smartFriendGate(s: ChatDecisionState, planner: PlannerOutput | null, asked: string[], examinerInChat: boolean): GateQuestion | null {
+  if (effectiveStakes(s) === 'low') return null
+  if (examinerInChat && s.dependency && !s.dependency.choice) {
+    return { question: dependencyQuestion(s.dependency.text), slotKey: null, gap: 'dependency', chips: [...DEPENDENCY_CHIPS] }
+  }
+  const base = baseSmartFriendGate(s, planner, asked)
+  if (base) return base
+  if (examinerInChat && !outlookCovered(s) && !duplicatesKnown(OUTLOOK_ASK, s, asked)) {
+    return { question: OUTLOOK_ASK, slotKey: OUTLOOK_KEY, gap: 'outlook' }
+  }
+  return null
+}
+
+function baseSmartFriendGate(s: ChatDecisionState, planner: PlannerOutput | null, asked: string[]): GateQuestion | null {
   if (effectiveStakes(s) === 'low') return null
   if (!planner) {
     return effectiveStakes(s) === 'high' && !s.contradictions?.length && !isResolved(s, CHANGE_MIND_SLOT.key) && !duplicatesKnown(CHANGE_MIND_SLOT.ask, s, asked)

@@ -1442,7 +1442,7 @@ export default async function RecordPage({ params }: Props) {
               it never nudges an anonymous visitor to invite people before
               they've signed up themselves. */}
           {session.user_id && (
-            <div className="rec-fade rec-fade-4">
+            <div className="rec-fade rec-fade-4" data-tour-id="record-invite">
               <ReferralLink userId={session.user_id} />
             </div>
           )}
@@ -1464,10 +1464,12 @@ export default async function RecordPage({ params }: Props) {
                   userId={session.user_id ?? null}
                   encryptionEnabled={!!process.env.DB_ENCRYPTION_KEY}
                 />
-                <ShareRecordButton
-                  sessionId={session.id}
-                  decisionText={session.decision_text}
-                />
+                <span data-tour-id="record-share" style={{ display: 'inline-flex' }}>
+                  <ShareRecordButton
+                    sessionId={session.id}
+                    decisionText={session.decision_text}
+                  />
+                </span>
               </div>
               <Link href="/">
                 <button

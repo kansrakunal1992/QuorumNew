@@ -123,6 +123,17 @@ export function isNaturalIntakeEnabled(): boolean {
   return process.env.NEXT_PUBLIC_NATURAL_INTAKE_ENABLED === 'true'
 }
 
+// ── Examiner-in-chat (Oct 2026) ──────────────────────────────────────────────
+// Moves two things the Examiner did AFTER the chat into the chat itself (lib/chat-intake-gates.ts):
+//   - the combined E0 + C0 "outlook" probe, asked in the single existing smart-friend turn;
+//   - the R1 "this hinges on another decision" gate, caught the moment it is said.
+// OFF by default: it can add one extra chat turn for people who would otherwise wrap with none (the v9
+// "rich opener wraps with zero questions" contract), so it ships as an experiment. Meaningful only when
+// isNaturalIntakeEnabled() is also true. To enable: NEXT_PUBLIC_EXAMINER_IN_CHAT=true, then redeploy.
+export function isExaminerInChatEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_EXAMINER_IN_CHAT === 'true'
+}
+
 // ── Natural Intake — connector sub-flags (Phase 2–4) ─────────────────────────
 // Each external connector clears its own approval process on its own
 // timeline (Slack Marketplace review, Google verification, Microsoft

@@ -11,6 +11,11 @@ import LeanBadge, { LEAN_LABELS } from './LeanBadge'
 import PersonaIcon from './PersonaIcon'
 import { splitHighlight } from '@/lib/persona-highlight'
 import { track } from '@/lib/track'
+import { parseDisplayTags, orderKinds, stripDisplayTags, type DisplayTagKind } from '@/lib/display-tags'
+import {
+  parsePersonaContent, serializePersonaContent, buildAdvisorConversation, extractNewInfo,
+  type HistorySegment, type PushbackSegment,
+} from '@/lib/persona-history'
 
 // v9 analytics: "Council launch requested" (Convene tapped) is NOT "Council running". This fires once per session per page
 // load, when the first advisor request actually goes out, so a failed hand-off shows up as requested-but-never-started.
@@ -67,7 +72,7 @@ interface Props {
    *  means an unauthenticated session, same as before, and the fetch omits
    *  the header exactly like today. */
   authToken?: string | null
-  onComplete?: (personaKey: string, content: string) => void
+  onComplete?: (personaKey: string, content: string, meta?: { silent?: boolean }) => void
   /** When set, triggers a supplemental stream showing updated analysis with examiner answers */
   examinerContext?: string
   /** Sprint 5: structural context from past sessions — injected for Pattern Analyst, Risk Architect, Elder */
@@ -135,9 +140,11 @@ interface Props {
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
 export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, authToken, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed, onCollapseChange, expandRequestToken }: Props) {
-  const [response, setResponse]           = useState(initialContent ?? '')
+  // Hydrated content is the serialized thread (original + [Pushback…]/[Updated…] segments,
+  // see lib/persona-history.ts) — `response` is only ever the ORIGINAL analysis.
+  const [response, setResponse]           = useState(initialContent ? parsePersonaContent(initialContent).initial : '')
   const [panelState, setPanelState]       = useState<PanelState>(initialContent ? 'done' : 'idle')
-  const [messages, setMessages]           = useState<Message[]>([])
+  const [, setMessages]                   = useState<Message[]>([])
   const [pushback, setPushback]           = useState('')
   const [showPushback, setShowPushback]   = useState(false)
   // Unified session, Tier 3: structured challenge reason. Purely a text-
@@ -145,7 +152,12 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // `pushback`, so this needs no change to the submission path below.
   const [challengeReason, setChallengeReason] = useState<string | null>(null)
   const [isPushingBack, setIsPushingBack] = useState(false)
-  const [exchanges, setExchanges]         = useState<{ user: string; reply: string }[]>([])
+  // Chronological thread of everything after the original analysis: this advisor's own
+  // pushbacks AND share-context updates (another advisor's challenge, broadcast to the
+  // council). Previously updates lived in a single overwritten string, so a SECOND
+  // challenge erased the first update from both the UI and what synthesis was given.
+  const [history, setHistory] = useState<HistorySegment[]>([])
+  const exchanges = history.filter((h): h is PushbackSegment => h.kind === 'pushback')
 
   // Header block — parsed from <lens>, <position>, <realcost>, <lean> tags in streamed output
   const [lensText,     setLensText]     = useState('')
@@ -210,7 +222,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     if (args) streamResponseRef.current?.(args.msgs, args.isFirst, args.examinerCtx)
   }, [])
 
-  const responseRef   = useRef(initialContent ?? '')
+  const responseRef   = useRef(initialContent ? parsePersonaContent(initialContent).initial : '')
   // Bug fix: rebuilding `fullContent` for persistence after any pushback or
   // examiner-update previously reused `responseRef.current` — which by that
   // point already holds the STRIPPED prose (see the `isFirst` streaming loop
@@ -229,7 +241,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // separately, so it — not the display-cleaned responseRef — is what gets
   // reused when reconstructing fullContent for every subsequent save.
   const rawInitialRef = useRef(
-    initialContent ? initialContent.split(/\n\n\[(?:Pushback|Updated after Examiner)/)[0] : '',
+    initialContent ? parsePersonaContent(initialContent).initial : '',
   )
   // Bug fix ("Contrarian missing its lens/position/lean header block, card
   // looks broken, only on some runs, gone on re-run"): lib/personas.ts
@@ -268,7 +280,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // Stored so the manual "Retry" button (shown once auto-retries are
   // exhausted) can re-issue the exact same call the user was waiting on.
   const lastCallArgsRef = useRef<{ msgs: Message[]; isFirst: boolean; examinerCtx?: string } | null>(null)
-  const exchangesRef  = useRef(exchanges)
+  const historyRef    = useRef<HistorySegment[]>([])
   const onCompleteRef = useRef(onComplete)
   const onLeanUpdateRef = useRef(onLeanUpdate)
   const onPersonaCompleteRef = useRef(onPersonaComplete)
@@ -277,7 +289,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // those refs exist to prevent, just missed on this one. Same pattern applied here.
   const onExaminerUpdateCompleteRef = useRef(onExaminerUpdateComplete)
 
-  useEffect(() => { exchangesRef.current        = exchanges       }, [exchanges])
+  useEffect(() => { historyRef.current          = history         }, [history])
+  // Update the ref synchronously too: the effect above runs after paint, and a second
+  // challenge can complete before then (batch of 6 parallel streams).
+  const commitHistory = useCallback((next: HistorySegment[]) => {
+    historyRef.current = next
+    setHistory(next)
+  }, [])
   useEffect(() => { onCompleteRef.current       = onComplete      }, [onComplete])
   useEffect(() => { onLeanUpdateRef.current     = onLeanUpdate    }, [onLeanUpdate])
   useEffect(() => { onPersonaCompleteRef.current = onPersonaComplete }, [onPersonaComplete])
@@ -484,103 +502,49 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // text never flashes on screen; once done, the now-guaranteed-closed
   // tags are used to slice out their exact spans and wrap each in its own
   // highlight.
-  const stripHighlightMarkup = (text: string): string => {
-    return text
-      .replace(/<\/?assumption>/g, '').replace(/<assumption>[\s\S]*$/, '')
-      .replace(/<\/?reversal>/g, '').replace(/<reversal>[\s\S]*$/, '')
-      // <estimate> (Numeric Provenance constraint, lib/personas.ts
-      // WORD_LIMIT_PREFIX #6) — same content-preserving, stays-in-place
-      // treatment as <assumption>/<reversal>. Unlike those two, a response
-      // can contain several <estimate> spans (one per suggested numeric
-      // threshold), so it's handled separately below in renderAssumption
-      // rather than as a single indexOf pair — this strip is only the
-      // streaming-safe fallback shown before the response is done.
-      .replace(/<\/?estimate>/g, '').replace(/<estimate>[\s\S]*$/, '')
+  // Streaming-safe: never shows raw markup, including a half-received "<estim" at the edge.
+  const stripHighlightMarkup = (text: string): string => stripDisplayTags(text, { streaming: true })
+
+  // Highlight styles per kind. When kinds nest (e.g. an <estimate> inside a <reversal>) the
+  // spans nest too — outer kind wraps inner — so each keeps its own colour and nothing is
+  // sliced twice. See lib/display-tags.ts for why the old indexOf/slice approach duplicated text.
+  const HIGHLIGHT_VARS: Record<DisplayTagKind, { bg: string; border: string }> = {
+    assumption: { bg: '--assumption-highlight-bg', border: '--assumption-highlight-border' },
+    reversal:   { bg: '--reversal-highlight-bg',   border: '--reversal-highlight-border' },
+    estimate:   { bg: '--estimate-highlight-bg',   border: '--estimate-highlight-border' },
   }
 
   const renderAssumption = (text: string, isDone: boolean): React.ReactNode => {
-    if (!isDone) {
-      return <>{stripHighlightMarkup(text)}</>
-    }
-    const assumptionStart = text.indexOf('<assumption>')
-    const assumptionEnd   = text.indexOf('</assumption>')
-    const hasAssumption   = assumptionStart !== -1 && assumptionEnd !== -1 && assumptionEnd > assumptionStart
+    if (!isDone) return <>{stripHighlightMarkup(text)}</>
 
-    const reversalStart = text.indexOf('<reversal>')
-    const reversalEnd   = text.indexOf('</reversal>')
-    const hasReversal    = reversalStart !== -1 && reversalEnd !== -1 && reversalEnd > reversalStart
-
-    // <estimate> can appear multiple times per response (one per suggested
-    // numeric threshold) — find every closed occurrence, unlike the single
-    // indexOf pair used for <assumption>/<reversal> above. isEstimate flags
-    // these for the trailing "estimate" marker below — color alone doesn't
-    // tell a user what a highlight means, so <estimate> spans get an
-    // explicit inline label, unlike the other two tags which read fine
-    // from their surrounding sentence.
-    const estimateSpans = [...text.matchAll(/<estimate>([\s\S]*?)<\/estimate>/g)].map(m => ({
-      start: m.index!,
-      end:   m.index! + m[0].length,
-      tagLen: '<estimate>'.length,
-      closeLen: '</estimate>'.length,
-      bgVar: '--estimate-highlight-bg',
-      borderVar: '--estimate-highlight-border',
-      isEstimate: true,
-    }))
-
-    if (!hasAssumption && !hasReversal && estimateSpans.length === 0) {
-      // No tag found (a rare miss, or a persona/response with none) —
-      // render as-is, still guarding against any stray/unclosed tag.
-      return <>{stripHighlightMarkup(text)}</>
-    }
-
-    // <assumption> falls mid-paragraph; <reversal> is instructed to close
-    // the response, after it — so in practice assumptionStart < reversalStart
-    // whenever both are present. Handle both orders anyway rather than
-    // assume it, since nothing prevents a model from writing them the other
-    // way round. <estimate> spans can fall anywhere relative to both —
-    // sorting by start below handles all orderings.
-    const spans = [
-      hasAssumption && { start: assumptionStart, end: assumptionEnd + '</assumption>'.length, tagLen: '<assumption>'.length, closeLen: '</assumption>'.length, bgVar: '--assumption-highlight-bg', borderVar: '--assumption-highlight-border', isEstimate: false },
-      hasReversal    && { start: reversalStart,   end: reversalEnd   + '</reversal>'.length,   tagLen: '<reversal>'.length,   closeLen: '</reversal>'.length,   bgVar: '--reversal-highlight-bg',   borderVar: '--reversal-highlight-border',   isEstimate: false },
-      ...estimateSpans,
-    ].filter((s): s is { start: number; end: number; tagLen: number; closeLen: number; bgVar: string; borderVar: string; isEstimate: boolean } => !!s)
-      .sort((a, b) => a.start - b.start)
-
-    const nodes: React.ReactNode[] = []
-    let cursor = 0
-    spans.forEach((s, i) => {
-      nodes.push(text.slice(cursor, s.start))
-      nodes.push(
-        <span
-          key={i}
-          title={s.isEstimate ? 'Council-suggested estimate — not a fact you stated' : undefined}
-          style={{
-            background:    `var(${s.bgVar})`,
-            borderBottom:  `1px solid var(${s.borderVar})`,
-            paddingBottom: 1,
-            borderRadius:  2,
-            cursor:        s.isEstimate ? 'help' : undefined,
-          }}
-        >{text.slice(s.start + s.tagLen, s.end - s.closeLen)}</span>
-      )
-      // <estimate> gets an explicit trailing label — the highlight color
-      // alone doesn't tell a first-time user what it means, and unlike
-      // <assumption>/<reversal>, this needs to work without a hover (most
-      // usage here is mobile). "estimate" is spelled out rather than
-      // abbreviated for the same reason the color-only approach wasn't
-      // enough on its own: don't trade one unexplained signal for another.
-      if (s.isEstimate) {
-        nodes.push(
-          <sup
-            key={`${i}-marker`}
-            className="estimate-marker"
-            title="Council-suggested estimate — not a fact you stated"
-          >estimate</sup>
+    const items = parseDisplayTags(text)
+    const nodes: React.ReactNode[] = items.map((item, i) => {
+      if (item.type === 'estimateMarker') {
+        // Explicit trailing label — colour alone doesn't tell a first-time user what an
+        // estimate highlight means, and this has to work without hover (mobile).
+        return (
+          <sup key={`m${i}`} className="estimate-marker" title="Council-suggested estimate — not a fact you stated">estimate</sup>
         )
       }
-      cursor = s.end
+      if (item.kinds.length === 0) return <span key={i}>{item.text}</span>
+      // reduceRight: first (outermost) kind ends up outermost.
+      return orderKinds(item.kinds).reduceRight<React.ReactNode>((inner, kind, depth) => {
+        const v = HIGHLIGHT_VARS[kind]
+        return (
+          <span
+            key={depth === 0 ? i : undefined}
+            title={kind === 'estimate' ? 'Council-suggested estimate — not a fact you stated' : undefined}
+            style={{
+              background:    `var(${v.bg})`,
+              borderBottom:  `1px solid var(${v.border})`,
+              paddingBottom: 1,
+              borderRadius:  2,
+              cursor:        kind === 'estimate' ? 'help' : undefined,
+            }}
+          >{inner}</span>
+        )
+      }, item.text)
     })
-    nodes.push(text.slice(cursor))
     return <>{nodes}</>
   }
 
@@ -706,10 +670,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         }
         // Strip lens/position/realcost tags from pushback reply (keep original header state)
         const cleanReply = stripHeaderTags(acc)
-        const newExchanges = [...exchangesRef.current, { user: userText, reply: cleanReply }]
-        setExchanges(newExchanges)
+        const newHistory: HistorySegment[] = [...historyRef.current, { kind: 'pushback', user: userText, reply: cleanReply }]
+        commitHistory(newHistory)
         setIsPushingBack(false)
-        const fullContent = [rawInitialRef.current || responseRef.current, ...newExchanges.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)].join('\n\n')
+        const fullContent = serializePersonaContent(rawInitialRef.current || responseRef.current, newHistory)
         onCompleteRef.current?.(persona.key, fullContent)
         // Automatic percolation: this advisor's own completion is now part of
         // the same "whole council reassessing this new information" batch as
@@ -724,7 +688,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
     } catch {
       retryOrFail('Connection error.')
     }
-  }, [sessionId, persona.key, decisionText, contextText, registerMode, structuralContext, extractHeaderTags, stripHeaderTags])
+  }, [sessionId, persona.key, decisionText, contextText, registerMode, structuralContext, extractHeaderTags, stripHeaderTags, commitHistory])
 
   useEffect(() => { streamResponseRef.current = streamResponse }, [streamResponse])
 
@@ -741,14 +705,21 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   // Parse header tags from initialContent so Lens/Position/Trade-off render on Back to Council
   useEffect(() => {
     if (!initialContent) return
-    const prose = extractHeaderTags(initialContent)
+    // Split the serialized thread FIRST: header tags / display tags must only be
+    // parsed out of the ORIGINAL analysis. Feeding the whole blob through
+    // extractHeaderTags + renderAssumption (the old behaviour) put every later
+    // reply — each with its own <assumption>/<reversal>/<estimate> — into one paragraph.
+    const parsed = parsePersonaContent(initialContent)
+    const prose = extractHeaderTags(parsed.initial)
     setResponse(prose)
     responseRef.current = prose
     // Keep the raw (tag-intact) original-response segment current too — see
     // rawInitialRef's definition above for why this must stay separate from
     // responseRef.current.
-    rawInitialRef.current = initialContent.split(/\n\n\[(?:Pushback|Updated after Examiner)/)[0]
-  }, [initialContent, extractHeaderTags])
+    rawInitialRef.current = parsed.initial
+    // Restore the pushback / update thread (previously dropped on every reload).
+    commitHistory(parsed.history.map(seg => ({ ...seg, reply: stripHeaderTags(seg.reply) })))
+  }, [initialContent, extractHeaderTags, stripHeaderTags, commitHistory])
 
   useEffect(() => {
     if (initialContent) return   // already hydrated from DB — no re-fetch
@@ -758,22 +729,35 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   }, [streamResponse, initialContent, canStream, initialExaminerContext]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Examiner supplemental update ────────────────────────────────────────
-  // Fires when examinerContext is set (non-empty) after the initial analysis is done
+  // Fires when examinerContext (the "New information…" broadcast) is set after this
+  // advisor's initial analysis is done. Each broadcast is appended to `history` as an
+  // 'update' segment — it never overwrites an earlier one.
   const examinerContextRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (!examinerContext || examinerContext === examinerContextRef.current) return
+    // Don't mark this broadcast as handled until we can actually act on it. Before, an
+    // advisor that was still streaming its initial analysis when the broadcast landed
+    // set the ref and then returned — so the update was dropped for good and the batch
+    // in SessionView waited out its 25 s safety net with this advisor's view unchanged.
+    // panelState is a dependency, so this re-runs the moment the card reaches 'done'.
+    if (panelState !== 'done' || !responseRef.current) return
     examinerContextRef.current = examinerContext
-    // Only fire if we have the original response to build on
-    if (!responseRef.current) return
+    const broadcast = examinerContext
+
+    // Every exit path MUST tell SessionView this advisor is finished with the batch —
+    // otherwise the single synthesis re-run waits for the 25 s timeout.
+    const finish = (content: string) => onExaminerUpdateCompleteRef.current?.(persona.key, content)
 
     const runExaminerUpdate = async () => {
       setExaminerUpdateState('streaming')
       setExaminerUpdate('')
       try {
-        const examinerMessages = [
-          { role: 'assistant' as const, content: responseRef.current },
-          { role: 'user' as const, content: examinerContext },
-        ]
+        // The advisor sees its OWN original analysis (tag-intact, so its <lean> is visible)
+        // plus every earlier exchange, then the new information. Before, round 2 only had
+        // the stripped prose of the original — it couldn't see round 1.
+        const examinerMessages = buildAdvisorConversation(
+          rawInitialRef.current || responseRef.current, historyRef.current, broadcast,
+        )
         const res = await fetch('/api/persona', {
           method: 'POST',
           headers: {
@@ -790,7 +774,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             isExaminerContextCall: true,  // suppresses pushbackProtocol injection + DB saves
           }),
         })
-        if (!res.ok || !res.body) { setExaminerUpdateState('done'); return }
+        if (!res.ok || !res.body) { setExaminerUpdateState('done'); finish(''); return }
 
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
@@ -801,38 +785,37 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           acc += decoder.decode(value, { stream: true })
           setExaminerUpdate(stripHeaderTags(acc))
         }
-        setExaminerUpdateState('done')
-        // Update completedResponses in SessionView with the full combined content
-        if (acc) {
-          const cleanAcc = stripHeaderTags(acc)
-          // P1 fix: this stream loop never parsed <lean> before stripping it —
-          // only the individual-pushback branch in streamResponse() did. Share
-          // to All Advisors goes through THIS function, not that one, so a
-          // lean shift triggered by this path was silently discarded, which
-          // meant leanShifts computed in SynthesisCard was always empty for
-          // anyone using Share to All Advisors instead of per-persona Challenge
-          // — i.e. the weight-delta boost (Gap #2) never actually fired.
-          const leanMatch = acc.match(/<lean>([\s\S]*?)<\/lean>/)
-          if (leanMatch) {
-            const lean = leanMatch[1].trim().toLowerCase()
-            if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
-              onLeanUpdateRef.current?.(persona.key, lean)
-            }
+        if (!acc.trim()) { setExaminerUpdateState('done'); finish(''); return }
+
+        const cleanAcc = stripHeaderTags(acc)
+        // P1 fix: parse <lean> before stripping — Share-to-council goes through THIS function,
+        // not streamResponse, so a lean shift here was previously discarded.
+        const leanMatch = acc.match(/<lean>([\s\S]*?)<\/lean>/)
+        if (leanMatch) {
+          const lean = leanMatch[1].trim().toLowerCase()
+          if (lean === 'proceed' || lean === 'wait' || lean === 'mixed') {
+            onLeanUpdateRef.current?.(persona.key, lean)
           }
-          const fullContent = [rawInitialRef.current || responseRef.current, `[Updated after Examiner answers]\n${cleanAcc}`,
-            ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`)
-          ].join('\n\n')
-          onCompleteRef.current?.(persona.key, fullContent)
-          // Sprint 16b Fix 4b: notify SessionView this update is done — used to count share-context completions
-          onExaminerUpdateCompleteRef.current?.(persona.key, fullContent)
         }
+        const newHistory: HistorySegment[] = [
+          ...historyRef.current,
+          { kind: 'update', info: extractNewInfo(broadcast), reply: cleanAcc },
+        ]
+        commitHistory(newHistory)
+        setExaminerUpdate('')
+        setExaminerUpdateState('done')
+        const fullContent = serializePersonaContent(rawInitialRef.current || responseRef.current, newHistory)
+        onCompleteRef.current?.(persona.key, fullContent)
+        // Sprint 16b Fix 4b: notify SessionView this update is done — counts share-context completions
+        finish(fullContent)
       } catch {
         setExaminerUpdateState('done')
+        finish('')
       }
     }
 
     runExaminerUpdate()
-  }, [examinerContext, sessionId, persona.key, decisionText, contextText, registerMode, stripHeaderTags])
+  }, [examinerContext, panelState, sessionId, persona.key, decisionText, contextText, registerMode, stripHeaderTags, commitHistory, authToken])
 
   // ── Structural echo — retroactive enrichment (2026-08-08) ─────────────────
   // structuralContext (prop, from SessionView) depends on a whole ontology-
@@ -878,10 +861,10 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         // supplemental update reads from and writes back to — pushback,
         // examiner updates — so a reload still shows this citation).
         rawInitialRef.current = `${currentRaw}\n\n${data.structuralTag}`
-        const fullContent = [rawInitialRef.current,
-          ...exchangesRef.current.map(e => `[Pushback: "${e.user}"]\n${e.reply}`),
-        ].join('\n\n')
-        onCompleteRef.current?.(persona.key, fullContent)
+        const fullContent = serializePersonaContent(rawInitialRef.current, historyRef.current)
+        // silent: adds a citation badge only — must NOT count as a content change that mints a
+        // new synthesis version (it used to: a phantom "V2" appeared with no challenge made).
+        onCompleteRef.current?.(persona.key, fullContent, { silent: true })
       })
       .catch(() => { /* additive-only feature — silent failure is correct here */ })
   }, [structuralContext, panelState, sessionId, persona.key])
@@ -889,10 +872,15 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
   const handlePushback = async () => {
     if (!pushback.trim()) return
     const challengeText = pushback
-    const updated: Message[] = [
-      ...messages,
-      { id: Date.now().toString(), session_id: sessionId, persona: persona.key, role: 'user', content: challengeText, created_at: new Date().toISOString() },
-    ]
+    // The advisor must see its OWN original analysis and every earlier exchange — `messages`
+    // used to hold only the person's challenges, so "what does this change in your prior
+    // analysis?" was asked without showing that analysis (and with no lean to anchor to).
+    const updated: Message[] = buildAdvisorConversation(
+      rawInitialRef.current || responseRef.current, historyRef.current, challengeText,
+    ).map((t, i) => ({
+      id: `${Date.now()}-${i}`, session_id: sessionId, persona: persona.key, role: t.role,
+      content: t.content, created_at: new Date().toISOString(),
+    }))
     setMessages(updated)
     setPushback('')
     setShowPushback(false)
@@ -1254,7 +1242,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
             Sits below exchanges (or below analysis if no pushback) as a persistent conclusion.
             S3-05: labelled — this is the advisor's closing statement, previously
             unmarked italic text indistinguishable from a stray aside. */}
-        {realCostText && panelState === 'done' && exchanges.length === 0 && (
+        {realCostText && panelState === 'done' && history.length === 0 && (
           <div style={{ marginTop: 16 }}>
             <div style={{ borderTop: '1px solid var(--border-dim)', marginBottom: 10 }} />
             <p style={{
@@ -1279,22 +1267,33 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           </div>
         )}
 
-        {/* Pushback exchanges */}
-        {exchanges.map((ex, i) => (
+        {/* Thread: this advisor's pushbacks AND share-context updates, in the order they happened */}
+        {history.map((seg, i) => seg.kind === 'pushback' ? (
           <div key={i} style={{ marginTop: 18 }}>
             <div style={{ borderRadius: 8, padding: '8px 12px', background: 'var(--bg-inset)', border: '1px solid var(--border-dim)', marginBottom: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <span style={{ fontSize: 11, color: 'var(--gold)', flexShrink: 0, marginTop: 1 }}>↩</span>
               <div>
                 <p style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 2 }}>Your pushback</p>
-                <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5 }}>{ex.user}</p>
+                <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5 }}>{seg.user}</p>
               </div>
             </div>
-            <p className="persona-response">{ex.reply}</p>
+            <p className="persona-response">{seg.reply}</p>
+          </div>
+        ) : (
+          <div key={i} style={{ marginTop: 16, borderRadius: 8, border: '1px solid var(--info-border)', background: 'var(--info-bg)', padding: '10px 14px' }}>
+            <p style={{ fontSize: 10.5, color: 'var(--info-text)', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <polyline points="1 4 1 10 7 10"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/>
+              </svg>
+              Updated with new information
+            </p>
+            {seg.info && <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 0 6px', fontStyle: 'italic' }}>“{seg.info}”</p>}
+            <p className="persona-response" style={{ fontSize: 13 }}>{seg.reply}</p>
           </div>
         ))}
 
         {/* Real cost — persists below pushback exchanges too */}
-        {realCostText && panelState === 'done' && exchanges.length > 0 && (
+        {realCostText && panelState === 'done' && history.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <div style={{ borderTop: '1px solid var(--border-dim)', marginBottom: 10 }} />
             <p style={{
@@ -1374,13 +1373,13 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         )}
 
         {/* Examiner update — shown below original, never overwrites */}
-        {(examinerUpdate || examinerUpdateState === 'streaming') && (
+        {examinerUpdateState === 'streaming' && (
           <div style={{ marginTop: 16, borderRadius: 8, border: '1px solid var(--info-border)', background: 'var(--info-bg)', padding: '10px 14px', animation: 'examinerFadeIn 0.35s ease-out both' }}>
             <p style={{ fontSize: 10.5, color: 'var(--info-text)', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <polyline points="1 4 1 10 7 10"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/>
               </svg>
-              Updated with your answers
+              Reassessing new information…
             </p>
             <p className={`persona-response ${examinerUpdateState === 'streaming' ? 'cursor' : ''}`} style={{ fontSize: 13 }}>
               {examinerUpdate}

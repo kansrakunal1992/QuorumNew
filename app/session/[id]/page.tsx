@@ -4,6 +4,7 @@ import SessionView             from '@/components/SessionView'
 import { decrypt }             from '@/lib/encryption'
 import { getMirrorAccessState } from '@/lib/mirror-access'   // O4
 import { isFoundingAvailable }  from '@/lib/founding'
+import { buildInitialMessages } from '@/lib/persona-history'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -107,25 +108,28 @@ export default async function SessionPage({ params }: Props) {
     context_text:  decryptText(session.context_text),
   }
 
-  // Build personaKey → full assistant content map from stored messages
-  // Bug fix: this previously concatenated multiple rows for the same persona
-  // (initial response + every pushback reply — the messages table gets a new
-  // row per call, see app/api/persona/route.ts) with NO separator at all,
-  // so on reload the last sentence of one response ran directly into the
-  // first word of the next with no paragraph break. Noted here rather than
-  // fully reconstructed: this map only feeds PersonaPanel's initialContent
-  // (used to re-derive the header tags + the flowing "response" prose on
-  // reload) — it does not restore per-exchange "You challenged" dividers,
-  // since PersonaPanel doesn't parse that structure back out of a single
-  // string. Restoring that history structure would be a separate, larger
-  // change; this fix only stops prose from visibly running together.
-  const initialMessages: Record<string, string> = {}
-  for (const msg of messages ?? []) {
-    if (msg.role === 'assistant' && msg.persona && msg.content) {
-      const prev = initialMessages[msg.persona]
-      initialMessages[msg.persona] = (prev ? prev + '\n\n' : '') + (decrypt(msg.content) ?? '')
-    }
-  }
+  // Build personaKey → content map from stored messages.
+  //
+  // ROOT CAUSE FIX (Oct 2026): this used to concatenate EVERY assistant row per
+  // persona with "\n\n" — including `synthesis`. Consequences on any reload or
+  // back-navigation from the record page:
+  //   • synthesis: the cached text was S1 + S2 + S3…, and SynthesisCard's
+  //     `.match(/<verdict>/)` takes the FIRST verdict → the Council Synthesis
+  //     "kept the same" verdict no matter how many challenges had been made.
+  //   • advisors: original + pushbacks + share-context updates were fused into
+  //     one paragraph with several <assumption>/<reversal>/<estimate> pairs,
+  //     which leaked raw tags.
+  // buildInitialMessages (lib/persona-history.ts) keeps ONLY the newest
+  // synthesis/decision_brief row and rebuilds each advisor's thread with
+  // [Pushback: …] / [Updated after Examiner answers: …] markers that
+  // PersonaPanel parses back into its exchange list.
+  const initialMessages: Record<string, string> = buildInitialMessages(
+    (messages ?? []).map(msg => ({
+      persona: msg.persona as string | null,
+      role:    msg.role as string,
+      content: msg.content ? (decrypt(msg.content) ?? '') : '',
+    })),
+  )
 
   return <SessionView
     session={decryptedSession}

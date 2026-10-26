@@ -20,6 +20,7 @@
 // lib/chat-intake-context.ts and lib/chat-intake-lean.ts.
 
 import type { ChatDecisionState, ChatRichness, DecisionKind } from '@/lib/types'
+import { OUTLOOK_KEY } from '@/lib/chat-intake-gates'
 
 export const DECISION_KINDS: readonly DecisionKind[] = [
   'career_exit', 'job_offer', 'relocation', 'money', 'business',
@@ -314,6 +315,10 @@ export function briefRows(state: ChatDecisionState): BriefRow[] {
   if (isKnown(state, CHANGE_MIND_SLOT.key)) {
     rows.push({ key: CHANGE_MIND_SLOT.key, label: CHANGE_MIND_SLOT.label, required: false, value: state.facts![CHANGE_MIND_SLOT.key].trim(), status: 'known' })
   }
+  // The combined E0 + C0 probe (lib/chat-intake-gates.ts): what good looks like, and what still worries them.
+  if (isKnown(state, OUTLOOK_KEY)) {
+    rows.push({ key: OUTLOOK_KEY, label: 'What good looks like, and what worries you', required: false, value: state.facts![OUTLOOK_KEY].trim(), status: 'known' })
+  }
   return rows
 }
 
@@ -422,7 +427,7 @@ export function sanitizeChips(raw: unknown, fallback: string[] = []): string[] {
 export function buildPlaybackFallback(state: ChatDecisionState): string {
   const lead = state.decisionStatement?.trim().replace(/[.\s]+$/, '')
   const facts = briefRows(state)
-    .filter(r => r.status === 'known' && r.key !== CHANGE_MIND_SLOT.key)
+    .filter(r => r.status === 'known' && r.key !== CHANGE_MIND_SLOT.key && r.key !== OUTLOOK_KEY)
     .slice(0, 5)
     .map(r => `${r.label}: ${clip(r.value ?? '', 70).replace(/[.\s]+$/, '')}`)
   const head = lead ? `Here\u2019s what I\u2019ve got: ${lead}.` : 'Here\u2019s what I\u2019ve got so far.'

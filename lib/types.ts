@@ -320,6 +320,10 @@ export interface ChatDecisionState {
   // Both are the person's own words, as closely as the transcript allows.
   gutFeeling?:         string | null
   successPicture?:     string | null
+  // -- Oct 2026: in-chat gating (lib/chat-intake-gates.ts) ----------------------
+  // The upstream DECISION this one hinges on, if the person said so (Examiner rule R1, caught
+  // inside the chat instead of after the Council has run), and what they chose to do about it.
+  dependency?:         { text: string; choice?: 'keep_going' | 'park_this' } | null
   // ── v4: set ONLY by the end-of-chat chips (POST /api/chat-intake/lean) ───
   // Never written by the extraction model, and carried forward across
   // extraction runs by lib/chat-intake-state.ts so a later chat turn can't
