@@ -47,11 +47,14 @@ export function ceilingFor(s: ChatDecisionState, base: number): number {
 
 const lower = (x: unknown): string => String(x ?? '').toLowerCase()
 
+/** The routes Quorum thinks the person is weighing, as plain text. (They are {label, type} objects — never stringify them directly.) */
+export const optionLabels = (s: ChatDecisionState): string[] => (s.options ?? []).map(o => (typeof o === 'string' ? o : o?.label ?? '')).filter(Boolean)
+
 /** Everything the person has said or chosen so far, as one lowercase string (their words, their taps, Quorum's refined statement). */
 function evidenceText(s: ChatDecisionState): string {
   const facts = Object.values(s.facts ?? {}).join(' | ')
   const taps  = Object.values(s.cardAnswers ?? {}).flatMap(a => a.selectedLabels).join(' | ')
-  return lower([s.decisionStatement, (s.options ?? []).join(' | '), facts, taps, (s.evidence ?? []).join(' | ')].filter(Boolean).join(' | '))
+  return lower([s.decisionStatement, optionLabels(s).join(' | '), facts, taps, (s.evidence ?? []).join(' | ')].filter(Boolean).join(' | '))
 }
 
 /** The route the person said they would actually take (their answer, not the options on the table). Empty until they have said. */
@@ -62,13 +65,15 @@ function chosenPath(s: ChatDecisionState): string {
 }
 /** How the decision was framed (Quorum's statement + routes). Only used when the person has not yet said what they would do. */
 function framing(s: ChatDecisionState): string {
-  return lower([s.decisionStatement ?? '', (s.options ?? []).join(' | ')].join(' | '))
+  return lower([s.decisionStatement ?? '', optionLabels(s).join(' | ')].join(' | '))
 }
 
-const VENTURE       = /\b(something of my own|my own (thing|business|product|company)|own thing|start(ing)? (a|my|something|up)|build(ing)? (a|my|the|something|it)|launch|startup|start-up|business|product|company|venture|idea|freelanc|consult)/
-const INCOME_AT_RISK = /\b(quit|resign|leave (my|the|without)|without a (paycheck|job|salary)|full[- ]?time|break|sabbatical|something of my own|my own|own thing|build|start|launch|freelanc|consult|business|product|startup)/
+// Building something of their OWN. Deliberately narrow: "the company will be acquired" or "a product manager" must not count.
+const VENTURE       = /\b(something of my own|my own (thing|business|product|company|startup|venture|app|practice)|own thing|start(ing)? (a|my) (own )?(business|company|startup|venture|practice|agency|firm|app)|build(ing)? something|build(ing)? (a|my) (own )?(product|business|company|startup|venture|app)|launch(ing)? (a|my) (own )?(product|business|company|startup|app)|freelanc|self[- ]?employ|go independent|side (business|project|hustle))/
+const INCOME_AT_RISK = /\b(quit|resign|leave (my|the|without)|without a (paycheck|job|salary)|between jobs|look for another job|job search|search for (a|another)|full[- ]?time|break|sabbatical|something of my own|my own|own thing|build|start|launch|freelanc|consult|business|product|startup)/
 const JOB_SECURED   = /\b(job lined up|another job lined up|new job lined up|have an offer|accepted an offer|already have (a|another) job)/
-const STILL_EMPLOYED = /\b(look for another job|job search|search for (a|another)|stay (in|at|where)|negotiate|new role or team|same job|remain)/
+// Routes that keep the paycheck. ("Look for another job" is NOT one: as an answer to "if you left" it means searching with no income.)
+const STILL_EMPLOYED = /\b(stay (in|at|where)|negotiate|new role or team|same job|remain)/
 const PEOPLE_MENTION = /\b(partner|wife|husband|spouse|girlfriend|boyfriend|kid|kids|child|children|son|daughter|baby|parent|parents|mother|father|famil(y|ies)|dependant|dependent|depends on)\b/
 const TEAM_MENTION   = /\b(co-?founder|partner|team|investor|investors|employees|staff)\b/
 const VALIDATION_MENTION = /\b(customer|customers|users?|paying|pilot|tested|validated|waitlist|interviews?|spoken to|talked to|prototype|sold)\b/
@@ -175,9 +180,11 @@ export function readinessLine(r: ReadinessResult): string {
     return 'Your decision now has enough context for the Council. Take a last look at how I\u2019ve put it below \u2014 correct anything that\u2019s off.'
   }
   if (r.state === 'ready_with_unknowns') {
-    return 'Your decision has enough context for the Council to start. A few things are still open, and I\u2019ll tell it so rather than guess. Take a last look below.'
+    const n = r.unknown.length + r.deferred.length
+    return `Your decision has enough context for the Council to start. ${n === 1 ? 'One thing is' : 'A few things are'} still open, and I\u2019ll tell it so rather than guess. Take a last look below.`
   }
-  return 'I\u2019ll stop asking here. Some important details are still open \u2014 I\u2019ll flag them to the Council rather than guess. Check how I\u2019ve put it below and fix anything that\u2019s off.'
+  const g = r.gaps.length + r.criticalOpen.length
+  return `I\u2019ll stop asking here. ${g === 1 ? 'One important detail is' : 'Some important details are'} still open \u2014 I\u2019ll flag ${g === 1 ? 'it' : 'them'} to the Council rather than guess. Check how I\u2019ve put it below and fix anything that\u2019s off.`
 }
 
 // ── Smart-friend gate (the one extra question) ───────────────────────────────
@@ -206,13 +213,28 @@ export function gapIsOpen(s: ChatDecisionState, gap: SmartFriendGap): boolean {
   }
 }
 
-const STOP = new Set('the a an and or of to in on for with is are was were be been it this that these those you your yours i my me we our they their them what when where which who whom how why would could should can will do does did have has had about into from than then there here just also very really any some more most such not no yes'.split(' '))
-const words = (t: string): string[] => lower(t).replace(/[\u2019']/g, '').split(/[^a-z0-9]+/).filter(w => w.length >= 4 && !STOP.has(w))
+const STOP = new Set('many much the a an and or of to in on for with is are was were be been it this that these those you your yours i my me we our they their them what when where which who whom how why would could should can will do does did have has had about into from than then there here just also very really any some more most such not no yes'.split(' '))
+// Paraphrase tolerance for the duplicate check: light stemming + a small domain synonym map, so "How long could your cash
+// last without pay?" is recognised as the same ask as "My savings would last over a year without a salary".
+const SYNONYMS: Record<string, string> = {
+  savings: 'money', saving: 'money', saved: 'money', save: 'money', cash: 'money', runway: 'money', funds: 'money', salary: 'money', income: 'money', paycheck: 'money', pay: 'money', earnings: 'money', money: 'money',
+  quit: 'leave', leave: 'leave', resign: 'leave', exit: 'leave', leaving: 'leave', quitting: 'leave',
+  job: 'job', role: 'job', work: 'job', employer: 'job', company: 'job', position: 'job',
+  family: 'people', partner: 'people', wife: 'people', husband: 'people', kids: 'people', children: 'people', child: 'people', spouse: 'people', dependants: 'people', dependents: 'people', parents: 'people',
+  customer: 'customer', customers: 'customer', users: 'customer', clients: 'customer', buyers: 'customer',
+  idea: 'venture', product: 'venture', startup: 'venture', business: 'venture', venture: 'venture',
+  undo: 'reverse', reverse: 'reverse', reversible: 'reverse', revert: 'reverse',
+  deadline: 'timing', timeline: 'timing', date: 'timing', soon: 'timing',
+  months: 'duration', month: 'duration', years: 'duration', year: 'duration', weeks: 'duration', week: 'duration',
+}
+const stem = (w: string): string => w.length > 5 ? w.replace(/(ing|ed|ly|es|s)$/, '') : w
+export const canon = (w: string): string => SYNONYMS[w] ?? SYNONYMS[stem(w)] ?? stem(w)
+const words = (t: string): string[] => lower(t).replace(/[\u2019']/g, '').split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !STOP.has(w)).map(canon)
 
 /** Would this question ask for something already on file or already asked? (token overlap, deliberately conservative) */
 export function duplicatesKnown(question: string, s: ChatDecisionState, asked: string[] = []): boolean {
   const q = new Set(words(question))
-  if (q.size < 3) return false
+  if (q.size < 2) return false
   const corpus = [
     ...asked,
     ...Object.values(s.facts ?? {}),
@@ -225,6 +247,32 @@ export function duplicatesKnown(question: string, s: ChatDecisionState, asked: s
     q.forEach(w => { if (cw.has(w)) hit += 1 })
     return hit / q.size >= 0.6
   })
+}
+
+// ── Expanding an answer the app clipped ──────────────────────────────────────
+
+const ELLIPSIS = '\u2026'
+const squash = (x: string): string => x.replace(/\s+/g, ' ').trim()
+
+/**
+ * Stored answers are clipped (160 characters) by design, so the summary can show "...right now\u2026". When the person
+ * taps "Show full answer" we need their own full wording back: it is still in the transcript. If `shown` ends in "\u2026"
+ * and one of their messages begins with (or contains) that clipped text, return the message from that point on.
+ * Returns null whenever it can't be sure (not clipped, too short to match reliably, no matching message) — never a guess.
+ */
+export function fullAnswerFor(shown: string, userMessages: string[]): string | null {
+  const t = shown.trim()
+  if (!t.endsWith(ELLIPSIS)) return null
+  const prefix = squash(t.slice(0, -1))
+  if (prefix.length < 20) return null
+  for (const m of [...userMessages].reverse()) {          // latest message first: a correction should win
+    const n = squash(m)
+    const i = n.indexOf(prefix)
+    if (i < 0) continue
+    const full = n.slice(i)
+    return full.length > prefix.length + 1 ? full.slice(0, 700) : null
+  }
+  return null
 }
 
 // ── What the summary screen shows, with provenance ───────────────────────────
@@ -242,6 +290,11 @@ export function summaryProvenance(s: ChatDecisionState): SummaryProvenance {
   for (const sl of slotsFor(s.decisionKind)) {
     const ca = s.cardAnswers?.[sl.key]
     const known = isKnown(s, sl.key)
+    // v9.1: they tapped something, then changed their mind in their own words. Show the newer words first and keep the tap visible.
+    if (ca?.superseded && known) {
+      out.youTold.push({ label: sl.label, value: `${s.facts![sl.key].trim()} (you earlier chose: ${ca.selectedLabels.join('; ')})` })
+      continue
+    }
     if (ca?.responseType === 'cards' && ca.selectedLabels.length) {
       out.youChose.push({ label: sl.label, values: ca.selectedLabels, addedWords: ca.usedFreeText })
       continue
@@ -249,10 +302,12 @@ export function summaryProvenance(s: ChatDecisionState): SummaryProvenance {
     if (known) out.youTold.push({ label: sl.label, value: s.facts![sl.key].trim() })
   }
   if (s.userCorrections?.length) out.youTold.push({ label: 'You corrected', value: s.userCorrections[s.userCorrections.length - 1] })
-  if (s.decisionStatement && !s.userEditedDecision) out.myReading.push(`The decision, as I\u2019ve framed it: ${s.decisionStatement}`)
-  if (s.options?.length) out.myReading.push(`Routes I think you\u2019re weighing: ${s.options.slice(0, 4).join('; ')}`)
+  // (The refined decision is already shown at the top of the summary — not repeated here.)
+  if (optionLabels(s).length) out.myReading.push(`Routes I think you\u2019re weighing: ${optionLabels(s).slice(0, 4).join('; ')}`)
   if (s.contradictions?.length) out.myReading.push(`A possible tension: ${s.contradictions[0]}`)
-  if (s.unknowns?.length) out.myReading.push(`The main unknown, as I read it: ${s.unknowns[0]}`)
+  // The model sometimes returns a bare slot name ("runway") here. That is not a sentence a person can read, and "Still open" already lists it.
+  const mainUnknown = (s.unknowns ?? []).find(u => u.trim().split(/\s+/).length >= 3)
+  if (mainUnknown) out.myReading.push(`The main unknown, as I read it: ${mainUnknown}`)
   const r = councilReadiness(s)
   const seen = new Set<string>()
   const add = (k: string, why: SummaryProvenance['notKnown'][number]['why']) => { if (!seen.has(k)) { seen.add(k); out.notKnown.push({ label: label(k), why }) } }

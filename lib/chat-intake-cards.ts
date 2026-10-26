@@ -532,11 +532,15 @@ export function cardContextLines(state: ChatDecisionState): string[] {
   if (r.gaps.length) out.push(`Essential details still open when the intake stopped: ${r.gaps.map(k => labelOf(state, k)).join('; ')}`)
   if (r.deferred.length) out.push(`Not asked in intake (judged not material to this decision \u2014 explore only if it changes the answer): ${r.deferred.map(k => labelOf(state, k)).join('; ')}`)
 
-  const chosen = Object.values(state.cardAnswers ?? {}).filter(a => a.responseType === 'cards' && a.selectedLabels.length)
+  const chosen = Object.values(state.cardAnswers ?? {}).filter(a => a.responseType === 'cards' && a.selectedLabels.length && !a.superseded)
   if (chosen.length) {
     out.push(`Chosen from options (tapped by the person):\n${chosen.map(a => `- ${labelOf(state, a.slotKey)}: ${a.selectedLabels.join('; ')}${a.usedFreeText ? ' (and added their own words \u2014 see transcript)' : ''}`).join('\n')}`)
   }
-  const all = Object.values(state.cardAnswers ?? {}).filter(a => a.selectedAll)
+  const changed = Object.values(state.cardAnswers ?? {}).filter(a => a.superseded && a.selectedLabels.length)
+  if (changed.length) {
+    out.push(`Earlier taps the person later changed in their own words (the newer words in Key facts outrank these):\n${changed.map(a => `- ${labelOf(state, a.slotKey)}: earlier chose ${a.selectedLabels.join('; ')}`).join('\n')}`)
+  }
+  const all = Object.values(state.cardAnswers ?? {}).filter(a => a.selectedAll && !a.superseded)
   if (all.length) out.push(`Selected every option offered on: ${all.map(a => labelOf(state, a.slotKey)).join('; ')}`)
   const skipped = (state.skippedSlots ?? [])
   if (skipped.length) out.push(`Skipped or preferred not to say: ${skipped.map(k => labelOf(state, k)).join('; ')}`)

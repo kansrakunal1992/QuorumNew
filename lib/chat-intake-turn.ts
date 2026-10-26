@@ -32,7 +32,7 @@ import {
 import { allSelectedNote, buildCardGroup, recordCardAnswer, sanitizeCardMeta } from './chat-intake-cards'
 import { criticalOpen, duplicatesKnown, effectiveStakes, finalizeForCouncil, gapIsOpen, isSmartFriendGap } from './chat-intake-depth'
 import type { SmartFriendGap } from './chat-intake-depth'
-import { composeReply, validateReflection } from './chat-intake-reflection'
+import { composeReply, reflectionPrint, validateReflection } from './chat-intake-reflection'
 import { NON_ANSWER } from './chat-intake-plan-parse'
 import type { PlannerOutput } from './chat-intake-plan-parse'
 
@@ -110,6 +110,14 @@ export function mergeNotes(
   if (notes.decisionThreshold) s.decisionThreshold = notes.decisionThreshold
   if (notes.reversibility)     s.reversibility     = notes.reversibility
   if (notes.stakes)            s.stakes            = notes.stakes
+  // v9.1: the person changed their mind about something they TAPPED. Both signals are required (the model names the slot AND
+  // writes a new value for it) so a restated fact can't hide a real selection. The tap is flagged, never deleted.
+  for (const k of notes.correctedSlots ?? []) {
+    const ca = s.cardAnswers?.[k]
+    if (ca && !ca.superseded && typeof notes.facts?.[k] === 'string' && notes.facts[k].trim()) {
+      s.cardAnswers = { ...(s.cardAnswers ?? {}), [k]: { ...ca, superseded: true } }
+    }
+  }
   if (notes.leaningOptionType) s.leaningOptionType = notes.leaningOptionType
   if (notes.gutFeeling)        s.gutFeeling        = notes.gutFeeling
   if (notes.successPicture)    s.successPicture    = notes.successPicture
@@ -335,11 +343,11 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
 
   // v9: the reflection that goes above the next question, if the model's is good enough. Never substituted.
   const labels = Object.values(s.cardAnswers ?? {}).filter(a => a.exchange === exchangeCount).flatMap(a => a.selectedLabels)
-  const verdict = validateReflection(planner?.reflection, { userText, selectedLabels: labels, onFile: Object.values(s.facts ?? {}) })
+  const verdict = validateReflection(planner?.reflection, { userText, selectedLabels: labels, onFile: Object.values(s.facts ?? {}), previousPrints: s.reflectionPrints })
   const reflection = verdict.ok ? verdict.text : null
   const reflectionMeta = { shown: verdict.ok, reason: verdict.ok ? null : verdict.reason }
   const noteReflection = (state: ChatDecisionState): ChatDecisionState => verdict.ok
-    ? { ...state, reflectionCount: (state.reflectionCount ?? 0) + 1, turnsSinceReflection: 0 }
+    ? { ...state, reflectionCount: (state.reflectionCount ?? 0) + 1, turnsSinceReflection: 0, reflectionPrints: [...(state.reflectionPrints ?? []), reflectionPrint(verdict.text)].slice(-3) }
     : { ...state, turnsSinceReflection: (state.turnsSinceReflection ?? 0) + 1 }
 
   if (ready || nearCeiling) {

@@ -15,39 +15,12 @@
  */
 
 import { NextResponse } from 'next/server'
+import { claimCheckpoint, internalSessionHeaders, releaseClaim } from '@/lib/chat-intake-checkpoint-helpers'
 import { createServiceClient } from '@/lib/supabase'
 import { isNaturalIntakeEnabled } from '@/lib/feature-flags'
 import { assembleSessionInput } from '@/lib/chat-intake-state'
 import { decrypt } from '@/lib/encryption'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
-
-const CLAIM_STALE_MS = 90_000
-
-/** 'claimed' = we hold it; 'held' = someone else is mid-creation; 'unavailable' = column missing / unexpected error (proceed unclaimed). */
-async function claimCheckpoint(supabase: ReturnType<typeof createServiceClient>, chatIntakeId: string): Promise<'claimed' | 'held' | 'unavailable'> {
-  try {
-    const staleBefore = new Date(Date.now() - CLAIM_STALE_MS).toISOString()
-    const { data, error } = await supabase
-      .from('chat_intakes')
-      .update({ checkpoint_claimed_at: new Date().toISOString() })
-      .eq('id', chatIntakeId)
-      .or(`checkpoint_claimed_at.is.null,checkpoint_claimed_at.lt.${staleBefore}`)
-      .select('id')
-    if (error) {
-      console.warn('[ChatIntake Checkpoint] claim unavailable (is sprint_intake_v9_claim.sql applied?):', error.message)
-      return 'unavailable'
-    }
-    return data && data.length > 0 ? 'claimed' : 'held'
-  } catch (e) {
-    console.warn('[ChatIntake Checkpoint] claim threw:', e)
-    return 'unavailable'
-  }
-}
-
-/** Best-effort: lets an immediate retry through after a failed creation instead of waiting out the stale window. */
-async function releaseClaim(supabase: ReturnType<typeof createServiceClient>, chatIntakeId: string): Promise<void> {
-  try { await supabase.from('chat_intakes').update({ checkpoint_claimed_at: null }).eq('id', chatIntakeId) } catch { /* best-effort */ }
-}
 
 export async function POST(req: Request) {
   if (!isNaturalIntakeEnabled()) {
@@ -115,7 +88,7 @@ export async function POST(req: Request) {
     // Conditional write on chat_intakes.checkpoint_claimed_at (supabase/sprint_intake_v9_claim.sql). A claim older than
     // CLAIM_STALE_MS is treated as abandoned. If the column has not been migrated yet the claim is skipped (logged), so
     // deploying this file before the migration cannot break launches — it just leaves the old (unclaimed) behaviour.
-    const claim = await claimCheckpoint(supabase, chatIntakeId)
+    const claim = await claimCheckpoint(supabase as never, chatIntakeId)
     if (claim === 'held') {
       return NextResponse.json({ error: 'This decision is already being set up — one moment.', inProgress: true }, { status: 409 })
     }
@@ -136,12 +109,7 @@ export async function POST(req: Request) {
     const realIp  = req.headers.get('x-real-ip')
     const sessionRes = await fetch(`${baseUrl}/api/session`, {
       method:  'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(req.headers.get('Authorization') ? { Authorization: req.headers.get('Authorization')! } : {}),
-        ...(fwdFor ? { 'x-forwarded-for': fwdFor } : {}),
-        ...(realIp ? { 'x-real-ip': realIp } : {}),
-      },
+      headers: internalSessionHeaders({ authorization: req.headers.get('Authorization'), forwardedFor: fwdFor, realIp }),
       body: JSON.stringify({
         decision_text:  finalDecisionText,
         context_text:   contextText,
@@ -156,7 +124,7 @@ export async function POST(req: Request) {
     const sessionJson = await sessionRes.json().catch(() => null)
     if (!sessionRes.ok || !sessionJson?.id) {
       console.error('[ChatIntake Checkpoint] session creation failed:', sessionRes.status, sessionJson)
-      await releaseClaim(supabase, chatIntakeId)
+      await releaseClaim(supabase as never, chatIntakeId)
       // A rate limit is not "something broke": say so, so the screen can ask the person to wait instead of retrying blindly.
       if (sessionRes.status === 429) {
         return NextResponse.json({ error: sessionJson?.error ?? 'Too many requests — please wait a moment and try again.', rateLimited: true }, { status: 429 })

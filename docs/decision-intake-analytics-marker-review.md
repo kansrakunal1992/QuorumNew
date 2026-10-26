@@ -289,5 +289,11 @@ measured by any existing event**; derive it as `council_execution_started.create
 
 ## Still unresolved
 1. **R2 / R3 cannot be pre-empted in chat.** They are evaluated by `lib/rule-engine.ts` on a *scored vector* of the finished session (R2: identity_alignment ≥ 5 and ambiguity ≥ 4 → the "75 years old" question; R3: decision_discriminating_info ≤ 1 and outcome_uncertainty ≥ 4). Knowing in advance would mean running the scorer before the session exists. They remain the only unavoidable post-summary questions. Not changed; do not derive them.
-2. A later typed correction that contradicts an earlier card tap updates the fact (and the model's `userCorrections`, which the Council context labels as outranking inferences) but the tapped label still appears under "What you chose" and in "Chosen from options". Both are sent, correctly labelled; the label is not hidden because hiding on a heuristic could lose a real selection.
+2. ~~A later typed correction that contradicts an earlier card tap leaves the label under "What you chose".~~ **Closed (gap-closing pass):** when the planner names a corrected slot **and** writes a new value for it, the tap is flagged `superseded` (kept, never deleted); the summary shows the newer words first with "(you earlier chose: …)", and the Council context lists it under "Earlier taps the person later changed" instead of "Chosen from options". Both signals are required so a restated fact can't hide a real selection. Scripted-tested only; whether the live planner names `correctedSlots` reliably is **[live]**.
 3. Everything that needs the live model, a phone, or production traffic (see the live-review protocol).
+
+
+## Gap-closing pass — event / data notes
+* No new events. `decision_state` gains `reflectionPrints` (up to 3 arrays of hashed content-word fingerprints — **hashes, never text**, used only to refuse a near-repeat reflection) and `cardAnswers[*].superseded`.
+* `correctedSlots` is read from the planner's notes and **never persisted**.
+* `lib/chat-intake-checkpoint-helpers.ts` now holds the claim / release / internal-header logic (route files can only export handlers); it is unit-tested with a fake database. The route itself is still untested end to end **[live]**.

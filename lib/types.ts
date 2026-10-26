@@ -289,6 +289,8 @@ export interface ChatCardAnswer {
   usedFreeText:   boolean
   selectedAll:    boolean
   exchange:       number
+  /** The person later changed their mind about this slot in their own words (the tap is kept, flagged — never silently dropped). */
+  superseded?:    boolean
 }
 
 // The running notes state a fast, cheap model updates after every chat turn.
@@ -352,6 +354,8 @@ export interface ChatDecisionState {
   reflectionCount?:       number                           // reflections shown (counts only; the text lives in the transcript)
   turnsSinceReflection?:  number                           // consecutive question turns without a grounded reflection
   flowVersion?:           string                           // intake flow identifier, for historical comparison (lib/chat-intake-depth.ts INTAKE_FLOW_VERSION)
+  correctedSlots?:        string[]                         // notes only (never persisted): slots whose earlier answer the person has just changed
+  reflectionPrints?:      string[][]                       // hashed word-sets of recent reflections — to stop near-repeats (hashes, never text)
   userEditedDecision?:    string                           // the person's own rewrite of the decision — authoritative over every Quorum inference
 }
 

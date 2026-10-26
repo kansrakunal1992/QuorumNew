@@ -53,7 +53,7 @@ const CONTENT_KEYS = [
   'decisionStatement', 'decisionKind', 'options', 'leaningOptionType', 'stakeholders',
   'deadline', 'reversibility', 'assumptions', 'unknowns', 'evidence', 'decisionThreshold',
   'initialReaction', 'gutFeeling', 'successPicture', 'userCorrections',
-  'facts', 'unknownFacts', 'naSlots', 'contradictions', 'stakes',
+  'facts', 'unknownFacts', 'naSlots', 'contradictions', 'stakes', 'correctedSlots',
 ] as const
 
 function contentView(state: ChatDecisionState): Record<string, unknown> {
@@ -126,6 +126,8 @@ RULES FOR THE NEXT QUESTION ("next"):
 
 REFLECTION ("reflection"): one short line, shown ABOVE your next question, that gives something back. Use it for ONE of: a useful distinction between two things they said; a connection between two of their answers; a possible tension; or why the next question matters to the advice. Rules: 8–40 words; built only from what THEY said or tapped (their own specifics, not generic wisdom); provisional wording ("may", "sounds like", "could be", "I can't tell yet"); never a question; never advice or a recommendation; never guess their feelings or motives; never just repeat the options they tapped; never start with an acknowledgement ("Got it", "Thanks", "Makes sense"). If REFLECTION DUE says it is due, you MUST write one. If you have nothing grounded to say, return null — a missing reflection is better than a vague one.
 
+CORRECTIONS ("notes.correctedSlots"): if the person CLEARLY changes their mind about something they answered earlier (including an option they tapped), put that slot's key in "correctedSlots" AND write the new value in "facts" for the same key. Only when they actually said so; never to tidy up, never because a later answer merely adds detail.
+
 STAKES ("notes.stakes"): "low" (easily undone, small money, few people affected), "medium", or "high" (hard to undo, large money or income, other people depend on it). Judge it from the first message and revise only if they tell you something that changes it. It sets how many questions are worth asking, so do not inflate it.
 
 SMART FRIEND ("smartFriendQuestion"): if you had to advise this person right now, what ONE fact would you still ask for that changes your advice? One short question, or null if nothing material is missing. Also set "smartFriendGap" to exactly one of: "tension", "validation", "feasibility", "who_affected", "reversibility", "timing". Only ask when that gap is genuinely still open and would change the advice — never about something they already told you or already answered by tapping. If "contradictions" holds a tension that would change your advice, make this the question that asks the person which side is closer to the truth (neutral wording, no judgement).
@@ -134,7 +136,7 @@ If the latest message is a question about Quorum itself (privacy, pricing, how i
 
 Return ONLY this JSON object, nothing else:
 {
-  "notes": { "decisionStatement": string, "decisionKind": string, "options": [{"label": string, "type": "act"|"dont_act"|"wait"|"gather_info"|"experiment"}], "leaningOptionType": string, "stakeholders": [{"name": string, "role": string, "consultReason": "expertise"|"challenge"|"approval"|"affected"|"trust"}], "deadline": string, "stakes": "low"|"medium"|"high", "reversibility": "reversible"|"somewhat_reversible"|"irreversible", "assumptions": [string], "unknowns": [string], "evidence": [string], "decisionThreshold": string, "initialReaction": string, "gutFeeling": string, "successPicture": string, "userCorrections": [string], "facts": { "<slot key>": string }, "unknownFacts": [string], "naSlots": [string], "contradictions": [string] },
+  "notes": { "decisionStatement": string, "decisionKind": string, "options": [{"label": string, "type": "act"|"dont_act"|"wait"|"gather_info"|"experiment"}], "leaningOptionType": string, "stakeholders": [{"name": string, "role": string, "consultReason": "expertise"|"challenge"|"approval"|"affected"|"trust"}], "deadline": string, "stakes": "low"|"medium"|"high", "correctedSlots": [string], "reversibility": "reversible"|"somewhat_reversible"|"irreversible", "assumptions": [string], "unknowns": [string], "evidence": [string], "decisionThreshold": string, "initialReaction": string, "gutFeeling": string, "successPicture": string, "userCorrections": [string], "facts": { "<slot key>": string }, "unknownFacts": [string], "naSlots": [string], "contradictions": [string] },
   "answeredPending": boolean,
   "aboutQuorum": boolean,
   "next": { "slotKey": string, "question": string, "chips": [string] } | null,

@@ -39,7 +39,8 @@ import { pushSessionId } from '@/lib/storage'            // Phase 0: "I'm done" 
 import { track } from '@/lib/track'                      // Phase 0: first-party events
 import { buildLeanChoices, matchSavedLean, PRIORITIES } from '@/lib/chat-intake-lean'   // v9: lean + priority now live on this screen
 import type { LeanChoice } from '@/lib/chat-intake-lean'
-import { INTAKE_FLOW_VERSION, councilReadiness, readinessLine, summaryProvenance } from '@/lib/chat-intake-depth'
+import { INTAKE_FLOW_VERSION, councilReadiness, fullAnswerFor, readinessLine, summaryProvenance } from '@/lib/chat-intake-depth'
+import ExpandableText from '@/components/ExpandableText'
 import { viewportBucket } from '@/lib/chat-intake-cards'   // v9: readiness + provenance
 import { intakeReadiness } from '@/lib/chat-intake-cards'    // v8: readiness marker
 import NextDecisionPrompt from '@/components/NextDecisionPrompt'  // Phase 1: continuity ending
@@ -127,6 +128,8 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [leanPick, setLeanPick]         = useState<LeanChoice | null>(null)
   const [priorityPick, setPriorityPick] = useState<string | null>(null)
   const [launchError, setLaunchError]   = useState<string | null>(null)
+  const [userMessages, setUserMessages] = useState<string[]>([])         // the person's own messages, to expand clipped answers
+  const [leanOpen, setLeanOpen]         = useState<Record<number, boolean>>({})   // lean choices expanded to their full wording
   const [derivedReview, setDerivedReview] = useState(false)   // chat-covered Examiner answers are shown on the reveal screen, confirmed by Convene
   const [saveFailed, setSaveFailed]   = useState(false)         // the Examiner save failed 3 times: offer "continue anyway"
   const [feedback, setFeedback]       = useState<string | null>(null)
@@ -177,6 +180,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         setEditedText(s.decisionStatement ?? '')
         const firstUser = ((d.messages ?? []) as { role: string; content: string }[]).find(m => m.role === 'user')?.content?.trim() ?? ''
         setOriginal(firstUser)
+        setUserMessages(((d.messages ?? []) as { role: string; content: string }[]).filter(m => m.role === 'user').map(m => m.content))
         setLeanPick(matchSavedLean(buildLeanChoices(s.options), s.chosenLean, s.chosenLeanLabel))
         setPriorityPick(s.optimizationPriority ?? null)
         setSubPhase('reflect')
@@ -537,7 +541,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
               {editedText || 'The decision, once I have enough to name it'}
             </div>
             {prov.youTold.length > 0 && block('What you told me', (
-              <ul style={ul}>{prov.youTold.map((r, i) => <li key={`t${i}`}>{r.label}: {r.value}</li>)}</ul>
+              <ul style={ul}>{prov.youTold.map((r, i) => <li key={`t${i}`}>{r.label}: <ExpandableText text={r.value} full={fullAnswerFor(r.value, userMessages)} /></li>)}</ul>
             ))}
             {prov.youChose.length > 0 && block('What you chose', (
               <ul style={ul}>{prov.youChose.map((r, i) => <li key={`c${i}`}>{r.label}: {r.values.join('; ')}{r.addedWords ? ' (plus your own words)' : ''}</li>)}</ul>
@@ -550,10 +554,10 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
                 <li key={`n${i}`}>{r.label}{r.why === 'not_asked' ? ' \u2014 not asked; I\u2019ll flag it to the Council' : r.why === 'skipped' ? ' \u2014 you skipped this' : r.why === 'gap' ? ' \u2014 still open, I won\u2019t guess' : ' \u2014 not known yet'}</li>
               ))}</ul>
             ))}
-            {!!state.stakeholders?.length && (
+            {state.stakeholders?.some(x => !/^(you|me|myself|i)$/i.test(x.name.trim())) && (
               <div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-4)', marginBottom: 4 }}>Who's involved</div>
-                <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.stakeholders.map(s => s.name).join(', ')}</div>
+                <div style={{ fontSize: 14.5, color: 'var(--text-2)' }}>{state.stakeholders.filter(x => !/^(you|me|myself|i)$/i.test(x.name.trim())).map(s => s.name).join(', ')}</div>
               </div>
             )}
           </div>
@@ -581,10 +585,22 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
               <div role="group" aria-labelledby="lean-q">
                 <div id="lean-q" style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--text-1)', marginBottom: 8 }}>Where are you leaning?</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {buildLeanChoices(state.options).map((c, i) => (
-                    <button key={`${i}-${c.fullLabel}`} type="button" title={c.fullLabel} aria-pressed={leanPick?.fullLabel === c.fullLabel}
-                      onClick={() => setLeanPick(c)} style={chip(leanPick?.fullLabel === c.fullLabel)}>{c.label}</button>
-                  ))}
+                  {buildLeanChoices(state.options).map((c, i) => {
+                    const sel = leanPick?.fullLabel === c.fullLabel
+                    const clipped = !c.isUnsure && c.fullLabel !== c.label
+                    // Clipped on a phone by default; the full wording opens in place (automatically once chosen, or via the "+" control).
+                    const open = clipped && (leanOpen[i] ?? sel)
+                    return (
+                      <span key={`${i}-${c.fullLabel}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%' }}>
+                        <button type="button" title={c.fullLabel} aria-pressed={sel} onClick={() => setLeanPick(c)} style={chip(sel)}>{open ? c.fullLabel : c.label}</button>
+                        {clipped && (
+                          <button type="button" aria-expanded={open} aria-label={open ? 'Show shorter wording' : 'Show full wording'}
+                            onClick={() => setLeanOpen(o => ({ ...o, [i]: !open }))}
+                            style={{ background: 'none', border: 'none', minWidth: 32, minHeight: 32, fontSize: 15, color: 'var(--text-3)', cursor: 'pointer' }}>{open ? '\u2212' : '+'}</button>
+                        )}
+                      </span>
+                    )
+                  })}
                 </div>
               </div>
               <div role="group" aria-labelledby="prio-q">

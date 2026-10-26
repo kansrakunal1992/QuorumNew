@@ -34,12 +34,14 @@ interface Props {
 
 export default function ChatCardStep({ primary, companion, onSubmit, onFreeTextOpen, onTap, onCompanionShown, initialPrimary, initialCompanion }: Props) {
   const [firstSel, setFirstSel] = useState<CardSelection | null>(initialCompanion && initialPrimary ? initialPrimary : null)
+  const [secondMounted, setSecondMounted] = useState<boolean>(!!(initialCompanion && initialPrimary))
   const [announce, setAnnounce] = useState('')
   const headingRef = useRef<HTMLDivElement>(null)
   const open2 = !!companion && !!firstSel
 
   useEffect(() => {
     if (!open2 || !companion) return
+    setSecondMounted(true)
     setAnnounce(`Next question: ${companion.title}`)
     onCompanionShown?.(companion)
     setTimeout(() => headingRef.current?.focus(), 0)
@@ -50,37 +52,42 @@ export default function ChatCardStep({ primary, companion, onSubmit, onFreeTextO
     return <ChatCardGroup group={primary} initial={initialPrimary} onTap={onTap} onFreeTextOpen={() => onFreeTextOpen?.(primary)} onSubmit={sel => onSubmit(sel, null)} />
   }
 
-  if (!firstSel) {
-    return <ChatCardGroup group={primary} initial={initialPrimary} onTap={onTap} onFreeTextOpen={() => onFreeTextOpen?.(primary)} onSubmit={sel => setFirstSel(sel)} />
-  }
-
-  const summary = serializeSelection(primary, firstSel)
+  const summary = firstSel ? serializeSelection(primary, firstSel) : ''
+  // Both groups stay MOUNTED once opened and are only hidden: tapping "Change" on the first answer must bring it back with
+  // every selection and typed word intact, and must not wipe what was already entered in the second group.
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignSelf: 'stretch', maxWidth: '100%' }}>
-      <button
-        type="button"
-        onClick={() => setFirstSel(null)}
-        aria-label={`Your answer so far: ${summary}. Change it.`}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', minHeight: 44,
-          padding: '9px 14px', borderRadius: 14, border: '1px solid var(--border-mid)', background: 'var(--bg-card)',
-          color: 'var(--text-2)', fontSize: 14.5, cursor: 'pointer',
-        }}
-      >
-        <span aria-hidden="true" style={{ fontWeight: 700, color: 'var(--gold)' }}>{'\u2713'}</span>
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{summary}</span>
-        <span style={{ fontSize: 13, color: 'var(--text-3)', textDecoration: 'underline' }}>Change</span>
-      </button>
-      <div ref={headingRef} tabIndex={-1} style={{ outline: 'none' }}>
-        <ChatCardGroup
-          group={companion}
-          showTitle
-          initial={initialCompanion}
-          onTap={onTap}
-          onFreeTextOpen={() => onFreeTextOpen?.(companion)}
-          onSubmit={sel => onSubmit(firstSel, sel)}
-        />
+      <div hidden={!!firstSel}>
+        <ChatCardGroup group={primary} initial={initialPrimary} onTap={onTap} onFreeTextOpen={() => onFreeTextOpen?.(primary)} onSubmit={sel => setFirstSel(sel)} />
       </div>
+      {firstSel && (
+        <button
+          type="button"
+          onClick={() => setFirstSel(null)}
+          aria-label={`Your answer so far: ${summary}. Change it.`}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', minHeight: 44,
+            padding: '9px 14px', borderRadius: 14, border: '1px solid var(--border-mid)', background: 'var(--bg-card)',
+            color: 'var(--text-2)', fontSize: 14.5, cursor: 'pointer',
+          }}
+        >
+          <span aria-hidden="true" style={{ fontWeight: 700, color: 'var(--gold)' }}>{'\u2713'}</span>
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{summary}</span>
+          <span style={{ fontSize: 13, color: 'var(--text-3)', textDecoration: 'underline' }}>Change</span>
+        </button>
+      )}
+      {secondMounted && (
+        <div ref={headingRef} tabIndex={-1} hidden={!firstSel} style={{ outline: 'none' }}>
+          <ChatCardGroup
+            group={companion}
+            showTitle
+            initial={initialCompanion}
+            onTap={onTap}
+            onFreeTextOpen={() => onFreeTextOpen?.(companion)}
+            onSubmit={sel => { if (firstSel) onSubmit(firstSel, sel) }}
+          />
+        </div>
+      )}
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{announce}</div>
     </div>
   )
