@@ -31,6 +31,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
+import { newUserPrefDefaults } from '@/lib/notification-defaults'
 
 export async function POST(req: Request) {
   try {
@@ -170,6 +171,10 @@ export async function POST(req: Request) {
         user_id:    userId,
         user_email: userEmail ?? null,
         ...(existingPref?.signup_method ? {} : { signup_method: authMethod ?? null }),
+        // New people only (no row yet): the weekly note starts ON. An existing row -- including one that never chose a
+        // cadence -- is untouched, and an explicit choice (habit card / notification settings) always wins because it
+        // writes to the same column independently of this. See lib/notification-defaults.ts.
+        ...newUserPrefDefaults(existingPref),
       }, { onConflict: 'user_id' })
 
     if (prefError) {

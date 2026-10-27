@@ -6,9 +6,10 @@
 //   0 4 * * 0
 //
 // WHO gets it -- all must hold:
-//   o chose "Weekly" in the second-decision card (user_preferences.brief_cadence = 'weekly').
-//     Nobody is enrolled by default; "only when I'm stuck" / "only for big
-//     decisions" are real choices that mean no weekly email.
+//   o has brief_cadence = 'weekly'. Since Oct 2026 that is the DEFAULT for people who signed in for the first
+//     time after the change (set once, when their preferences row is first created -- see
+//     lib/notification-defaults.ts); people who already existed are NOT enrolled unless they chose Weekly
+//     themselves. "Only when I'm stuck" / "only for big decisions" are real choices that mean no weekly email.
 //   o weekly_brief_opted_out is not true (one-click unsubscribe in the email).
 //   o has made a decision, but NOT in the last 3 days (already engaged -- do not nag).
 //   o has not been sent a weekly brief in the last 6 days.

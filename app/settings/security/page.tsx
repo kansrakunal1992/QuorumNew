@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { clearUserEmail } from '@/lib/storage'
+import { signOutOfThisDevice, signOutOfAllDevices } from '@/lib/sign-out'
 import SettingsNav from '@/components/SettingsNav'
 import SettingsCard from '@/components/SettingsCard'
 
@@ -60,17 +60,8 @@ export default function SecurityCenterPage() {
     setSigningOut(true)
     setSignOutError(null)
     try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.signOut()
-      if (error) throw error
-      // supabase.auth.signOut() only clears the Supabase session — it has no
-      // idea quorum_user_email exists. Without this, the homepage still reads
-      // "Sessions linked to X" straight out of localStorage (app/page.tsx
-      // seeds that state directly from this key on mount, not from a live
-      // session check), EmailCaptureCard stays hidden thinking it's already
-      // linked, and the onboarding tours skip their email-link steps — the
-      // app looks signed in everywhere even though the session is gone.
-      clearUserEmail()
+      // Clears the Supabase session AND the locally stored email (lib/sign-out.ts explains why both).
+      await signOutOfThisDevice()
       setSignOutDone('device')
       setTimeout(() => router.push('/'), 1800)
     } catch (e: unknown) {
@@ -85,11 +76,8 @@ export default function SecurityCenterPage() {
     setSignOutAll(true)
     setSignOutError(null)
     try {
-      const supabase = createClient()
-      // scope: 'global' invalidates all refresh tokens for this user
-      const { error } = await supabase.auth.signOut({ scope: 'global' })
-      if (error) throw error
-      clearUserEmail()
+      // scope 'global' invalidates every refresh token for this user.
+      await signOutOfAllDevices()
       setSignOutDone('all')
       setTimeout(() => router.push('/'), 1800)
     } catch (e: unknown) {

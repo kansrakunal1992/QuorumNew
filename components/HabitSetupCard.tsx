@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { CUES, CADENCES, readHabitPrefs, writeHabitPrefs, type HabitPrefs } from '@/lib/habit-prefs'
 import { getAuthHeaders } from '@/lib/auth-headers'
 import { track } from '@/lib/track'
+import { NEW_USER_DEFAULT_CADENCE } from '@/lib/notification-defaults'
 
 interface Props {
   surface: string
@@ -28,7 +29,9 @@ interface Props {
 
 export default function HabitSetupCard({ surface, linked, onSaved }: Props) {
   const [cue, setCue]         = useState<string | null>(null)
-  const [cadence, setCadence] = useState<string | null>(null)
+  // Weekly is pre-selected: it is the default for new people (lib/notification-defaults.ts). Tapping it again clears it;
+  // nothing is saved until they press Save, and "Not now" still records an explicit decline.
+  const [cadence, setCadence] = useState<string | null>(NEW_USER_DEFAULT_CADENCE)
   const [state, setState]     = useState<'idle' | 'saving' | 'saved' | 'hidden' | 'error'>('idle')
 
   // Already answered on this device -> do not ask again.

@@ -15,6 +15,8 @@ import AuthPanel from '@/components/AuthPanel'
 import ContextIngestionPanel from '@/components/ContextIngestionPanel'          // Context Ingestion (Elite)
 import SettingsNav from '@/components/SettingsNav'
 import SettingsCard from '@/components/SettingsCard'
+import { signOutOfThisDevice } from '@/lib/sign-out'
+import { clearUserEmail } from '@/lib/storage'
 
 const CONSENT_KEY = 'quorum_cookie_consent'
 
@@ -62,6 +64,9 @@ export default function PrivacyCenterPage() {
   const [sessionEmail,   setSessionEmail]   = useState<string | null>(null)
   const [sessionChecked, setSessionChecked] = useState(false)
   const [authToken,      setAuthToken]      = useState<string | null>(null)
+  const [signingOut,     setSigningOut]     = useState(false)
+  const [signedOut,      setSignedOut]      = useState(false)
+  const [signOutError,   setSignOutError]   = useState<string | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -80,6 +85,23 @@ export default function PrivacyCenterPage() {
     }
     setConsentLoaded(true)
   }, [])
+
+  // Sign out of this device. Sign-out lived only on the Security Center tab, which nothing in the app links to, so
+  // people could not find it. Shared with the Security page and the delete flow via lib/sign-out.ts, which also clears
+  // the locally stored email (otherwise the app keeps looking signed in after the session is gone).
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    setSignOutError(null)
+    try {
+      await signOutOfThisDevice()
+      setSignedOut(true)
+      setTimeout(() => router.push('/'), 1500)
+    } catch (e: unknown) {
+      setSignOutError(e instanceof Error ? e.message : 'Sign out failed. Please try again.')
+    } finally {
+      setSigningOut(false)
+    }
+  }
 
   const saveConsent = () => {
     writeConsent({ necessary: true, functional, analytics, ts: Date.now() })
@@ -151,7 +173,9 @@ export default function PrivacyCenterPage() {
         return
       }
       // Success — sign out and redirect to home
-      await supabase.auth.signOut()
+      // The account is already gone server-side, so a sign-out error here must NOT turn a successful deletion into
+      // "Deletion failed"; the session is dead either way. (Also clears the stored email, which this path used to leave.)
+      try { await signOutOfThisDevice() } catch { clearUserEmail() }
       setDeleteSubmitted(true)
       setShowDeleteModal(false)
       setDeleteConfirm('')
@@ -203,6 +227,41 @@ export default function PrivacyCenterPage() {
         <SettingsNav active="privacy" />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 24 }}>
+
+          {/* Your account / Sign out */}
+          {sessionChecked && sessionEmail && (
+            <SettingsCard title="Your account">
+              <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '0 0 14px' }}>
+                Signed in as <strong style={{ color: 'var(--text-1)', fontWeight: 600 }}>{sessionEmail}</strong>
+              </p>
+              {signedOut ? (
+                <p role="status" style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>
+                  You&rsquo;re signed out. Taking you home&hellip;
+                </p>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    style={{ fontSize: 13, padding: '9px 18px', minHeight: 40 }}
+                  >
+                    {signingOut ? 'Signing out\u2026' : 'Sign out'}
+                  </button>
+                  <Link
+                    href="/settings/security"
+                    style={{ fontSize: 12.5, color: 'var(--text-4)', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                  >
+                    Sign out of all devices
+                  </Link>
+                </div>
+              )}
+              {signOutError && (
+                <p role="alert" style={{ fontSize: 12.5, color: 'var(--red, #c0392b)', margin: '12px 0 0' }}>{signOutError}</p>
+              )}
+            </SettingsCard>
+          )}
 
           {/* ── Consent Preferences ─────────────────────────────────────────── */}
           <SettingsCard title="Cookie & Storage Preferences">
