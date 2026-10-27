@@ -143,3 +143,45 @@ export function dependencyContextLine(dep: DependencyState | null | undefined): 
   if (!dep?.text) return null
   return `${DEPENDS_LINE_PREFIX}${dep.text}${dep.choice ? ` (${dep.choice})` : ''}`
 }
+
+// ── Decision helpers extracted so they can be unit-tested (they used to be inline in route code) ──────
+
+/** The text the fresh chat is pre-filled with when the person chooses to settle the upstream decision first. */
+export function upstreamPrefill(dep: string): string {
+  return `I need to decide: ${dep}`
+}
+
+export interface R1DowngradeInput {
+  ruleMode:     string | null | undefined
+  redirectRule: string | null | undefined
+  intakeMode:   string | null | undefined
+  contextText:  string
+}
+
+/**
+ * Examiner rule R1 ("an upstream decision must resolve first") normally blocks synthesis AFTER the Council has run.
+ * If the person already answered the same question in chat and chose to keep going, blocking again would override a
+ * choice they made on purpose. A dependency with no recorded choice, or a "park" choice, is never downgraded.
+ */
+export function shouldDowngradeR1(i: R1DowngradeInput): boolean {
+  if (i.ruleMode !== 'REDIRECT' || i.redirectRule !== 'R1' || i.intakeMode !== 'chat') return false
+  return readCoverageFromContext(i.contextText).dependency?.choice === 'keep_going'
+}
+
+export interface S0Input {
+  decisionWordCount: number
+  effectiveMode:     string | null | undefined
+  intakeMode:        string | null | undefined
+  examinerInChat:    boolean
+}
+
+/**
+ * S0 ("subject orientation") exists to deepen a THIN brief. A chat session's brief was already filled slot by slot
+ * (lib/chat-intake-brief.ts), so with Examiner-in-chat on, S0 would only re-ask what the chat covered and force a
+ * separate quick-check step. Classic-intake sessions, and everything with the flag off, are unchanged.
+ */
+export function shouldAskS0(i: S0Input): boolean {
+  if (i.effectiveMode === 'REDIRECT') return false
+  if (i.examinerInChat && i.intakeMode === 'chat') return false
+  return i.decisionWordCount < 25
+}

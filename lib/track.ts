@@ -26,6 +26,7 @@ export type TrackEventName =
   | 'another_decision_clicked'
   | 'park_started'
   | 'park_saved'
+  | 'park_pivot_started'
   | 'tally_seen'
   | 'auth_prompt_seen'
   | 'auth_started'

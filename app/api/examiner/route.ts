@@ -62,8 +62,8 @@ import { checkR7Resolvable }     from '@/lib/examiner-resolvability-check'  // A
 import { forwardTierHeaders }    from '@/lib/tier-forward'
 import { runLocalContextLookup } from '@/lib/web-context-lookup'  // PR2 — local/regulatory/market context
 import { checkChatCoverage }     from '@/lib/examiner-derive'      // Natural Intake v1 — derive-and-confirm
-import { readCoverageFromContext } from '@/lib/chat-intake-gates'   // Examiner-in-chat: what the chat already recorded
-import { isNaturalIntakeEnabled } from '@/lib/feature-flags'       // Natural Intake v1
+import { readCoverageFromContext, shouldAskS0, shouldDowngradeR1 } from '@/lib/chat-intake-gates'   // Examiner-in-chat: what the chat already recorded
+import { isNaturalIntakeEnabled, isExaminerInChatEnabled } from '@/lib/feature-flags'       // Natural Intake v1
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PR1/PR2 (readiness gate foundation): criticality tiers
@@ -489,13 +489,14 @@ export async function GET(req: Request) {
     // time here, after the Council has run, would override a choice they made on purpose. Downgrade R1 to
     // GATE (the dependency stays on record in context_text and reaches the Council as an open unknown). A
     // dependency the chat never resolved (no recorded choice) is left to this block exactly as before.
-    if (ruleResult.mode === 'REDIRECT' && redirectRule === 'R1'
-        && (sessionRes.data as { intake_mode?: string } | null)?.intake_mode === 'chat') {
-      const chatDep = readCoverageFromContext(contextText).dependency
-      if (chatDep?.choice === 'keep_going') {
-        effectiveMode = 'GATE'
-        console.log(`[Examiner GET] R1 downgraded REDIRECT->GATE for session ${sessionId}: person chose to keep going in chat (${chatDep.text})`)
-      }
+    if (shouldDowngradeR1({
+      ruleMode:     ruleResult.mode,
+      redirectRule,
+      intakeMode:   (sessionRes.data as { intake_mode?: string } | null)?.intake_mode,
+      contextText,
+    })) {
+      effectiveMode = 'GATE'
+      console.log(`[Examiner GET] R1 downgraded REDIRECT->GATE for session ${sessionId}: person chose to keep going in chat`)
     }
 
     // ── SB-2: S0 trigger — thin brief only (context paste no longer suppresses) ─
@@ -507,7 +508,12 @@ export async function GET(req: Request) {
     //
     // Suppressed in REDIRECT mode (redirect IS the message in that case).
     const decisionWordCount = decisionText.trim().split(/\s+/).filter(Boolean).length
-    const shouldAddS0       = decisionWordCount < 25 && effectiveMode !== 'REDIRECT'
+    const shouldAddS0       = shouldAskS0({
+      decisionWordCount,
+      effectiveMode,
+      intakeMode:     (sessionRes.data as { intake_mode?: string } | null)?.intake_mode,
+      examinerInChat: isExaminerInChatEnabled(),
+    })
 
     // ── SB-2: Slot budget ─────────────────────────────────────────────────────
     // Max 3 questions total. New budget:

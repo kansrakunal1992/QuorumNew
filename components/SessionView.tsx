@@ -17,7 +17,7 @@ import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
 import { computeReadiness } from '@/lib/readiness'   // PR3/PR4 — readiness gate
-import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import { isUnifiedSessionEnabled, isEarlyCouncilStartEnabled } from '@/lib/feature-flags'
 import InitialInstinctCapture from '@/components/InitialInstinctCapture'
 import { parseOptionLabels } from '@/lib/chat-intake-context'
 import QuorumPrediction       from '@/components/QuorumPrediction'
@@ -42,6 +42,7 @@ import GraphNudgeLine       from './GraphNudgeLine'        // QW-3: Graph nudge 
 import OpeningCeremonyCard  from './OpeningCeremonyCard'  // S2-07: ritual beat before personas stream (sessions 1–3)
 import TensionInterstitial  from './TensionInterstitial'  // S3-01: pre-synthesis tension beat
 import { buildNewInfoMessage, parsePersonaContent } from '@/lib/persona-history'  // challenge broadcast + thread parsing
+import { councilGates } from '@/lib/council-gates'   // early Council start: fetch vs reveal
 import EarlyEchoCard        from './EarlyEchoCard'         // Sprint: second-use early signal, sessions 2-4
 import MirrorEchoCard       from './MirrorEchoCard'        // Sprint: live in-session Mirror signal, sessions 5+
 import type { Lean }        from './TensionInterstitial'
@@ -1052,19 +1053,27 @@ export default function SessionView({ session: initialSession, initialMessages =
   // decoupled from any card's completion/failure, so one card erroring can
   // never keep the others from being revealed (or, more importantly per
   // canStream below, from fetching in the first place).
+  // Early Council start: advisors fetch before the reveal gates open (see canStream below), so the REVEAL must wait
+  // for BOTH gates -- otherwise cards would fade in while "Quorum's Read" is still on screen. Flag off: councilRevealed
+  // is always true and this effect is identical to before.
+  const { canStream: councilCanStream, councilRevealed } = councilGates({
+    earlyStart: isEarlyCouncilStartEnabled(),
+    examinerSubmitted, notReadyBlocked, ceremonyGateOpen, quorumReadGateOpen,
+  })
   useEffect(() => {
-    if (!(examinerSubmitted && ceremonyGateOpen)) return
+    if (!(examinerSubmitted && ceremonyGateOpen && councilRevealed)) return
     if (streamUnlockedUpTo >= PERSONA_ORDER.length) return
     const t = setTimeout(() => setStreamUnlockedUpTo(c => c + 1), 260)
     return () => clearTimeout(t)
-  }, [examinerSubmitted, ceremonyGateOpen, streamUnlockedUpTo])
+  }, [examinerSubmitted, ceremonyGateOpen, councilRevealed, streamUnlockedUpTo])
 
   // S3-01: Tension interstitial — fires once all 6 advisors have finished AND the user
   // has answered the follow-up questions (the exact moment synthesis would otherwise
   // begin). Not gated by session count — this reflects THIS decision's actual tension,
   // not an onboarding ritual, so it's valuable for every session.
-  const interstitialActive   = allPersonasDone && examinerReady && !interstitialDismissed && !redirectBlocked
-  const interstitialGateOpen = !interstitialActive
+  // The tension interstitial shows advisor leans and synthesis follows it, so both wait for the reveal (early start only).
+  const interstitialActive   = allPersonasDone && examinerReady && !interstitialDismissed && !redirectBlocked && councilRevealed
+  const interstitialGateOpen = !interstitialActive && councilRevealed
 
   const handleExaminerComplete = useCallback(
     (
@@ -2488,7 +2497,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       // brand-new session id) would still see the PRIOR session's
                       // persona text here, rendering stale cached content instead of
                       // running the six advisors fresh against the new decision text.
-                      canStream={isHydrated || (examinerSubmitted && ceremonyGateOpen && quorumReadGateOpen && !notReadyBlocked)}
+                      canStream={isHydrated || councilCanStream}
                       initialExaminerContext={examinerInitialContext[key]}
                       // R6: match date/session id are session-wide (which past decision
                       // matched) and passed to every persona unconditionally — harmless

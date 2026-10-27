@@ -68,6 +68,9 @@ export default function NaturalIntakeClient() {
   // Phase 1: bumped when a new decision starts so the home history (and the
   // counts derived from it) refetch instead of staying frozen at page load.
   const [historyVersion, setHistoryVersion] = useState(0)
+  // Remounts ChatIntake for a true fresh chat when the person moves to the upstream decision they parked on
+  // (its bubbles / brief state live inside the component, so resetting chatIntakeId alone would not clear them).
+  const [chatKey, setChatKey] = useState(0)
 
   // Phase 0: one landing_view per mount of the front door.
   useEffect(() => { track('landing_view', { surface: 'natural_intake' }) }, [])
@@ -222,6 +225,7 @@ export default function NaturalIntakeClient() {
     setGrantExtra(false)
     setPhase('chat')
     setHistoryVersion(v => v + 1)
+    setChatKey(k => k + 1)
     try { window.scrollTo(0, 0) } catch {}
   }
 
@@ -238,6 +242,8 @@ export default function NaturalIntakeClient() {
     >
       {phase === 'chat' && (
         <ChatIntake
+          key={`chat-${chatKey}`}
+          onStartUpstream={handleNewDecision}
           chatIntakeId={chatIntakeId}
           deviceId={deviceId}
           grantExtraExchanges={grantExtra}

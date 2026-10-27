@@ -134,6 +134,18 @@ export function isExaminerInChatEnabled(): boolean {
   return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_EXAMINER_IN_CHAT === 'true'
 }
 
+// ── Early Council start (Oct 2026) ───────────────────────────────────────────
+// Sessions 1-3 hold the six advisors back until the person has (a) cleared the Opening Ceremony and (b) dismissed
+// "Quorum's Read" -- so the Council sits idle for however long the person takes to read the hypothesis. ON: advisors
+// FETCH as soon as the Examiner is done, and the REVEAL (cards fading in, the tension interstitial, synthesis) stays
+// behind those same two gates, so hypothesis-before-advisors ordering is unchanged. The text is simply already there
+// when the person gets to it. OFF (default): byte-identical to before. Independent of the Natural Intake flags.
+// Trade-off: a person who abandons while reading the hypothesis has already spent the six advisor calls.
+// To enable: NEXT_PUBLIC_EARLY_COUNCIL_START=true, then redeploy (baked in at build time).
+export function isEarlyCouncilStartEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_EARLY_COUNCIL_START === 'true'
+}
+
 // ── Natural Intake — connector sub-flags (Phase 2–4) ─────────────────────────
 // Each external connector clears its own approval process on its own
 // timeline (Slack Marketplace review, Google verification, Microsoft

@@ -164,3 +164,101 @@ describe('B — detection edge cases', () => {
     expect(detectUpstreamDecision('Once I\u2019ve decided about my visa.')).toBe(detectUpstreamDecision("Once I've decided about my visa."))
   })
 })
+
+import { shouldDowngradeR1, shouldAskS0, upstreamPrefill } from '../lib/chat-intake-gates'
+
+describe('R1 downgrade — the Examiner never re-blocks a dependency the person already answered in chat', () => {
+  const ctx = (choice?: string) => `Kind of decision: A job offer\n${DEPENDS_LINE_PREFIX}move to Pune${choice ? ` (${choice})` : ''}`
+  const input = (o: Record<string, unknown> = {}) => ({ ruleMode: 'REDIRECT', redirectRule: 'R1', intakeMode: 'chat', contextText: ctx('keep_going'), ...o })
+  it('downgrades when the person chose to keep going', () => {
+    expect(shouldDowngradeR1(input())).toBe(true)
+  })
+  it('does NOT downgrade a dependency with no recorded choice (the original R1 block stands)', () => {
+    expect(shouldDowngradeR1(input({ contextText: ctx() }))).toBe(false)
+  })
+  it('does NOT downgrade a parked decision', () => {
+    expect(shouldDowngradeR1(input({ contextText: ctx('park_this') }))).toBe(false)
+  })
+  it('does NOT downgrade when no dependency was recorded at all', () => {
+    expect(shouldDowngradeR1(input({ contextText: 'Kind of decision: A job offer' }))).toBe(false)
+  })
+  it('only ever touches R1 — an R7 redirect is left to its own resolvability check', () => {
+    expect(shouldDowngradeR1(input({ redirectRule: 'R7' }))).toBe(false)
+  })
+  it('only ever touches a REDIRECT', () => {
+    expect(shouldDowngradeR1(input({ ruleMode: 'GATE' }))).toBe(false)
+    expect(shouldDowngradeR1(input({ ruleMode: null }))).toBe(false)
+  })
+  it('never applies to classic-intake sessions, even if a stray line is present', () => {
+    expect(shouldDowngradeR1(input({ intakeMode: 'classic' }))).toBe(false)
+    expect(shouldDowngradeR1(input({ intakeMode: undefined }))).toBe(false)
+  })
+})
+
+describe('S0 — only re-asked when the chat has not already deepened the brief', () => {
+  const s0 = (o: Record<string, unknown> = {}) => shouldAskS0({ decisionWordCount: 10, effectiveMode: 'GATE', intakeMode: 'chat', examinerInChat: false, ...o } as never)
+  it('flag OFF: unchanged — a thin brief (<25 words) gets S0, in chat or classic', () => {
+    expect(s0()).toBe(true)
+    expect(s0({ intakeMode: 'classic' })).toBe(true)
+  })
+  it('flag OFF: a long brief never gets S0', () => { expect(s0({ decisionWordCount: 40 })).toBe(false) })
+  it('flag ON + chat session: suppressed (the chat is the deepening)', () => {
+    expect(s0({ examinerInChat: true })).toBe(false)
+  })
+  it('flag ON + classic session: unchanged', () => {
+    expect(s0({ examinerInChat: true, intakeMode: 'classic' })).toBe(true)
+  })
+  it('never in REDIRECT, regardless of the flag', () => {
+    expect(s0({ effectiveMode: 'REDIRECT' })).toBe(false)
+    expect(s0({ effectiveMode: 'REDIRECT', examinerInChat: true })).toBe(false)
+  })
+})
+
+describe('upstreamPrefill', () => {
+  it('turns the parked dependency into the opening of the next chat', () => {
+    expect(upstreamPrefill('move to Pune')).toBe('I need to decide: move to Pune')
+  })
+  it('round-trips with detection: the prefill is not itself re-detected as another dependency', () => {
+    expect(detectUpstreamDecision(upstreamPrefill('move to Pune'))).toBeNull()
+  })
+})
+
+describe('end to end: chat turn → session context → Examiner decision', () => {
+  const full: ChatDecisionState = { decisionKind: 'career_exit', phase: 'gathering', stakes: 'high', facts: { role: 'a', next_step: 'Take a break', runway: 'o12', why_now: 'z', alternatives: 'q', people: 'wife' } }
+  const run = (s: ChatDecisionState, text: string) =>
+    decideTurn(s, { planner: plan(), userText: text, dontKnow: false, exchangeCount: 3, ceiling: 9, closingLine: CLOSE, examinerInChat: true })
+
+  it('keep going ⇒ the recorded choice reaches the Examiner and R1 is downgraded', () => {
+    const gate = run(full, 'It depends on whether I move to Pune')
+    const done = run(gate.state, DEPENDENCY_CHIPS[0])
+    const { contextText } = assembleSessionInput(done.state, [])
+    expect(shouldDowngradeR1({ ruleMode: 'REDIRECT', redirectRule: 'R1', intakeMode: 'chat', contextText })).toBe(true)
+  })
+  it('the gate was asked but never answered ⇒ R1 still blocks, exactly as before', () => {
+    const gate = run(full, 'It depends on whether I move to Pune')
+    const { contextText } = assembleSessionInput(gate.state, [])
+    expect(shouldDowngradeR1({ ruleMode: 'REDIRECT', redirectRule: 'R1', intakeMode: 'chat', contextText })).toBe(false)
+  })
+  it('outlook answered in chat ⇒ both Examiner anchors are recoverable verbatim from context_text', () => {
+    const asked = run(full, 'x')
+    const answered = run(asked.state, 'Calm, stable pay. I worry I would regret leaving early.')
+    const cov = readCoverageFromContext(assembleSessionInput(answered.state, []).contextText)
+    expect(cov.gut).toContain('regret')
+    expect(cov.success).toContain('stable pay')
+  })
+})
+
+describe('the gate only offers "park" when parking can actually be saved', () => {
+  const full2: ChatDecisionState = { decisionKind: 'career_exit', phase: 'gathering', stakes: 'high', gutFeeling: 'x', facts: { role: 'a', next_step: 'Take a break', runway: 'o12', why_now: 'z', alternatives: 'q', people: 'wife' } }
+  const t = (canPark?: boolean) => decideTurn(full2, { planner: plan(), userText: 'It depends on whether I move to Pune', dontKnow: false, exchangeCount: 3, ceiling: 9, closingLine: CLOSE, examinerInChat: true, canPark })
+  it('Watchlist on (or unspecified): the gate is raised', () => {
+    expect(t(true).state.pending?.gap).toBe('dependency')
+    expect(t(undefined).state.pending?.gap).toBe('dependency')
+  })
+  it('Watchlist off: the gate is not raised, so no decision is silently lost; the dependency stays recorded without a choice', () => {
+    const r = t(false)
+    expect(r.state.pending?.gap).not.toBe('dependency')
+    expect(r.state.dependency?.choice).toBeUndefined()
+    expect(r.action).toBe('close')
+  })
+})

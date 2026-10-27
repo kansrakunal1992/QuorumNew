@@ -21,7 +21,7 @@ import { NextResponse }          from 'next/server'
 import { createServiceClient, createClient } from '@/lib/supabase'
 import { encrypt, decrypt }      from '@/lib/encryption'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
-import { isNaturalIntakeEnabled, isExaminerInChatEnabled } from '@/lib/feature-flags'
+import { isNaturalIntakeEnabled, isExaminerInChatEnabled, isWatchlistEnabled } from '@/lib/feature-flags'
 import {
   extractDecisionState,
   DEFAULT_MAX_EXCHANGES,
@@ -251,6 +251,7 @@ export async function POST(req: Request) {
         captureText: pre.primaryText,
         asked: transcriptSoFar.filter(m => m.role === 'quorum').map(m => m.content),
         examinerInChat: isExaminerInChatEnabled(),
+        canPark:        isWatchlistEnabled(),
       })
     }
 

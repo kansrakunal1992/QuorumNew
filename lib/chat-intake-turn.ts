@@ -293,6 +293,8 @@ export interface DecideInput {
   asked?:        string[]
   /** Examiner-in-chat experiment (lib/feature-flags.ts). Off => behaviour is identical to before it existed. */
   examinerInChat?: boolean
+  /** Whether "park this" can actually be honoured (the Watchlist API 404s when its flag is off). Undefined = yes. */
+  canPark?:        boolean
 }
 
 export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult {
@@ -378,7 +380,7 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
   if (ready || nearCeiling) {
     // Last look before wrapping: ONE extra question, only for a critical, still-open, non-deferrable gap.
     if (ready && !nearCeiling && !s.smartFriendAsked) {
-      const q = smartFriendGate(s, planner, inp.asked ?? [], !!inp.examinerInChat)
+      const q = smartFriendGate(s, planner, inp.asked ?? [], !!inp.examinerInChat, inp.canPark !== false)
       s = { ...s, smartFriendAsked: true }
       if (q) {
         const next: ChatDecisionState = noteReflection({ ...s, phase: 'gathering', pending: { kind: 'smart_friend', slotKey: q.slotKey, chips: q.chips ?? [], gap: q.gap } })
@@ -410,9 +412,10 @@ type GateQuestion = { question: string; slotKey: string | null; gap: SmartFriend
  *   3. the combined outlook probe (Examiner E0 + C0) -- only when neither anchor is on file and nothing sharper applies.
  * Low-stakes decisions never get an extra question.
  */
-function smartFriendGate(s: ChatDecisionState, planner: PlannerOutput | null, asked: string[], examinerInChat: boolean): GateQuestion | null {
+function smartFriendGate(s: ChatDecisionState, planner: PlannerOutput | null, asked: string[], examinerInChat: boolean, canPark: boolean): GateQuestion | null {
   if (effectiveStakes(s) === 'low') return null
-  if (examinerInChat && s.dependency && !s.dependency.choice) {
+  // Offering "park this" when the Watchlist is off would silently lose the decision, so the gate is not raised at all then.
+  if (examinerInChat && canPark && s.dependency && !s.dependency.choice) {
     return { question: dependencyQuestion(s.dependency.text), slotKey: null, gap: 'dependency', chips: [...DEPENDENCY_CHIPS] }
   }
   const base = baseSmartFriendGate(s, planner, asked)

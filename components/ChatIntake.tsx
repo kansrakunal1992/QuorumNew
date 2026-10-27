@@ -40,6 +40,7 @@ import type { MirrorStatus, ChatDecisionState, ChatQuickReplies, ChatCardGroup a
 import ChatCardStep from '@/components/ChatCardStep'   // v9: one chat step = one card group, or two related groups that open in place
 import { cardAnsweredProps, cardShownProps, intakeReadiness, metaFor, serializeSelection, viewportBucket } from '@/lib/chat-intake-cards'
 import { INTAKE_FLOW_VERSION } from '@/lib/chat-intake-depth'
+import { upstreamPrefill } from '@/lib/chat-intake-gates'
 import { parkText, dependencyParkText } from '@/lib/park-client'   // Examiner-in-chat: the "park this until I've decided that" gate outcome
 import type { CardSelection } from '@/lib/chat-intake-cards'
 import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
@@ -71,6 +72,8 @@ interface ChatIntakeProps {
   grantExtraExchanges:   boolean
   onChatIntakeId:        (id: string) => void
   onReadyToReflect:      (chatIntakeId: string) => void
+  /** Examiner-in-chat: after "park this until I've decided that", start a fresh chat on the upstream decision. */
+  onStartUpstream?:      (prefill: string) => void
 
   // Item 6 plan, Phase 0 — fetched once by NaturalIntakeClient and shared
   // between the top bar's Mirror label and the hero's status-card stack,
@@ -107,6 +110,7 @@ export default function ChatIntake({
   grantExtraExchanges,
   onChatIntakeId,
   onReadyToReflect,
+  onStartUpstream,
   authToken,
   userEmail,
   onUserEmailChange,
@@ -141,6 +145,7 @@ export default function ChatIntake({
   const [quick, setQuick]             = useState<ChatQuickReplies | null>(null)
   const [briefState, setBriefState]   = useState<ChatDecisionState | null>(null)
   const parkedForDependencyRef = useRef(false)   // dependency-gate park fires once per chat
+  const [parkedDependency, setParkedDependency] = useState<string | null>(null)   // set once the person parks at the gate
   const [walkthrough, setWalkthrough] = useState(false)
   const quickRef = useRef<ChatQuickReplies | null>(null)
   // v8 analytics: when the current card group appeared, and when this chat's first message was sent.
@@ -390,6 +395,7 @@ export default function ChatIntake({
         const stPark = (data.state ?? {}) as ChatDecisionState
         if (stPark.dependency?.text && !parkedForDependencyRef.current) {
           parkedForDependencyRef.current = true
+          setParkedDependency(stPark.dependency.text)
           void parkText(dependencyParkText(stPark.decisionStatement, stPark.dependency.text))
             .then(r => track('park_saved', { surface: 'chat_intake_gate', linked: r === 'saved' }))
         }
@@ -764,7 +770,7 @@ export default function ChatIntake({
             </button>
           )}
           {/* Always-available exit for people who've said what they have to say. */}
-          {exchangeCount >= 1 && !sending && !closing && quick?.kind !== 'playback' && (
+          {exchangeCount >= 1 && !sending && !closing && !parkedDependency && quick?.kind !== 'playback' && (
             <button
               type="button"
               onClick={tapEnough}
@@ -775,6 +781,41 @@ export default function ChatIntake({
             >
               {ENOUGH_LABEL}
             </button>
+          )}
+
+          {/* Dependency gate, "park this" outcome: the decision is on the Watchlist; offer to settle the one it hinges on.
+              "That's enough" is hidden above, because wrapping up here would create a session for the parked decision. */}
+          {parkedDependency && !sending && (
+            <div style={{
+              alignSelf: 'stretch', background: 'var(--bg-card)', border: '1px solid var(--border-dim)',
+              borderRadius: 14, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10,
+            }}>
+              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.5 }}>
+                Want to work through <strong style={{ color: 'var(--text-1)' }}>{'\u201C'}{parkedDependency}{'\u201D'}</strong> now? It{'\u2019'}s the one that unlocks the other.
+              </p>
+              {onStartUpstream && (
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ fontSize: 13, padding: '9px 16px', minHeight: 40 }}
+                    onClick={() => {
+                      track('park_pivot_started', { surface: 'chat_intake_gate' })
+                      onStartUpstream(upstreamPrefill(parkedDependency))
+                    }}
+                  >
+                    Work through that now {'\u2192'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setParkedDependency(null)}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-4)', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                  >
+                    Not now
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* v4 — end-of-chat panel: the lean + priority taps that used to be
