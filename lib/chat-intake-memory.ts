@@ -22,19 +22,50 @@ import 'server-only'
 
 import { createServiceClient } from '@/lib/supabase'
 import { fetchFoundationalContext } from '@/lib/foundational-context'
-import { isContextIngestionEnabled } from '@/lib/feature-flags'
+import { isContextIngestionEnabled, isIntakeHistoryReuseEnabled } from '@/lib/feature-flags'
+import { durableBackgroundLines, MAX_HISTORY_ROWS } from '@/lib/chat-intake-history'
+import type { PriorIntake } from '@/lib/chat-intake-history'
 
 const MAX_BACKGROUND_CHARS = 1200
 export const BACKGROUND_FETCH_UNTIL_EXCHANGE = 3
+
+/**
+ * v11: what the person already told Quorum in their own earlier, confirmed decisions (recent, situation-level facts
+ * only — see lib/chat-intake-history.ts). Off unless NEXT_PUBLIC_INTAKE_HISTORY_REUSE=true. Never throws.
+ */
+export async function fetchHistoryBackground(userId: string, excludeIntakeId?: string | null): Promise<string> {
+  if (!isIntakeHistoryReuseEnabled()) return ''
+  try {
+    let q = createServiceClient()
+      .from('chat_intakes')
+      .select('id, created_at, decision_state')
+      .eq('user_id', userId)
+      .eq('status', 'checkpointed')               // only decisions the person confirmed
+      .order('created_at', { ascending: false })
+      .limit(MAX_HISTORY_ROWS + 1)
+    if (excludeIntakeId) q = q.neq('id', excludeIntakeId)
+    const { data } = await q
+    const lines = durableBackgroundLines((data ?? []) as PriorIntake[])
+    return lines.length ? lines.join('\n') : ''
+  } catch (err) {
+    console.warn('[ChatIntake] history background failed (non-fatal):', err)
+    return ''
+  }
+}
 
 export async function fetchIntakeBackground(
   userId:        string | null,
   decisionText:  string,
   exchangeCount: number,
+  currentIntakeId?: string | null,
 ): Promise<string> {
   if (!userId || exchangeCount > BACKGROUND_FETCH_UNTIL_EXCHANGE) return ''
   try {
     const parts: string[] = []
+
+    // v11: their own earlier decisions (opt-in flag; '' when off, anonymous, or nothing recent to reuse).
+    const history = await fetchHistoryBackground(userId, currentIntakeId)
+    if (history) parts.push(history)
 
     if (isContextIngestionEnabled()) {
       const memory = await fetchFoundationalContext(userId, null, decisionText)

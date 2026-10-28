@@ -54,7 +54,7 @@ async function resolveUserId(req: Request): Promise<string | null> {
 }
 
 /** v9: the second card group's answer. Untrusted client input: shape-checked here, ids re-validated in preprocessTurn. */
-function cleanCompanion(raw: unknown): QuickReplyMeta['companion'] {
+function cleanCompanion(raw: unknown): NonNullable<QuickReplyMeta['companion']> | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
   if (typeof r.text !== 'string' || !r.text.trim()) return null
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
       userEmail?:       string
       deviceId?:        string
       extraExchanges?:  boolean   // "Let me add more" tap at the reflection step
-      quickReply?:      { kind?: string; slotKey?: string | null; card?: unknown; companion?: unknown }   // a tapped chip / card answer / "not sure" / playback answer
+      quickReply?:      { kind?: string; slotKey?: string | null; card?: unknown; companion?: unknown; companion2?: unknown }   // a tapped chip / card answer / "not sure" / playback answer
       walkthrough?:     boolean   // person chose "Walk me through it" on the first message
       action?:          'enough'  // "That's enough, show me" — wrap now, no new message
     }
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
       action === 'enough' ? { kind: 'enough' }
       : quickReply && QUICK_KINDS.includes(quickReply.kind as QuickReplyKind)
         // v8: `card` is untrusted client data — preprocessTurn re-validates it against the card group stored server-side.
-        ? { kind: quickReply.kind as QuickReplyKind, slotKey: typeof quickReply.slotKey === 'string' ? quickReply.slotKey.slice(0, 40) : null, card: (quickReply.card ?? null) as QuickReplyMeta['card'], companion: cleanCompanion(quickReply.companion) }
+        ? { kind: quickReply.kind as QuickReplyKind, slotKey: typeof quickReply.slotKey === 'string' ? quickReply.slotKey.slice(0, 40) : null, card: (quickReply.card ?? null) as QuickReplyMeta['card'], companion: cleanCompanion(quickReply.companion), companion2: cleanCompanion(quickReply.companion2) }
         : null
     const isEnough = quick?.kind === 'enough'
 
@@ -229,7 +229,7 @@ export async function POST(req: Request) {
     } else {
       // ── 2. ONE planner call: notes + next question + playback + sharp-friend check
       const decisionHint = pre.state.decisionStatement || transcriptWithUser.find(m => m.role === 'user')?.content || userText
-      const background   = await fetchIntakeBackground(serverUserId, decisionHint, exchangeCount)
+      const background   = await fetchIntakeBackground(serverUserId, decisionHint, exchangeCount, intakeId)
       let planner: PlannerOutput | null = await planTurn({
         state: pre.state, transcript: transcriptWithUser, exchangeCount, ceiling, background, cardNote: pre.cardNote ?? null,
         reflectionDue: reflectionDue(exchangeCount, pre.state.turnsSinceReflection),

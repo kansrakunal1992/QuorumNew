@@ -43,10 +43,10 @@ function fakePlanner(p: Persona, pre: ChatDecisionState, text: string, first: bo
 interface Run { exchanges: number; questions: number; askedSlots: string[]; final: ChatDecisionState; first: TurnResult; last: TurnResult }
 
 // v9: a person who answers BOTH card groups of a combined step in one submission.
-function withCompanion(state: ChatDecisionState, answer: string, responseType: 'free_text_only' | 'not_sure', meta: QuickReplyMeta, appendToText: (t: string) => void): void {
-  const comp = state.pending?.companion
+function withCompanion(state: ChatDecisionState, answer: string, responseType: 'free_text_only' | 'not_sure', meta: QuickReplyMeta, appendToText: (t: string) => void, which: 'companion' | 'companion2' = 'companion'): void {
+  const comp = state.pending?.[which]
   if (!comp) return
-  meta.companion = { text: answer, card: { questionId: comp.questionId, responseType, selectedIds: [], usedFreeText: responseType === 'free_text_only' } }
+  meta[which] = { text: answer, card: { questionId: comp.questionId, responseType, selectedIds: [], usedFreeText: responseType === 'free_text_only' } }
   appendToText(answer)
 }
 
@@ -57,7 +57,7 @@ function simulate(p: Persona, opts: { overEager?: boolean } = {}): Run {
   let exchanges = 0, questions = 0
   const askedSlots: string[] = []
   let first: TurnResult | null = null
-  let pendingCompanionSlot: string | undefined
+  let pendingCompanionSlots: string[] = []
   let last!: TurnResult
 
   for (;;) {
@@ -77,7 +77,7 @@ function simulate(p: Persona, opts: { overEager?: boolean } = {}): Run {
     state = result.state
     last = result
     // a companion group counts as asked only when the person actually answers it (typing past it leaves it open, to be asked once more)
-    const shownCompanion = result.state.pending?.companion?.slotKey
+    const shownCompanions = [result.state.pending?.companion?.slotKey, result.state.pending?.companion2?.slotKey].filter((x): x is string => !!x)
     first ??= result
 
     if (result.action === 'ask')          { questions += 1; askedSlots.push(result.state.pending!.slotKey!) }
@@ -86,17 +86,21 @@ function simulate(p: Persona, opts: { overEager?: boolean } = {}): Run {
 
     // the persona's reply
     meta = null
-    pendingCompanionSlot = shownCompanion
+    pendingCompanionSlots = shownCompanions
     if (result.action === 'playback') { text = PLAYBACK_YES; meta = { kind: 'playback_yes' } }
-    else if (p.behavior === 'evasive')   { text = UNKNOWN_REPLY_TEXT; meta = { kind: 'unknown', slotKey: state.pending?.slotKey }; withCompanion(state, UNKNOWN_REPLY_TEXT, 'not_sure', meta, (t) => { text = `${text}\n${t}` }) }
+    else if (p.behavior === 'evasive')   { text = UNKNOWN_REPLY_TEXT; meta = { kind: 'unknown', slotKey: state.pending?.slotKey }; withCompanion(state, UNKNOWN_REPLY_TEXT, 'not_sure', meta, (t) => { text = `${text}\n${t}` }); withCompanion(state, UNKNOWN_REPLY_TEXT, 'not_sure', meta, (t) => { text = `${text}\n${t}` }, 'companion2') }
     else if (p.behavior === 'emotional') { text = 'I just cannot take it anymore, everything feels so heavy right now' }
     else if (result.action === 'smart_friend') { text = 'a real raise and a different manager' }
     else {
       text = p.answers[state.pending?.slotKey ?? ''] ?? 'not much to add'; meta = { kind: 'chip', slotKey: state.pending?.slotKey }
       const comp = state.pending?.companion
       if (comp) withCompanion(state, p.answers[comp.slotKey] ?? 'not much to add', 'free_text_only', meta, (t) => { text = `${text}\n${t}` })
+      const comp2 = state.pending?.companion2
+      if (comp2) withCompanion(state, p.answers[comp2.slotKey] ?? 'not much to add', 'free_text_only', meta, (t) => { text = `${text}\n${t}` }, 'companion2')
     }
-    if (meta?.companion && pendingCompanionSlot) askedSlots.push(pendingCompanionSlot)
+    // a companion counts as asked only when the person actually answered it
+    if (meta?.companion  && pendingCompanionSlots[0]) askedSlots.push(pendingCompanionSlots[0])
+    if (meta?.companion2 && pendingCompanionSlots[1]) askedSlots.push(pendingCompanionSlots[1])
   }
   return { exchanges, questions, askedSlots, final: state, first: first!, last }
 }

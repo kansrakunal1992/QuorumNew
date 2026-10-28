@@ -46,7 +46,7 @@ import type { CardSelection } from '@/lib/chat-intake-cards'
 import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
 import {
   ENOUGH_LABEL, WALKTHROUGH_LABEL, WALKTHROUGH_LINE,
-  UNKNOWN_CHIP_LABEL, UNKNOWN_REPLY_TEXT, PLAYBACK_YES,
+  UNKNOWN_CHIP_LABEL, UNKNOWN_REPLY_TEXT, PLAYBACK_YES, scoreRichness,
 } from '@/lib/chat-intake-brief'
 import { isUnifiedSessionEnabled, isWatchlistEnabled } from '@/lib/feature-flags'
 import WatchlistSection from '@/components/WatchlistSection'   // Phase 1: parked items need a visible home
@@ -154,6 +154,7 @@ export default function ChatIntake({
   const cardGroupsAnswered = useRef<number>(0)
   const retrySel = useRef<CardSelection | null>(null)   // last card answer, restored if the send fails
   const retrySel2 = useRef<CardSelection | null>(null)  // ...and the second group's, for a combined step
+  const retrySel3 = useRef<CardSelection | null>(null)  // ...and the third group's (v11)
   const submissionsRef = useRef(0)                       // user submissions (messages + card steps), for effort reporting
   const tapsRef        = useRef(0)                       // individual card taps / special buttons
   const [faqOpen, setFaqOpen]   = useState(false)
@@ -312,13 +313,13 @@ export default function ChatIntake({
     if (!shownKey || !quick?.card) return
     cardShownAt.current = Date.now()
     track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
-    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: quick.companion ? 2 : 1, flow_version: INTAKE_FLOW_VERSION, viewport: viewportBucket() })
+    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: 1 + (quick.companion ? 1 : 0) + (quick.companion2 ? 1 : 0), flow_version: INTAKE_FLOW_VERSION, viewport: viewportBucket() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownKey])
 
   const send = useCallback(async (
     text: string,
-    meta?: { kind: 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no'; slotKey?: string | null; card?: ChatCardResponseMeta; companion?: { text: string; card: ChatCardResponseMeta } },
+    meta?: { kind: 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no'; slotKey?: string | null; card?: ChatCardResponseMeta; companion?: { text: string; card: ChatCardResponseMeta }; companion2?: { text: string; card: ChatCardResponseMeta } },
     opts?: { enough?: boolean },
   ) => {
     const trimmed = text.trim()
@@ -386,6 +387,7 @@ export default function ChatIntake({
       }
       retrySel.current = null
       retrySel2.current = null
+      retrySel3.current = null
       setExchangeCount(data.exchangeCount)
       setBubbles(prev => [...prev, { role: 'quorum', content: data.quorumReply }])
       setBriefState((data.state ?? null) as ChatDecisionState | null)
@@ -470,26 +472,36 @@ export default function ChatIntake({
   }
   // v8 — a card group answer: the labels (+ their own words) become the chat message; the structured
   // selection travels beside it so Quorum keeps both. Analytics gets ids and counts only.
-  function submitCards(group: CardGroupSpec, sel: CardSelection, companion?: CardGroupSpec | null, companionSel?: CardSelection | null) {
+  function submitCards(
+    group: CardGroupSpec, sel: CardSelection,
+    companion?: CardGroupSpec | null, companionSel?: CardSelection | null,
+    companion2?: CardGroupSpec | null, companion2Sel?: CardSelection | null,
+  ) {
     const card = metaFor(group, sel)
     retrySel.current = sel
     retrySel2.current = companionSel ?? null
+    retrySel3.current = companion2Sel ?? null
     track('intake_card_answered', { ...cardAnsweredProps(group, card, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
     cardGroupsAnswered.current += 1
     const kind = card.responseType === 'not_sure' ? 'unknown'
       : card.responseType === 'prefer_not' || card.responseType === 'skip' ? 'declined' : 'cards'
     let message = serializeSelection(group, sel)
     let comp: { text: string; card: ChatCardResponseMeta } | undefined
-    if (companion && companionSel) {
-      // v9: both answers travel as ONE reply: the primary text, then the second group's text on its own line.
-      const ctext = serializeSelection(companion, companionSel)
-      const cmeta = metaFor(companion, companionSel)
-      comp = { text: ctext, card: cmeta }
+    let comp2: { text: string; card: ChatCardResponseMeta } | undefined
+    // v9/v11: every group's answer travels as ONE reply: the primary text, then each further group's text on its own line.
+    for (const [g, gs, assign] of [
+      [companion,  companionSel,  (v: { text: string; card: ChatCardResponseMeta }) => { comp = v }],
+      [companion2, companion2Sel, (v: { text: string; card: ChatCardResponseMeta }) => { comp2 = v }],
+    ] as const) {
+      if (!g || !gs) continue
+      const ctext = serializeSelection(g, gs)
+      const cmeta = metaFor(g, gs)
+      assign({ text: ctext, card: cmeta })
       message = `${message}\n${ctext}`
-      track('intake_card_answered', { ...cardAnsweredProps(companion, cmeta, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
+      track('intake_card_answered', { ...cardAnsweredProps(g, cmeta, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
       cardGroupsAnswered.current += 1
     }
-    send(message, { kind, slotKey: group.slotKey, card, ...(comp ? { companion: comp } : {}) })
+    send(message, { kind, slotKey: group.slotKey, card, ...(comp ? { companion: comp } : {}), ...(comp2 ? { companion2: comp2 } : {}) })
   }
 
   function tapEnough() {
@@ -593,6 +605,14 @@ export default function ChatIntake({
         </div>
       )}
       </div>
+      {/* v11: a short, vague first message means more follow-up questions. A one-line nudge — shown only while typing,
+          only before the first send, and only when the message is still sparse — invites the options and the deadline
+          up front. It never blocks sending and "a rough version is fine" still holds. */}
+      {!started && !walkthrough && input.trim().length >= 8 && scoreRichness(input).tier === 'sparse' && (
+        <div role="note" style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.45, textAlign: 'left' }}>
+          Tip: add what you{'\u2019'}re choosing between, and any deadline {'\u2014'} you{'\u2019'}ll get fewer questions.
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         {started && <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />}
         <button
@@ -743,10 +763,12 @@ export default function ChatIntake({
               key={`${quick.card.questionId}-${exchangeCount}`}
               primary={quick.card}
               companion={quick.companion ?? null}
+              companion2={quick.companion2 ?? null}
               initialPrimary={retrySel.current}
               initialCompanion={retrySel2.current}
+              initialCompanion2={retrySel3.current}
               onTap={() => { tapsRef.current += 1 }}
-              onSubmit={(sel, sel2) => submitCards(quick.card as CardGroupSpec, sel, quick.companion ?? null, sel2)}
+              onSubmit={(sel, sel2, sel3) => submitCards(quick.card as CardGroupSpec, sel, quick.companion ?? null, sel2, quick.companion2 ?? null, sel3)}
               onFreeTextOpen={g => track('intake_card_freetext_opened', { question_id: g.questionId, slot_key: g.slotKey, chat_intake_id: chatIntakeId ?? null })}
               onCompanionShown={g => track('intake_card_group_shown', { ...cardShownProps(g, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION, companion: true })}
             />

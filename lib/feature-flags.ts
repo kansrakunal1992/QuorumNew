@@ -123,6 +123,15 @@ export function isNaturalIntakeEnabled(): boolean {
   return process.env.NEXT_PUBLIC_NATURAL_INTAKE_ENABLED === 'true'
 }
 
+// -- Reuse of earlier decisions in the chat (v11) ------------------------------
+// A returning, signed-in person is not re-asked situation facts (role, money runway, who depends on them) they gave in
+// an earlier confirmed chat in the last few months (lib/chat-intake-history.ts). Each reused fact is marked
+// "(from earlier)" so it can be corrected on the confirm screen. Opt-in, like the other experiments: meaningful only
+// when isNaturalIntakeEnabled() is also true. To enable: NEXT_PUBLIC_INTAKE_HISTORY_REUSE=true, then redeploy.
+export function isIntakeHistoryReuseEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_INTAKE_HISTORY_REUSE === 'true'
+}
+
 // ── Examiner-in-chat (Oct 2026) ──────────────────────────────────────────────
 // Moves two things the Examiner did AFTER the chat into the chat itself (lib/chat-intake-gates.ts):
 //   - the combined E0 + C0 "outlook" probe, asked in the single existing smart-friend turn;

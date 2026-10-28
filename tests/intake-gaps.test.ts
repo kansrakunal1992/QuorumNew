@@ -179,9 +179,10 @@ describe('10 · static quality gates on cards and components (what code can chec
     expect(group).not.toMatch(/e\.preventDefault\(/)             // desyncs controlled inputs / screen readers
     expect(group).toMatch(/minmax\(min\(100%, 230px\), 1fr\)/)  // one column on a 320 px screen
   })
-  it('combined step keeps both groups mounted so "Change" never loses entries, and announces the second group', () => {
-    expect(step).toMatch(/hidden=\{!!firstSel\}/)
-    expect(step).toMatch(/hidden=\{!firstSel\}/)
+  it('combined step keeps every group mounted (only hidden) so "Change" never loses entries, and announces each further group', () => {
+    // v11: generalised from two groups to up to three — a group is only ever hidden, never unmounted, once reached
+    expect(step).toMatch(/hidden=\{!isCurrent\}/)
+    expect(step).toMatch(/const mounted = i <= Math\.max\(reached, current\)/)
     expect(step).toMatch(/aria-live="polite"/)
     expect(step).toMatch(/Next question:/)
     expect(step).toMatch(/minHeight: 44/)

@@ -376,6 +376,9 @@ async function generateGapQuestions(gaps: string[]): Promise<string[]> {
 // GET — serve Examiner questions
 // ─────────────────────────────────────────────────────────────────────────────
 
+const EXAMINER_WAIT_MS      = 5000
+const EXAMINER_WAIT_STEP_MS = 400
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const sessionId = searchParams.get('sessionId')
@@ -385,6 +388,20 @@ export async function GET(req: Request) {
   }
 
   const supabase = createServiceClient()
+
+  // v11: optional server-side wait (?wait=1). The questions only exist once the ontology tagger has finished, and the
+  // confirm screen used to find that out by polling once a second. With wait=1 this request holds for up to
+  // EXAMINER_WAIT_MS and answers the moment the tagger is done (or has failed), so the person is never kept waiting
+  // for the next poll tick. Without the parameter the route behaves exactly as before. Reads one small row.
+  if (searchParams.get('wait') === '1') {
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < EXAMINER_WAIT_MS) {
+      const { data: t } = await supabase.from('sessions_ontology').select('tagger_status').eq('session_id', sessionId).maybeSingle()
+      const st = (t as { tagger_status?: string } | null)?.tagger_status
+      if (st === 'complete' || st === 'failed') break
+      await new Promise(r => setTimeout(r, EXAMINER_WAIT_STEP_MS))
+    }
+  }
 
   const [ontologyRes, sessionRes] = await Promise.all([
     supabase

@@ -27,7 +27,7 @@ const ALLOWED_KEYS = new Set([
   'derived_answers', 'typed_answers', 'derived_reviewed_on_reveal', 'lean_saved',
   // v10: whether the quick check was shown, how many chat-covered answers were recorded without a screen, and the
   // post-Council "did this feel specific to you?" answer (yes | partly | no)
-  'check_shown', 'auto_recorded', 'specific',
+  'check_shown', 'auto_recorded', 'specific', 'priority_source',
 ])
 
 // Identifier-looking strings only: no spaces, no sentence punctuation.

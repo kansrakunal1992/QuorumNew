@@ -36,6 +36,7 @@ import { track } from '@/lib/track'                      // Phase 0: first-party
 import { buildLeanChoices, matchSavedLean, PRIORITIES } from '@/lib/chat-intake-lean'   // v9: lean + priority live on this screen
 import type { LeanChoice } from '@/lib/chat-intake-lean'
 import { INTAKE_FLOW_VERSION, councilReadiness, fullAnswerFor, readinessLine, summaryProvenance } from '@/lib/chat-intake-depth'
+import { suggestPriority } from '@/lib/chat-intake-priority'              // v11: a one-tap-fewer suggestion for "what matters most"
 import ExpandableText from '@/components/ExpandableText'
 import { viewportBucket } from '@/lib/chat-intake-cards'   // v9: readiness + provenance
 import { intakeReadiness } from '@/lib/chat-intake-cards'    // v8: readiness marker
@@ -111,6 +112,10 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const unified = isUnifiedSessionEnabled()
   const [leanPick, setLeanPick]         = useState<LeanChoice | null>(null)
   const [priorityPick, setPriorityPick] = useState<string | null>(null)
+  // v11: "what matters most" arrives pre-selected when the person's own words make it clear (lib/chat-intake-priority.ts).
+  // It is only a suggestion — labelled as one, one tap to change — and is saved by their tap on Convene.
+  const [prioritySuggested, setPrioritySuggested] = useState<string | null>(null)
+  const priorityTouched = useRef(false)
   const [launchError, setLaunchError]   = useState<string | null>(null)
   const [examineError, setExamineError] = useState<string | null>(null)
   const [userMessages, setUserMessages] = useState<string[]>([])         // the person's own messages, to expand clipped answers
@@ -159,7 +164,12 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         setOriginal(firstUser)
         setUserMessages(((d.messages ?? []) as { role: string; content: string }[]).filter(m => m.role === 'user').map(m => m.content))
         setLeanPick(matchSavedLean(buildLeanChoices(s.options), s.chosenLean, s.chosenLeanLabel))
-        setPriorityPick(s.optimizationPriority ?? null)
+        const savedPriority = s.optimizationPriority ?? null
+        setPriorityPick(savedPriority)
+        if (!savedPriority) {
+          const suggested = suggestPriority(((d.messages ?? []) as { role: string; content: string }[]).filter(m => m.role === 'user').map(m => m.content))
+          if (suggested) { setPriorityPick(suggested); setPrioritySuggested(suggested) }
+        }
         setSubPhase('reflect')
         // v8 marker: the refined-decision summary was shown. Ids / counts only.
         if (!summaryTracked.current) {
@@ -207,16 +217,17 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   }
 
   // The Examiner only has questions once the ontology tagger has finished, so a null list means "not ready yet",
-  // not "nothing to ask". A short poll keeps a slow tagger from silently skipping the check (which would just push
-  // the same questions onto the session page instead). Same ~9 s ceiling as before, polled a little faster.
+  // not "nothing to ask". The request asks the server to hold for up to ~5 s and answer the moment the tagger is done
+  // (?wait=1, v11) instead of polling every second; a short retry covers a server that doesn't support it or a slow
+  // tagger. Same ~10 s ceiling as before; if it is still not ready the session page asks, as it always has.
   async function loadQuestions(sid: string): Promise<CheckpointQuestion[]> {
-    for (let attempt = 0; attempt < 9; attempt++) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const res  = await fetch(`/api/examiner?sessionId=${sid}`)
+        const res  = await fetch(`/api/examiner?sessionId=${sid}&wait=1`)
         const data = await res.json()
         if (Array.isArray(data?.questions)) return data.questions as CheckpointQuestion[]
       } catch { /* fall through to retry */ }
-      await new Promise(r => setTimeout(r, 1000))
+      await new Promise(r => setTimeout(r, 500))
     }
     return []
   }
@@ -300,6 +311,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       check_shown:      qs.some(isCouncilCritical),                 // v10: was the one-question check put in front of the person?
       auto_recorded:    Object.keys(autoConfirmed(qs)).length,      // v10: chat-covered answers recorded without a screen
       lean_saved:       !!leanPick,
+      priority_source:  !prioritySuggested ? 'chosen' : priorityPick !== prioritySuggested ? 'changed' : priorityTouched.current ? 'chosen' : 'suggested',   // v11
     }, { sessionId: sid })
     setLaunchMode('convene')
     setSubPhase('submitting')
@@ -625,9 +637,12 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {PRIORITIES.map(pr => (
                     <button key={pr.value} type="button" aria-pressed={priorityPick === pr.value}
-                      onClick={() => setPriorityPick(pr.value)} style={chip(priorityPick === pr.value)}>{pr.label}</button>
+                      onClick={() => { priorityTouched.current = true; setPriorityPick(pr.value) }} style={chip(priorityPick === pr.value)}>{pr.label}</button>
                   ))}
                 </div>
+                {prioritySuggested && priorityPick === prioritySuggested && !priorityTouched.current && (
+                  <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 6 }}>Suggested from what you told me {'\u2014'} tap another to change it.</div>
+                )}
               </div>
             </div>
           )}

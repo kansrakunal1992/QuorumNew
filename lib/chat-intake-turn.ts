@@ -33,6 +33,7 @@ import {
   DEPENDENCY_CHIPS, OUTLOOK_ASK, OUTLOOK_KEY, applyOutlookAnswer, dependencyQuestion, detectUpstreamDecision,
   outlookCovered, parkedReply, parseDependencyChoice,
 } from './chat-intake-gates'
+import { quantityChipsFor } from '@/lib/chat-intake-quantity'
 import { allSelectedNote, buildCardGroup, recordCardAnswer, sanitizeCardMeta } from './chat-intake-cards'
 import { criticalOpen, duplicatesKnown, effectiveStakes, finalizeForCouncil, gapIsOpen, isSmartFriendGap } from './chat-intake-depth'
 import type { SmartFriendGap } from './chat-intake-depth'
@@ -48,6 +49,7 @@ export interface QuickReplyMeta {
   kind: QuickReplyKind; slotKey?: string | null; card?: ChatCardResponseMeta | null
   /** v9: the answer to the second card group shown in the same step. `text` is exactly what was appended to the chat message. */
   companion?: { text: string; card?: ChatCardResponseMeta | null } | null
+  companion2?: { text: string; card?: ChatCardResponseMeta | null } | null
 }
 
 export type TurnAction = 'ask' | 'smart_friend' | 'playback' | 'correct' | 'close' | 'faq' | 'park'
@@ -70,7 +72,7 @@ const NO_CHIPS: ChatQuickReplies = { kind: 'none', chips: [] }
 function quickFromPending(p: ChatPendingTurn | null | undefined): ChatQuickReplies {
   if (!p) return NO_CHIPS
   if (p.kind === 'playback') return { kind: 'playback', chips: p.chips }
-  if (p.kind === 'ask' || p.kind === 'smart_friend') return { kind: 'ask', slotKey: p.slotKey ?? null, chips: p.chips, card: p.card ?? null, companion: p.companion ?? null }
+  if (p.kind === 'ask' || p.kind === 'smart_friend') return { kind: 'ask', slotKey: p.slotKey ?? null, chips: p.chips, card: p.card ?? null, companion: p.companion ?? null, companion2: p.companion2 ?? null }
   return NO_CHIPS
 }
 
@@ -235,23 +237,31 @@ export function preprocessTurn(
   let cardNote: string | null = null
   let primaryText = userText
 
-  // v9: the second card group answered in the same step. Recorded deterministically here so it is never lost,
-  // whatever the model extracts; the primary answer is what the generic capture below sees.
-  const comp: ChatCardGroup | null = pending?.kind === 'ask' ? (pending.companion ?? null) : null
-  if (comp && quick?.companion) {
-    const raw   = String(quick.companion.text ?? '')
+  // v9/v11: the second (and third) card group answered in the same step. Recorded deterministically here so they are
+  // never lost, whatever the model extracts; the primary answer is what the generic capture below sees. Each group's
+  // text was appended to the message in order (primary, then companion, then companion2), so they are peeled off from
+  // the end: last group first.
+  const extras: { comp: ChatCardGroup | null; ans: { text: string; card?: ChatCardResponseMeta | null } | null | undefined; nth: string }[] = [
+    { comp: pending?.kind === 'ask' ? (pending.companion2 ?? null) : null, ans: quick?.companion2, nth: 'third'  },
+    { comp: pending?.kind === 'ask' ? (pending.companion  ?? null) : null, ans: quick?.companion,  nth: 'second' },
+  ]
+  const notes: string[] = []
+  for (const { comp, ans, nth } of extras) {
+    if (!comp || !ans) continue
+    const raw   = String(ans.text ?? '')
     const ctext = clipText(raw, 900)
-    const cmeta = sanitizeCardMeta(quick.companion.card, comp)
-    if (raw && userText.endsWith(raw)) primaryText = userText.slice(0, userText.length - raw.length).trim()
+    const cmeta = sanitizeCardMeta(ans.card, comp)
+    if (raw && primaryText.endsWith(raw)) primaryText = primaryText.slice(0, primaryText.length - raw.length).trim()
     if (cmeta) {
       const exchange = ctx.exchange ?? 0
       s = recordCardAnswer(s, comp, cmeta, exchange)
       if (cmeta.responseType === 'not_sure') s = markUnknown(s, comp.slotKey)
       else if (cmeta.responseType !== 'prefer_not' && cmeta.responseType !== 'skip' && ctext.trim().length >= 2 && !isResolved(s, comp.slotKey)) s = setFact(s, comp.slotKey, ctext)
       const label = slotSpec(s.decisionKind, comp.slotKey)?.label ?? comp.slotKey
-      cardNote = `In the same message they also answered a second question, "${label}": ${ctext}. Treat that as answered.`
+      notes.unshift(`In the same message they also answered a ${nth} question, "${label}": ${ctext}. Treat that as answered.`)
     }
   }
+  if (notes.length) cardNote = notes.join(' ')
 
   // v8: a card answer (or a typed reply to a question that was showing cards).
   const card: ChatCardGroup | null = pending?.kind === 'ask' ? (pending.card ?? null) : null
@@ -383,8 +393,9 @@ export function decideTurn(pre: ChatDecisionState, inp: DecideInput): TurnResult
       const q = smartFriendGate(s, planner, inp.asked ?? [], !!inp.examinerInChat, inp.canPark !== false)
       s = { ...s, smartFriendAsked: true }
       if (q) {
-        const next: ChatDecisionState = noteReflection({ ...s, phase: 'gathering', pending: { kind: 'smart_friend', slotKey: q.slotKey, chips: q.chips ?? [], gap: q.gap } })
-        return { state: next, action: 'smart_friend', reply: composeReply(reflection, q.question), quickReplies: { kind: 'ask', slotKey: q.slotKey, chips: q.chips ?? [] }, readyToReflect: false, reflection: reflectionMeta }
+        const sfChips = q.chips?.length ? q.chips : quantityChipsFor(q.question)   // v11: tap-first answers for amount / yes-no questions
+        const next: ChatDecisionState = noteReflection({ ...s, phase: 'gathering', pending: { kind: 'smart_friend', slotKey: q.slotKey, chips: sfChips, gap: q.gap } })
+        return { state: next, action: 'smart_friend', reply: composeReply(reflection, q.question), quickReplies: { kind: 'ask', slotKey: q.slotKey, chips: sfChips }, readyToReflect: false, reflection: reflectionMeta }
       }
     }
     return wrap(s)
@@ -442,15 +453,23 @@ function baseSmartFriendGate(s: ChatDecisionState, planner: PlannerOutput | null
   return { question: q.trim(), slotKey: null, gap }
 }
 
-/** A second, related card group to open in the SAME message once the first is answered (progressive; never a form). */
-function pickCompanion(s: ChatDecisionState, slotKey: string): ChatCardGroup | null {
-  if (s.walkthrough) return null     // step-by-step mode: one small thing at a time
+/**
+ * Up to TWO more related card groups to open in the SAME message (progressive; never a form). v9 paired one; v11 allows a
+ * second so a typical step covers three questions instead of one — each step is a model round trip, so this is the
+ * biggest saving in waiting time. Only still-essential slots that have a real card group are batched; anything else
+ * (free-text questions, "smart friend" follow-ups) keeps its own step, and step-by-step mode keeps one thing at a time.
+ */
+export const MAX_COMPANIONS = 2
+function pickCompanions(s: ChatDecisionState, slotKey: string): ChatCardGroup[] {
+  if (s.walkthrough) return []     // step-by-step mode: one small thing at a time
   const rest = criticalOpen(s).filter(x => x.key !== slotKey && (s.askCounts?.[x.key] ?? 0) < MAX_ASKS_PER_SLOT && !isNotApplicable(s, x.key))
-  for (const cand of rest.slice(0, 2)) {
+  const out: ChatCardGroup[] = []
+  for (const cand of rest) {
+    if (out.length >= MAX_COMPANIONS) break
     const g = buildCardGroup({ kind: s.decisionKind, slot: cand, question: cand.ask })
-    if (g) return g
+    if (g) out.push(g)
   }
-  return null
+  return out
 }
 
 function askNext(s: ChatDecisionState, planner: PlannerOutput | null, closingLine: string, reflection: string | null): TurnResult {
@@ -467,25 +486,30 @@ function askNext(s: ChatDecisionState, planner: PlannerOutput | null, closingLin
 
   const useModelWording = !!proposed && usableQuestion(planner!.next!.question)
   const question = useModelWording ? planner!.next!.question.trim() : slot.ask
-  const chips    = sanitizeChips(useModelWording ? planner!.next!.chips : slot.chips, slot.chips ?? [])
+  const slotChips = sanitizeChips(useModelWording ? planner!.next!.chips : slot.chips, slot.chips ?? [])
 
   // Cards: approved template + the planner's adaptation, validated. No usable options -> asked as plain text.
   const card = buildCardGroup({ kind: s.decisionKind, slot, question, modelChips: useModelWording ? planner!.next!.chips : undefined })
+  // v11: a question with no cards and no options of its own, but that asks for an amount, a duration, a count or a yes/no,
+  // gets generic tap-first answers (lib/chat-intake-quantity.ts). Typing is still there.
+  const chips      = !card && slotChips.length === 0 ? quantityChipsFor(question) : slotChips
   const shownChips = card ? card.options.map(o => o.label) : chips
 
   // v9: a related second group in the same step (only next to a real card group, and only for a still-essential slot).
-  const companion = card ? pickCompanion(s, slot.key) : null
+  const extra      = card ? pickCompanions(s, slot.key) : []
+  const companion  = extra[0] ?? null
+  const companion2 = extra[1] ?? null
 
   const askCounts = { ...(s.askCounts ?? {}), [slot.key]: (s.askCounts?.[slot.key] ?? 0) + 1 }
-  if (companion) askCounts[companion.slotKey] = (askCounts[companion.slotKey] ?? 0) + 1
+  for (const g of extra) askCounts[g.slotKey] = (askCounts[g.slotKey] ?? 0) + 1
 
   const next: ChatDecisionState = {
     ...s, phase: 'gathering', askCounts,
-    pending:   { kind: 'ask', slotKey: slot.key, chips: shownChips, card, companion },
+    pending:   { kind: 'ask', slotKey: slot.key, chips: shownChips, card, companion, companion2 },
   }
   return {
     state: next, action: 'ask', reply: composeReply(reflection, question),
-    quickReplies: { kind: 'ask', slotKey: slot.key, chips: shownChips, card, companion },
+    quickReplies: { kind: 'ask', slotKey: slot.key, chips: shownChips, card, companion, companion2 },
     readyToReflect: false,
   }
 }

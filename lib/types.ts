@@ -210,6 +210,8 @@ export interface ChatPendingTurn {
   card?:    ChatCardGroup | null
   /** v9: a second, related card group shown in the SAME message (progressive: it opens after the first is answered). */
   companion?: ChatCardGroup | null
+  /** v11: a third related group in the same message (opens after the second). */
+  companion2?: ChatCardGroup | null
   /** v9: what the extra (smart-friend) question was about, so the answer can settle the right thing. */
   gap?:       string | null
 }
@@ -223,6 +225,8 @@ export interface ChatQuickReplies {
   card?:    ChatCardGroup | null
   /** v9: second related group in the same step (see ChatPendingTurn.companion). */
   companion?: ChatCardGroup | null
+  /** v11: third related group in the same step (see ChatPendingTurn.companion2). */
+  companion2?: ChatCardGroup | null
 }
 
 // ── Natural Intake (v8): card groups inside the chat ─────────────────────────
