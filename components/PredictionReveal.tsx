@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState } from 'react'
 import SessionComposer from '@/components/SessionComposer'
 import { track } from '@/lib/track'   // Phase 1: first-party events
+import { finalChoicesFor } from '@/lib/final-choice'   // v12: the same options shown on the confirm screen, as taps
 
 interface Props {
   sessionId:             string
@@ -36,6 +37,18 @@ interface Props {
   defaultReviewDays?:    number
   alreadyDecided?:       boolean
   initialMatched?:       boolean | null
+  /**
+   * v12: the session's own option labels (the same ones shown on the confirm screen) as tappable choices. Fewer than two
+   * -> the box stays a plain text field, exactly as before.
+   */
+  optionLabels?:         string[]
+  /** v12: the option they tapped as their first lean (full label), so it can be marked for comparison. */
+  firstLeanLabel?:       string | null
+  /**
+   * v12: one of their first few decisions. Quorum's guess was then made from how people generally decide, not from their
+   * history, so the reveal says so instead of implying it already knows them.
+   */
+  earlyUser?:            boolean
 }
 
 interface RevealState {
@@ -51,7 +64,12 @@ function todayPlusDays(days: number): string {
 
 export default function PredictionReveal({
   sessionId, authToken, predictedChoice, initialInstinctLabel, onDecided, alreadyDecided, initialMatched, defaultReviewDays,
+  optionLabels, firstLeanLabel, earlyUser,
 }: Props) {
+  // v12: tappable options (same labels as the confirm screen) + "Something else" (free text). null -> text box only.
+  const choices = finalChoicesFor(optionLabels, firstLeanLabel)
+  const [picked, setPicked]             = useState<string | null>(null)   // a choice's full label, or 'other'
+  const [chosenOption, setChosenOption] = useState<string | null>(null)   // sent so the match with Quorum's guess is exact
   // 'compose' -> 'review' -> locked (reveal shown)
   const [phase, setPhase]           = useState<'compose' | 'review'>('compose')
   const [draftDecision, setDraft]   = useState('')
@@ -81,7 +99,7 @@ export default function PredictionReveal({
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ finalDecision: draftDecision.trim() }),
+        body: JSON.stringify({ finalDecision: draftDecision.trim(), ...(chosenOption ? { chosenOptionLabel: chosenOption } : {}) }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -117,18 +135,37 @@ export default function PredictionReveal({
   }
 
   if (reveal) {
+    // v12: if Quorum's guess never arrived, say nothing about a guess (it used to read 'Quorum guessed "null"').
+    if (!predictedChoice) {
+      return (
+        <div style={revealBoxStyle}>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em', color: 'var(--gold)', textTransform: 'uppercase', margin: '0 0 10px' }}>
+            Decision locked
+          </p>
+          <p style={{ fontSize: 15, color: 'var(--text-1)', margin: 0, lineHeight: 1.5 }}>
+            That's recorded. Quorum will bring it back to you on your review date.
+          </p>
+        </div>
+      )
+    }
+    // v12: for a person's first few decisions Quorum's guess came from how people generally decide, not from their own
+    // history — so it is called a first guess, and the footer says it is still learning them.
+    const heading = earlyUser
+      ? (reveal.predictionMatched ? 'Quorum\u2019s first guess matched' : 'Quorum guessed differently')
+      : (reveal.predictionMatched ? 'Quorum predicted you' : 'You surprised Quorum')
+    const lead = earlyUser ? 'From what you\u2019d told it, Quorum guessed' : 'Quorum guessed'
     return (
       <div style={revealBoxStyle}>
         <p style={{
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em',
           color: 'var(--gold)', textTransform: 'uppercase', margin: '0 0 10px',
         }}>
-          {reveal.predictionMatched ? 'Quorum predicted you' : 'You surprised Quorum'}
+          {heading}
         </p>
         <p style={{ fontSize: 15, color: 'var(--text-1)', margin: '0 0 8px', lineHeight: 1.5 }}>
           {reveal.predictionMatched
-            ? `Quorum guessed "${predictedChoice}" — and that's what you chose.`
-            : `Quorum guessed "${predictedChoice}" — you went a different way.`}
+            ? `${lead} \"${predictedChoice}\" -- and that's what you chose.`
+            : `${lead} \"${predictedChoice}\" -- you went a different way.`}
         </p>
         {reveal.patternCount > 0 && (
           <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>
@@ -138,7 +175,9 @@ export default function PredictionReveal({
           </p>
         )}
         <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '10px 0 0' }}>
-          Either way is useful — this is about whether Quorum understands you, not about beating it.
+          {earlyUser
+            ? 'It doesn\u2019t know you yet \u2014 each decision is how it starts to learn the way you decide.'
+            : 'Either way is useful -- this is about whether Quorum understands you, not about beating it.'}
         </p>
       </div>
     )
@@ -192,12 +231,62 @@ export default function PredictionReveal({
           read, what are you actually going to do?
         </p>
       )}
-      <SessionComposer
-        placeholder="What are you actually going to do?"
-        initialValue={draftDecision}
-        submitLabel="Review"
-        onSubmit={(text) => { setDraft(text); setPhase('review') }}
-      />
+      {/* A failed save returns here (phase 'compose'); the message used to be rendered only on the review step, so the
+          person saw the box silently reset with no explanation. */}
+      {error && <p role="alert" style={{ fontSize: 12, color: 'var(--danger, #c25454)', margin: '0 0 10px' }}>{error}</p>}
+      {choices ? (
+        <>
+          {/* v12: the same options as the confirm screen, one tap each — so what they chose now can be compared with where
+              they leaned, and with Quorum's guess, exactly. "Something else" opens the text box below. */}
+          <div role="radiogroup" aria-label="What are you actually going to do?" style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '0 0 12px' }}>
+            {choices.map(c => {
+              const sel = picked === c.fullLabel
+              return (
+                <button key={c.fullLabel} type="button" role="radio" aria-checked={sel}
+                  onClick={() => setPicked(c.fullLabel)}
+                  style={{
+                    textAlign: 'left', padding: '11px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14.5, lineHeight: 1.35, minHeight: 44,
+                    border: sel ? '2px solid var(--gold)' : '1px solid var(--border-mid)',
+                    background: sel ? 'var(--gold-dim)' : 'var(--bg-inset)', color: sel ? 'var(--text-1)' : 'var(--text-2)',
+                  }}>
+                  {c.label}
+                  {c.isFirstLean && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>Your first lean</span>}
+                </button>
+              )
+            })}
+            <button type="button" role="radio" aria-checked={picked === 'other'}
+              onClick={() => setPicked('other')}
+              style={{
+                textAlign: 'left', padding: '11px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14.5, minHeight: 44,
+                border: picked === 'other' ? '2px solid var(--gold)' : '1px dashed var(--border-mid)',
+                background: picked === 'other' ? 'var(--gold-dim)' : 'transparent', color: picked === 'other' ? 'var(--text-1)' : 'var(--text-3)',
+              }}>
+              Something else
+            </button>
+          </div>
+          {picked === 'other' && (
+            <SessionComposer
+              placeholder="What are you actually going to do?"
+              initialValue={chosenOption ? '' : draftDecision}
+              submitLabel="Review"
+              onSubmit={(text) => { setDraft(text); setChosenOption(null); setPhase('review') }}
+            />
+          )}
+          {picked && picked !== 'other' && (
+            <button type="button" className="btn-primary" style={{ padding: '10px 20px', fontSize: 13, minHeight: 44 }}
+              onClick={() => { setDraft(picked); setChosenOption(picked); setPhase('review') }}>
+              Review
+            </button>
+          )}
+        </>
+      ) : (
+        <SessionComposer
+          placeholder="What are you actually going to do?"
+          initialValue={draftDecision}
+          submitLabel="Review"
+          onSubmit={(text) => { setDraft(text); setPhase('review') }}
+        />
+      )}
       <label style={{ display: 'block', fontSize: 11.5, color: 'var(--text-3)', margin: '12px 0 6px' }}>
         When should Quorum bring this back to you? (required)
       </label>

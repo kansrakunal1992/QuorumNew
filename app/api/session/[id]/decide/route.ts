@@ -20,6 +20,8 @@ import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { countMatchingPastPattern } from '@/lib/prediction-engine'
 import { evaluateSessionReflections } from '@/lib/stakeholder-network'   // Phase 5, v3
 import { loadDecisionRows } from '@/lib/decision-history'                 // Phase 2: device-aware history
+import { parseOptionLabels } from '@/lib/chat-intake-context'
+import { matchPrediction } from '@/lib/final-choice'                      // v12: exact match when the person tapped one of the options
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -31,7 +33,7 @@ export async function POST(req: Request, { params }: Params) {
   const { id: sessionId } = await params
   if (!sessionId) return NextResponse.json({ error: 'Missing session id' }, { status: 400 })
 
-  let body: { finalDecision?: string }
+  let body: { finalDecision?: string; chosenOptionLabel?: string }
   try {
     body = await req.json()
   } catch {
@@ -42,6 +44,10 @@ export async function POST(req: Request, { params }: Params) {
   if (finalDecision.length > 2000) {
     return NextResponse.json({ error: 'finalDecision too long' }, { status: 400 })
   }
+
+  // v12: set when the person tapped one of the session's own options instead of typing. Optional; ignored unless it
+  // really is one of this session's options (see matchPrediction), so it can only make the comparison exact.
+  const chosenOptionLabel = typeof body.chosenOptionLabel === 'string' ? body.chosenOptionLabel.trim().slice(0, 300) : ''
 
   const supabase = createServiceClient()
 
@@ -63,7 +69,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, user_id, device_id, initial_instinct, optimization_priority, quorum_predicted_choice, final_decision')
+    .select('id, user_id, device_id, initial_instinct, optimization_priority, quorum_predicted_choice, final_decision, context_text')
     .eq('id', sessionId)
     .single()
 
@@ -86,10 +92,21 @@ export async function POST(req: Request, { params }: Params) {
   // framed as "Quorum predicted you" / "You surprised Quorum."
   const predicted = (session.quorum_predicted_choice ?? '').toLowerCase()
   const finalLower = finalDecision.toLowerCase()
-  const predictionMatched = predicted.length > 0 && (
+  const keywordMatched = predicted.length > 0 && (
     finalLower.includes(predicted) ||
     predicted.split(/\s+/).filter((w: string) => w.length > 3).some((word: string) => finalLower.includes(word))
   )
+  // v12: when the person tapped one of the session's own options and Quorum's guess names one of them, compare the two
+  // exactly instead of by shared words. Anything that can't be tied to the options (typed text, an unrecognised guess)
+  // keeps the keyword comparison above, unchanged.
+  let exactMatched: boolean | null = null
+  if (chosenOptionLabel) {
+    try {
+      const ctx = session.context_text ? (decrypt(session.context_text as string) ?? '') : ''
+      exactMatched = matchPrediction(session.quorum_predicted_choice, parseOptionLabels(ctx), chosenOptionLabel)
+    } catch { exactMatched = null }
+  }
+  const predictionMatched = exactMatched ?? keywordMatched
 
   // -- Pattern callback --
   // Phase 2: also compares against rows that only share this session's

@@ -19,7 +19,7 @@ import { createClient } from '@/lib/supabase'
 import { computeReadiness } from '@/lib/readiness'   // PR3/PR4 — readiness gate
 import { isUnifiedSessionEnabled, isEarlyCouncilStartEnabled } from '@/lib/feature-flags'
 import InitialInstinctCapture from '@/components/InitialInstinctCapture'
-import { parseOptionLabels } from '@/lib/chat-intake-context'
+import { parseOptionLabels, parseContextLine, LEAN_LINE_PREFIX } from '@/lib/chat-intake-context'
 import QuorumPrediction       from '@/components/QuorumPrediction'
 import PredictionReveal       from '@/components/PredictionReveal'
 import SpecificityCheck       from '@/components/SpecificityCheck'   // v10: one tap after the Council — did it feel specific?
@@ -358,6 +358,12 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [instinctLocked,   setInstinctLocked]   = useState(!isUnifiedSessionEnabled() || !!initialSession.initial_instinct)
   const [lockedPriority,   setLockedPriority]   = useState<string | null>(initialSession.optimization_priority ?? null)
   const [lockedInstinct,   setLockedInstinct]   = useState<'accept' | 'reject' | 'unsure' | null>(initialSession.initial_instinct ?? null)
+  // v12: the exact option they tapped as their first lean (saved by the confirm screen in the session's context). Null when
+  // they were not sure, or for sessions that did not come through the chat.
+  const firstLeanLabel = (() => {
+    const l = parseContextLine(initialSession.context_text, LEAN_LINE_PREFIX)
+    return l && l.toLowerCase() !== 'not sure yet' ? l : null
+  })()
   // Point 4: tracks whether the final decision has been locked, so
   // RecordReceipt (the "you're done" signal) can be withheld until it has.
   const [decisionLocked,   setDecisionLocked]   = useState(!!initialSession.final_decision_locked_at)
@@ -2307,11 +2313,18 @@ export default function SessionView({ session: initialSession, initialMessages =
                     sessionId={session.id}
                     authToken={authTokenSV}
                     predictedChoice={predictedChoiceForReveal}
+                    // v12: name the option they actually tapped when it is known. The 3-value instinct alone said
+                    // "genuinely unsure" to someone who had picked "Negotiate terms" (only act / don't-act options map to
+                    // yes / no), and "leaning no" to someone who tapped a named option.
                     initialInstinctLabel={
+                      firstLeanLabel ? `leaning toward \u201C${firstLeanLabel.length > 80 ? `${firstLeanLabel.slice(0, 79).trimEnd()}\u2026` : firstLeanLabel}\u201D` :
                       lockedInstinct === 'accept' ? 'leaning yes' :
                       lockedInstinct === 'reject' ? 'leaning no'  :
                       lockedInstinct === 'unsure' ? 'genuinely unsure' : null
                     }
+                    optionLabels={parseOptionLabels(session.context_text)}
+                    firstLeanLabel={firstLeanLabel}
+                    earlyUser={(totalSessionCount ?? 0) <= 3}
                     onDecided={(info) => {
                       setDecisionLocked(true)
                       if (info?.reviewDate) setLockedReviewDate(info.reviewDate)

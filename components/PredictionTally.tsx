@@ -59,7 +59,9 @@ export default function PredictionTally({ refreshKey, sessionId, surface }: Prop
 
   const { guessed, total } = tally
   const line = guessed === 0
-    ? `You've surprised Quorum ${total === 1 ? 'on your first one' : `${total} times out of ${total}`}.`
+    ? (total === 1
+        ? 'Quorum guessed differently on your first one \u2014 it\u2019s still learning how you decide.'   // v12: one miss against a generic first guess is not "surprising" anyone
+        : `You've surprised Quorum ${total} times out of ${total}.`)
     : `Quorum has guessed right ${guessed} of ${total} so far.`
 
   return (
