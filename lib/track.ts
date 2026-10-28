@@ -59,6 +59,8 @@ export type TrackEventName =
   | 'council_launch_requested'      // the person asked for the Council (Convene tapped / launch confirmed) — NOT proof it started
   | 'intake_summary_feedback'        // one-tap "did this capture it?" on the summary: captured = yes | partly | no
   | 'council_execution_started'     // the session page actually began running the Council (first advisor request fired)
+  // v10 — shortened journey. One tap after the Council: did the result feel specific to this person? specific = yes | partly | no
+  | 'council_specificity_feedback'
 
 export type TrackProps = Record<string, string | number | boolean | null>
 

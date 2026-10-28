@@ -34,6 +34,11 @@ interface Props {
   initialPredictedChoice?: string | null
   initialReasoning?:       string | null
   initialUsedSearch?:      boolean | null
+  /**
+   * v10: make the prediction exactly as before (same call, same saved row, same onPredicted callback) but show
+   * nothing. A new person first sees Quorum's guess after they decide (PredictionReveal), not before the Council.
+   */
+  hidden?:                 boolean
 }
 
 interface PredictionState {
@@ -46,7 +51,7 @@ interface PredictionState {
 
 export default function QuorumPrediction({
   sessionId, authToken, onPredicted,
-  initialPredictedChoice, initialReasoning, initialUsedSearch,
+  initialPredictedChoice, initialReasoning, initialUsedSearch, hidden = false,
 }: Props) {
   const hydrated = !!initialPredictedChoice
   const [state, setState] = useState<PredictionState>(
@@ -99,6 +104,7 @@ export default function QuorumPrediction({
   // this card renders nothing (below), and the rest of the session
   // proceeds on its own regardless.
   if (state.status === 'error') return null
+  if (hidden) return null
 
   return (
     <div

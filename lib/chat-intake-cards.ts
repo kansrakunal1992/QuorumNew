@@ -143,10 +143,7 @@ export const CARD_PRESETS: Partial<Record<DecisionKind, Record<string, CardPrese
       ],
     },
     deadline: { mode: 'single', options: [['days', 'Within days'], ['week_two', 'In a week or two'], ['none', 'No deadline']] },
-    alternatives: {
-      mode: 'multi', hint: 'Select everything you could realistically ask for.',
-      options: [['neg_pay', 'Negotiate pay'], ['neg_role', 'Negotiate the role'], ['more_time', 'Ask for more time'], ['start_date', 'Change the start date']],
-    },
+    // v10: the job-offer "what could you negotiate?" card was removed along with its slot (see lib/chat-intake-brief.ts).
   },
   relocation: {
     work_plan: {

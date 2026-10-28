@@ -171,7 +171,9 @@ describe('persona conversations', () => {
     const p   = PERSONAS.find(x => x.id === 'novice-job-offer')!
     const run = simulate(p, { overEager: true })
     // every required specific of a job offer is actually asked, in the person's own conversation
-    expect(run.askedSlots).toEqual(expect.arrayContaining(['offer', 'leaving', 'hesitation', 'deadline', 'alternatives']))
+    expect(run.askedSlots).toEqual(expect.arrayContaining(['offer', 'leaving', 'hesitation', 'deadline']))
+    // v10: the "what could you negotiate?" question is gone for a job offer
+    expect(run.askedSlots).not.toContain('alternatives')
     // v9 combines related questions into one step, so the chat is shorter than one-question-per-turn — but it must not collapse to a single turn
     expect(run.exchanges).toBeGreaterThanOrEqual(3)
     // and what they said is kept as facts, not buried under "not sure yet"

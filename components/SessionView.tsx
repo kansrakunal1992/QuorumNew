@@ -22,6 +22,7 @@ import InitialInstinctCapture from '@/components/InitialInstinctCapture'
 import { parseOptionLabels } from '@/lib/chat-intake-context'
 import QuorumPrediction       from '@/components/QuorumPrediction'
 import PredictionReveal       from '@/components/PredictionReveal'
+import SpecificityCheck       from '@/components/SpecificityCheck'   // v10: one tap after the Council — did it feel specific?
 import SynthesisChallenge     from '@/components/SynthesisChallenge'
 import RecordReceipt from './RecordReceipt'
 import NextDecisionPrompt from '@/components/NextDecisionPrompt'   // Phase 1: continuity ending
@@ -66,17 +67,9 @@ const COUNCIL_STEPS_BASE: TourStep[] = [
     body:           'After all six advisors weigh in, Quorum synthesises their positions into one strategic brief. Dissenting views are preserved, not averaged away. Read this first — it surfaces the sharpest tensions.',
     preferredSide:  'bottom',
   },
-  // Unified session: new step, recapping the hypothesis card above the
-  // synthesis — by the time this tour fires (once synthesis is ready) the
-  // user has already had the hypothesis on screen for a while, so this is
-  // a "here's what that was" reinforcement, not a first introduction.
-  ...(isUnifiedSessionEnabled() ? [{
-    id:             'council-prediction',
-    targetSelector: '[data-tour-id="council-prediction"]',
-    heading:        'Quorum\'s hypothesis, made before this',
-    body:           'Before any of this, Quorum locked in its own guess about what you\'d choose — stated plainly, with reasoning, before the full read. You\'ll find out later whether it was right.',
-    preferredSide:  'bottom',
-  } as TourStep] : []),
+  // v10: the "Quorum's hypothesis, made before this" step is gone — the hypothesis card is no longer shown above the
+  // synthesis (see QuorumPrediction's hidden prop), so a step pointing at it would describe something the person
+  // never saw. They meet the prediction in PredictionReveal after they decide.
   {
     id:             'council-bias',
     targetSelector: '[data-tour-id="council-bias"]',
@@ -2030,17 +2023,20 @@ export default function SessionView({ session: initialSession, initialMessages =
                   previously rendered in parallel with Examiner, which meant
                   Quorum's hypothesis could appear before the user had
                   answered the clarifying question(s). */}
+              {/* v10: Quorum's hypothesis is made here exactly as before, but NOT shown. A first-time person met it
+                  before the Council had said anything, where it read as a verdict competing with the Council (and
+                  with no history it was at its weakest). They first see it after they decide, in PredictionReveal
+                  ("Quorum guessed X"), on the record page and in Mirror. */}
               {isUnifiedSessionEnabled() && examinerSubmitted && (
-                <div data-tour-id="council-prediction">
-                  <QuorumPrediction
-                    sessionId={session.id}
-                    authToken={authTokenSV}
-                    onPredicted={setPredictedChoiceForReveal}
-                    initialPredictedChoice={initialSession.quorum_predicted_choice}
-                    initialReasoning={initialSession.quorum_prediction_reasoning}
-                    initialUsedSearch={initialSession.quorum_prediction_used_search}
-                  />
-                </div>
+                <QuorumPrediction
+                  hidden
+                  sessionId={session.id}
+                  authToken={authTokenSV}
+                  onPredicted={setPredictedChoiceForReveal}
+                  initialPredictedChoice={initialSession.quorum_predicted_choice}
+                  initialReasoning={initialSession.quorum_prediction_reasoning}
+                  initialUsedSearch={initialSession.quorum_prediction_used_search}
+                />
               )}
 
               {/* ── Council Status Bar ── */}
@@ -2068,59 +2064,6 @@ export default function SessionView({ session: initialSession, initialMessages =
                     ontologyVector={ontologyVector}
                     onDismiss={() => setXRayDismissed(true)}
                   />
-                )
-              }
-
-              {/* S1-07 / QW-3: Graph teaser — Option B (pictorial), sessions 1–5.
-                  Sessions 1–3: appears as the X-Ray fades out, referencing the
-                  ontology shape it just showed. Sessions 4–5: X-Ray no longer
-                  renders (gated <=3), so this appears on its own once the
-                  session is ready — no ontology callback in the copy, since
-                  there's no "this shape" to refer back to.
-                  Deliberately reuses DecisionGraph unmodified (same component +
-                  same /api/mirror/graph endpoint as /mirror) rather than a
-                  bespoke visual — what's shown here is guaranteed to match
-                  what the person would see if they clicked through to /mirror
-                  right now: a ghost node at session 1, a real (redacted)
-                  preview graph from session 2 on. No timer — this one stays
-                  up, it's meant to be an open loop, not a flash message.
-                  Sessions 6+ get GraphNudgeLine instead (see bottom of flow) —
-                  event-gated single line, not this pictorial version, per the
-                  POV doc (item3-4plus-sessions-pov-plan.md). */}
-              {(totalSessionCount ?? 0) <= 5
-                && ontologyReady
-                && (xRayDismissed || (totalSessionCount ?? 0) > 3)
-                && (
-                  <div
-                    className="sv-fade"
-                    style={{
-                      background:   'var(--bg-card)',
-                      border:       '1px solid var(--border-mid)',
-                      borderRadius: 13,
-                      padding:      '16px 20px 18px',
-                      marginBottom: 12,
-                    }}
-                  >
-                    <p style={{
-                      fontFamily:    'var(--font-mono)',
-                      fontSize:      10,
-                      fontWeight:    700,
-                      letterSpacing: '0.12em',
-                      textTransform: 'uppercase',
-                      color:         'var(--text-4)',
-                      margin:        '0 0 12px',
-                    }}>
-                      {(totalSessionCount ?? 0) <= 3
-                        ? 'This shape gets compared against future decisions'
-                        : 'Your Decision Graph'}
-                    </p>
-                    
-                    <DecisionGraph
-                                          authToken={authTokenSV ?? ''}
-                                          fallbackSessionCount={totalSessionCount ?? getStoredSessionIds().length}
-                                          fallbackCurrentNode={decisionGraphFallbackNode}
-                                        />
-                  </div>
                 )
               }
 
@@ -2196,6 +2139,12 @@ export default function SessionView({ session: initialSession, initialMessages =
                   decisionLocked={decisionLocked}
                 />
               </div>
+
+              {/* v10: one-tap "did this feel specific to you?" — measures what the shorter intake could cost.
+                  First few decisions only, once per session, takes no space until synthesis is done. */}
+              {synthesisDone && (totalSessionCount ?? 0) <= 5 && (
+                <SpecificityCheck sessionId={session.id} />
+              )}
 
               {/* ── 1b. Record Receipt (appears after synthesis completes) ── */}
               {/* Point 4: under the flag, also requires decisionLocked — this card reads
@@ -2512,6 +2461,61 @@ export default function SessionView({ session: initialSession, initialMessages =
                 })}
                 </div>
               </div>
+
+              {/* S1-07 / QW-3: Graph teaser — Option B (pictorial), sessions 1–5.
+                  v10: now sits BELOW the Council (after the six advisors) instead of above it. On a phone it used to
+                  push the Council's own result off the first screen. Same component, same gating, same copy.
+                  Sessions 1–3: shown once the X-Ray has faded, referencing the
+                  ontology shape it showed. Sessions 4–5: X-Ray no longer
+                  renders (gated <=3), so this appears on its own once the
+                  session is ready — no ontology callback in the copy, since
+                  there's no "this shape" to refer back to.
+                  Deliberately reuses DecisionGraph unmodified (same component +
+                  same /api/mirror/graph endpoint as /mirror) rather than a
+                  bespoke visual — what's shown here is guaranteed to match
+                  what the person would see if they clicked through to /mirror
+                  right now: a ghost node at session 1, a real (redacted)
+                  preview graph from session 2 on. No timer — this one stays
+                  up, it's meant to be an open loop, not a flash message.
+                  Sessions 6+ get GraphNudgeLine instead (see bottom of flow) —
+                  event-gated single line, not this pictorial version, per the
+                  POV doc (item3-4plus-sessions-pov-plan.md). */}
+              {(totalSessionCount ?? 0) <= 5
+                && ontologyReady
+                && (xRayDismissed || (totalSessionCount ?? 0) > 3)
+                && (
+                  <div
+                    className="sv-fade"
+                    style={{
+                      background:   'var(--bg-card)',
+                      border:       '1px solid var(--border-mid)',
+                      borderRadius: 13,
+                      padding:      '16px 20px 18px',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <p style={{
+                      fontFamily:    'var(--font-mono)',
+                      fontSize:      10,
+                      fontWeight:    700,
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      color:         'var(--text-4)',
+                      margin:        '0 0 12px',
+                    }}>
+                      {(totalSessionCount ?? 0) <= 3
+                        ? 'This shape gets compared against future decisions'
+                        : 'Your Decision Graph'}
+                    </p>
+                    
+                    <DecisionGraph
+                                          authToken={authTokenSV ?? ''}
+                                          fallbackSessionCount={totalSessionCount ?? getStoredSessionIds().length}
+                                          fallbackCurrentNode={decisionGraphFallbackNode}
+                                        />
+                  </div>
+                )
+              }
 
               {/* ── Capture Position — after personas, giving time to read all six advisors ── */}
               {/* Originally between synthesis and personas; moved here so the user records   */}

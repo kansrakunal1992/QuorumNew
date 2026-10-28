@@ -1087,7 +1087,10 @@ export default function ChatIntake({
           {/* Item 6 plan, Phase 3 — inline capture. Now clearly below the
               input (see the note above it) rather than above, so it reads
               as "you can do this later," not a gate in front of typing. */}
-          {!hasEmail && (
+          {/* v10: a brand-new visitor has nothing to save yet, so the sign-in card is held back and the header
+              "Sign in" link stays the way in. It still shows for anyone who already has decisions on this
+              device (that is when "keep my record" is worth a tap). The first-Council result page has its own Save. */}
+          {!hasEmail && historySessions.length > 0 && (
             <div style={{ width: '100%', maxWidth: 440, marginTop: 16, textAlign: 'left' }}>
               <AuthPanel userEmail={userEmail} onAuthenticated={onUserEmailChange} />
             </div>

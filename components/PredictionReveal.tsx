@@ -13,7 +13,7 @@
 //
 // Point 6: this is deliberately NOT the same moment as InitialInstinctCapture
 // — that locked a gut lean before Quorum said anything; this locks what you
-// are actually going to do, after seeing the hypothesis and the full read.
+// are actually going to do, after seeing the full read.
 
 'use client'
 
@@ -188,7 +188,7 @@ export default function PredictionReveal({
       </p>
       {initialInstinctLabel && (
         <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px', lineHeight: 1.5 }}>
-          You started out {initialInstinctLabel}. Now that you've seen Quorum's hypothesis and full
+          You started out {initialInstinctLabel}. Now that you've seen the full
           read, what are you actually going to do?
         </p>
       )}

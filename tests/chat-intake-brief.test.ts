@@ -14,13 +14,19 @@ import type { ChatDecisionState } from '../lib/types'
 const career: ChatDecisionState = { decisionKind: 'career_exit', richness: 'sparse' }
 
 describe('slots per kind of decision', () => {
-  it('every kind has required specifics and a shared "other routes" slot', () => {
+  it('every kind has required specifics, and a shared "other routes" slot — except a job offer (v10)', () => {
     for (const k of DECISION_KINDS) {
       const req = slotsFor(k).filter(s => s.required)
       expect(req.length).toBeGreaterThanOrEqual(3)
       expect(req.length).toBeLessThanOrEqual(6)
-      expect(req.some(s => s.key === 'alternatives')).toBe(true)
+      expect(req.some(s => s.key === 'alternatives')).toBe(k !== 'job_offer')
     }
+  })
+  it('v10: a job offer is NOT asked "what could you negotiate?" — the Council raises countering and timing itself; the deadline is still asked', () => {
+    const keys = slotsFor('job_offer').map(s => s.key)
+    expect(keys).not.toContain('alternatives')
+    expect(keys).toEqual(expect.arrayContaining(['offer', 'leaving', 'hesitation', 'deadline']))
+    expect(slotsFor('job_offer').find(s => s.key === 'deadline')?.required).toBe(true)
   })
   it('a job exit asks about the job, what is next and the runway — the specifics the old chat never asked', () => {
     const keys = slotsFor('career_exit').filter(s => s.required).map(s => s.key)

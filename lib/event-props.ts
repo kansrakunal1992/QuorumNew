@@ -13,6 +13,7 @@ const INTAKE_EVENTS = new Set([
   'intake_card_group_shown', 'intake_card_answered', 'intake_card_freetext_opened', 'intake_council_ready',
   'intake_summary_shown', 'intake_summary_action', 'intake_summary_feedback', 'intake_reflection_shown',
   'intake_step_shown', 'intake_checkpoint_error', 'council_launch_requested', 'council_execution_started',
+  'council_specificity_feedback',
 ])
 
 const ALLOWED_KEYS = new Set([
@@ -24,6 +25,9 @@ const ALLOWED_KEYS = new Set([
   'user_submissions', 'card_taps', 'stakes', 'deferred_count', 'gap_count', 'reflections_shown', 'changed_from_original',
   'action', 'edited', 'shown', 'reason', 'stage', 'captured',
   'derived_answers', 'typed_answers', 'derived_reviewed_on_reveal', 'lean_saved',
+  // v10: whether the quick check was shown, how many chat-covered answers were recorded without a screen, and the
+  // post-Council "did this feel specific to you?" answer (yes | partly | no)
+  'check_shown', 'auto_recorded', 'specific',
 ])
 
 // Identifier-looking strings only: no spaces, no sentence punctuation.

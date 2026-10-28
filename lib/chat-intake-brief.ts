@@ -105,8 +105,8 @@ const KIND_SLOTS: Record<DecisionKind, SlotSpec[]> = {
     { key: 'deadline', label: 'Their deadline', ask: 'When do they need an answer?',
       chips: ['Within days', 'In a week or two', 'No deadline'], weight: 55, required: true,
       findOut: 'Ask them how long you have to decide' },
-    alt('Is there anything you could counter or negotiate before deciding?',
-      ['Negotiate pay', 'Negotiate the role', 'Ask for more time']),
+    // v10: no separate "what could you negotiate?" question for a job offer. Countering, asking for time and a later
+    // start are routes the Council raises itself; asking up front added a screen without adding what it needs.
   ],
   relocation: [
     { key: 'from_to', label: 'From \u2192 to', ask: 'Which city are you in now, and where would you move?', weight: 90, required: true },

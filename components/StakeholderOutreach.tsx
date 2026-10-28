@@ -3,7 +3,7 @@
 // components/StakeholderOutreach.tsx
 // ── "Want to hear from them directly?" (Phase 2/3, v2) ────────────────────────
 //
-// Surfaces contextually inside DecisionCheckpoint.tsx's examine phase, only
+// Surfaces contextually on DecisionCheckpoint.tsx's confirm screen (a small collapsed line), only
 // when the chat actually named a stakeholder (plan section 22: integrations
 // appear when they solve a current problem, never as a standing menu).
 //
@@ -19,6 +19,7 @@ import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ChatStakeholderMention } from '@/lib/types'
 import ConnectorSettings, { type ConnectorProvider } from '@/components/ConnectorSettings'
+import { realStakeholders } from '@/lib/real-stakeholders'
 
 type Channel = 'slack' | 'teams' | 'gmail' | 'outlook' | 'whatsapp' | 'manual'
 
@@ -53,7 +54,9 @@ const smallPrimaryBtn: CSSProperties = {
 
 type Phase = 'prompt' | 'channel' | 'search' | 'draft' | 'sent' | 'paste' | 'saved'
 
-export default function StakeholderOutreach({ sessionId, stakeholders, authToken }: Props) {
+export default function StakeholderOutreach({ sessionId, stakeholders: allStakeholders, authToken }: Props) {
+  // v10: never offer to "ask You" — the person themselves is not a stakeholder (lib/real-stakeholders.ts).
+  const stakeholders = realStakeholders(allStakeholders)
   const [phase, setPhase]           = useState<Phase>('prompt')
   const [expanded, setExpanded]     = useState(false)
   const [person, setPerson]         = useState(stakeholders[0] ?? null)
