@@ -28,7 +28,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ChatDecisionState } from '@/lib/types'
-import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import { isUnifiedSessionEnabled, isPreTagEnabled } from '@/lib/feature-flags'
 import { createClient } from '@/lib/supabase'
 import { getAuthHeaders } from '@/lib/auth-headers'      // Phase 0: send the token on checkpoint
 import { pushSessionId } from '@/lib/storage'            // Phase 0: "I'm done" sessions must reach local history
@@ -107,6 +107,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [editedText, setEditedText] = useState('')
   const [original, setOriginal]       = useState('')    // v8: the person's own first words, shown beside the refined decision
   const summaryTracked = useRef(false)
+  const pretagFired    = useRef(false)    // v13: the pre-tag request goes out once per visit to this screen
   // v9: lean + priority are part of the one confirmation. The session page refuses to start without them
   // (its own lean gate), so they stay required here rather than being asked again on the next screen.
   const unified = isUnifiedSessionEnabled()
@@ -171,6 +172,14 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
           if (suggested) { setPriorityPick(suggested); setPrioritySuggested(suggested) }
         }
         setSubPhase('reflect')
+        // v13: start classifying the decision NOW, while the person reads and taps, so "Convene the Council" doesn't wait
+        // for it. Fire-and-forget: the server needs no answer from us, a failure only means the launch tags as it always did.
+        if (isPreTagEnabled() && !pretagFired.current) {
+          pretagFired.current = true
+          getAuthHeaders()
+            .then(h => fetch('/api/chat-intake/pretag', { method: 'POST', headers: { 'Content-Type': 'application/json', ...h }, body: JSON.stringify({ chatIntakeId }) }))
+            .catch(() => { /* best-effort */ })
+        }
         // v8 marker: the refined-decision summary was shown. Ids / counts only.
         if (!summaryTracked.current) {
           summaryTracked.current = true

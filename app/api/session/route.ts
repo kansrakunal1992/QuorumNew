@@ -122,7 +122,7 @@ export async function POST(req: Request) {
     // everything it triggers — fireStructuralMatch → /api/structural-match)
     // silently falls back to Free-tier Mistral routing regardless of the
     // real caller's tier. See lib/tier-forward.ts's doc comment.
-    fireOntologyTagger(sessionId, decision_text.trim(), context_text?.trim() ?? null, forwardTierHeaders(req.headers))
+    fireOntologyTagger(sessionId, decision_text.trim(), context_text?.trim() ?? null, forwardTierHeaders(req.headers), chat_intake_id || null)
 
     return NextResponse.json({ id: sessionId })
   } catch (err) {
@@ -136,13 +136,14 @@ function fireOntologyTagger(
   decisionText: string,
   contextText:  string | null,
   tierHeaders:  Record<string, string>,
+  chatIntakeId: string | null = null,   // v13: lets /api/ontology use a tag pre-computed on the confirm screen (see lib/chat-intake-pretag.ts)
 ) {
   const baseUrl        = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const internalSecret = process.env.INTERNAL_API_SECRET ?? ''
   fetch(`${baseUrl}/api/ontology`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret, ...tierHeaders },
-    body:    JSON.stringify({ sessionId, decisionText, contextText }),
+    body:    JSON.stringify({ sessionId, decisionText, contextText, ...(chatIntakeId ? { chatIntakeId } : {}) }),
   }).catch(err => {
     console.error('[Session] Ontology tagger fire failed:', err)
   })

@@ -195,3 +195,12 @@ export function isWhatsAppShareEnabled(): boolean {
 export function isTeamsConnectorEnabled(): boolean {
   return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_TEAMS_CONNECTOR_ENABLED === 'true'
 }
+
+// -- Pre-tag (v13) --------------------------------------------------------------
+// While the person is on the confirm screen the ontology tagger is run early and parked on the chat
+// (chat_intakes.pre_tag*), so "Convene the Council" doesn't wait for it (lib/chat-intake-pretag.ts). Adds no rows to
+// `sessions`. Opt-in: needs supabase/sprint_intake_v13_pretag.sql run first. Meaningful only when natural intake is on.
+// To enable: NEXT_PUBLIC_PRETAG_ENABLED=true, then redeploy. Off = exactly the previous behaviour everywhere.
+export function isPreTagEnabled(): boolean {
+  return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_PRETAG_ENABLED === 'true'
+}

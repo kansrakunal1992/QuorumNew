@@ -16,28 +16,16 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { tagDecision } from '@/lib/ontology-tagger'
+import { validateTag } from '@/lib/ontology-validate'
 import { evaluateRules } from '@/lib/rule-engine'
 import { forwardTierHeaders } from '@/lib/tier-forward'
+import { isPreTagEnabled } from '@/lib/feature-flags'
+import { pretagHash, takePretag, taggerInput } from '@/lib/chat-intake-pretag'
 import type { OntologyTag } from '@/lib/ontology-tagger'
 
 // ── Validation ─────────────────────────────────────────────────────────────────
 
-function validateTag(tag: OntologyTag): boolean {
-  const validTypes = [
-    'commitment', 'allocation', 'transition',
-    'acquisition', 'renunciation', 'governance', 'delegation',
-  ]
-  if (!validTypes.includes(tag.decision_type_primary)) return false
-  if (typeof tag.instrumental_weight !== 'number')     return false
-  if (typeof tag.constitutive_weight !== 'number')     return false
-  if (!tag.examiner_gap_1 || !tag.examiner_gap_2 || !tag.examiner_gap_3) return false
-  // v2.0: also require scored_vector
-  if (!tag.scored_vector || typeof tag.scored_vector !== 'object')        return false
-  if (typeof tag.scored_vector.upstream_dependency?.score !== 'number') return false
-  if (typeof tag.scored_vector.identity_alignment?.score !== 'number')  return false
-  if (typeof tag.scored_vector.regret_asymmetry?.score !== 'number')    return false
-  return true
-}
+// validateTag lives in lib/ontology-validate.ts (moved there unchanged so the pre-tag path applies the same test).
 
 // ── DB insert shape ────────────────────────────────────────────────────────────
 
@@ -113,6 +101,9 @@ export async function POST(req: Request) {
     sessionId = body.sessionId
     const decisionText: string | undefined = body.decisionText
     const contextText: string | null = body.contextText ?? null
+    // v13: set by POST /api/session when the session came from a chat (chat_intake_id). Only used to look up a pre-computed
+    // tag for that chat — and only if the input hashes the same — so passing someone else's id gains nothing.
+    const chatIntakeId: string | null = typeof body.chatIntakeId === 'string' ? body.chatIntakeId : null
 
     if (!sessionId || !decisionText) {
       return NextResponse.json(
@@ -128,7 +119,21 @@ export async function POST(req: Request) {
     )
 
     // ── 1. Run 14-dim tagger ──────────────────────────────────────────────────
-    const tag = await tagDecision(decisionText, contextText)
+    // v13 (pre-tag): with the feature on, every session is tagged from the same canonical input (the context minus the
+    // person's lean / priority lines, which a pre-tag cannot know yet), and a chat session first checks for a tag computed
+    // while the person was still on the confirm screen — a hit skips the model call entirely. A miss, a failure, or the
+    // feature being off is exactly the previous behaviour: the model call below.
+    let tag: OntologyTag | null = null
+    let taggerContext: string | null = contextText
+    if (isPreTagEnabled()) {
+      const input = taggerInput(decisionText, contextText)
+      taggerContext = input.contextText
+      if (chatIntakeId) {
+        tag = await takePretag(supabase as never, chatIntakeId, pretagHash(input.decisionText, input.contextText))
+        if (tag) console.log(`[Ontology] Session ${sessionId} | used the pre-computed tag (no model call)`)
+      }
+    }
+    if (!tag) tag = await tagDecision(decisionText, taggerContext)
 
     if (!tag || !validateTag(tag)) {
       await supabase.from('sessions_ontology').upsert(
