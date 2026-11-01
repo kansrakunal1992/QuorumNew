@@ -22,7 +22,6 @@ export interface GateSessionFacts {
   councilMessageCount: number
   status: string | null | undefined
   finalDecisionLockedAt: string | null | undefined
-  examinerSubmitted: boolean
 }
 
 /** True when this session is waiting for the Council to start (so a sign-in can still be asked for first). */
@@ -30,7 +29,8 @@ export function isCouncilNotYetRun(f: GateSessionFacts): boolean {
   if (f.councilMessageCount > 0) return false
   if (f.status === 'completed') return false
   if (f.finalDecisionLockedAt) return false
-  if (f.examinerSubmitted) return false
+  // NOT the examiner status: since v10, tapping Convene auto-submits the quick check (/api/examiner sets
+  // examiner_status='submitted'), so every fresh chat session already looks "submitted" when this page loads.
   return true
 }
 

@@ -10,7 +10,7 @@ Two goals:
 ## 1. Sign in before the Council (ON by default)
 
 - `components/ConveneGate.tsx` wraps `<SessionView>` on `/session/<id>`. A **signed-out** visitor whose **Council has not run yet** sees a short sign-in step instead. `SessionView` is not mounted, so no ontology, examiner or advisor call is made (nothing is spent) until they are signed in.
-- Everything already run, locked, completed, or past its examiner check opens **exactly as before** (`lib/convene-gate.ts`, decided on the server in `app/session/[id]/page.tsx`).
+- Everything already run, locked or completed opens **exactly as before** (`lib/convene-gate.ts`, decided on the server in `app/session/[id]/page.tsx`).
 - Reuses `ConnectCard` with a new non-skippable `convene_gate` mode, `returnTo` and `link-sessions`. After Google or the magic link the person lands back on the same `/session/<id>` with the session linked to their account; the magic link works across browsers because the session is fetched by id.
 - **In-app browsers** (Instagram, Facebook, WhatsApp, other web views): Google refuses sign-in there, so the gate hides the Google button and shows an email option with a one-line explanation.
 - **Fails open**: if the auth check throws, the person gets `SessionView`. A bug in the gate cannot lock anyone out.

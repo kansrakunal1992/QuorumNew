@@ -139,7 +139,6 @@ export default async function SessionPage({ params }: Props) {
     councilMessageCount:   (messages ?? []).filter(m => m.role === 'assistant' && !!m.persona).length,
     status:                session.status as string | null,
     finalDecisionLockedAt: (session as { final_decision_locked_at?: string | null }).final_decision_locked_at ?? null,
-    examinerSubmitted:     examinerAlreadySubmitted,
   })
 
   return <ConveneGate sessionId={id} candidate={gateCandidate}>

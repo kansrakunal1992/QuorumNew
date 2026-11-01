@@ -157,7 +157,7 @@ describe('visitor token (aggregate-only, day-rotating)', () => {
 })
 
 describe('sign-in-before-Council gate rules', () => {
-  const fresh = { councilMessageCount: 0, status: 'active', finalDecisionLockedAt: null, examinerSubmitted: false }
+  const fresh = { councilMessageCount: 0, status: 'active', finalDecisionLockedAt: null }
   it('is ON by default, and only the documented off values switch it off', () => {
     expect(isConveneGateEnabled(undefined)).toBe(true)
     expect(isConveneGateEnabled('')).toBe(true)
@@ -166,11 +166,16 @@ describe('sign-in-before-Council gate rules', () => {
   })
   it('gates a brand-new session whose Council has not run', () => { expect(isGateCandidate(true, fresh)).toBe(true) })
   it('never gates when switched off', () => { expect(isGateCandidate(false, fresh)).toBe(false) })
-  it('never gates a session that already ran, was locked, completed, or had its check submitted', () => {
+  it('never gates a session that already ran, was locked or completed', () => {
     expect(isCouncilNotYetRun({ ...fresh, councilMessageCount: 1 })).toBe(false)
     expect(isCouncilNotYetRun({ ...fresh, status: 'completed' })).toBe(false)
     expect(isCouncilNotYetRun({ ...fresh, finalDecisionLockedAt: '2026-10-01T00:00:00Z' })).toBe(false)
-    expect(isCouncilNotYetRun({ ...fresh, examinerSubmitted: true })).toBe(false)
+  })
+  it('REGRESSION: a session whose quick check was auto-submitted at Convene is still gated (v10 submits it on Convene)', () => {
+    // lib/convene-gate.ts must not take an examiner flag at all; the page must not pass one
+    expect(readFileSync(join(__dirname, '..', 'lib/convene-gate.ts'), 'utf-8')).not.toMatch(/examinerSubmitted\s*:/)
+    expect(readFileSync(join(__dirname, '..', 'app/session/[id]/page.tsx'), 'utf-8')).not.toContain('examinerSubmitted')
+    expect(isGateCandidate(true, fresh)).toBe(true)
   })
 })
 
