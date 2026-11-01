@@ -38,6 +38,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import Razorpay                       from 'razorpay'
 import { createServiceClient }        from '@/lib/supabase'
 import { corsHeaders }                from '@/lib/decision-session-cors'
+import { trackServerAnon }            from '@/lib/track-server'     // v14: guest order funnel
+import { normalizeOrderTrigger, safeToken } from '@/lib/event-context'
 
 function getRazorpay() {
   const keyId     = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
@@ -61,7 +63,9 @@ export async function OPTIONS(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const cors = corsHeaders(req.headers.get('origin'))
 
-  let body: { utmSource?: string; utmCampaign?: string; utmContent?: string }
+  // v14: `trigger` is how the order came to exist: 'click' (the person pressed pay) or 'load' (the page created it on
+  // load). The landing page that calls this lives outside this repo and should send it; without it we record 'unknown'.
+  let body: { utmSource?: string; utmCampaign?: string; utmContent?: string; trigger?: string }
   try {
     body = await req.json()
   } catch {
@@ -110,6 +114,14 @@ export async function POST(req: NextRequest) {
     console.error('[decision-session/create-order] DB insert failed:', dbError)
     return NextResponse.json({ error: 'Order creation failed' }, { status: 500, headers: cors })
   }
+
+  // v14: lets the dashboard separate real checkout intent (click) from automatic order creation (load).
+  await trackServerAnon(supabase, 'guest_order_created', {
+    trigger:      normalizeOrderTrigger(body.trigger),
+    utm_source:   safeToken(body.utmSource),
+    utm_campaign: safeToken(body.utmCampaign),
+    surface:      'landing',
+  })
 
   return NextResponse.json(
     {

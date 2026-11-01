@@ -147,9 +147,21 @@ export interface StoredUtm {
 
 const EMPTY_UTM: StoredUtm = { utm_source: null, utm_campaign: null, utm_content: null }
 
+// v14: in-memory copy of this page-load's first-touch UTM. Memory only, nothing is written to the device, so it
+// needs no consent; it is lost on a full page reload. It lets signup attribution work for visitors who have not
+// accepted cookies (and after in-app navigation, where the URL no longer carries the tags).
+let memoryUtm: StoredUtm | null = null
+export function rememberUtmInMemory(u: StoredUtm): void {
+  if (!memoryUtm && (u.utm_source || u.utm_campaign || u.utm_content)) memoryUtm = u
+}
+
 /** Call once on a page that might be a first landing (e.g. AuthPanel mount). */
 export function captureUtm(): void {
   if (typeof window === 'undefined') return
+  try {
+    const q = new URLSearchParams(window.location.search)
+    rememberUtmInMemory({ utm_source: q.get('utm_source'), utm_campaign: q.get('utm_campaign'), utm_content: q.get('utm_content') })   // v14
+  } catch { /* ignore */ }
   if (!hasFunctionalConsent()) return // S2-01 gate — same rule as device ID
   try {
     if (sessionStorage.getItem(UTM_KEY)) return // first touch already captured this session
@@ -182,9 +194,23 @@ export function getStoredUtm(): StoredUtm {
         utm_content:  params.get('utm_content'),
       }
     }
+    if (memoryUtm) return memoryUtm   // v14: this page-load's first touch (works without consent)
     const raw = sessionStorage.getItem(UTM_KEY)
     if (raw) return JSON.parse(raw) as StoredUtm
   } catch { /* ignore */ }
-  return EMPTY_UTM
+  return memoryUtm ?? EMPTY_UTM
 }
 
+
+// v14: the sign-in-before-Council gate. When the person taps "Continue with Google", the Google round trip leaves the
+// page, and /auth/callback links their anonymous sessions from this list. Without functional consent pushSessionId()
+// (correctly) writes nothing, so the session they are about to be signed in for would not be linked to their account.
+// This writes that ONE id, only at the moment the person starts signing in. It is part of the sign-in they asked for,
+// the same reasoning that makes quorum_user_email and quorum_return_to strictly necessary.
+export function pushSessionIdForSignIn(id: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const ids = getStoredSessionIds()
+    if (!ids.includes(id)) localStorage.setItem(STORAGE_KEY, JSON.stringify([id, ...ids].slice(0, 100)))
+  } catch { /* storage unavailable: magic link still carries the id via ?xs= */ }
+}

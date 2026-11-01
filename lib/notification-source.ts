@@ -14,6 +14,16 @@ export const NOTIFICATION_SOURCES = [
   'weekly_brief',
   'pattern_notice',
   'review_date',
+  // v14: every other email we send now tags its link, so opens and "then decided" are measurable per email.
+  // (Before this, only the three above were ever recorded; opens from the nudges were structurally invisible, and
+  // the 7/14/30-day check-ins all shared one tag so we could not tell which reminder worked.)
+  'daily_nudge',
+  'validation_nudge',
+  'council_nudge',
+  'mirror_insight',
+  'reanalyze_7d',
+  'reanalyze_14d',
+  'reanalyze_30d',
 ] as const
 
 export type NotificationSource = (typeof NOTIFICATION_SOURCES)[number]

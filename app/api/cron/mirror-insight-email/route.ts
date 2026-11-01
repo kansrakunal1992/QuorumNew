@@ -148,7 +148,7 @@ function buildInsightEmailHtml({
     </p>
 
     <!-- CTA -->
-    <a href="${appUrl}/mirror"
+    <a href="${appUrl}/mirror?n=mirror_insight"
        style="display:inline-block;background:#c9a84c;color:#0a0a12;text-decoration:none;
               padding:13px 28px;border-radius:8px;font-size:14px;font-weight:700;
               letter-spacing:0.04em">
@@ -158,7 +158,7 @@ function buildInsightEmailHtml({
     <!-- Footer -->
     <p style="color:#bbb;font-size:11px;margin:48px 0 0;line-height:1.7">
       Weekly insight from your Judgment Record.<br>
-      <a href="${appUrl}" style="color:#aaa;text-decoration:none">Quorum</a>
+      <a href="${appUrl}/?n=mirror_insight" style="color:#aaa;text-decoration:none">Quorum</a>
     </p>
 
   </div>

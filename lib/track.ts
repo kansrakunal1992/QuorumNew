@@ -15,6 +15,7 @@
 
 import { getStoredDeviceId, getStoredSessionIds } from '@/lib/storage'
 import { getAuthHeaders } from '@/lib/auth-headers'
+import { getEventContext } from '@/lib/attribution'
 
 export type TrackEventName =
   | 'landing_view'
@@ -61,6 +62,19 @@ export type TrackEventName =
   | 'council_execution_started'     // the session page actually began running the Council (first advisor request fired)
   // v10 — shortened journey. One tap after the Council: did the result feel specific to this person? specific = yes | partly | no
   | 'council_specificity_feedback'
+  // v14  cookie banner outcome, errors, sign-in-before-Council gate, payment funnel, record + outcome. Ids/enums/counts only.
+  | 'consent_shown'
+  | 'consent_accepted'            // functional: boolean, via: all | preferences
+  | 'consent_rejected'
+  | 'client_error'                // where, kind (ai_error | rate_limited | network | payment_failed | other), status
+  | 'convene_gate_shown'          // the sign-in step shown immediately before the Council would run
+  | 'paywall_viewed'
+  | 'checkout_opened'
+  | 'payment_success'
+  | 'payment_failed'
+  | 'checkout_dismissed'
+  | 'record_viewed'
+  | 'outcome_recorded'
 
 export type TrackProps = Record<string, string | number | boolean | null>
 
@@ -82,9 +96,30 @@ export function track(
           deviceId:      getStoredDeviceId(),
           decisionIndex: getStoredSessionIds().length,
           sessionId:     opts.sessionId ?? null,
-          props,
+          props: { ...getEventContext(event), ...props },   // v14: device class, in-app browser, first-touch channel
         }),
       })
     } catch { /* analytics must never affect the product */ }
   })()
+}
+
+export type ClientErrorKind = 'ai_error' | 'rate_limited' | 'network' | 'payment_failed' | 'other'
+
+// v14: failures the person experiences but nothing recorded (a Council advisor that never answered, a 429, a failed
+// checkout). Capped per page load so a retry loop cannot flood the events table.
+const errorCounts = new Map<string, number>()
+export function trackError(where: string, kind: ClientErrorKind, status?: number | null, opts: { sessionId?: string | null } = {}): void {
+  const key = `${where}:${kind}`
+  const n = (errorCounts.get(key) ?? 0) + 1
+  errorCounts.set(key, n)
+  if (n > 3) return
+  track('client_error', { where, kind, status: typeof status === 'number' ? status : null }, opts)
+}
+
+/** Map an HTTP status (or a thrown error) to the error kind used above. */
+export function errorKindFromStatus(status: number | null | undefined): ClientErrorKind {
+  if (status === 429) return 'rate_limited'
+  if (typeof status === 'number' && status >= 500) return 'ai_error'
+  if (status == null) return 'network'
+  return 'other'
 }

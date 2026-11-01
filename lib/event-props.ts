@@ -7,6 +7,8 @@
 // — no spaces), so a sentence of free text, an option label or a name cannot be stored even if a future caller
 // passes one by mistake. Numbers and booleans pass through. Everything else is dropped silently.
 
+import { CONTEXT_KEYS } from '@/lib/event-context'
+
 type Prim = string | number | boolean | null
 
 const INTAKE_EVENTS = new Set([
@@ -14,6 +16,11 @@ const INTAKE_EVENTS = new Set([
   'intake_summary_shown', 'intake_summary_action', 'intake_summary_feedback', 'intake_reflection_shown',
   'intake_step_shown', 'intake_checkpoint_error', 'council_launch_requested', 'council_execution_started',
   'council_specificity_feedback',
+  // v14: cookie banner outcome, errors, sign-in-before-Council gate, payment funnel, record + outcome, guest orders.
+  // Same rule as above: known keys only, identifier-shaped values only.
+  'consent_shown', 'consent_accepted', 'consent_rejected', 'client_error', 'convene_gate_shown',
+  'paywall_viewed', 'checkout_opened', 'payment_success', 'payment_failed', 'checkout_dismissed',
+  'record_viewed', 'outcome_recorded', 'guest_order_created', 'guest_order_paid',
 ])
 
 const ALLOWED_KEYS = new Set([
@@ -28,7 +35,11 @@ const ALLOWED_KEYS = new Set([
   // v10: whether the quick check was shown, how many chat-covered answers were recorded without a screen, and the
   // post-Council "did this feel specific to you?" answer (yes | partly | no)
   'check_shown', 'auto_recorded', 'specific', 'priority_source',
+  // v14: timings (ms), where an error happened and what kind, consent choice, payment plan/surface, notification source
+  'ms_on_confirm', 'api_ms', 'where', 'kind', 'status', 'via', 'functional', 'plan', 'surface', 'trigger',
+  'source', 'helped', 'from_notification', 'founding',
 ])
+const CONTEXT_KEY_SET: ReadonlySet<string> = new Set(CONTEXT_KEYS)
 
 // Identifier-looking strings only: no spaces, no sentence punctuation.
 const SAFE_STRING = /^[A-Za-z0-9._:,|\-]{1,120}$/
@@ -39,7 +50,7 @@ export function sanitizeIntakeProps(event: string, raw: Record<string, Prim>): R
   if (!INTAKE_EVENTS.has(event)) return raw
   const out: Record<string, Prim> = {}
   for (const [k, v] of Object.entries(raw)) {
-    if (!ALLOWED_KEYS.has(k)) continue
+    if (!ALLOWED_KEYS.has(k) && !CONTEXT_KEY_SET.has(k)) continue
     if (v === null || typeof v === 'boolean' || typeof v === 'number') out[k] = v
     else if (typeof v === 'string' && SAFE_STRING.test(v)) out[k] = v
   }

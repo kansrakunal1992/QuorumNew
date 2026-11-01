@@ -107,6 +107,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
   const [editedText, setEditedText] = useState('')
   const [original, setOriginal]       = useState('')    // v8: the person's own first words, shown beside the refined decision
   const summaryTracked = useRef(false)
+  const summaryShownAt = useRef(0)   // v14: when the confirm screen appeared, for ms_on_confirm
   const pretagFired    = useRef(false)    // v13: the pre-tag request goes out once per visit to this screen
   // v9: lean + priority are part of the one confirmation. The session page refuses to start without them
   // (its own lean gate), so they stay required here rather than being asked again on the next screen.
@@ -183,6 +184,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
         // v8 marker: the refined-decision summary was shown. Ids / counts only.
         if (!summaryTracked.current) {
           summaryTracked.current = true
+          summaryShownAt.current = Date.now()
           const r = intakeReadiness(s)
           track('intake_summary_shown', {
             chat_intake_id:    chatIntakeId,
@@ -317,6 +319,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
       flow_version:     state.flowVersion ?? null,
       derived_answers:  rows.filter(r => r.derived_from_chat).length,
       typed_answers:    rows.filter(r => !r.derived_from_chat && !!r.response_text).length,
+      ms_on_confirm:    summaryShownAt.current ? Date.now() - summaryShownAt.current : null,   // v14: time spent on the confirm screen
       check_shown:      qs.some(isCouncilCritical),                 // v10: was the one-question check put in front of the person?
       auto_recorded:    Object.keys(autoConfirmed(qs)).length,      // v10: chat-covered answers recorded without a screen
       lean_saved:       !!leanPick,

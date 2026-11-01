@@ -27,6 +27,8 @@ import {
 import { createClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import { track } from '@/lib/track'   // Phase 0: first-party events
+import { captureFirstTouch } from '@/lib/attribution'   // v14: which channel brought this visitor (utm / referrer host), device + in-app browser
+import { parseNotificationSource } from '@/lib/notification-source'   // v14: return_visit.source
 import { setDecisionPrefill } from '@/lib/prefill'   // Phase 1
 import { eligibleHeroCards } from '@/lib/hero-cards'
 import type { MirrorStatus } from '@/lib/types'
@@ -73,7 +75,9 @@ export default function NaturalIntakeClient() {
   const [chatKey, setChatKey] = useState(0)
 
   // Phase 0: one landing_view per mount of the front door.
-  useEffect(() => { track('landing_view', { surface: 'natural_intake' }) }, [])
+  // v14: capture the first touch (utm_*, referrer host) BEFORE the event so landing_view carries it. This used to run
+  // only when the sign-in panel mounted, which is why every signup showed "(direct / none)".
+  useEffect(() => { captureFirstTouch(); track('landing_view', { surface: 'natural_intake' }) }, [])
 
   // Phase 4: return_visit -- someone who already has decisions on this device
   // comes back after 12+ hours. localStorage timestamp only, and only when a
@@ -87,7 +91,11 @@ export default function NaturalIntakeClient() {
       localStorage.setItem(KEY, String(now))
       const decisions = getStoredSessionIds().length
       if (last && decisions > 0 && now - last > 12 * 3_600_000) {
-        track('return_visit', { hours_since: Math.round((now - last) / 3_600_000), decisions })
+        // v14: which email/push brought them back (?n=), null when they came directly
+        // (NotificationLandingTracker strips ?n= from the URL and keeps it for the tab session, so read either.)
+        const source = parseNotificationSource(new URLSearchParams(window.location.search).get('n'))
+          ?? parseNotificationSource(sessionStorage.getItem('quorum_from_notification'))
+        track('return_visit', { hours_since: Math.round((now - last) / 3_600_000), decisions, source })
       }
     } catch {}
   }, [])

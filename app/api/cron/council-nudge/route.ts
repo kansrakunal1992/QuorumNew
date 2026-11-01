@@ -212,7 +212,7 @@ export async function POST(req: Request) {
       if (!email) { skipped++; continue }
 
       const body       = `Your decision is still open. We predicted you'd choose "${target.predicted}". Want to see if the Council agrees?`
-      const sessionUrl = `${appUrl}/session/${target.id}`
+      const sessionUrl = `${appUrl}/session/${target.id}?n=council_nudge`   // v14: opens are measurable
       const unsubUrl   = `${appUrl}/api/cron/unsubscribe?token=${encodeURIComponent(generateUnsubToken(userId, 'validation'))}`
 
       const ok = await sendEmail({

@@ -1,6 +1,8 @@
 import { notFound }            from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase'
 import SessionView             from '@/components/SessionView'
+import ConveneGate              from '@/components/ConveneGate'      // v14: sign in before the Council runs
+import { isConveneGateEnabled, isGateCandidate } from '@/lib/convene-gate'
 import { decrypt }             from '@/lib/encryption'
 import { getMirrorAccessState } from '@/lib/mirror-access'   // O4
 import { isFoundingAvailable }  from '@/lib/founding'
@@ -131,7 +133,17 @@ export default async function SessionPage({ params }: Props) {
     })),
   )
 
-  return <SessionView
+  // v14: a signed-out visitor whose Council has NOT run yet is asked to sign in before it starts (default ON; set
+  // NEXT_PUBLIC_CONVENE_GATE=off to disable). Anything already run, locked or completed opens exactly as before.
+  const gateCandidate = isGateCandidate(isConveneGateEnabled(), {
+    councilMessageCount:   (messages ?? []).filter(m => m.role === 'assistant' && !!m.persona).length,
+    status:                session.status as string | null,
+    finalDecisionLockedAt: (session as { final_decision_locked_at?: string | null }).final_decision_locked_at ?? null,
+    examinerSubmitted:     examinerAlreadySubmitted,
+  })
+
+  return <ConveneGate sessionId={id} candidate={gateCandidate}>
+    <SessionView
     session={decryptedSession}
     initialMessages={initialMessages}
     totalSessionCount={totalSessionCount ?? undefined}
@@ -144,4 +156,5 @@ export default async function SessionPage({ params }: Props) {
     appliedRuleFromServer={appliedRuleFromServer}
     initialSynthesisVersions={initialSynthesisVersions}
   />
+  </ConveneGate>
 }

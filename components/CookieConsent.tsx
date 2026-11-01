@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react'
+import { track } from '@/lib/track'   // v14: how many visitors see, accept, reject or ignore the banner
 
 const CONSENT_KEY = 'quorum_cookie_consent'
 
@@ -39,7 +40,7 @@ export default function CookieConsent() {
 
   useEffect(() => {
     if (!readConsent()) {
-      const t = setTimeout(() => setVisible(true), 900)
+      const t = setTimeout(() => { setVisible(true); track('consent_shown') }, 900)
       return () => clearTimeout(t)
     }
   }, [])
@@ -48,18 +49,22 @@ export default function CookieConsent() {
 
   const accept = () => {
     writeConsent({ necessary: true, functional: true, analytics: false, ts: Date.now() })
+    track('consent_accepted', { functional: true, via: 'all' })
     setVisible(false)
     setShowPrefs(false)
   }
 
   const reject = () => {
     writeConsent({ necessary: true, functional: false, analytics: false, ts: Date.now() })
+    track('consent_rejected', { functional: false, via: 'reject_button' })
     setVisible(false)
     setShowPrefs(false)
   }
 
   const savePrefs = () => {
     writeConsent({ necessary: true, functional, analytics, ts: Date.now() })
+    if (functional) track('consent_accepted', { functional: true, via: 'preferences' })
+    else track('consent_rejected', { functional: false, via: 'preferences' })
     setVisible(false)
     setShowPrefs(false)
   }

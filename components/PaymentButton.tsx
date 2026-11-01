@@ -18,13 +18,14 @@
 //   onSuccess — called on successful payment; caller triggers Mirror unlock
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { track, trackError, errorKindFromStatus } from '@/lib/track'   // v14: payment funnel
 
 // ── Type declaration for Razorpay checkout (loaded via CDN script tag) ────────
 declare global {
   interface Window {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Razorpay: new (options: Record<string, any>) => { open: () => void }
+    Razorpay: new (options: Record<string, any>) => { open: () => void; on?: (event: string, cb: (r: any) => void) => void }
   }
 }
 
@@ -34,6 +35,8 @@ interface PaymentButtonProps {
   authToken: string
   userEmail: string
   onSuccess: () => void
+  /** v14: where this button is shown, for the payment funnel (default 'mirror'). Identifier-shaped only. */
+  surface?:  string
 }
 
 // ── Load Razorpay checkout.js once — idempotent ───────────────────────────────
@@ -59,9 +62,20 @@ export function PaymentButton({
   authToken,
   userEmail,
   onSuccess,
+  surface = 'mirror',
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
+
+  // v14: one paywall_viewed per plan per surface per tab session (the page can render several plan buttons).
+  useEffect(() => {
+    try {
+      const key = `quorum_paywall_viewed_${surface}_${plan}`
+      if (sessionStorage.getItem(key)) return
+      sessionStorage.setItem(key, '1')
+    } catch { /* storage unavailable: count once per mount */ }
+    track('paywall_viewed', { plan, surface })
+  }, [plan, surface])
 
   async function handleClick() {
     setLoading(true)
@@ -79,6 +93,8 @@ export function PaymentButton({
       })
 
       if (!res.ok) {
+        trackError('payment_create', 'payment_failed', res.status)
+        track('payment_failed', { plan, surface, reason: 'create_subscription', status: res.status })
         let msg = 'Subscription creation failed'
         try {
           const err = await res.json()
@@ -95,6 +111,8 @@ export function PaymentButton({
       // ── Step 2: Load Razorpay checkout.js ───────────────────────────────
       const loaded = await loadRazorpayScript()
       if (!loaded) {
+        trackError('payment_script', 'network', null)
+        track('payment_failed', { plan, surface, reason: 'script_load' })
         throw new Error('Checkout failed to load. Please refresh and try again.')
       }
 
@@ -120,16 +138,25 @@ export function PaymentButton({
         },
         // handler fires on successful payment (before webhook)
         handler: () => {
+          track('payment_success', { plan, surface, founding: plan.startsWith('founding') })
           setLoading(false)
           onSuccess()
         },
         modal: {
           backdropclose: false,
           escape:        false,
-          ondismiss:     () => setLoading(false),
+          ondismiss:     () => { track('checkout_dismissed', { plan, surface }); setLoading(false) },
         },
       })
 
+      // v14: a declined or failed payment inside the Razorpay window (distinct from closing it)
+      try {
+        rzp.on?.('payment.failed', (r: { error?: { code?: string } }) => {
+          const code = typeof r?.error?.code === 'string' ? r.error.code.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40) : 'unknown'
+          track('payment_failed', { plan, surface, reason: code || 'unknown' })
+        })
+      } catch { /* analytics only */ }
+      track('checkout_opened', { plan, surface })
       rzp.open()
 
     } catch (err: unknown) {

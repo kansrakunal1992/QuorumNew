@@ -173,7 +173,7 @@ function buildNudgeEmailHtml({
     </p>
 
     <!-- CTA -->
-    <a href="${appUrl}"
+    <a href="${appUrl}/?n=daily_nudge"
        style="display:inline-block;background:#c9a84c;color:#0a0a12;text-decoration:none;
               padding:13px 28px;border-radius:8px;font-size:14px;font-weight:700;
               letter-spacing:0.04em">
@@ -185,7 +185,7 @@ function buildNudgeEmailHtml({
       You&rsquo;re receiving this because you use Quorum.<br>
       <a href="${unsubUrl}" style="color:#aaa;text-decoration:underline">Stop these nudges</a>
       &nbsp;&middot;&nbsp;
-      <a href="${appUrl}" style="color:#aaa;text-decoration:none">Quorum</a>
+      <a href="${appUrl}/?n=daily_nudge" style="color:#aaa;text-decoration:none">Quorum</a>
     </p>
 
   </div>

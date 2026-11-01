@@ -55,7 +55,7 @@ import AddToHomeScreenPrompt from '@/components/AddToHomeScreenPrompt'   // Phas
 import { getGateMode, resolveArm, isGated } from '@/lib/auth-gate'        // Phase 3
 import { getStoredSessionIds } from '@/lib/storage'                       // Phase 3
 import { getAuthHeaders } from '@/lib/auth-headers'   // Phase 0: send the token so chat_intakes/sessions get user_id
-import { track } from '@/lib/track'                     // Phase 0: first-party events
+import { track, trackError, errorKindFromStatus } from '@/lib/track'   // Phase 0: first-party events; v14: client_error
 import { takeDecisionPrefill } from '@/lib/prefill'    // Phase 1: "Bring it now" hand-off
 import { buildLeanChoices, PRIORITIES } from '@/lib/chat-intake-lean'
 import type { LeanChoice } from '@/lib/chat-intake-lean'
@@ -150,6 +150,7 @@ export default function ChatIntake({
   const quickRef = useRef<ChatQuickReplies | null>(null)
   // v8 analytics: when the current card group appeared, and when this chat's first message was sent.
   const cardShownAt   = useRef<number>(0)
+  const lastApiMs     = useRef<number>(0)   // v14: how long the last chat turn took to come back (the wait the person felt)
   const chatStartedAt = useRef<number>(0)
   const cardGroupsAnswered = useRef<number>(0)
   const retrySel = useRef<CardSelection | null>(null)   // last card answer, restored if the send fails
@@ -313,7 +314,7 @@ export default function ChatIntake({
     if (!shownKey || !quick?.card) return
     cardShownAt.current = Date.now()
     track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
-    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: 1 + (quick.companion ? 1 : 0) + (quick.companion2 ? 1 : 0), flow_version: INTAKE_FLOW_VERSION, viewport: viewportBucket() })
+    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: 1 + (quick.companion ? 1 : 0) + (quick.companion2 ? 1 : 0), flow_version: INTAKE_FLOW_VERSION, viewport: viewportBucket() , api_ms: lastApiMs.current || null})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownKey])
 
@@ -341,6 +342,8 @@ export default function ChatIntake({
     setQuick(null)
     setSending(true)
 
+    const apiStartedAt = Date.now()           // v14
+    let apiStatus: number | null = null       // v14: null until the server answered (so a throw before that is a network failure)
     try {
       const res = await fetch('/api/chat-intake', {
         method:  'POST',
@@ -359,6 +362,8 @@ export default function ChatIntake({
           walkthrough:    !chatIntakeId && walkthrough ? true : undefined,
         }),
       })
+      apiStatus = res.status
+      lastApiMs.current = Date.now() - apiStartedAt
       const data = await res.json()
       // Phase 3: the server says this device needs a linked email before a
       // new decision. Roll the optimistic bubble back and show the gate; the
@@ -369,7 +374,7 @@ export default function ChatIntake({
         if (typeof data.decisionCount === 'number') setLocalCount(c => Math.max(c, data.decisionCount))
         return
       }
-      if (!res.ok) throw new Error(data?.error || 'Chat failed')
+      if (!res.ok) { trackError('chat_turn', errorKindFromStatus(res.status), res.status); throw new Error(data?.error || 'Chat failed') }
 
       if (!chatIntakeId) {
         onChatIntakeId(data.chatIntakeId)
@@ -449,6 +454,7 @@ export default function ChatIntake({
         onReadyToReflect(data.chatIntakeId ?? chatIntakeId!)
       }
     } catch (err) {
+      if (apiStatus === null) trackError('chat_turn', 'network', null)   // v14: the request never got an answer
       console.error('[ChatIntake] send failed:', err)
       setQuick(quickRef.current)   // put the tap-answers back so nothing is lost
       setBubbles(prev => [...prev, { role: 'quorum', content: "Sorry — something slipped. Try that again?" }])

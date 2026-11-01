@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import CaseStudyOptIn from './CaseStudyOptIn' // Item #11
+import { track, trackError, errorKindFromStatus } from '@/lib/track'   // v14: outcome_recorded + failures
+import { parseNotificationSource } from '@/lib/notification-source'
 
 type OutcomeQuality = 'better_than_expected' | 'as_expected' | 'worse_than_expected' | 'too_early'
 
@@ -87,7 +89,13 @@ export default function OutcomeTracker({ sessionId, existingOutcome, preDecision
           retrospective_confidence: retroConfidence,
         }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) { trackError('outcome_save', errorKindFromStatus(res.status), res.status, { sessionId }); throw new Error() }
+
+      // v14: the check-in loop's last step. from_notification says whether this visit came from one of our emails.
+      try {
+        const source = parseNotificationSource(sessionStorage.getItem('quorum_from_notification'))
+        track('outcome_recorded', { helped, from_notification: !!source, source }, { sessionId })
+      } catch { /* analytics only */ }
 
       // Capture locally so the saved-state card renders even though
       // existingOutcome (server prop) is still null.

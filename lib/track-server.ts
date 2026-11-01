@@ -7,6 +7,8 @@
 // fail (and make Razorpay retry) because an analytics row could not be written.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { sanitizeIntakeProps } from '@/lib/event-props'
+import { sanitizeContextProps } from '@/lib/event-context'
 
 export async function trackServer(
   supabase: SupabaseClient,
@@ -26,6 +28,26 @@ export async function trackServer(
       session_id:     opts.sessionId ?? null,
       identity_state: identity,
       props:          opts.props ?? {},
+    })
+    if (error) console.warn(`[track-server] ${event} skipped:`, error.message)
+  } catch (err) {
+    console.warn(`[track-server] ${event} failed:`, err)
+  }
+}
+
+// v14: events the server witnesses for someone with NO account (a guest paying for a Decision Session). Same table,
+// user_id null, and the same privacy sanitiser as the browser path: known keys only, identifier-shaped values only.
+export async function trackServerAnon(
+  supabase: SupabaseClient,
+  event: string,
+  props: Record<string, string | number | boolean | null> = {},
+): Promise<void> {
+  try {
+    const { error } = await supabase.from('events').insert({
+      event,
+      user_id:        null,
+      identity_state: 'anonymous',
+      props:          sanitizeContextProps(sanitizeIntakeProps(event, props)),
     })
     if (error) console.warn(`[track-server] ${event} skipped:`, error.message)
   } catch (err) {

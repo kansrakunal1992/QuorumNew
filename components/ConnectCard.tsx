@@ -18,6 +18,10 @@
 //              NOT skippable: replaces the chat input once the person has
 //              enough decisions. Existing records stay open -- only starting
 //              the next decision needs a linked email.
+//   convene_gate  v14, behind NEXT_PUBLIC_CONVENE_GATE (default ON, lib/convene-gate.ts). NOT skippable. Shown by
+//              components/ConveneGate.tsx on /session/<id> for a signed-out visitor whose Council has not run yet,
+//              i.e. immediately before the Council would start. Returns to the same session after Google or the
+//              magic link (returnTo), and links the session to the account.
 //
 // Collapsed by default (one line + one button) so it never competes with the
 // "next decision" prompt above it; expands to Google + email link on tap, or
@@ -30,12 +34,13 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
-import { getOrCreateDeviceId, getStoredSessionIds, getStoredUserEmail, getStoredUtm } from '@/lib/storage'
+import { getOrCreateDeviceId, getStoredSessionIds, getStoredUserEmail, getStoredUtm, pushSessionIdForSignIn } from '@/lib/storage'
+import { detectInApp } from '@/lib/event-context'   // v14: Google sign-in is refused inside in-app browsers (Instagram, Facebook, ...)
 import { getAuthHeaders } from '@/lib/auth-headers'
 import { currentPathAsReturnTo, setReturnTo } from '@/lib/return-to'
 import { track } from '@/lib/track'
 
-export type ConnectMode = 'd1_soft' | 'd2_earned' | 'd3_gate'
+export type ConnectMode = 'd1_soft' | 'd2_earned' | 'd3_gate' | 'convene_gate'
 
 interface Props {
   mode?: ConnectMode
@@ -81,9 +86,11 @@ export default function ConnectCard({
   decisionCount, arm, lead, tourId,
 }: Props) {
   const tourAttr = tourId ? { 'data-tour-id': tourId } : {}
-  const skippable = mode !== 'd3_gate'
+  const skippable = mode !== 'd3_gate' && mode !== 'convene_gate'
+  const isGate    = mode === 'convene_gate'
+  const inAppName = typeof navigator !== 'undefined' ? detectInApp(navigator.userAgent) : 'none'   // v14
   const [visible,  setVisible]  = useState(false)
-  const [expanded, setExpanded] = useState(defaultExpanded || !!parkedText || mode === 'd3_gate')
+  const [expanded, setExpanded] = useState(defaultExpanded || !!parkedText || mode === 'd3_gate' || mode === 'convene_gate')
   const [email,    setEmail]    = useState('')
   const [state,    setState]    = useState<SendState>('idle')
   const [error,    setError]    = useState('')
@@ -94,7 +101,8 @@ export default function ConnectCard({
     let cancelled = false
     ;(async () => {
       try {
-        if (getStoredUserEmail()) return
+        // v14: the gate trusts only the LIVE session below. A stale stored email must not leave the gate blank.
+        if (mode !== 'convene_gate' && getStoredUserEmail()) return
         const until = Number(localStorage.getItem(DISMISS_KEY) ?? '0')
         if (skippable && until && until > Date.now() && !parkedText) return
         if (sessionStorage.getItem(PENDING_KEY)) { if (!cancelled) { setVisible(true); setState('sent') } ; return }
@@ -114,7 +122,9 @@ export default function ConnectCard({
   if (!visible) return null
 
   const formattedDate = reviewDate ? formatReviewDate(reviewDate) : null
-  const line = mode === 'd3_gate'
+  const line = isGate
+    ? (lead || 'Quorum will hold this decision, bring it back to you on your review date, and ask how it turned out. Where should it reach you?')
+    : mode === 'd3_gate'
     ? `Your record has ${decisionCount ?? 'several'} decision${decisionCount === 1 ? '' : 's'}. Connect to keep going. Quorum will hold your record, remind you on your review dates, and tell you when it finds something.`
     : mode === 'd2_earned'
     ? (lead || 'Keep your record connected and Quorum can tell you when it finds something. Where should it reach you?')
@@ -181,7 +191,7 @@ export default function ConnectCard({
       <div style={card} {...tourAttr}>
         <p style={{ ...small, color: 'var(--gold)', fontWeight: 600, marginBottom: 4 }}>Check your inbox.</p>
         <p style={small}>
-          The link brings you back here with your decisions connected.
+          {isGate ? 'The link brings you straight back to your Council.' : 'The link brings you back here with your decisions connected.'}
           {' '}
           <button style={linkBtn} onClick={() => { try { sessionStorage.removeItem(PENDING_KEY) } catch {} ; setState('idle'); setEmail('') }}>
             Wrong email?
@@ -197,7 +207,7 @@ export default function ConnectCard({
         <p style={{ ...small, marginBottom: 10 }}>
           <strong style={{ color: 'var(--text-2)' }}>{email}</strong> signed up with Google. Use that to get back in.
         </p>
-        <GoogleSignInButton variant="compact" onStart={() => track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null })} />
+        <GoogleSignInButton variant="compact" onStart={() => { if (isGate && sessionId) pushSessionIdForSignIn(sessionId); track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null }) }} />
       </div>
     )
   }
@@ -224,13 +234,24 @@ export default function ConnectCard({
     <div style={card} {...tourAttr}>
       <p style={{ ...small, marginBottom: 12 }}>{line}</p>
 
-      <GoogleSignInButton variant="primary" onStart={() => track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null })} />
+      {isGate && inAppName !== 'none' ? (
+        // v14: Instagram / Facebook / WhatsApp open links in an embedded browser, and Google refuses sign-in there.
+        // Offer the email link as the way in, and say how to use Google if they prefer it.
+        <p style={{ ...small, fontSize: 12, marginBottom: 10 }}>
+          You are viewing this inside another app&rsquo;s browser, where Google sign-in is blocked. Use your email below, or open this page in Chrome or Safari to use Google.
+        </p>
+      ) : (
+        <>
+          <GoogleSignInButton variant="primary" onStart={() => { if (isGate && sessionId) pushSessionIdForSignIn(sessionId); track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null }) }} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
         <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
         <span style={{ fontSize: 10.5, color: 'var(--text-5)' }}>or</span>
         <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />
-      </div>
+          </div>
+
+        </>
+      )}
 
       <div style={{ display: 'flex', gap: 8 }}>
         <input
@@ -261,7 +282,7 @@ export default function ConnectCard({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
         <span style={{ fontSize: 11, color: 'var(--text-5)' }}>
-          {mode === 'd3_gate' ? 'No password. Your existing records stay open.' : 'No password. Just a link, or Google.'}
+          {isGate ? 'No password. Your decision stays private.' : mode === 'd3_gate' ? 'No password. Your existing records stay open.' : 'No password. Just a link, or Google.'}
         </span>
         {skippable && <button style={linkBtn} onClick={dismiss}>Not now</button>}
       </div>

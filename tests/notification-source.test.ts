@@ -9,7 +9,9 @@ describe('parseNotificationSource', () => {
     expect(parseNotificationSource('  Weekly_Brief ')).toBe('weekly_brief')
   })
   it('rejects anything else', () => {
-    expect(parseNotificationSource('daily_nudge')).toBeNull()
+    // v14: daily_nudge became a real source (its email link is now tagged), so use a different unknown value here.
+    expect(parseNotificationSource('daily_nudge_typo')).toBeNull()
+    expect(parseNotificationSource('reanalyze_99d')).toBeNull()
     expect(parseNotificationSource('<script>')).toBeNull()
     expect(parseNotificationSource(null)).toBeNull()
     expect(parseNotificationSource(42)).toBeNull()

@@ -10,7 +10,7 @@ import { PERSONAS_WITH_STRUCTURAL_CONTEXT } from '@/lib/structural-dims'
 import LeanBadge, { LEAN_LABELS } from './LeanBadge'
 import PersonaIcon from './PersonaIcon'
 import { splitHighlight } from '@/lib/persona-highlight'
-import { track } from '@/lib/track'
+import { track, trackError, errorKindFromStatus } from '@/lib/track'   // v14: client_error for Council failures
 import { parseDisplayTags, orderKinds, stripDisplayTags, type DisplayTagKind } from '@/lib/display-tags'
 import {
   parsePersonaContent, serializePersonaContent, buildAdvisorConversation, extractNewInfo,
@@ -588,6 +588,8 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
       })
       if (!res.ok || !res.body) {
         const rl = await parseRateLimit(res)
+        // v14: a Council advisor that never answered used to be invisible to analytics
+        trackError('council_advisor', errorKindFromStatus(res.status), res.status, { sessionId })
         if (rl) { setRateLimitInfo(rl); setPanelState('idle'); return }
         retryOrFail('Failed to load. Check API key.')
         return
@@ -686,6 +688,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         onExaminerUpdateCompleteRef.current?.(persona.key, fullContent)
       }
     } catch {
+      trackError('council_advisor', 'network', null, { sessionId })   // v14
       retryOrFail('Connection error.')
     }
   }, [sessionId, persona.key, decisionText, contextText, registerMode, structuralContext, extractHeaderTags, stripHeaderTags, commitHistory])

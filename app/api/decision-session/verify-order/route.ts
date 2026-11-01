@@ -30,6 +30,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto                         from 'crypto'
 import { createServiceClient }        from '@/lib/supabase'
+import { trackServerAnon }            from '@/lib/track-server'     // v14: guest order funnel
+import { safeToken }                  from '@/lib/event-context'
 import { corsHeaders }                from '@/lib/decision-session-cors'
 
 function verifyOrderSignature(orderId: string, paymentId: string, signature: string, secret: string): boolean {
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
   // rather than erroring or minting a second one. ──────────────────────────
   const { data: existing } = await supabase
     .from('decision_session_payments')
-    .select('status, booking_token')
+    .select('status, booking_token, utm_source')
     .eq('razorpay_order_id', razorpayOrderId)
     .maybeSingle()
 
@@ -110,6 +112,8 @@ export async function POST(req: NextRequest) {
     console.error('[decision-session/verify-order] DB update failed:', updateError)
     return NextResponse.json({ error: 'Verification write failed' }, { status: 500, headers: cors })
   }
+
+  await trackServerAnon(supabase, 'guest_order_paid', { utm_source: safeToken(existing.utm_source), surface: 'landing' })   // v14
 
   console.log(`[decision-session/verify-order] Verified payment | order: ${razorpayOrderId} | payment: ${razorpayPaymentId}`)
   return NextResponse.json({ verified: true, token }, { headers: cors })

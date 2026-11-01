@@ -3,6 +3,7 @@ import { formatDateTime, formatDate } from '@/lib/dates'
 import { createServiceClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
 import OutcomeTracker from '@/components/OutcomeTracker'
+import RecordViewTracker from '@/components/RecordViewTracker'   // v14: record_viewed
 import BriefCTA from '@/components/BriefCTA'
 import NextDecisionPrompt from '@/components/NextDecisionPrompt'   // Phase 1: replaces EmailCaptureCard here
 import EarlyEchoCard from '@/components/EarlyEchoCard'
@@ -845,6 +846,7 @@ export default async function RecordPage({ params }: Props) {
 
   return (
     <>
+      <RecordViewTracker sessionId={id} />
       {/* ── Entrance animations + page-specific styles ──────── */}
       <style>{`
         @keyframes recordFadeIn {

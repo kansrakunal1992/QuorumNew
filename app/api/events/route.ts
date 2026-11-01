@@ -11,6 +11,8 @@
 
 import { NextResponse } from 'next/server'
 import { sanitizeIntakeProps } from '@/lib/event-props'
+import { sanitizeContextProps } from '@/lib/event-context'
+import { visitorHashEnabled, visitorToken } from '@/lib/visitor-hash'
 import { createClient, createServiceClient } from '@/lib/supabase'
 import { checkLimit, getClientIP, LIMITS } from '@/lib/rate-limit'
 
@@ -59,6 +61,19 @@ const ALLOWED_EVENTS = new Set([
   'intake_summary_feedback',
   // v10 — shortened journey (additive)
   'council_specificity_feedback',
+  // v14: cookie banner, errors, sign-in-before-Council gate, payment funnel, record + outcome (additive)
+  'consent_shown',
+  'consent_accepted',
+  'consent_rejected',
+  'client_error',
+  'convene_gate_shown',
+  'paywall_viewed',
+  'checkout_opened',
+  'payment_success',
+  'payment_failed',
+  'checkout_dismissed',
+  'record_viewed',
+  'outcome_recorded',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -68,7 +83,7 @@ function cleanProps(raw: unknown): Record<string, string | number | boolean | nu
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
   let n = 0
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (n >= 20) break
+    if (n >= 30) break   // v14: 20 -> 30, device/attribution context adds up to ~8 keys
     if (k.length > 40) continue
     if (v === null || typeof v === 'boolean' || typeof v === 'number') out[k] = v as any
     else if (typeof v === 'string') out[k] = v.slice(0, 200)
@@ -108,6 +123,15 @@ export async function POST(req: Request) {
     const deviceId  = typeof body.deviceId === 'string' && body.deviceId.length <= 80 ? body.deviceId : null
     const idx       = Number.isFinite(body.decisionIndex) ? Math.max(0, Math.min(10_000, Math.floor(body.decisionIndex as number))) : null
 
+    // v14: for an event with NO device id (a visitor who has not accepted cookies), add an aggregate-only,
+    // day-rotating visitor token so "how many distinct people visited" can be estimated. Off unless
+    // VISITOR_HASH_SECRET is set. Never stored on the visitor's device; see lib/visitor-hash.ts.
+    const props = sanitizeContextProps(sanitizeIntakeProps(String(body.event), cleanProps(body.props)))   // v9 + v14
+    const secret = process.env.VISITOR_HASH_SECRET
+    if (!deviceId && !userId && visitorHashEnabled(secret)) {
+      try { props.vh = visitorToken(secret, getClientIP(req), req.headers.get('user-agent') ?? '') } catch { /* optional */ }
+    }
+
     const { error } = await createServiceClient().from('events').insert({
       event:          body.event,
       device_id:      deviceId,
@@ -115,7 +139,7 @@ export async function POST(req: Request) {
       session_id:     sessionId,
       decision_index: idx,
       identity_state: identityState,
-      props:          sanitizeIntakeProps(String(body.event), cleanProps(body.props)),   // v9: intake events keep ids/counts only (lib/event-props.ts)
+      props,   // v9: intake events keep ids/counts only (lib/event-props.ts); v14: context keys checked, visitor token added
     })
     if (error) console.warn('[api/events] insert skipped:', error.message)
   } catch (err) {

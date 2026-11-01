@@ -297,7 +297,7 @@ export async function POST(req: Request) {
 
       const unsubToken = generateUnsubToken(userId, 'validation')
       const unsubUrl    = `${appUrl}/api/cron/unsubscribe?token=${encodeURIComponent(unsubToken)}`
-      const sessionUrl  = `${appUrl}/record/${target.id}`
+      const sessionUrl  = `${appUrl}/record/${target.id}?n=validation_nudge`   // v14: opens are measurable
 
       const html = buildValidationEmailHtml({ bodyText: resolved.email.body, sessionUrl, unsubUrl })
       const ok   = await sendEmail({ to: email, subject: resolved.email.subject, html })
