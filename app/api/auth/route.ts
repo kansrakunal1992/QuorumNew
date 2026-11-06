@@ -30,6 +30,11 @@
 // lookup itself errors (a transient admin-API issue should never block a
 // legitimate sign-in) — logged, not surfaced to the caller.
 //
+// Cross-browser hardening: the same information is ALSO stored server-side in auth_pending_intents, keyed by email,
+// and recovered by POST /api/auth/resume after sign-in. The query string alone is not reliable — if Supabase does not
+// honour emailRedirectTo (Redirect URL allow-list mismatch) it redirects to the Site URL and drops every param. See
+// lib/auth-intent.ts for the full explanation.
+//
 // GTM attribution: utm* fields ride along the same way (?us=&uc=&ct=) so
 // app/auth/callback/page.tsx can fire POST /api/auth/link-utm on first
 // registration only. This route never writes attribution itself — see that
@@ -39,6 +44,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 import { sanitizeReturnTo } from '@/lib/return-to'   // Phase 0: send people back where they were
+import { sanitizeIntent, cleanSessionIds } from '@/lib/auth-intent'    // cross-browser: server-side pending intent (see that file)
 
 export async function POST(req: Request) {
   const rlResult = checkLimit(getClientIP(req), LIMITS.auth)
@@ -86,9 +92,8 @@ export async function POST(req: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const params  = new URLSearchParams()
   if (body.deviceId) params.set('xd', body.deviceId)
-  if (Array.isArray(body.sessionIds) && body.sessionIds.length) {
-    params.set('xs', body.sessionIds.slice(0, 40).join(','))
-  }
+  const linkSessionIds = cleanSessionIds(body.sessionIds)   // uuids only: link_sessions_to_user takes uuid[]
+  if (linkSessionIds.length) params.set('xs', linkSessionIds.join(','))
   if (body.utmSource)   params.set('us', body.utmSource)
   if (body.utmCampaign) params.set('uc', body.utmCampaign)
   if (body.utmContent)  params.set('ct', body.utmContent)
@@ -96,6 +101,28 @@ export async function POST(req: Request) {
   // different browser still lands on the page the person signed in from.
   const returnTo = sanitizeReturnTo(body.returnTo)
   if (returnTo) params.set('rt', returnTo)
+
+  // ── Cross-browser: record the pending intent server-side (best effort — never blocks sending the link) ──
+  try {
+    const intent = sanitizeIntent({
+      returnTo: body.returnTo, sessionIds: body.sessionIds, deviceId: body.deviceId,
+      utmSource: body.utmSource, utmCampaign: body.utmCampaign, utmContent: body.utmContent,
+    })
+    const { error: intentError } = await supabase.from('auth_pending_intents').insert({
+      email,
+      return_to:    intent.returnTo,
+      session_ids:  intent.sessionIds,
+      device_id:    intent.deviceId,
+      utm_source:   intent.utmSource,
+      utm_campaign: intent.utmCampaign,
+      utm_content:  intent.utmContent,
+    })
+    if (intentError) console.warn('[api/auth] pending intent not stored (non-fatal):', intentError.message)
+    // Opportunistic cleanup — rows are only honoured for 1 hour, so anything older than a day is dead weight.
+    await supabase.from('auth_pending_intents').delete().lt('created_at', new Date(Date.now() - 24 * 3600_000).toISOString())
+  } catch (err) {
+    console.warn('[api/auth] pending intent threw (non-fatal):', err)
+  }
 
   const query = params.toString()
   const emailRedirectTo = `${baseUrl}/auth/callback${query ? `?${query}` : ''}`

@@ -13,6 +13,11 @@
 //   4. Bias library retro-link   — upgrades anonymous bias rows to user_id lane
 //   5. user_preferences upsert   — ensures Mirror can access the user's preferences
 //
+// Security hardening (Nov 2026): this route used to trust `userId` / `userEmail` from the request body, so anyone who
+// knew a user id could attach arbitrary sessions to that account — or attach someone else's anonymous sessions to their
+// own. The caller (app/auth/callback/page.tsx) always has a freshly verified session, so identity now comes ONLY from
+// the Bearer token. A `userId` in the body is still accepted for backward compatibility but must match the token.
+//
 // Provider-lock / duplicate-account note (confirmed with product, 2026-08):
 // this route intentionally does NOT run a cross-provider duplicate-account check
 // (e.g. "does this email already have a user_preferences row under a different
@@ -32,22 +37,33 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { newUserPrefDefaults } from '@/lib/notification-defaults'
+import { getUserFromBearer } from '@/lib/audit'
+import { cleanSessionIds } from '@/lib/auth-intent'
 
 export async function POST(req: Request) {
   try {
-    const { sessionIds, userId, userEmail, deviceIds, deviceId, authMethod } = await req.json() as {
-      sessionIds?: string[]
+    const authed = await getUserFromBearer(req)
+    if (!authed) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { sessionIds: rawSessionIds, userId: claimedUserId, deviceIds, deviceId, authMethod } = await req.json() as {
+      sessionIds?: unknown[]
       userId?:     string
-      userEmail?:  string
+      userEmail?:  string                          // ignored: taken from the verified token (kept so old clients still type-check)
       deviceIds?:  string[]                        // Sprint 6b: array of device IDs to sweep
       deviceId?:   string                           // legacy single deviceId (kept for backward compat)
       authMethod?: 'magic_link' | 'google'          // which flow just authenticated — stamped into
                                                      // user_preferences.signup_method below, informational only
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId required' }, { status: 400 })
+    // Identity comes from the verified token. A mismatching claimed id means a forged or confused request.
+    if (claimedUserId && claimedUserId !== authed.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    const userId    = authed.id
+    const userEmail = authed.email ?? undefined
+    const sessionIds = cleanSessionIds(rawSessionIds)   // uuids only — one bad entry would fail the whole uuid[] RPC
 
     const supabase = createServiceClient()
 

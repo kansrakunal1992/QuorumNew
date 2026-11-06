@@ -30,9 +30,21 @@ interface Props {
 
 type GateState = 'checking' | 'open' | 'gate'
 
+// /auth/callback sends someone whose link failed back here with ?auth_error=… (see app/auth/callback/page.tsx).
+function readAuthErrorNotice(): string | null {
+  try {
+    const reason = new URLSearchParams(window.location.search).get('auth_error')
+    if (reason === 'link_expired') return 'That sign-in link has expired or was already used. Send yourself a new one below.'
+    if (reason === 'link_failed')  return 'That sign-in link did not work. Send yourself a new one below.'
+  } catch { /* no window / bad URL: no notice */ }
+  return null
+}
+
 export default function ConveneGate({ sessionId, candidate, children }: Props) {
   const [state, setState] = useState<GateState>(candidate ? 'checking' : 'open')
   const shownRef = useRef(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  useEffect(() => { setNotice(readAuthErrorNotice()) }, [])
 
   useEffect(() => {
     if (!candidate) return
@@ -70,6 +82,12 @@ export default function ConveneGate({ sessionId, candidate, children }: Props) {
         One quick step first. Six advisors will read your decision and push back from different angles. Sign in so
         Quorum can keep that record private to you.
       </p>
+
+      {notice && (
+        <p role="alert" style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text-2)', background: 'var(--bg-card)', border: '1px solid var(--border-mid)', borderRadius: 10, padding: '10px 12px', margin: '0 0 14px' }}>
+          {notice}
+        </p>
+      )}
 
       <ConnectCard mode="convene_gate" surface="session_page" sessionId={sessionId} arm={CONVENE_GATE_STAGE} />
 

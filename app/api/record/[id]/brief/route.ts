@@ -17,6 +17,8 @@ import { PERSONAS, DECISION_BRIEF } from '@/lib/personas'
 import { createCompletion }   from '@/lib/ai-client'
 import type { PersonaKey }     from '@/lib/types'
 import { encrypt, decrypt }    from '@/lib/encryption'
+import { buildRecordArc } from '@/lib/record-arc'               // lean label + honest wording for a first-ever guess
+import { countDecisionsThrough } from '@/lib/decision-history'
 import { briefLineIsRedundantTitle } from '@/lib/brief-markdown'
 import { checkLimit, getClientIP, tooManyRequests, LIMITS } from '@/lib/rate-limit'
 
@@ -329,6 +331,8 @@ async function buildPdf(
     quorum_prediction_reasoning?: string | null
     final_decision?:              string | null
     prediction_matched_final?:    boolean | null
+    /** How many decisions this person had made when this one was made (lib/record-arc.ts). */
+    decisions_so_far?:            number
   },
   messages: { persona: string; role: string; content: string }[],
   examinerQAs: ExaminerQA[] = [],
@@ -1352,9 +1356,6 @@ async function buildPdf(
     doc.text('What you started with, what Quorum guessed, and what you actually chose', ML, Y)
     Y += 26
 
-    const INSTINCT_LABEL: Record<string, string> = {
-      accept: 'Leaning yes', reject: 'Leaning no', unsure: 'Genuinely unsure',
-    }
     const PRIORITY_LABEL: Record<string, string> = {
       career_growth: 'Career growth', security: 'Security', money: 'Money',
       time_freedom: 'Time / freedom', family: 'Family', other: 'Something else',
@@ -1394,27 +1395,35 @@ async function buildPdf(
       Y = boxTop + boxH + 16
     }
 
-    if (session.initial_instinct) {
-      arcField('INITIAL LEAN — LOCKED BEFORE QUORUM SAID ANYTHING', INSTINCT_LABEL[session.initial_instinct] ?? session.initial_instinct)
+    // Same wording rules as the Record page (lib/record-arc.ts): the exact option they tapped as their lean, and an
+    // honest "first guess" label for a person's first few decisions instead of claiming they "surprised" Quorum.
+    const arc = buildRecordArc({
+      initialInstinct:   session.initial_instinct,
+      contextText:       session.context_text,
+      predictedChoice:   session.quorum_predicted_choice,
+      predictionMatched: session.prediction_matched_final,
+      finalDecision:     session.final_decision,
+      decisionsSoFar:    session.decisions_so_far,
+    })
+
+    if (arc.lean) {
+      arcField('INITIAL LEAN \u2014 LOCKED BEFORE QUORUM SAID ANYTHING', arc.lean)
     }
     if (session.optimization_priority) {
       arcField('WHAT MATTERED MOST', PRIORITY_LABEL[session.optimization_priority] ?? session.optimization_priority)
     }
-    if (session.quorum_predicted_choice) {
-      const reasoningSuffix = session.quorum_prediction_reasoning ? ` — ${session.quorum_prediction_reasoning}` : ''
-      arcField('QUORUM\u2019S HYPOTHESIS', `${session.quorum_predicted_choice}${reasoningSuffix}`)
+    if (arc.guess) {
+      const reasoningSuffix = session.quorum_prediction_reasoning ? ` \u2014 ${session.quorum_prediction_reasoning}` : ''
+      arcField(arc.early ? 'QUORUM\u2019S FIRST GUESS' : 'QUORUM\u2019S HYPOTHESIS', `${arc.guess}${reasoningSuffix}`)
     }
     if (session.final_decision) {
       arcField('WHAT YOU ACTUALLY CHOSE', session.final_decision, C.gold)
-      if (session.prediction_matched_final !== null && session.prediction_matched_final !== undefined) {
+      if (arc.verdict) {
         ensure(16)
         doc.setFont('Helvetica', 'normal')
         doc.setFontSize(9.5)
         doc.setTextColor(...C.mutedText)
-        doc.text(
-          session.prediction_matched_final ? 'Quorum predicted this outcome.' : 'This decision surprised Quorum.',
-          ML, Y,
-        )
+        doc.text(arc.verdict, ML, Y)
         Y += 20
       }
     }
@@ -1819,9 +1828,16 @@ Generate the Decision Brief now.`
     question_order: r.question_order,
   }))
 
+  // Only needed to word Quorum's guess honestly for a person's first decisions (lib/record-arc.ts).
+  const decisionsSoFar = session.quorum_predicted_choice
+    ? await countDecisionsThrough(supabase, {
+        id: session.id, created_at: session.created_at, user_id: sessionResult.data.user_id, device_id: sessionResult.data.device_id,
+      })
+    : 1
+
   let pdfBuffer: Buffer
   try {
-    pdfBuffer = await buildPdf(session, messages, examinerQAs, theme)
+    pdfBuffer = await buildPdf({ ...session, decisions_so_far: decisionsSoFar }, messages, examinerQAs, theme)
   } catch (err) {
     console.error('[brief/route] PDF build error:', err)
     return NextResponse.json({ error: 'PDF generation failed' }, { status: 500 })

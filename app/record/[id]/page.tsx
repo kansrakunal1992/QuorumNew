@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import { formatDateTime, formatDate } from '@/lib/dates'
 import { createServiceClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
+import { buildRecordArc } from '@/lib/record-arc'                 // lean label + honest wording for a first-ever guess
+import { countDecisionsThrough } from '@/lib/decision-history'
 import OutcomeTracker from '@/components/OutcomeTracker'
 import RecordViewTracker from '@/components/RecordViewTracker'   // v14: record_viewed
 import BriefCTA from '@/components/BriefCTA'
@@ -677,6 +679,23 @@ export default async function RecordPage({ params }: Props) {
   const totalSessionCount = totalSessionCountResult.count ?? undefined
   const recordTourDone    = !!tourProfileResult?.data?.record_tour_completed_at
 
+  // "How this decision moved" — what the lean / guess / verdict should SAY (lib/record-arc.ts). The guess is wording
+  // for a person's first few decisions differently because Quorum had no history to read them from. The count is only
+  // needed when there is a guess to word, so skip the extra query otherwise.
+  const decisionsSoFar = session.quorum_predicted_choice
+    ? await countDecisionsThrough(supabase, {
+        id: session.id, created_at: session.created_at, user_id: session.user_id, device_id: session.device_id,
+      })
+    : 1
+  const arc = buildRecordArc({
+    initialInstinct:   session.initial_instinct,
+    contextText:       session.context_text,
+    predictedChoice:   session.quorum_predicted_choice,
+    predictionMatched: session.prediction_matched_final,
+    finalDecision:     session.final_decision,
+    decisionsSoFar,
+  })
+
   // Note: per-session bias note moved to the live SessionView page (SB-3) —
   // it now surfaces right after synthesis completes, when the user is most
   // engaged, instead of on the static record page after the fact.
@@ -1183,28 +1202,27 @@ export default async function RecordPage({ params }: Props) {
                   How this decision moved
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
-                  {session.initial_instinct && (
+                  {arc.lean && (
                     <div>
                       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Initial lean</p>
-                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>
-                        {session.initial_instinct === 'accept' ? 'Leaning yes' : session.initial_instinct === 'reject' ? 'Leaning no' : 'Genuinely unsure'}
-                      </p>
+                      <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>{arc.lean}</p>
                     </div>
                   )}
-                  {session.quorum_predicted_choice && (
+                  {arc.guess && (
                     <div>
-                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quorum predicted</p>
-                      <p style={{ fontSize: 14, color: 'var(--gold)', margin: 0 }}>{session.quorum_predicted_choice}</p>
+                      <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{arc.guessHeading}</p>
+                      <p style={{ fontSize: 14, color: 'var(--gold)', margin: 0 }}>{arc.guess}</p>
+                      {arc.guessNote && (
+                        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '3px 0 0', lineHeight: 1.4 }}>{arc.guessNote}</p>
+                      )}
                     </div>
                   )}
                   {session.final_decision && (
                     <div>
                       <p style={{ fontSize: 10, color: 'var(--text-4)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Finally chose</p>
                       <p style={{ fontSize: 14, color: 'var(--text-1)', margin: 0 }}>{session.final_decision}</p>
-                      {session.prediction_matched_final !== null && session.prediction_matched_final !== undefined && (
-                        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '3px 0 0' }}>
-                          {session.prediction_matched_final ? 'Quorum predicted this' : 'This surprised Quorum'}
-                        </p>
+                      {arc.verdict && (
+                        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '3px 0 0' }}>{arc.verdict}</p>
                       )}
                     </div>
                   )}

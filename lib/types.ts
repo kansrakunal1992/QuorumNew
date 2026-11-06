@@ -195,6 +195,8 @@ export interface ChatStakeholderMention {
 export type DecisionKind =
   | 'career_exit' | 'job_offer' | 'relocation' | 'money' | 'business'
   | 'relationship' | 'education' | 'purchase' | 'other'
+  // Nov 2026: decision types that used to collapse into `other` or be force-fit into `purchase` / `money`.
+  | 'housing' | 'health' | 'family' | 'team' | 'product'
 
 export type ChatRichness = 'rich' | 'medium' | 'sparse'
 export type ChatPhase    = 'gathering' | 'playback' | 'done'

@@ -12,11 +12,16 @@
 // sources and passes the combined payload to link-sessions so ALL prior anonymous
 // sessions are linked regardless of which browser the link is opened in.
 //
-// Identity merge priority:
-//   1. Explicit session IDs from URL params (?xs=...)  ← cross-browser recovery
-//   2. Session IDs from localStorage                   ← same-browser, most common
-//   3. Device ID from URL params (?xd=...)             ← cross-browser recovery
-//   4. Device ID from localStorage                     ← same-browser fallback
+// Identity merge (see lib/auth-intent.ts — mergeIdentity — for the exact rules):
+//   session ids / device ids  = de-duplicated UNION of: URL params, the server-side pending intent, localStorage
+//   return path               = PRIORITY: URL ?rt=  →  pending intent  →  localStorage
+//
+// Nov 2026 — cross-browser hardening. The URL params alone were not reliable: when Supabase does not honour the
+// link's emailRedirectTo (Redirect URL allow-list mismatch) it redirects to the Site URL and every param is lost, so
+// the person landed on Home and lost their place in the Convene gate. POST /api/auth now also records a short-lived
+// "pending intent" keyed by email, and this page fetches it (POST /api/auth/resume) once Supabase has verified the
+// link. Link failures (#error_code=otp_expired in the URL HASH, which this page never read before) are now handled
+// explicitly and send the person back to where they were instead of Home.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Suspense, useEffect, useState } from 'react'
@@ -24,6 +29,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getStoredSessionIds, storeUserEmail, getStoredDeviceId } from '@/lib/storage'
 import { sanitizeReturnTo, readReturnTo, clearReturnTo } from '@/lib/return-to'   // Phase 0: return to where they were
+import { mergeIdentity, parseAuthHash, readInitialAuthHash, cleanSessionIds, withQueryFlag } from '@/lib/auth-intent'   // cross-browser hardening
+import type { AuthIntent } from '@/lib/auth-intent'
 import { readPendingParks, setPendingParks } from '@/lib/pending-park'             // Phase 1: file parked items after sign-in
 import { readHabitPrefs } from '@/lib/habit-prefs'                                 // Phase 2: file the D2 cue + cadence after sign-in
 import { track } from '@/lib/track'                                                 // Phase 0: first-party events
@@ -42,12 +49,24 @@ function CallbackHandler() {
 
         // ── Step 1: Exchange PKCE code for a session ──────────────────────────
         const code  = searchParams.get('code')
-        const error = searchParams.get('error')
+        // Supabase's implicit flow reports a failed link in the URL HASH (#error=access_denied&error_code=otp_expired),
+        // PKCE-style flows in the query string. Read both — this used to check only the query string, so an expired or
+        // already-used link fell through to a vague "no session" failure and a bounce to Home.
+        const hashInfo = parseAuthHash(readInitialAuthHash())
+        const error = searchParams.get('error') ?? hashInfo.error
+
+        // Where to send someone whose link failed: the page they asked for it from (carried in ?rt= or saved locally),
+        // so they land back on the sign-in step with a clear message rather than on Home with their place lost.
+        const bounceHome = (reason: 'link_expired' | 'link_failed') => {
+          const back = sanitizeReturnTo(searchParams.get('rt')) ?? readReturnTo()
+          try { sessionStorage.removeItem('quorum_brief_email_pending') } catch {}
+          setStatus('error')
+          setTimeout(() => router.replace(back ? withQueryFlag(back, 'auth_error', reason) : '/'), 2500)
+        }
 
         if (error) {
-          console.error('[AuthCallback] URL error param:', error, searchParams.get('error_description'))
-          setStatus('error')
-          setTimeout(() => router.replace('/'), 3000)
+          console.error('[AuthCallback] URL error:', error, searchParams.get('error_description') ?? hashInfo.description)
+          bounceHome(hashInfo.kind === 'expired' ? 'link_expired' : 'link_failed')
           return
         }
 
@@ -55,8 +74,7 @@ function CallbackHandler() {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
           if (exchangeError) {
             console.error('[AuthCallback] Code exchange failed:', exchangeError)
-            setStatus('error')
-            setTimeout(() => router.replace('/'), 3000)
+            bounceHome('link_failed')
             return
           }
         }
@@ -65,8 +83,7 @@ function CallbackHandler() {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         if (sessionError || !session?.user) {
           console.error('[AuthCallback] No session after exchange:', sessionError)
-          setStatus('error')
-          setTimeout(() => router.replace('/'), 3000)
+          bounceHome('link_failed')
           return
         }
 
@@ -77,36 +94,45 @@ function CallbackHandler() {
         storeUserEmail(user.email ?? '')
 
         // ── Step 3: Build merged identity payload ─────────────────────────────
-        // Source A: localStorage (populated when magic link opened in SAME browser)
+        // Three carriers, because any one of them can be missing:
+        //   A. localStorage        — only populated when the link opens in the SAME browser that requested it
+        //   B. the link's URL params (?xd ?xs ?rt) — lost if Supabase falls back to the Site URL
+        //   C. the server-side pending intent, keyed by this verified email — survives both of the above
+        let intent: AuthIntent | null = null
+        try {
+          const r = await fetch('/api/auth/resume', {
+            method:  'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+          if (r.ok) intent = ((await r.json()) as { intent?: AuthIntent | null }).intent ?? null
+        } catch { /* non-fatal: URL params + localStorage still apply */ }
+
         const localSessionIds = getStoredSessionIds()
         const localDeviceId   = getStoredDeviceId()
+        const urlDeviceId     = searchParams.get('xd') ?? null
+        const urlSessionIds   = cleanSessionIds(searchParams.get('xs') ?? '')
 
-        // Source B: URL params embedded by /api/auth at send time
-        // These are present when the link is opened in a DIFFERENT browser
-        // (email client, mobile WebView) where localStorage is empty.
-        const urlDeviceId      = searchParams.get('xd') ?? null
-        const urlSessionIdsRaw = searchParams.get('xs') ?? ''
-        const urlSessionIds    = urlSessionIdsRaw
-          ? urlSessionIdsRaw.split(',').filter(s => s.length > 10) // basic sanity check
-          : []
-
-        // Merge: deduplicated union of both sources
-        const allSessionIds = [...new Set([...localSessionIds, ...urlSessionIds])]
-
-        // For device_id: URL param is the originating browser's device — use it
-        // even if localStorage has a different (or no) device ID.
-        // Pass both so link-sessions can update sessions rows for either device.
-        const deviceIds = [...new Set([localDeviceId, urlDeviceId].filter(Boolean))] as string[]
+        const identity = mergeIdentity({
+          local:  { sessionIds: localSessionIds, deviceId: localDeviceId, returnTo: readReturnTo() },
+          url:    {
+            sessionIds: urlSessionIds, deviceId: urlDeviceId, returnTo: searchParams.get('rt'),
+            utmSource:   searchParams.get('us') ?? null,
+            utmCampaign: searchParams.get('uc') ?? null,
+            utmContent:  searchParams.get('ct') ?? null,
+          },
+          intent,
+        })
+        const allSessionIds = identity.sessionIds
+        const deviceIds     = identity.deviceIds
 
         console.log(`[AuthCallback] Linking: ${allSessionIds.length} sessions, deviceIds=[${deviceIds.join(',')}]`)
-        console.log(`[AuthCallback]   local: ${localSessionIds.length} sessions, device=${localDeviceId}`)
-        console.log(`[AuthCallback]   url:   ${urlSessionIds.length} sessions, device=${urlDeviceId}`)
+        console.log(`[AuthCallback]   local: ${localSessionIds.length} sessions · url: ${urlSessionIds.length} · intent: ${intent?.sessionIds.length ?? 'none'} · returnTo=${identity.returnTo ?? 'home'}`)
 
         // ← NEW: GTM attribution — read back the us/uc/ct params /api/auth
         // embedded in the magic link (see that route for the write side).
-        const urlUtmSource   = searchParams.get('us') ?? null
-        const urlUtmCampaign = searchParams.get('uc') ?? null
-        const urlUtmContent  = searchParams.get('ct') ?? null
+        const urlUtmSource   = identity.utm.source     // URL param, else the pending intent (see mergeIdentity)
+        const urlUtmCampaign = identity.utm.campaign
+        const urlUtmContent  = identity.utm.content
 
         // Sprint 12: which method this session actually authenticated with.
         // Supabase sets app_metadata.provider to 'email' for magic link /
@@ -177,17 +203,17 @@ function CallbackHandler() {
         // above is already that single canonical id, so there's no
         // "wrong account" case for this step to detect. See the matching
         // note in app/api/auth/link-sessions/route.ts.
-        await fetch('/api/auth/link-sessions', {
+        // Identity comes from the Bearer token: the route no longer trusts a userId in the body (see that file).
+        const linkRes = await fetch('/api/auth/link-sessions', {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify({
             sessionIds: allSessionIds,   // explicit IDs to link via RPC
-            userId:     user.id,
-            userEmail:  user.email,
             deviceIds,                   // device IDs for DB-level session lookup
             authMethod,
           }),
-        })
+        }).catch(() => null)
+        if (!linkRes?.ok) console.warn('[AuthCallback] link-sessions did not succeed:', linkRes?.status)
 
         // ── Phase 1: file anything parked while anonymous ─────────────────────
         // "Park it for later" needs an account; the text waited in
@@ -232,8 +258,11 @@ function CallbackHandler() {
         // ?rt= (magic link, survives a different browser) wins over the
         // localStorage value (Google OAuth / same-browser). Both are validated
         // same-origin paths. Home stays the default.
-        const returnTo = sanitizeReturnTo(searchParams.get('rt')) ?? readReturnTo()
+        // Priority (lib/auth-intent.ts mergeIdentity): the link's ?rt=, then the server-side pending intent, then this
+        // browser's saved value. Already validated same-origin paths.
+        const returnTo = identity.returnTo
         clearReturnTo()
+        try { sessionStorage.removeItem('quorum_brief_email_pending') } catch {}   // the link was used: stop showing "Check your inbox"
         if (returnTo) {
           router.replace(`${returnTo}${returnTo.includes('?') ? '&' : '?'}linked=1`)
           return

@@ -10,6 +10,7 @@ import PlanBadge from '@/components/PlanBadge'                         // Free/E
 import NotificationLandingTracker from '@/components/NotificationLandingTracker'   // Phase 4: ?n= email-link attribution
 import VisitorCounter from '@/components/VisitorCounter'               // "N people already here" social-proof pill
 import MetaPixel from '@/components/MetaPixel'                         // Free-tier acquisition funnel tracking
+import { AUTH_HASH_RESCUE_SCRIPT } from '@/lib/auth-intent'          // magic link landed on the wrong page -> forward to /auth/callback
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
@@ -104,6 +105,13 @@ export default function RootLayout({
             `,
           }}
         />
+
+        {/* ── Magic-link rescue ──
+            If Supabase ever sends a person to a page other than /auth/callback (Site URL fallback, stale Redirect URL
+            allow-list), the sign-in tokens still arrive in the URL hash of whatever page they landed on. Forward them to
+            /auth/callback before React hydrates so the one code path that links sessions and returns people to their
+            Council always runs. No-op on every normal page load. See lib/auth-intent.ts. ── */}
+        <script dangerouslySetInnerHTML={{ __html: AUTH_HASH_RESCUE_SCRIPT }} />
 
         {/* ── Structured data (Organization + SoftwareApplication) ── */}
         <script

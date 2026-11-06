@@ -24,7 +24,9 @@ import { OUTLOOK_KEY } from '@/lib/chat-intake-gates'
 
 export const DECISION_KINDS: readonly DecisionKind[] = [
   'career_exit', 'job_offer', 'relocation', 'money', 'business',
-  'relationship', 'education', 'purchase', 'other',
+  'relationship', 'education', 'purchase',
+  'housing', 'health', 'family', 'team', 'product',
+  'other',
 ]
 
 export const KIND_LABELS: Record<DecisionKind, string> = {
@@ -36,6 +38,11 @@ export const KIND_LABELS: Record<DecisionKind, string> = {
   relationship: 'A relationship',
   education:    'Studying',
   purchase:     'A purchase',
+  housing:      'A home',
+  health:       'A health decision',
+  family:       'A family decision',
+  team:         'A people decision at work',
+  product:      'A product or technical call',
   other:        'A decision',
 }
 
@@ -166,6 +173,79 @@ const KIND_SLOTS: Record<DecisionKind, SlotSpec[]> = {
     alt('Is there a cheaper or later option you\u2019d consider?', ['A cheaper one', 'Wait a while', 'Rent or borrow']),
     { key: 'urgency', label: 'Any deadline', ask: 'Is there a deadline on this?',
       chips: ['Sale ends soon', 'No rush'], weight: 30, required: false },
+  ],
+  // ── Nov 2026: decision types that used to be force-fit into `purchase` / `money` / `other` ─────────────────────────
+  // Same contract as every kind above (3-6 required slots, a required "other routes" slot, no feelings questions —
+  // tests/chat-intake-brief.test.ts enforces it for every entry in DECISION_KINDS). To add another kind: extend
+  // DecisionKind in lib/types.ts, then DECISION_KINDS / KIND_LABELS / KIND_SLOTS here, CARD_PRESETS in
+  // lib/chat-intake-cards.ts, and a rule in lib/decision-taxonomy.ts. The planner prompt picks the new kind up on its own.
+  housing: [
+    { key: 'what', label: 'The move', ask: 'Are you buying, selling, renting or renovating \u2014 and roughly where?',
+      chips: ['Buying', 'Selling', 'Renting', 'Renovating'], weight: 85, required: true },
+    { key: 'price', label: 'Price and funding', ask: 'Roughly what is the price, and how would you pay \u2014 savings, a loan, or both?', weight: 80, required: true,
+      findOut: 'Get the full cost: price, taxes, registration and the monthly loan payment' },
+    { key: 'affordability', label: 'Monthly fit', ask: 'If there is a loan, how would the monthly payment sit against your income?',
+      chips: ['Comfortably', 'A stretch', 'Too tight', 'No loan needed'], weight: 75, required: true,
+      findOut: 'Work out the monthly payment and compare it with your take-home income' },
+    { key: 'horizon', label: 'How long you would stay', ask: 'How many years do you expect to live there, or hold it?',
+      chips: ['Under 3 years', '3\u20137 years', '7+ years'], weight: 65, required: true,
+      findOut: 'Decide how long you would realistically stay' },
+    alt('Would renting a while longer, or a cheaper or different area, be worth trying first?',
+      ['Rent a while longer', 'A cheaper area', 'A smaller place']),
+    { key: 'people', label: 'Who it affects', ask: 'Who else lives there or is part of this decision?',
+      chips: ['Just me', 'A partner', 'Kids or family'], weight: 40, required: false },
+    { key: 'deadline', label: 'Any deadline', ask: 'Is there a date a seller, landlord or lease is forcing?',
+      chips: ['Within weeks', 'Within months', 'No deadline'], weight: 40, required: false },
+  ],
+  health: [
+    { key: 'situation', label: 'What is being decided', ask: 'What is the health decision \u2014 a treatment, a procedure, or something else \u2014 and what have you been told so far?', weight: 90, required: true },
+    { key: 'advice', label: 'What a doctor advised', ask: 'What has a qualified doctor advised, and have you had a second opinion?',
+      chips: ['One doctor so far', 'A second opinion', 'Not seen a doctor yet'], weight: 80, required: true,
+      findOut: 'Get a second opinion from a qualified doctor before deciding' },
+    { key: 'urgency', label: 'How soon', ask: 'How soon does this need to be decided?',
+      chips: ['Today or this week', 'Within a month', 'No set time'], weight: 70, required: true,
+      findOut: 'Ask your doctor how long you can safely wait' },
+    { key: 'risks', label: 'The main worry', ask: 'What is the main risk or side effect that worries you?', weight: 60, required: true },
+    alt('Is there a gentler option, or a way to wait and monitor first?',
+      ['Wait and monitor', 'A gentler treatment', 'Another specialist']),
+    { key: 'cost', label: 'Cost and cover', ask: 'Would the cost or insurance cover change what you do?',
+      chips: ['Yes', 'A little', 'No'], weight: 35, required: false },
+  ],
+  family: [
+    { key: 'what', label: 'The choice', ask: 'What is the family decision, in a sentence?', weight: 85, required: true },
+    { key: 'who', label: 'Who it is about', ask: 'Who is it mainly about \u2014 a child, a partner, a parent, or the whole family?',
+      chips: ['A child', 'My partner', 'A parent', 'The whole family'], weight: 80, required: true },
+    { key: 'change', label: 'What it would change', ask: 'What would it change day to day \u2014 money, time, or where you live?',
+      chips: ['Money', 'Time', 'Where we live', 'All of these'], weight: 65, required: true },
+    { key: 'agreement', label: 'Where everyone stands', ask: 'Does everyone involved agree, or is someone pulling the other way?',
+      chips: ['Everyone agrees', 'Mixed views', 'Not discussed yet'], weight: 65, required: true,
+      findOut: 'Talk it through with the people it affects before deciding' },
+    alt('Is there a trial run or a smaller first step before committing?',
+      ['A trial period', 'Ask for outside help', 'Wait a year']),
+    { ...WHY_NOW, required: false, weight: 45 },
+  ],
+  team: [
+    { key: 'what', label: 'The people decision', ask: 'Is this about hiring, letting someone go, promoting or restructuring \u2014 and for which role?',
+      chips: ['Hiring', 'Letting someone go', 'Promoting', 'Restructuring'], weight: 90, required: true },
+    { key: 'evidence', label: 'What you know', ask: 'What do you actually know so far \u2014 track record, interviews, results or feedback?', weight: 75, required: true },
+    { key: 'tried', label: 'What you have tried', ask: 'What have you already tried to fix or fill this?',
+      chips: ['Direct feedback', 'Coaching or support', 'A change of scope', 'Nothing yet'], weight: 65, required: true },
+    { key: 'impact', label: 'Impact on the team', ask: 'Who else on the team would this affect, and how?', weight: 55, required: true },
+    alt('Is there a middle route \u2014 a trial period, a change of scope, or interim cover?',
+      ['A trial period', 'Change the scope', 'Interim cover']),
+    { ...WHY_NOW, required: false, weight: 45 },
+  ],
+  product: [
+    { key: 'what', label: 'The call', ask: 'What is the product or technical decision, and what are the options?', weight: 90, required: true },
+    { key: 'goal', label: 'What it must achieve', ask: 'What outcome must this decision deliver, and by when?', weight: 75, required: true },
+    { key: 'reversal', label: 'Cost of being wrong', ask: 'If this turns out wrong, how costly is it to reverse?',
+      chips: ['Easy to undo', 'Costly to undo', 'Cannot be undone'], weight: 75, required: true },
+    { key: 'evidence', label: 'What data you have', ask: 'What data or customer evidence do you have so far?',
+      chips: ['None yet', 'Some signals', 'Strong evidence'], weight: 60, required: true,
+      findOut: 'Get one real data point or customer conversation before committing' },
+    alt('Is there a smaller experiment that would answer this first?',
+      ['A small pilot', 'A prototype', 'Ask customers']),
+    { key: 'people', label: 'Who must agree', ask: 'Who has to sign off, and do they agree yet?', weight: 40, required: false },
   ],
   other: [
     { key: 'what', label: 'The decision', ask: 'What exactly are you choosing between? Give me the specifics.', weight: 90, required: true },

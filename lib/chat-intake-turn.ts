@@ -34,6 +34,7 @@ import {
   outlookCovered, parkedReply, parseDependencyChoice,
 } from './chat-intake-gates'
 import { quantityChipsFor } from '@/lib/chat-intake-quantity'
+import { classifyKind } from '@/lib/decision-taxonomy'   // deterministic fallback when the planner gives no kind
 import { allSelectedNote, buildCardGroup, recordCardAnswer, sanitizeCardMeta } from './chat-intake-cards'
 import { criticalOpen, duplicatesKnown, effectiveStakes, finalizeForCouncil, gapIsOpen, isSmartFriendGap } from './chat-intake-depth'
 import type { SmartFriendGap } from './chat-intake-depth'
@@ -112,6 +113,13 @@ export function mergeNotes(
 
   if (notes.decisionStatement) s.decisionStatement = notes.decisionStatement
   if (isDecisionKind(notes.decisionKind)) s.decisionKind = notes.decisionKind
+  // Nov 2026: if the planner gave no kind (down, slow, unusable reply) and none was set on an earlier turn, take a
+  // deterministic first read of the person's own words instead of silently dropping to the generic `other` slots.
+  // Conservative by construction (lib/decision-taxonomy.ts) and NEVER overrides a kind the planner or an earlier turn set.
+  if (!s.decisionKind) {
+    const guess = classifyKind(notes.decisionStatement || s.decisionStatement || opts.userText)
+    if (guess) s.decisionKind = guess
+  }
   if (notes.deadline)          s.deadline          = notes.deadline
   if (notes.decisionThreshold) s.decisionThreshold = notes.decisionThreshold
   if (notes.reversibility)     s.reversibility     = notes.reversibility

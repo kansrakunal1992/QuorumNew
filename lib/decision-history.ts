@@ -49,3 +49,26 @@ export async function loadDecisionRows(
       prediction_matched_final: (r.prediction_matched_final as boolean | null) ?? null,
     }))
 }
+
+/**
+ * How many decisions this person had made when `session` was made, counting it. Looks at rows linked to their user_id
+ * AND rows that only share the device_id (same reasoning as loadDecisionRows above), de-duplicated by id. Used to word
+ * Quorum's guess honestly on the Record and the PDF: a person's first few decisions were guessed from general patterns,
+ * not from their own history (see lib/record-arc.ts). Capped at 10 per source — callers only compare against ~3.
+ * Fails soft to 1: an unknown count must not turn a first decision into an authoritative-sounding "surprised Quorum".
+ */
+export async function countDecisionsThrough(
+  supabase: SupabaseClient,
+  session: { id: string; created_at: string; user_id?: string | null; device_id?: string | null },
+): Promise<number> {
+  const ids = new Set<string>([session.id])
+  const run = async (col: 'user_id' | 'device_id', value: string) => {
+    const { data, error } = await supabase
+      .from('sessions').select('id').eq(col, value).lte('created_at', session.created_at).limit(10)
+    if (error) { console.warn('[decision-history] countDecisionsThrough failed:', error.message); return }
+    for (const r of data ?? []) ids.add(r.id as string)
+  }
+  if (session.user_id) await run('user_id', session.user_id)
+  if (session.device_id && DEVICE_RE.test(session.device_id)) await run('device_id', session.device_id)
+  return ids.size
+}

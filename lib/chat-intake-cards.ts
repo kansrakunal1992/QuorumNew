@@ -230,6 +230,67 @@ export const CARD_PRESETS: Partial<Record<DecisionKind, Record<string, CardPrese
       options: [['smaller', 'A smaller version first'], ['wait', 'Wait and learn more'], ['ask', 'Ask someone for input'], ['nothing', 'Do nothing for now']],
     },
   },
+  // ── Nov 2026: new decision types (see KIND_SLOTS in lib/chat-intake-brief.ts) ──────────────────────────────────
+  housing: {
+    what: { mode: 'single', options: [['buy', 'Buying'], ['sell', 'Selling'], ['rent', 'Renting'], ['renovate', 'Renovating']] },
+    affordability: {
+      mode: 'single', sensitive: true,
+      options: [['comfortable', 'Comfortably'], ['stretch', 'A stretch'], ['tight', 'Too tight'], ['no_loan', 'No loan needed']],
+    },
+    horizon: { mode: 'single', options: [['u3', 'Under 3 years'], ['y3_7', '3\u20137 years'], ['y7p', '7+ years']] },
+    alternatives: {
+      mode: 'multi', hint: 'Select every route that could realistically work.',
+      options: [['rent_longer', 'Rent a while longer'], ['cheaper_area', 'A cheaper area'], ['smaller', 'A smaller place'], ['wait', 'Wait for the market']],
+    },
+    people: { mode: 'multi', sensitive: true, options: [['just_me', 'Just me', true], ['partner', 'A partner'], ['kids', 'Kids'], ['family', 'Parents or other family']] },
+    deadline: { mode: 'single', options: [['weeks', 'Within weeks'], ['months', 'Within months'], ['none', 'No deadline']] },
+  },
+  health: {
+    advice: {
+      mode: 'single', sensitive: true,
+      options: [['one_doctor', 'One doctor so far'], ['second_opinion', 'A second opinion'], ['not_seen', 'Not seen a doctor yet']],
+    },
+    urgency: { mode: 'single', options: [['now', 'Today or this week'], ['month', 'Within a month'], ['none', 'No set time']] },
+    alternatives: {
+      mode: 'multi', hint: 'Select every option worth asking a doctor about.',
+      options: [['monitor', 'Wait and monitor'], ['gentler', 'A gentler treatment'], ['specialist', 'Another specialist'], ['lifestyle', 'Lifestyle changes first']],
+    },
+    cost: { mode: 'single', sensitive: true, options: [['yes', 'Yes'], ['little', 'A little'], ['no', 'No']] },
+  },
+  family: {
+    who: { mode: 'single', sensitive: true, options: [['child', 'A child'], ['partner', 'My partner'], ['parent', 'A parent'], ['whole_family', 'The whole family']] },
+    change: {
+      mode: 'multi', hint: 'Choose at least one. Select as many as apply.',
+      options: [['money', 'Money'], ['time', 'Time'], ['where_live', 'Where we live'], ['routines', 'Everyday routines']],
+    },
+    agreement: {
+      mode: 'single', sensitive: true,
+      options: [['agree', 'Everyone agrees'], ['mixed', 'Mixed views'], ['not_discussed', 'Not discussed yet']],
+    },
+    alternatives: {
+      mode: 'multi', hint: 'Select every route that could realistically work.',
+      options: [['trial', 'A trial period'], ['help', 'Ask for outside help'], ['wait', 'Wait a year'], ['smaller_step', 'A smaller first step']],
+    },
+  },
+  team: {
+    what: { mode: 'single', options: [['hire', 'Hiring'], ['let_go', 'Letting someone go'], ['promote', 'Promoting'], ['restructure', 'Restructuring']] },
+    tried: {
+      mode: 'multi', hint: 'Choose at least one. Select as many as apply.',
+      options: [['feedback', 'Direct feedback'], ['coaching', 'Coaching or support'], ['scope', 'A change of scope'], ['nothing', 'Nothing yet', true]],
+    },
+    alternatives: {
+      mode: 'multi', hint: 'Select every route that could realistically work.',
+      options: [['trial', 'A trial period'], ['scope', 'Change the scope'], ['interim', 'Interim cover'], ['external', 'Bring in outside help']],
+    },
+  },
+  product: {
+    reversal: { mode: 'single', options: [['easy', 'Easy to undo'], ['costly', 'Costly to undo'], ['permanent', 'Cannot be undone']] },
+    evidence: { mode: 'single', options: [['none', 'None yet'], ['signals', 'Some signals'], ['strong', 'Strong evidence']] },
+    alternatives: {
+      mode: 'multi', hint: 'Select every route that could realistically work.',
+      options: [['pilot', 'A small pilot'], ['prototype', 'A prototype'], ['customers', 'Ask customers'], ['stage', 'Roll out in stages']],
+    },
+  },
 }
 
 /** Used when a kind has no template for a slot. */
