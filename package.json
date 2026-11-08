@@ -12,7 +12,8 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "eval:pattern-analyst": "tsx scripts/eval-pattern-analyst-fabrication.ts"
+    "eval:pattern-analyst": "tsx scripts/eval-pattern-analyst-fabrication.ts",
+    "playbooks:draft": "tsx scripts/draft-playbooks.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

@@ -13,7 +13,7 @@ import {
 } from '../lib/chat-intake-cards'
 import { decideTurn, preprocessTurn } from '../lib/chat-intake-turn'
 import { slotSpec, UNKNOWN_REPLY_TEXT } from '../lib/chat-intake-brief'
-import type { ChatCardGroup, ChatDecisionState, DecisionKind } from '../lib/types'
+import type { ChatCardGroup, ChatDecisionState, DecisionKind, BaseDecisionKind } from '../lib/types'
 
 const slot = (kind: DecisionKind, key: string) => slotSpec(kind, key)!
 
@@ -51,7 +51,7 @@ describe('card templates are decision-specific', () => {
 
   it('career-specific wording never leaks into other kinds of decision', () => {
     const careerOnly = /burnout|promotion|sabbatical|resign|my employer|less demanding/i
-    for (const kind of ['relocation', 'money', 'business', 'relationship', 'education', 'purchase'] as DecisionKind[]) {
+    for (const kind of ['relocation', 'money', 'business', 'relationship', 'education', 'purchase'] as BaseDecisionKind[]) {
       for (const [key, preset] of Object.entries(CARD_PRESETS[kind] ?? {})) {
         // alternatives / why_now are generic by design; check the rest for career vocabulary
         if (key === 'why_now') continue

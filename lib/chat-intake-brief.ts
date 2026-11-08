@@ -19,17 +19,20 @@
 // never pull in lib/ai-client.ts's server-only guard — same rule as
 // lib/chat-intake-context.ts and lib/chat-intake-lean.ts.
 
-import type { ChatDecisionState, ChatRichness, DecisionKind } from '@/lib/types'
+import type { BaseDecisionKind, ChatDecisionState, ChatRichness, DecisionKind } from '@/lib/types'
+import { PLAYBOOKS, getPlaybook, baseKindOf } from '@/lib/decision-playbooks'   // ready-made situations inside each type
 import { OUTLOOK_KEY } from '@/lib/chat-intake-gates'
 
-export const DECISION_KINDS: readonly DecisionKind[] = [
+/** The broad TYPES of decision. Specific situations inside them are playbooks (lib/decision-playbooks.ts). */
+export const DECISION_KINDS: readonly BaseDecisionKind[] = [
   'career_exit', 'job_offer', 'relocation', 'money', 'business',
   'relationship', 'education', 'purchase',
   'housing', 'health', 'family', 'team', 'product',
+  'career_move', 'lifestyle',
   'other',
 ]
 
-export const KIND_LABELS: Record<DecisionKind, string> = {
+export const KIND_LABELS: Record<BaseDecisionKind, string> = {
   career_exit:  'Leaving a job',
   job_offer:    'A job offer',
   relocation:   'Moving',
@@ -43,11 +46,21 @@ export const KIND_LABELS: Record<DecisionKind, string> = {
   family:       'A family decision',
   team:         'A people decision at work',
   product:      'A product or technical call',
+  career_move:  'A move at work',
+  lifestyle:    'An everyday choice',
   other:        'A decision',
 }
 
+/** Label for any kind: a playbook's own ("Buying a home") or its type's ("A home"). */
+export function kindLabel(kind: DecisionKind | null | undefined): string | null {
+  if (!kind) return null
+  const pb = getPlaybook(kind)
+  if (pb) return pb.label
+  return (KIND_LABELS as Record<string, string>)[kind] ?? null
+}
+
 export function isDecisionKind(v: unknown): v is DecisionKind {
-  return typeof v === 'string' && (DECISION_KINDS as readonly string[]).includes(v)
+  return typeof v === 'string' && ((DECISION_KINDS as readonly string[]).includes(v) || getPlaybook(v) !== null)
 }
 
 // ── Slots ────────────────────────────────────────────────────────────────────
@@ -84,7 +97,7 @@ const alt = (ask: string, chips: string[]): SlotSpec => ({
   findOut: 'List at least one route you haven\u2019t considered yet',
 })
 
-const KIND_SLOTS: Record<DecisionKind, SlotSpec[]> = {
+const KIND_SLOTS: Record<BaseDecisionKind, SlotSpec[]> = {
   career_exit: [
     { key: 'role', label: 'The job', ask: 'What\u2019s the role, and how long have you been in it?', weight: 80, required: true },
     { key: 'next_step', label: 'What comes next', ask: 'If you left, what would you do next?',
@@ -247,6 +260,24 @@ const KIND_SLOTS: Record<DecisionKind, SlotSpec[]> = {
       ['A small pilot', 'A prototype', 'Ask customers']),
     { key: 'people', label: 'Who must agree', ask: 'Who has to sign off, and do they agree yet?', weight: 40, required: false },
   ],
+  // ── Nov 2026 (playbook library): the two types the situations below hang off ───────────────────────────────────────
+  career_move: [
+    { key: 'what', label: 'The move', ask: 'What exactly are you weighing at work, in a sentence?', weight: 85, required: true },
+    { key: 'upside', label: 'What you would gain', ask: 'What would you gain if it goes well?', weight: 75, required: true },
+    { key: 'risk', label: 'What you would risk', ask: 'What could you lose or put at risk?', weight: 70, required: true },
+    alt('Is there a middle route \u2014 a smaller version, a trial, or different timing?',
+      ['A smaller version', 'Wait a quarter', 'Ask for something else']),
+    { key: 'people', label: 'Who else is involved', ask: 'Who else is involved or affected?',
+      chips: ['My manager', 'My team', 'HR', 'Just me'], weight: 45, required: false },
+  ],
+  lifestyle: [
+    { key: 'what', label: 'The choice', ask: 'What are you deciding, and what are the options?', weight: 85, required: true },
+    { key: 'matters', label: 'What matters most', ask: 'What matters most here \u2014 cost, time, enjoyment, or something else?',
+      chips: ['Cost', 'Time', 'Enjoyment', 'Health'], weight: 70, required: true },
+    alt('Is there an easy middle option?', ['Try a small version', 'Do both', 'Skip it']),
+    { key: 'deadline', label: 'By when', ask: 'Does it need deciding by a certain time?',
+      chips: ['Today', 'This week', 'No rush'], weight: 40, required: false },
+  ],
   other: [
     { key: 'what', label: 'The decision', ask: 'What exactly are you choosing between? Give me the specifics.', weight: 90, required: true },
     WHY_NOW,
@@ -263,8 +294,35 @@ export const CHANGE_MIND_SLOT: SlotSpec = {
   weight: 40, required: false,
 }
 
+// A playbook's slots: its own sharper questions first, then the generic ones it inherits from its type.
+// "Other routes" is inherited (required, unless the playbook is `light`); "what set this off" is inherited as optional.
+const PLAYBOOK_SLOTS = new Map<string, SlotSpec[]>()
+function playbookSlots(id: string): SlotSpec[] | null {
+  const cached = PLAYBOOK_SLOTS.get(id)
+  if (cached) return cached
+  const pb = getPlaybook(id)
+  if (!pb) return null
+  const own: SlotSpec[] = pb.slots.map(s => ({
+    key: s.key, label: s.label, ask: s.ask, weight: s.weight, required: s.required,
+    ...(s.chips ? { chips: s.chips } : {}),
+  }))
+  const parent = KIND_SLOTS[pb.base]
+  for (const key of ['alternatives', 'why_now']) {
+    if (own.some(o => o.key === key)) continue
+    const p = parent.find(x => x.key === key)
+    if (!p) continue
+    const mustAsk = key === 'alternatives' && !pb.light
+    own.push(mustAsk ? p : { ...p, required: false, weight: Math.min(p.weight, 45) })
+  }
+  PLAYBOOK_SLOTS.set(id, own)
+  return own
+}
+
 export function slotsFor(kind: DecisionKind | null | undefined): SlotSpec[] {
-  return KIND_SLOTS[kind && isDecisionKind(kind) ? kind : 'other']
+  if (!kind) return KIND_SLOTS.other
+  const fromPlaybook = playbookSlots(kind)
+  if (fromPlaybook) return fromPlaybook
+  return KIND_SLOTS[isDecisionKind(kind) ? (kind as BaseDecisionKind) : 'other']
 }
 
 export function slotSpec(kind: DecisionKind | null | undefined, key: string): SlotSpec | null {
@@ -272,12 +330,23 @@ export function slotSpec(kind: DecisionKind | null | undefined, key: string): Sl
   return slotsFor(kind).find(s => s.key === key) ?? null
 }
 
-/** Compact catalogue for the planner prompt: every kind, its slot keys and what each means. */
-export function slotCatalogForPrompt(): string {
-  return DECISION_KINDS.map(k => {
-    const slots = slotsFor(k).map(s => `${s.key}${s.required ? '*' : ''} (${s.label})`).join(', ')
-    return `- ${k}: ${slots}`
-  }).join('\n')
+const slotLine = (slots: SlotSpec[]): string => slots.map(s => `${s.key}${s.required ? '*' : ''} (${s.label})`).join(', ')
+
+/**
+ * Compact catalogue for the planner prompt. Every broad type with its slots, as before. Specific situations (playbooks)
+ * are listed too, but only where they help: on the opening turn (no kind chosen yet) the planner sees every situation's
+ * id and label so it can pick the sharpest one; once a situation is chosen it sees that situation's own slots instead.
+ * This keeps the prompt small on every later turn however large the library grows.
+ */
+export function slotCatalogForPrompt(current?: DecisionKind | null): string {
+  const kinds = DECISION_KINDS.map(k => `- ${k}: ${slotLine(slotsFor(k))}`).join('\n')
+  const cur = current ? getPlaybook(current) : null
+  if (cur) {
+    return `${kinds}\n\nThe situation chosen so far is \"${cur.id}\" (${cur.label}). Its questions: ${slotLine(slotsFor(cur.id))}`
+  }
+  if (current) return kinds
+  const situations = PLAYBOOKS.map(p => `${p.id} (${p.label})`).join('; ')
+  return `${kinds}\n\nMore specific situations. If the person's message clearly fits one, return its id as decisionKind instead of the broad type; otherwise return the broad type:\n${situations}`
 }
 
 // ── Resolution + status ──────────────────────────────────────────────────────
@@ -405,7 +474,7 @@ export function briefRows(state: ChatDecisionState): BriefRow[] {
 /** Plain-text brief appended to the session's context_text (see assembleSessionInput). */
 export function briefContextLines(state: ChatDecisionState): string[] {
   const out: string[] = []
-  if (state.decisionKind) out.push(`Kind of decision: ${KIND_LABELS[state.decisionKind]}`)
+  if (state.decisionKind) out.push(`Kind of decision: ${kindLabel(state.decisionKind) ?? 'A decision'}`)
   const rows = briefRows(state)
   const known = rows.filter(r => r.status === 'known')
   if (known.length) out.push(`Key facts:\n${known.map(r => `- ${r.label}: ${r.value}`).join('\n')}`)

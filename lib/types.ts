@@ -192,11 +192,22 @@ export interface ChatStakeholderMention {
 // The chat no longer works through a fixed checklist. It fills a "brief" whose
 // slots depend on the KIND of decision (see lib/chat-intake-brief.ts), and
 // each slot ends up known, explicitly unknown, or not applicable.
-export type DecisionKind =
+// The broad TYPES of decision. Each has its own required questions (lib/chat-intake-brief.ts KIND_SLOTS).
+export type BaseDecisionKind =
   | 'career_exit' | 'job_offer' | 'relocation' | 'money' | 'business'
   | 'relationship' | 'education' | 'purchase' | 'other'
   // Nov 2026: decision types that used to collapse into `other` or be force-fit into `purchase` / `money`.
   | 'housing' | 'health' | 'family' | 'team' | 'product'
+  // Nov 2026 (playbook library): work decisions that are not quitting or an offer, and everyday / small decisions.
+  | 'career_move' | 'lifestyle'
+
+// A PLAYBOOK is a specific, ready-made situation inside a type: 'housing.buy', 'relationship.breakup',
+// 'lifestyle.pet'. It inherits from its parent type and adds sharper questions and answer cards
+// (lib/decision-playbooks.ts + lib/playbook-data.ts). Namespacing the id under the parent means everything that already
+// carries a decisionKind around (state, analytics, the planner) carries a playbook for free.
+export type PlaybookId = `${Exclude<BaseDecisionKind, 'other'>}.${string}`
+
+export type DecisionKind = BaseDecisionKind | PlaybookId
 
 export type ChatRichness = 'rich' | 'medium' | 'sparse'
 export type ChatPhase    = 'gathering' | 'playback' | 'done'

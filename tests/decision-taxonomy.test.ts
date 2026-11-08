@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyKind, classifyDecisionText, SCORE_THRESHOLD } from '../lib/decision-taxonomy'
+import { classifyKind, classifyDecisionText, SCORE_THRESHOLD, RULE_ORDER } from '../lib/decision-taxonomy'
 import { DECISION_KINDS, slotsFor } from '../lib/chat-intake-brief'
 import { mergeNotes } from '../lib/chat-intake-turn'
 import { DECISION_CORPUS, KNOWN_SILENT_MISSES } from './fixtures/decision-corpus'
@@ -19,8 +19,8 @@ describe('decision-type coverage (seed corpus)', () => {
     }
   })
 
-  it('adding a decision type forces adding corpus rows: every kind except `other` has at least 5 examples', () => {
-    for (const k of DECISION_KINDS.filter(k => k !== 'other')) {
+  it('adding a keyword rule forces adding corpus rows: every ruled kind has at least 5 examples (the playbook-only types are covered by tests/decision-playbooks.test.ts)', () => {
+    for (const k of RULE_ORDER) {
       const n = DECISION_CORPUS.filter(r => r[1] === k).length
       expect(n, `kind ${k}`).toBeGreaterThanOrEqual(5)
     }
@@ -62,7 +62,7 @@ describe('mergeNotes uses the classifier only as a fallback', () => {
 
   it('fills a missing kind from the person\'s own words', () => {
     const s = mergeNotes({} as ChatDecisionState, noKind, { userText: 'Should I buy the house now or keep looking?' })
-    expect(s.decisionKind).toBe('housing')
+    expect(s.decisionKind).toBe('housing.buy')   // the specific situation inside the housing type
   })
   it('NEVER overrides a kind the planner already chose', () => {
     const s = mergeNotes({} as ChatDecisionState, { decisionKind: 'money' } as never, { userText: 'Should I buy the house now?' })
@@ -73,7 +73,7 @@ describe('mergeNotes uses the classifier only as a fallback', () => {
     expect(s.decisionKind).toBe('career_exit')
   })
   it('leaves the kind unset when the words give no confident answer', () => {
-    const s = mergeNotes({} as ChatDecisionState, noKind, { userText: 'Should I get a dog?' })
+    const s = mergeNotes({} as ChatDecisionState, noKind, { userText: 'Should I take the stairs or the lift?' })
     expect(s.decisionKind).toBeUndefined()
   })
 })

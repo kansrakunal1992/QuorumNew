@@ -16,7 +16,7 @@
 
 import { useMemo, useState } from 'react'
 import type { ChatDecisionState } from '@/lib/types'
-import { KIND_LABELS, briefRows, briefStatus } from '@/lib/chat-intake-brief'
+import { kindLabel, briefRows, briefStatus } from '@/lib/chat-intake-brief'
 
 interface Props {
   state:      ChatDecisionState | null
@@ -39,7 +39,7 @@ export default function DecisionBriefPanel({ state, onEditRow }: Props) {
 
   const { rows, status } = view
   const required = rows.filter(r => r.required)
-  const kind     = state.decisionKind ? KIND_LABELS[state.decisionKind] : null
+  const kind     = kindLabel(state.decisionKind)
   const summary  = status.ready
     ? 'I\u2019ve got the picture'
     : status.resolved === 0

@@ -21,6 +21,7 @@
 import type { ChatDecisionState, DecisionKind } from '@/lib/types'
 import { isKnown, isResolved, slotsFor } from '@/lib/chat-intake-brief'
 import type { SlotSpec } from '@/lib/chat-intake-brief'
+import { baseKindOf } from '@/lib/decision-playbooks'
 
 /** Written onto every new chat and every intake analytics event, so cohorts can be compared across redesigns. */
 export const INTAKE_FLOW_VERSION = 'v9_progressive_cards'
@@ -89,8 +90,9 @@ const peopleMentioned      = (s: ChatDecisionState): boolean => PEOPLE_MENTION.t
 export type SlotRole = 'critical' | 'deferrable' | 'optional' | 'resolved'
 
 /** Optional slots that become critical when the person's own path makes them material. */
-function becomesCritical(s: ChatDecisionState, kind: DecisionKind | null | undefined, key: string): boolean {
+function becomesCritical(s: ChatDecisionState, rawKind: DecisionKind | null | undefined, key: string): boolean {
   const st = effectiveStakes(s)
+  const kind = baseKindOf(rawKind)   // a playbook ('career_exit.freelance') follows its type's rules
   if (kind === 'career_exit') {
     if (key === 'validation') return st !== 'low' && ventureInPlay(s) && !VALIDATION_MENTION.test(evidenceText(s))
     if (key === 'people')     return st !== 'low' && incomeAtRisk(s) && !peopleMentioned(s)
@@ -104,7 +106,7 @@ function becomesCritical(s: ChatDecisionState, kind: DecisionKind | null | undef
 function deferrable(s: ChatDecisionState, kind: DecisionKind | null | undefined, slot: SlotSpec): boolean {
   const st = effectiveStakes(s)
   // Path-based: runway only matters when income is actually at risk.
-  if (kind === 'career_exit' && slot.key === 'runway') {
+  if (baseKindOf(kind) === 'career_exit' && slot.key === 'runway') {
     if (incomeAtRisk(s)) return false
     return jobSecured(s) || STILL_EMPLOYED.test(chosenPath(s)) || st === 'low'
   }

@@ -93,7 +93,7 @@ const PROMPT = (inp: PlannerInput): string => {
   return `You are Quorum's intake planner. Someone is talking through a decision. After EVERY message you do four jobs in one JSON reply: update a private note, say what to ask next, summarise what you understand, and say what a sharp friend would still need. You never talk to the person outside the "reflection", "question" and "smartFriendQuestion" strings.
 
 KINDS OF DECISION and their slots (* = required). Pick the one that fits in "decisionKind":
-${slotCatalogForPrompt()}
+${slotCatalogForPrompt(state.decisionKind)}
 
 PRIVATE NOTE SO FAR (carry forward; do not drop anything just because this message didn't repeat it):
 ${JSON.stringify(contentView(state))}

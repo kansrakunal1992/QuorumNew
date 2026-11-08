@@ -34,7 +34,8 @@ import {
   outlookCovered, parkedReply, parseDependencyChoice,
 } from './chat-intake-gates'
 import { quantityChipsFor } from '@/lib/chat-intake-quantity'
-import { classifyKind } from '@/lib/decision-taxonomy'   // deterministic fallback when the planner gives no kind
+import { classifyDecision } from '@/lib/decision-taxonomy'   // deterministic read of the person's own words
+import { classifyPlaybook, isPlaybookId } from '@/lib/decision-playbooks'
 import { allSelectedNote, buildCardGroup, recordCardAnswer, sanitizeCardMeta } from './chat-intake-cards'
 import { criticalOpen, duplicatesKnown, effectiveStakes, finalizeForCouncil, gapIsOpen, isSmartFriendGap } from './chat-intake-depth'
 import type { SmartFriendGap } from './chat-intake-depth'
@@ -113,12 +114,24 @@ export function mergeNotes(
 
   if (notes.decisionStatement) s.decisionStatement = notes.decisionStatement
   if (isDecisionKind(notes.decisionKind)) s.decisionKind = notes.decisionKind
-  // Nov 2026: if the planner gave no kind (down, slow, unusable reply) and none was set on an earlier turn, take a
-  // deterministic first read of the person's own words instead of silently dropping to the generic `other` slots.
-  // Conservative by construction (lib/decision-taxonomy.ts) and NEVER overrides a kind the planner or an earlier turn set.
-  if (!s.decisionKind) {
-    const guess = classifyKind(notes.decisionStatement || s.decisionStatement || opts.userText)
-    if (guess) s.decisionKind = guess
+  // Nov 2026: recognise the situation from the person's own words (lib/decision-taxonomy.ts + lib/decision-playbooks.ts).
+  //   - no kind at all (planner down, slow or unusable): take a deterministic first read instead of the generic `other`;
+  //   - only a broad type, and nothing answered yet: sharpen it into the specific situation inside that type
+  //     ("housing" -> "housing.buy"), so the questions and cards fit. Never mid-chat and never once any fact exists, so
+  //     answers already given are not orphaned by a change of question set.
+  // Conservative by construction and NEVER overrides a situation the planner or an earlier turn already chose.
+  {
+    const words = notes.decisionStatement || s.decisionStatement || opts.userText
+    if (!s.decisionKind) {
+      const guess = classifyDecision(words)
+      if (guess) s.decisionKind = guess
+    } else if (!isPlaybookId(s.decisionKind)) {
+      const nothingAnswered = Object.keys(s.facts ?? {}).length === 0 && Object.keys(notes.facts ?? {}).length === 0
+      if (nothingAnswered) {
+        const pb = classifyPlaybook(words, { within: s.decisionKind })
+        if (pb) s.decisionKind = pb.playbook.id
+      }
+    }
   }
   if (notes.deadline)          s.deadline          = notes.deadline
   if (notes.decisionThreshold) s.decisionThreshold = notes.decisionThreshold

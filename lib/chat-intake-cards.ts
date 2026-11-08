@@ -29,8 +29,9 @@
 
 import type {
   ChatCardAnswer, ChatCardGroup, ChatCardOption, ChatCardResponseMeta,
-  ChatCardResponseType, ChatDecisionState, DecisionKind,
+  ChatCardResponseType, ChatDecisionState, DecisionKind, BaseDecisionKind,
 } from '@/lib/types'
+import { getPlaybook, baseKindOf } from '@/lib/decision-playbooks'
 import { UNKNOWN_REPLY_TEXT, isKnown, slotSpec } from '@/lib/chat-intake-brief'
 import type { SlotSpec } from '@/lib/chat-intake-brief'
 import { councilReadiness } from '@/lib/chat-intake-depth'
@@ -83,7 +84,7 @@ const TIMELINE: CardPreset = {
 }
 
 /** Kind-specific templates. A slot with no template here falls back to UNIVERSAL_PRESETS, then to the slot's own chips. */
-export const CARD_PRESETS: Partial<Record<DecisionKind, Record<string, CardPreset>>> = {
+export const CARD_PRESETS: Partial<Record<BaseDecisionKind, Record<string, CardPreset>>> = {
   career_exit: {
     why_now: {
       mode: 'multi', hint: 'Choose at least one. Select as many as apply.',
@@ -299,8 +300,28 @@ const UNIVERSAL_PRESETS: Record<string, CardPreset> = {
   timeline: TIMELINE,
 }
 
+const slug = (label: string): string =>
+  label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'option'
+
+/** A playbook question's tap-answers ARE its cards: same ids every time (analytics-stable); a "none of these" answer stays exclusive. */
+function presetFromPlaybookSlot(slot: { chips: string[] | null; multi: boolean; sensitive: boolean }): CardPreset | null {
+  if (!slot.chips) return null
+  return {
+    mode: slot.multi ? 'multi' : 'single',
+    ...(slot.multi ? { hint: 'Select every one that applies.' } : {}),
+    ...(slot.sensitive ? { sensitive: true } : {}),
+    options: slot.chips.map(label => [slug(label), label, slot.multi && /^(none|nothing|nobody|no one|not yet)\b/i.test(label)] as [string, string, boolean]),
+  }
+}
+
 export function presetFor(kind: DecisionKind | null | undefined, slotKey: string): CardPreset | null {
-  const k: DecisionKind = kind ?? 'other'
+  // A situation's own question wins; slots it inherits (other routes, what set this off) use its type's templates.
+  const pb = getPlaybook(kind)
+  if (pb) {
+    const own = pb.slots.find(x => x.key === slotKey)
+    if (own) return presetFromPlaybookSlot(own)
+  }
+  const k: BaseDecisionKind = baseKindOf(kind) ?? 'other'
   return CARD_PRESETS[k]?.[slotKey] ?? UNIVERSAL_PRESETS[slotKey] ?? null
 }
 

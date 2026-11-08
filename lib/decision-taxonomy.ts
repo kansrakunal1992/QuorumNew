@@ -19,6 +19,7 @@
 // that lists the most common decisions currently landing in `other`.
 
 import type { DecisionKind } from '@/lib/types'
+import { classifyPlaybook } from '@/lib/decision-playbooks'
 
 interface Rule {
   kind:   DecisionKind
@@ -182,4 +183,16 @@ export function classifyDecisionText(raw: string | null | undefined): KindGuess 
 
 export function classifyKind(raw: string | null | undefined): DecisionKind | null {
   return classifyDecisionText(raw)?.kind ?? null
+}
+
+/**
+ * The richest read of the person's words: a specific situation (a playbook such as `housing.buy`) when one clearly
+ * fits, otherwise the broad type. The phrase library is the more specific signal, so it wins unless it disagrees with
+ * the type rules on a weak (two-word) match.
+ */
+export function classifyDecision(raw: string | null | undefined): DecisionKind | null {
+  const base = classifyKind(raw)
+  const pb = classifyPlaybook(raw)
+  if (pb && (!base || base === pb.playbook.base || pb.score >= 3)) return pb.playbook.id
+  return base
 }
