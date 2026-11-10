@@ -45,6 +45,7 @@ export type TrackEventName =
   | 'notification_to_decision'
   | 'mirror_viewed'
   | 'return_visit'
+  | 'decision_prefill_loaded'      // Nov 2026: a ?decision= link put text in the chat box (length + flags only, never the text)
   // v8 — Natural Intake cards. Additive: every earlier event above still fires exactly as before.
   // Props are stable ids / counts / booleans only — never option wording, never free text.
   | 'intake_card_group_shown'

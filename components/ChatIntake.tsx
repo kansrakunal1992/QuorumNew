@@ -57,6 +57,10 @@ import { getStoredSessionIds } from '@/lib/storage'                       // Pha
 import { getAuthHeaders } from '@/lib/auth-headers'   // Phase 0: send the token so chat_intakes/sessions get user_id
 import { track, trackError, errorKindFromStatus } from '@/lib/track'   // Phase 0: first-party events; v14: client_error
 import { takeDecisionPrefill } from '@/lib/prefill'    // Phase 1: "Bring it now" hand-off
+import {
+  readUrlDecisionPrefill, hasDecisionParam, urlWithoutParams, resolveFirstMessagePrefill, claimUrlPrefill, prefillSendProps,
+} from '@/lib/url-prefill'   // Nov 2026: prepopulated ?decision= links
+import { captureFirstTouch } from '@/lib/attribution'   // Nov 2026: so decision_prefill_loaded carries utm_medium too (see the effect below)
 import { buildLeanChoices, PRIORITIES } from '@/lib/chat-intake-lean'
 import type { LeanChoice } from '@/lib/chat-intake-lean'
 const VoiceInput = dynamic(() => import('@/components/VoiceInput'), { ssr: false })
@@ -145,6 +149,7 @@ export default function ChatIntake({
   const [quick, setQuick]             = useState<ChatQuickReplies | null>(null)
   const [briefState, setBriefState]   = useState<ChatDecisionState | null>(null)
   const parkedForDependencyRef = useRef(false)   // dependency-gate park fires once per chat
+  const prefillAppliedRef = useRef<string | null>(null)   // Nov 2026: the ?decision= text we loaded into the box, if any (for decision_started's prefill_edited)
   const [parkedDependency, setParkedDependency] = useState<string | null>(null)   // set once the person parks at the gate
   const [walkthrough, setWalkthrough] = useState(false)
   const quickRef = useRef<ChatQuickReplies | null>(null)
@@ -231,23 +236,45 @@ export default function ChatIntake({
 
   // Phase 1: text handed over from a post-decision screen ("Bring it now").
   // Only for a brand-new chat; a resumed chat already has its own thread.
+  //
+  // Nov 2026: also the one place a ?decision= link (LinkedIn / Instagram / WhatsApp posts) fills the box. It only ever
+  // PUTS TEXT IN THE BOX -- it never calls send(), so the visitor has to press the button themselves.
+  // Precedence if several sources want the empty box: the sessionStorage hand-off, then ?decision=, then ?q=1 (focus
+  // only). See lib/url-prefill.ts. Mount-only, and the param is removed from the address bar (all other params, UTMs
+  // included, are left exactly as written), so a rerender, a refresh or a remount cannot apply it a second time.
   useEffect(() => {
     if (chatIntakeId) return
     const pending = takeDecisionPrefill()
     // Phase 3: /q (and the weekly email's CTA) lands here as /?q=1 -- focus the
     // input, then tidy the URL so a refresh does not re-trigger it.
     let focusRequested = false
+    let urlPrefill: ReturnType<typeof readUrlDecisionPrefill> = null
     try {
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('q') === '1') {
-        focusRequested = true
-        params.delete('q')
-        const qs = params.toString()
-        window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''))
-      }
+      const { pathname, search, hash } = window.location
+      const params = new URLSearchParams(search)
+      focusRequested = params.get('q') === '1'
+      urlPrefill = readUrlDecisionPrefill(search)
+      const remove: string[] = []
+      if (focusRequested) remove.push('q')
+      if (hasDecisionParam(search)) remove.push('decision')
+      if (remove.length) window.history.replaceState(null, '', urlWithoutParams(pathname, search, hash, remove))
     } catch {}
-    if (pending) setInput(pending)
-    if (pending || focusRequested) setTimeout(() => inputRef.current?.focus(), 60)
+    const chosen = resolveFirstMessagePrefill({ sessionPrefill: pending, urlPrefill: urlPrefill?.text ?? null })
+    if (chosen?.source === 'session') {
+      setInput(chosen.text)
+    } else if (chosen?.source === 'url' && urlPrefill && !inputRef.current?.value.trim() && claimUrlPrefill(chosen.text)) {
+      setInput(chosen.text)
+      prefillAppliedRef.current = chosen.text
+      // This effect runs before NaturalIntakeClient's own captureFirstTouch() (child effects run first), so take the
+      // first touch here (idempotent) -- otherwise the event would lack utm_medium. Reads the URL, which still has the UTMs.
+      captureFirstTouch()
+      track('decision_prefill_loaded', {
+        surface: 'natural_intake', prefill_chars: chosen.text.length, prefill_truncated: urlPrefill.truncated,
+        flow_version: INTAKE_FLOW_VERSION,
+      })
+    }
+    // A prefilled link does not grab focus: on a phone that would raise the keyboard over the text and the button.
+    if (chosen?.source === 'session' || focusRequested) setTimeout(() => inputRef.current?.focus(), 60)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -388,7 +415,8 @@ export default function ChatIntake({
             track('notification_to_decision', { source: fromNotification })
           }
         } catch {}
-        track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION })
+        // Nov 2026: prefilled / prefill_edited only when the first message began as a ?decision= link (empty object otherwise).
+        track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION, ...prefillSendProps(prefillAppliedRef.current, trimmed) })
       }
       retrySel.current = null
       retrySel2.current = null

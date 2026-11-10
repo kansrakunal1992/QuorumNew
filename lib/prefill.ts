@@ -6,9 +6,12 @@
 
 const KEY = 'quorum_prefill_decision'
 
+// The one place the "how long may a prefilled decision be" limit lives. lib/url-prefill.ts (?decision= links) uses it too.
+export const MAX_PREFILL_CHARS = 600
+
 export function setDecisionPrefill(text: string): void {
   if (typeof window === 'undefined') return
-  const t = text.trim().slice(0, 600)
+  const t = text.trim().slice(0, MAX_PREFILL_CHARS)
   try {
     if (t) sessionStorage.setItem(KEY, t)
     else sessionStorage.removeItem(KEY)

@@ -21,6 +21,8 @@ const INTAKE_EVENTS = new Set([
   'consent_shown', 'consent_accepted', 'consent_rejected', 'client_error', 'convene_gate_shown',
   'paywall_viewed', 'checkout_opened', 'payment_success', 'payment_failed', 'checkout_dismissed',
   'record_viewed', 'outcome_recorded', 'guest_order_created', 'guest_order_paid',
+  // Nov 2026: prepopulated decision link. Length and flags only; the sanitizer below drops any free text.
+  'decision_prefill_loaded',
 ])
 
 const ALLOWED_KEYS = new Set([
@@ -38,6 +40,8 @@ const ALLOWED_KEYS = new Set([
   // v14: timings (ms), where an error happened and what kind, consent choice, payment plan/surface, notification source
   'ms_on_confirm', 'api_ms', 'where', 'kind', 'status', 'via', 'functional', 'plan', 'surface', 'trigger',
   'source', 'helped', 'from_notification', 'founding',
+  // Nov 2026: decision_prefill_loaded (number of characters loaded, and whether the link carried more than we keep)
+  'prefill_chars', 'prefill_truncated',
 ])
 const CONTEXT_KEY_SET: ReadonlySet<string> = new Set(CONTEXT_KEYS)
 

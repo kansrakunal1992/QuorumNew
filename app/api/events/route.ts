@@ -19,6 +19,7 @@ import { checkLimit, getClientIP, LIMITS } from '@/lib/rate-limit'
 const ALLOWED_EVENTS = new Set([
   'landing_view',
   'decision_started',
+  'decision_prefill_loaded',   // Nov 2026: prepopulated decision link loaded into the chat box
   'starter_opened',
   'starter_picked',
   'decision_checkpointed',

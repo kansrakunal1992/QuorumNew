@@ -55,7 +55,7 @@ export function getFirstTouch(): UtmTags & { ref: string | null; landing: string
 
 /** Events that should say which channel brought the person: the steps where "which source converts" matters. */
 const ATTRIBUTED_EVENTS = new Set([
-  'landing_view', 'decision_started', 'auth_prompt_seen', 'auth_started', 'magic_link_requested',
+  'landing_view', 'decision_started', 'decision_prefill_loaded', 'auth_prompt_seen', 'auth_started', 'magic_link_requested',
   'consent_shown', 'consent_accepted', 'consent_rejected', 'convene_gate_shown',
   'paywall_viewed', 'checkout_opened', 'payment_success',
 ])
