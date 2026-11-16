@@ -112,7 +112,16 @@ export async function POST(req: Request) {
     let priorState: ChatDecisionState | null = null
     let existingCount = 0
 
+    // Speed: a resumed chat's row and its transcript are independent, so they are fetched together (one round trip,
+    // not two); a brand-new chat has no transcript yet, so that query is skipped entirely.
+    // (Promise.resolve(...) matters: a Supabase query is lazy and only goes out when awaited, so it is started here.)
+    let existingMsgsPromise: Promise<{ data: { role: string; content: string; turn_order: number }[] | null }> | null = null
     if (intakeId) {
+      existingMsgsPromise = Promise.resolve(supabase
+        .from('chat_intake_messages')
+        .select('role, content, turn_order')
+        .eq('chat_intake_id', intakeId)
+        .order('turn_order', { ascending: true }))
       const { data: intakeRow } = await supabase
         .from('chat_intakes')
         .select('decision_state, exchange_count, status')
@@ -175,11 +184,7 @@ export async function POST(req: Request) {
      const resolvedIntakeId: string = intakeId
     
     // ── Load transcript so far, append this user turn ──────────────────────────
-    const { data: existingMsgs } = await supabase
-      .from('chat_intake_messages')
-      .select('role, content, turn_order')
-      .eq('chat_intake_id', resolvedIntakeId)
-      .order('turn_order', { ascending: true })
+    const existingMsgs = existingMsgsPromise ? (await existingMsgsPromise).data : []
 
     const transcriptSoFar: ChatIntakeMessage[] = (existingMsgs ?? []).map(m => ({
       id: '', chat_intake_id: resolvedIntakeId, role: m.role as 'user' | 'quorum',
@@ -191,17 +196,16 @@ export async function POST(req: Request) {
     let   transcriptWithUser = transcriptSoFar
 
     // "That's enough, show me" is a button, not a message — nothing to store for the user's side.
+    // Speed: the save starts now and is awaited just before Quorum's reply is stored (below), so it overlaps with the
+    // planner call instead of adding to it. Order in the table is unchanged: the user turn is always written first.
+    let userInsert: Promise<{ error: unknown }> | null = null
     if (!isEnough) {
-      const { error: insertUserErr } = await supabase.from('chat_intake_messages').insert({
+      userInsert = Promise.resolve(supabase.from('chat_intake_messages').insert({
         chat_intake_id: resolvedIntakeId,
         role:           'user',
         content:        encrypt(userText),
         turn_order:     nextOrder,
-      })
-      if (insertUserErr) {
-        console.error('[ChatIntake] insert user turn failed:', insertUserErr)
-        return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
-      }
+      }))
       transcriptWithUser = [...transcriptSoFar, {
         id: '', chat_intake_id: resolvedIntakeId, role: 'user', content: userText,
         turn_order: nextOrder, created_at: '',
@@ -261,25 +265,35 @@ export async function POST(req: Request) {
     }
     const updatedState = result.state
 
-    const { error: insertQuorumErr } = await supabase.from('chat_intake_messages').insert({
-      chat_intake_id: resolvedIntakeId,
-      role:           'quorum',
-      content:        encrypt(result.reply),
-      turn_order:     nextOrder,
-    })
+    if (userInsert) {
+      const { error: insertUserErr } = await userInsert
+      if (insertUserErr) {
+        console.error('[ChatIntake] insert user turn failed:', insertUserErr)
+        return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
+      }
+    }
+
+    // Speed: Quorum's reply and the chat's new state are independent writes, so they go out together.
+    const [{ error: insertQuorumErr }] = await Promise.all([
+      supabase.from('chat_intake_messages').insert({
+        chat_intake_id: resolvedIntakeId,
+        role:           'quorum',
+        content:        encrypt(result.reply),
+        turn_order:     nextOrder,
+      }),
+      supabase
+        .from('chat_intakes')
+        .update({
+          decision_state:   updatedState,
+          exchange_count:   exchangeCount,
+          initial_reaction: updatedState.initialReaction ?? null,
+          last_turn_at:     new Date().toISOString(),
+        })
+        .eq('id', resolvedIntakeId),
+    ])
     if (insertQuorumErr) {
       console.error('[ChatIntake] insert quorum turn failed:', insertQuorumErr)
     }
-
-    await supabase
-      .from('chat_intakes')
-      .update({
-        decision_state:   updatedState,
-        exchange_count:   exchangeCount,
-        initial_reaction: updatedState.initialReaction ?? null,
-        last_turn_at:     new Date().toISOString(),
-      })
-      .eq('id', resolvedIntakeId)
 
     return NextResponse.json({
       chatIntakeId:   resolvedIntakeId,

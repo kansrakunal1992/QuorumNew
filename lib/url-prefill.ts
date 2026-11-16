@@ -16,10 +16,13 @@
 // Precedence when more than one source wants to fill the empty box (highest first):
 //   1. sessionStorage hand-off (lib/prefill.ts)  - an in-app "Bring it now" the person just chose themselves
 //   2. ?decision= in the URL                      - a link someone sent them
+//      ?scenario=<slug>                           - same, but a short link whose wording lives in lib/post-scenarios.ts
+//                                                   (?decision= wins when both are present)
 //   3. ?q=1                                       - focus only, carries no text
 // Starter cards are never a conflict: they act on a click, after the box exists, and replace the text by design.
 
 import { MAX_PREFILL_CHARS } from './prefill'
+import { SCENARIO_PARAM, scenarioText } from './post-scenarios'
 
 export const DECISION_PARAM = 'decision'
 
@@ -76,14 +79,19 @@ export function cleanPrefillText(raw: unknown, max: number = MAX_PREFILL_CHARS):
 export function readUrlDecisionPrefill(search: unknown): UrlDecisionPrefill | null {
   if (typeof search !== 'string' || !search) return null
   let raw: string | null
-  try { raw = new URLSearchParams(search).get(DECISION_PARAM) } catch { return null }
+  try {
+    const params = new URLSearchParams(search)
+    raw = params.get(DECISION_PARAM)
+    // Campaign scenario: only when there is no usable ?decision= text, so a hand-written link always wins.
+    if (!cleanPrefillText(raw)) raw = scenarioText(params.get(SCENARIO_PARAM))
+  } catch { return null }
   return cleanPrefillText(raw)
 }
 
-/** True when the query string has a decision key at all (even an empty or unusable one), so it can be tidied away. */
+/** True when the query string has a decision or scenario key at all (even an empty or unusable one), so it can be tidied away. */
 export function hasDecisionParam(search: unknown): boolean {
   if (typeof search !== 'string' || !search) return false
-  try { return new URLSearchParams(search).has(DECISION_PARAM) } catch { return false }
+  try { const p = new URLSearchParams(search); return p.has(DECISION_PARAM) || p.has(SCENARIO_PARAM) } catch { return false }
 }
 
 /**
@@ -91,7 +99,9 @@ export function hasDecisionParam(search: unknown): boolean {
  * re-encoding, same order), so utm_source / utm_medium / utm_campaign / utm_content / utm_term, fbclid, ?n= and
  * everything else survive untouched. The #hash is kept too.
  */
-export function urlWithoutParams(pathname: string, search: string, hash: string, remove: readonly string[]): string {
+export function urlWithoutParams(pathname: string, search: string, hash: string, removeIn: readonly string[]): string {
+  // Tidying away ?decision= also tidies away ?scenario= (the same kind of link), so neither stays in the address bar.
+  const remove = removeIn.includes(DECISION_PARAM) ? [...removeIn, SCENARIO_PARAM] : removeIn
   const raw = (search || '').startsWith('?') ? search.slice(1) : (search || '')
   const kept = raw.split('&').filter(pair => {
     if (!pair) return false

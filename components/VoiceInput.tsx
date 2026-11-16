@@ -26,6 +26,8 @@ interface VoiceInputProps {
   // screens without the label pushing Send off-screen. Defaults to false —
   // HomeClient's existing full-width row is untouched.
   compact?: boolean
+  // Called when the person presses the mic, just before recording starts (lets the parent remember what was in the box).
+  onStart?: () => void
 }
 
 function errorMessage(code: VoiceErrorCode | null): string {
@@ -217,7 +219,7 @@ const dismissBtn: React.CSSProperties = {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function VoiceInput({ onTranscript, compact = false }: VoiceInputProps) {
+export default function VoiceInput({ onTranscript, compact = false, onStart }: VoiceInputProps) {
   const { state, finalText, partialText, errorCode, amplitudeRef, start, stop, reset } = useSoniox()
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const rawRef = useRef('')
@@ -253,7 +255,7 @@ export default function VoiceInput({ onTranscript, compact = false }: VoiceInput
   if (state === 'idle') {
     if (compact) return (
       <button
-        onClick={start}
+        onClick={() => { onStart?.(); start() }}
         aria-label="Voice input"
         title="Voice input"
         style={{
@@ -274,7 +276,7 @@ export default function VoiceInput({ onTranscript, compact = false }: VoiceInput
         <span style={{ fontSize: 12, color: 'var(--text-4)', letterSpacing: '0.03em' }}>
           Or speak your decision
         </span>
-        <button onClick={start} style={{
+        <button onClick={() => { onStart?.(); start() }} style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '6px 12px', borderRadius: 7,
           border: '1px solid var(--border-mid)',

@@ -95,7 +95,7 @@ const PROMPT = (inp: PlannerInput): string => {
 KINDS OF DECISION and their slots (* = required). Pick the one that fits in "decisionKind":
 ${slotCatalogForPrompt(state.decisionKind)}
 
-PRIVATE NOTE SO FAR (carry forward; do not drop anything just because this message didn't repeat it):
+PRIVATE NOTE SO FAR (the app keeps it and merges what you return, so you never need to repeat it):
 ${JSON.stringify(contentView(state))}
 
 ${missing.length ? `STILL OPEN (required slots, most useful first):\n${missing.map(m => `- ${m}`).join('\n')}` : 'STILL OPEN: nothing — every required slot is covered.'}
@@ -106,6 +106,7 @@ ${inp.background ? `\nKNOWN BACKGROUND about this person from earlier (use it so
 THIS IS EXCHANGE ${inp.exchangeCount} OF UP TO ${inp.ceiling}.
 
 RULES FOR THE NOTE:
+- RETURN ONLY WHAT IS NEW OR CHANGED THIS TURN. The app merges your "notes" into the note above, so leave out every field and every "facts" key that this message did not add or change. Do not repeat earlier facts, stakeholders, assumptions or evidence. When the set of "options" changes, return the full current list; a changed fact or a sharpened decision statement goes in whole. (Shorter replies come back faster.)
 - "facts" maps a slot key to a SHORT phrase in the person's own words (under 140 characters), only when the conversation actually answers it. Never guess. One message can fill several slots — fill them all.
 - "alternatives" counts only a real route beyond the two obvious ones (e.g. negotiate, trial it, ask for a change). Staying put and doing the thing do NOT count. If they say there is no other route, fill it with that.
 - "unknownFacts": ONLY a slot the person themselves said, in THIS conversation, that they don't know or haven't decided. A slot that simply hasn't come up yet is NOT unknown — leave it out and it will be asked about. Never mark slots unknown to move things along. "naSlots": only a low-stakes slot their own words show doesn't apply (e.g. who_moves when they said they live alone). When unsure, leave both lists empty.

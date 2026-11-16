@@ -44,3 +44,25 @@ export const INTAKE_EXAMPLES: readonly IntakeExample[] = [
 
 /** Examples after this index are hidden on short screens, so the first three always fit above the fold. */
 export const INTAKE_EXAMPLES_SHORT_SCREEN_COUNT = 3
+
+// -- One-tap start ---------------------------------------------------------------------------------------------
+// For the visitor who cannot put it into words yet. Tapping one SENDS `text` as the first message, in guided mode
+// (ChatIntake: send(..., { walkthrough: true })), and Quorum asks the next small question with tap-answers.
+// `text` reads as the person speaking, because it becomes their first chat bubble.
+export interface IntakeQuickStart {
+  /** Stable id, sent with starter_picked as `example` (placement: 'quick_start'). */
+  id:    string
+  /** The pill. */
+  label: string
+  /** The first message. */
+  text:  string
+}
+
+export const INTAKE_QUICK_STARTS: readonly IntakeQuickStart[] = [
+  { id: 'qs_career',        label: 'Career',        text: 'It\u2019s about my career.' },
+  { id: 'qs_money',         label: 'Money',         text: 'It\u2019s about money.' },
+  { id: 'qs_business',      label: 'Business',      text: 'It\u2019s about my business.' },
+  { id: 'qs_relationships', label: 'Relationships', text: 'It\u2019s about a relationship.' },
+  { id: 'qs_personal',      label: 'Personal',      text: 'It\u2019s a personal life decision.' },
+  { id: 'qs_small',         label: 'Smaller calls', text: 'It\u2019s a smaller, everyday decision.' },
+]

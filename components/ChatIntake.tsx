@@ -22,6 +22,7 @@ import dynamic from 'next/dynamic'
 const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })   // Phase 2: was only mounted in HomeClient
 import DecisionStarters from '@/components/DecisionStarters'
 import IntakeExamples from '@/components/IntakeExamples'           // landing: example openers visible without a tap
+import IntakeQuickStarts from '@/components/IntakeQuickStarts'     // landing: one-tap "what kind of decision" start
 import { INTAKE_EXAMPLES } from '@/lib/intake-examples'
 import FAQModal from '@/components/FAQModal'
 import BehaviorAlerts from '@/components/BehaviorAlerts'           // item 6 plan, Phase 1
@@ -245,6 +246,34 @@ export default function ChatIntake({
   }
   const activeExampleId = INTAKE_EXAMPLES.find(ex => ex.text === input)?.id ?? null
 
+  // Landing: one-tap start (components/IntakeQuickStarts.tsx). The tap IS the first message ("It's about my career."), sent
+  // in guided mode: the same walkthrough the "Walk me through it" link starts, which asks one small question at a time
+  // with tap-answers. The person chose to send it; nothing is sent on their behalf. Tagged on starter_picked so these
+  // starts can be told apart from typed ones (decision_started itself is unchanged).
+  function handleQuickStart(id: string, text: string) {
+    track('starter_picked', { placement: 'quick_start', example: id })
+    void send(text, undefined, { walkthrough: true })
+  }
+
+  // Voice: the transcript arrives as the whole dictation so far, not as new words, so it REPLACES the dictated part
+  // instead of being appended (appending repeated every earlier word). The box's text at the moment the mic was
+  // pressed is kept in front of it.
+  const voiceBaseRef = useRef('')
+  function handleVoiceStart() { voiceBaseRef.current = inputRef.current?.value ?? '' }
+  function handleVoiceTranscript(t: string) {
+    const base = voiceBaseRef.current.trim()
+    setInput(base ? `${base} ${t}` : t)
+  }
+
+  // Waiting: the first reply of a chat can take several seconds. After a few, say what is happening so the wait does not
+  // read as a stall. Plain and true: the message is being read and the next question worked out. Resets every turn.
+  const [waitSecs, setWaitSecs] = useState(0)
+  useEffect(() => {
+    if (!sending) { setWaitSecs(0); return }
+    const t = setInterval(() => setWaitSecs(n => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [sending])
+
   // Landing: the box grows with what is in it (up to ~6 lines), so an example or a ?decision= link that fills it is
   // readable in full on a narrow phone instead of hiding behind a 3-line scroll. Not used in the thread (1 row).
   useEffect(() => {
@@ -368,7 +397,7 @@ export default function ChatIntake({
   const send = useCallback(async (
     text: string,
     meta?: { kind: 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no'; slotKey?: string | null; card?: ChatCardResponseMeta; companion?: { text: string; card: ChatCardResponseMeta }; companion2?: { text: string; card: ChatCardResponseMeta } },
-    opts?: { enough?: boolean },
+    opts?: { enough?: boolean; walkthrough?: boolean },
   ) => {
     const trimmed = text.trim()
     const enough  = !!opts?.enough
@@ -406,7 +435,7 @@ export default function ChatIntake({
           quickReply:     meta,
           action:         enough ? 'enough' : undefined,
           // Only meaningful on the very first message of a brand-new chat.
-          walkthrough:    !chatIntakeId && walkthrough ? true : undefined,
+          walkthrough:    !chatIntakeId && (opts?.walkthrough ?? walkthrough) ? true : undefined,
         }),
       })
       apiStatus = res.status
@@ -648,20 +677,13 @@ export default function ChatIntake({
         disabled={transitioning}
         style={{
           width: '100%', resize: 'none', maxHeight: started ? 120 : 168,
-          padding: started ? '11px 14px' : '11px 62px 11px 14px',
+          padding: '11px 14px',
           borderRadius: 14, border: '1px solid var(--border-mid)',
           background: 'var(--bg-inset)', color: 'var(--text-1)',
           fontSize: 16, fontFamily: 'var(--font-body)',
           opacity: transitioning ? 0.6 : 1,
         }}
       />
-      {/* Landing: the mic sits inside the box's corner (frees the button row so
-          the CTA can be full width). In the thread it stays beside the button. */}
-      {!started && (
-        <div style={{ position: 'absolute', right: 8, bottom: 8 }}>
-          <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />
-        </div>
-      )}
       </div>
       {/* v11: a short, vague first message means more follow-up questions. A one-line nudge — shown only while typing,
           only before the first send, and only when the message is still sparse — invites the options and the deadline
@@ -677,7 +699,7 @@ export default function ChatIntake({
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        {started && <VoiceInput compact onTranscript={(t: string) => setInput(prev => (prev ? `${prev} ${t}` : t))} />}
+        {started && <VoiceInput compact onStart={handleVoiceStart} onTranscript={handleVoiceTranscript} />}
         <button
           type="submit"
           disabled={sending || transitioning || !input.trim()}
@@ -691,6 +713,9 @@ export default function ChatIntake({
           {started ? 'Send' : 'Help me decide →'}
         </button>
       </div>
+      {/* Landing voice: a labelled row ("Or speak your decision") under the button instead of an unlabelled icon in the box's
+          corner. On a phone, saying it is often easier than typing it. In the thread the compact icon stays beside Send. */}
+      {!started && <VoiceInput onStart={handleVoiceStart} onTranscript={handleVoiceTranscript} />}
       {/* Item 6 plan, Phase 1 — the classic home page's live bias detector
           (app/HomeClient.tsx) had no equivalent here at all. Same
           component, same two props, wired to this screen's own input
@@ -808,13 +833,18 @@ export default function ChatIntake({
             </div>
           ))}
           {sending && (
-            <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 4, padding: '11px 15px' }}>
+            <div style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 4, padding: '11px 15px' }}>
               {[0, 1, 2].map(i => (
                 <div key={i} style={{
                   width: 6, height: 6, borderRadius: 999, background: 'var(--text-4)',
                   animation: `chatDotPulse 1.1s ${i * 0.15}s infinite ease-in-out`,
                 }} />
               ))}
+              {waitSecs >= 4 && (
+                <span role="status" aria-live="polite" style={{ marginLeft: 8, fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.4 }}>
+                  {waitSecs >= 10 ? 'Still thinking \u2014 a good question takes a moment.' : 'Reading what you wrote\u2026'}
+                </span>
+              )}
             </div>
           )}
 
@@ -1047,7 +1077,8 @@ export default function ChatIntake({
             {/* Example openers, visible without a tap (components/IntakeExamples.tsx). Directly under the button so the
                 input, the button and at least one example share the first screen. Never above the input. */}
             {!gated && (
-              <div style={{ width: '100%', maxWidth: 440, marginTop: -2 }}>
+              <div style={{ width: '100%', maxWidth: 440, marginTop: -2, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />
                 <IntakeExamples onPick={handleInlineExamplePick} activeId={activeExampleId} />
               </div>
             )}
