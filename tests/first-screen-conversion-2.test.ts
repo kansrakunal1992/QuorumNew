@@ -6,7 +6,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { spawnSync } from 'child_process'
 import { POST_SCENARIOS, SCENARIO_SLUG, scenarioText } from '../lib/post-scenarios'
-import { INTAKE_EXAMPLES, INTAKE_QUICK_STARTS } from '../lib/intake-examples'
+import { INTAKE_EXAMPLES, INTAKE_QUICK_STARTS, QUICK_START_POSITION } from '../lib/intake-examples'
 import { scoreRichness } from '../lib/chat-intake-brief'
 import { MAX_PREFILL_CHARS } from '../lib/prefill'
 import { readUrlDecisionPrefill, hasDecisionParam, urlWithoutParams } from '../lib/url-prefill'
@@ -76,7 +76,7 @@ describe('2. one-tap start', () => {
   })
   it('a tap sends the first message in guided mode, tagged on starter_picked; it is not a prefill', () => {
     const fn = ci.slice(ci.indexOf('function handleQuickStart'), ci.indexOf('// Voice: the transcript arrives'))
-    expect(fn).toContain("track('starter_picked', { placement: 'quick_start', example: id })")
+    expect(fn).toContain("track('starter_picked', { placement: 'quick_start', example: id, position: QUICK_START_POSITION })")
     expect(fn).toContain('void send(text, undefined, { walkthrough: true })')
     expect(fn).not.toContain('setInput')
   })
@@ -84,17 +84,31 @@ describe('2. one-tap start', () => {
     expect(ci).toContain('walkthrough:    !chatIntakeId && (opts?.walkthrough ?? walkthrough) ? true : undefined,')
     expect(ci).toContain("track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION, ...prefillSendProps(prefillAppliedRef.current, trimmed) })")
   })
-  it('the pills sit under the button and above the sentences, only when the sign-in gate is not showing, and lock while sending', () => {
+  it('the pills come first, before the box (default), only when the sign-in gate is not showing, and lock while sending', () => {
     const hero = ci.slice(ci.indexOf('Hero \u2014 "Quorum is ready to think with me,'))
     const input = hero.indexOf('{inputForm}')
-    const qs = hero.indexOf('<IntakeQuickStarts')
-    const ex = hero.indexOf('<IntakeExamples')
-    expect(input).toBeGreaterThan(-1)
-    expect(qs).toBeGreaterThan(input)
-    expect(ex).toBeGreaterThan(qs)
-    expect(hero.slice(input, qs)).toContain('{!gated && (')
-    expect(hero).toContain('<IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />')
+    const above = hero.indexOf("{!gated && QUICK_START_POSITION === 'above' && (")
+    const below = hero.indexOf("{QUICK_START_POSITION === 'below' && <IntakeQuickStarts")
+    const ex    = hero.indexOf('<IntakeExamples')
+    expect(above).toBeGreaterThan(-1)
+    expect(above).toBeLessThan(input)                       // out in front of the box
+    expect(hero.indexOf('<IntakeQuickStarts')).toBe(hero.indexOf('<IntakeQuickStarts', above))   // first use is the 'above' one
+    expect(below).toBeGreaterThan(input)                    // the fallback sits under the button, beside the sentences
+    expect(below).toBeLessThan(ex)
+    expect(hero.match(/<IntakeQuickStarts onPick=\{handleQuickStart\} disabled=\{sending\} \/>/g)).toHaveLength(2)
     expect(src('components/IntakeQuickStarts.tsx')).toContain("type=\"button\"")
+  })
+  it('the position is a build-time switch that defaults to out in front, and it is reported on every tap', () => {
+    const ex = src('lib/intake-examples.ts')
+    expect(ex).toContain("process.env.NEXT_PUBLIC_QUICK_START_POSITION === 'below' ? 'below' : 'above'")
+    expect(QUICK_START_POSITION).toBe('above')
+    expect(ci).toContain("track('starter_picked', { placement: 'quick_start', example: id, position: QUICK_START_POSITION })")
+  })
+  it('the label and pills claim nothing, and the pills are a comfortable tap size', () => {
+    const c = src('components/IntakeQuickStarts.tsx')
+    expect(c).toContain('Start with a tap: what kind of decision is it?')
+    expect(c).not.toMatch(UNVERIFIED_CLAIM)
+    expect(c).toContain('minHeight: 40')
   })
 })
 

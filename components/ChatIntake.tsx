@@ -23,7 +23,7 @@ const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), 
 import DecisionStarters from '@/components/DecisionStarters'
 import IntakeExamples from '@/components/IntakeExamples'           // landing: example openers visible without a tap
 import IntakeQuickStarts from '@/components/IntakeQuickStarts'     // landing: one-tap "what kind of decision" start
-import { INTAKE_EXAMPLES } from '@/lib/intake-examples'
+import { INTAKE_EXAMPLES, QUICK_START_POSITION } from '@/lib/intake-examples'
 import FAQModal from '@/components/FAQModal'
 import BehaviorAlerts from '@/components/BehaviorAlerts'           // item 6 plan, Phase 1
 import AuthPanel from '@/components/AuthPanel'                     // item 6 plan, Phase 3
@@ -251,7 +251,7 @@ export default function ChatIntake({
   // with tap-answers. The person chose to send it; nothing is sent on their behalf. Tagged on starter_picked so these
   // starts can be told apart from typed ones (decision_started itself is unchanged).
   function handleQuickStart(id: string, text: string) {
-    track('starter_picked', { placement: 'quick_start', example: id })
+    track('starter_picked', { placement: 'quick_start', example: id, position: QUICK_START_POSITION })
     void send(text, undefined, { walkthrough: true })
   }
 
@@ -1068,6 +1068,13 @@ export default function ChatIntake({
                 input -> "Not sure what to say? Walk me through it · See examples".
                 The six category chips, the "or type anything" hint and the
                 "big calls and smaller ones" line now live in the examples panel. */}
+            {/* One-tap start, out in front: the first thing to act on after the headline lines, before the box. Never a
+                sign-in element. Hidden with the box when the returning-visitor gate is showing. */}
+            {!gated && QUICK_START_POSITION === 'above' && (
+              <div style={{ width: '100%', maxWidth: 440 }}>
+                <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />
+              </div>
+            )}
             {!gated && (
             <div style={{ width: '100%', maxWidth: 440 }}>
               {inputForm}
@@ -1078,7 +1085,7 @@ export default function ChatIntake({
                 input, the button and at least one example share the first screen. Never above the input. */}
             {!gated && (
               <div style={{ width: '100%', maxWidth: 440, marginTop: -2, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />
+                {QUICK_START_POSITION === 'below' && <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />}
                 <IntakeExamples onPick={handleInlineExamplePick} activeId={activeExampleId} />
               </div>
             )}

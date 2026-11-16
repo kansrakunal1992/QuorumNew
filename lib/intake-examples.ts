@@ -58,6 +58,14 @@ export interface IntakeQuickStart {
   text:  string
 }
 
+/**
+ * Where the pills sit on the landing screen: 'above' = first thing after the headline lines, before the box (default);
+ * 'below' = under the button, as in round 2. Set NEXT_PUBLIC_QUICK_START_POSITION=below and redeploy to go back; no code change.
+ * Sent with starter_picked as `position`.
+ */
+export const QUICK_START_POSITION: 'above' | 'below' =
+  process.env.NEXT_PUBLIC_QUICK_START_POSITION === 'below' ? 'below' : 'above'
+
 export const INTAKE_QUICK_STARTS: readonly IntakeQuickStart[] = [
   { id: 'qs_career',        label: 'Career',        text: 'It\u2019s about my career.' },
   { id: 'qs_money',         label: 'Money',         text: 'It\u2019s about money.' },
