@@ -21,6 +21,8 @@ import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })   // Phase 2: was only mounted in HomeClient
 import DecisionStarters from '@/components/DecisionStarters'
+import IntakeExamples from '@/components/IntakeExamples'           // landing: example openers visible without a tap
+import { INTAKE_EXAMPLES } from '@/lib/intake-examples'
 import FAQModal from '@/components/FAQModal'
 import BehaviorAlerts from '@/components/BehaviorAlerts'           // item 6 plan, Phase 1
 import AuthPanel from '@/components/AuthPanel'                     // item 6 plan, Phase 3
@@ -233,6 +235,24 @@ export default function ChatIntake({
     if (!examplesOpen) track('starter_opened')
     setExamplesOpen(o => !o)
   }
+  // Landing: the always-visible example openers (components/IntakeExamples.tsx). Same effect as a starter chip (fills the
+  // box, never sends) and the same starter_picked event, tagged so it can be told apart from the category chips above.
+  // On a phone it does not focus the box: that would raise the keyboard over the "Help me decide" button.
+  function handleInlineExamplePick(id: string, text: string) {
+    track('starter_picked', { placement: 'inline', example: id })
+    setInput(text)
+    try { if (!window.matchMedia('(pointer: coarse)').matches) inputRef.current?.focus() } catch {}
+  }
+  const activeExampleId = INTAKE_EXAMPLES.find(ex => ex.text === input)?.id ?? null
+
+  // Landing: the box grows with what is in it (up to ~6 lines), so an example or a ?decision= link that fills it is
+  // readable in full on a narrow phone instead of hiding behind a 3-line scroll. Not used in the thread (1 row).
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el || started) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight + 2, 168)}px`
+  }, [input, started])
 
   // Phase 1: text handed over from a post-decision screen ("Bring it now").
   // Only for a brand-new chat; a resumed chat already has its own thread.
@@ -597,6 +617,10 @@ export default function ChatIntake({
   // only its position in the tree changes, and the two spots are mutually
   // exclusive (started flips exactly once per visit), so there's no risk
   // of it ever rendering twice at once.
+  // A ?decision= link puts someone else's scenario in the box. Until the visitor changes it, say so: people do not send
+  // a situation that is not theirs, and nothing else on the screen tells them the text is meant to be edited.
+  const prefillUnedited = !!prefillAppliedRef.current && input === prefillAppliedRef.current
+
   const inputForm = (
     <form
       onSubmit={e => { e.preventDefault(); send(input) }}
@@ -623,7 +647,7 @@ export default function ChatIntake({
         rows={started ? 1 : 3}
         disabled={transitioning}
         style={{
-          width: '100%', resize: 'none', maxHeight: 120,
+          width: '100%', resize: 'none', maxHeight: started ? 120 : 168,
           padding: started ? '11px 14px' : '11px 62px 11px 14px',
           borderRadius: 14, border: '1px solid var(--border-mid)',
           background: 'var(--bg-inset)', color: 'var(--text-1)',
@@ -642,7 +666,12 @@ export default function ChatIntake({
       {/* v11: a short, vague first message means more follow-up questions. A one-line nudge — shown only while typing,
           only before the first send, and only when the message is still sparse — invites the options and the deadline
           up front. It never blocks sending and "a rough version is fine" still holds. */}
-      {!started && !walkthrough && input.trim().length >= 8 && scoreRichness(input).tier === 'sparse' && (
+      {!started && prefillUnedited && (
+        <div role="note" style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.45, textAlign: 'left' }}>
+          This is a starting point from the link. Change it to fit your situation.
+        </div>
+      )}
+      {!started && !walkthrough && input.trim().length >= 8 && scoreRichness(input).tier === 'sparse' && !prefillUnedited && (
         <div role="note" style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.45, textAlign: 'left' }}>
           Tip: add what you{'\u2019'}re choosing between, and any deadline {'\u2014'} you{'\u2019'}ll get fewer questions.
         </div>
@@ -966,9 +995,9 @@ export default function ChatIntake({
             short prompt, not that whole paragraph blown up to display type,
             which would look like a wall of giant text. Replaced by the
             thread the moment the user sends their first message. ── */
-        <div style={{
+        <div className="qi-hero" style={{
           flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-          alignItems: 'center', textAlign: 'center', padding: '24px 28px 32px',
+          alignItems: 'center', textAlign: 'center',
         }}>
           {/* Wrapped in its own `margin: auto 0` block, rather than putting
               justifyContent:'center' on the scrolling parent above — that
@@ -980,7 +1009,7 @@ export default function ChatIntake({
               scroll naturally once the optional blocks below make the
               screen taller (a returning user with hero cards, AuthPanel,
               and/or the reference section all present). */}
-          <div style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, width: '100%' }}>
+          <div className="qi-hero-stack" style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
             <div>
               <h1 style={{
                 fontFamily: 'var(--font-display)', fontWeight: 400,
@@ -989,8 +1018,8 @@ export default function ChatIntake({
               }}>
                 What's the decision you're circling?
               </h1>
-              <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 360 }}>
-                I'll uncover the decision, weigh your options, and challenge what you might be missing.
+              <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 400 }}>
+                Type it below. Quorum asks the questions that move it forward, then weighs your options.
               </p>
             </div>
 
@@ -1013,6 +1042,14 @@ export default function ChatIntake({
             <div style={{ width: '100%', maxWidth: 440 }}>
               {inputForm}
             </div>
+            )}
+
+            {/* Example openers, visible without a tap (components/IntakeExamples.tsx). Directly under the button so the
+                input, the button and at least one example share the first screen. Never above the input. */}
+            {!gated && (
+              <div style={{ width: '100%', maxWidth: 440, marginTop: -2 }}>
+                <IntakeExamples onPick={handleInlineExamplePick} activeId={activeExampleId} />
+              </div>
             )}
 
             {!gated && (
@@ -1039,7 +1076,7 @@ export default function ChatIntake({
                     aria-expanded={examplesOpen}
                     style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, color: 'var(--text-3)', cursor: 'pointer', textDecoration: 'underline' }}
                   >
-                    {examplesOpen ? 'Hide examples' : 'See examples'}
+                    {examplesOpen ? 'Fewer examples' : 'More examples'}
                   </button>
                 </div>
               </div>
@@ -1185,6 +1222,12 @@ export default function ChatIntake({
       {started && inputForm}
 
       <style jsx>{`
+        .qi-hero       { padding: 24px 28px 32px; }
+        .qi-hero-stack { gap: 20px; }
+        @media (max-width: 480px) {
+          .qi-hero       { padding: 12px 20px 24px; }
+          .qi-hero-stack { gap: 14px; }
+        }
         @keyframes chatDotPulse {
           0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
           30% { opacity: 1; transform: translateY(-2px); }

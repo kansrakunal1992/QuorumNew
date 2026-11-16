@@ -37,10 +37,17 @@ export default function CookieConsent() {
   const [showPrefs,  setShowPrefs]  = useState(false)
   const [functional, setFunctional] = useState(true)
   const [analytics,  setAnalytics]  = useState(false)
+  // Phones start with a one-line bar so the banner does not cover the bottom third of the first screen. Same three
+  // choices, same effects; "Cookies" opens the full text and the Cookie Policy link. Wide screens are unchanged.
+  const [slim, setSlim] = useState(false)
 
   useEffect(() => {
     if (!readConsent()) {
-      const t = setTimeout(() => { setVisible(true); track('consent_shown') }, 900)
+      const t = setTimeout(() => {
+        try { setSlim(window.matchMedia('(max-width: 480px)').matches) } catch {}
+        setVisible(true)
+        track('consent_shown')
+      }, 900)
       return () => clearTimeout(t)
     }
   }, [])
@@ -158,8 +165,64 @@ export default function CookieConsent() {
         </div>
       )}
 
+      {/* ── Slim bar (phones, before the person opens the full text) ───────── */}
+      {!showPrefs && slim && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 9000,
+          background: 'var(--bg-card)',
+          borderTop: '1px solid var(--border-mid)',
+          padding: '8px 12px calc(8px + env(safe-area-inset-bottom, 0px))',
+          display: 'flex', alignItems: 'center', gap: 6,
+          boxShadow: '0 -6px 32px rgba(0,0,0,0.38)',
+        }}>
+          <button
+            onClick={() => setSlim(false)}
+            aria-expanded={false}
+            style={{
+              flex: 1, textAlign: 'left', minWidth: 0, padding: '7px 4px',
+              background: 'none', border: 'none', color: 'var(--text-2)',
+              fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+              textDecoration: 'underline', textUnderlineOffset: 2,
+            }}
+          >
+            Cookies
+          </button>
+          <button
+            onClick={() => setShowPrefs(true)}
+            style={{
+              padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border-mid)',
+              background: 'none', color: 'var(--text-3)', fontSize: 12, fontWeight: 500,
+              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            }}
+          >
+            Manage
+          </button>
+          <button
+            onClick={reject}
+            aria-label="Reject non-essential cookies"
+            style={{
+              padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border-mid)',
+              background: 'none', color: 'var(--text-3)', fontSize: 12, fontWeight: 500,
+              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            }}
+          >
+            Reject
+          </button>
+          <button
+            onClick={accept}
+            style={{
+              padding: '7px 12px', borderRadius: 7, border: '1px solid var(--gold-dim)',
+              background: 'rgba(201,168,76,0.12)', color: 'var(--gold)', fontSize: 12, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            }}
+          >
+            Accept all
+          </button>
+        </div>
+      )}
+
       {/* ── Consent Banner ────────────────────────────────────────────────── */}
-      {!showPrefs && (
+      {!showPrefs && !slim && (
         <div style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 9000,
           background: 'var(--bg-card)',
