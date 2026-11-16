@@ -41,8 +41,10 @@ a one-line playback — **"Here's what I've got: … Did I get that right?"** wi
 **Yes, that's right / Not quite**. A typed correction is accepted too.
 
 Always available: **"That's enough — show me"** (wraps now; open items flagged as
-"not sure yet"). At the start, optional: **"Not sure what to say? Walk me through it"**
-(one easy step at a time, tap-answers throughout).
+"not sure yet"). At the start, the one-tap pills (Career, Money, Business, Relationships, Personal,
+Smaller calls) start the same guided walkthrough (one easy step at a time, tap-answers
+throughout). The separate "Not sure what to say? Walk me through it" link was removed
+in round 4 (Nov 2026): the pills do that job.
 
 Live panel (collapsed by default): **"What I've got so far"** — a dot meter and a
 plain sentence ("Getting the picture" / "Filling in the picture" / "I've got the

@@ -76,6 +76,8 @@ export type TrackEventName =
   | 'checkout_dismissed'
   | 'record_viewed'
   | 'outcome_recorded'
+  // round 4 (Nov 2026): landing screen. props: placement = landing
+  | 'intro_video_opened'          // the person tapped "Watch the intro" (the video itself is not tracked further)
 
 export type TrackProps = Record<string, string | number | boolean | null>
 

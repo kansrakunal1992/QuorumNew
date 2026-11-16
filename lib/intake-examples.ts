@@ -1,6 +1,8 @@
 // lib/intake-examples.ts
-// -- Landing screen: tappable example openers ---------------------------------------------------------------
-// Pure data. components/IntakeExamples.tsx renders it; ChatIntake puts `text` in the box on a tap. It never sends.
+// -- Example openers (data) -----------------------------------------------------------------------------------
+// Pure data. Round 4 (Nov 2026): the landing screen no longer shows these sentences (fewer choices on the first screen).
+// They now feed ONE thing: lib/post-scenarios.ts, which builds the ?scenario=<slug> campaign links from them
+// (job_offers, leave_job, hard_conversation, loan_or_invest). Do not delete them without moving those four scenarios.
 //
 // Why these are written the way they are:
 //   - Each `text` already says what is being chosen between, and gives one concrete fact and one worry or deadline.
@@ -42,7 +44,7 @@ export const INTAKE_EXAMPLES: readonly IntakeExample[] = [
   },
 ]
 
-/** Examples after this index are hidden on short screens, so the first three always fit above the fold. */
+/** Legacy. Only components/IntakeExamples.tsx (no longer rendered anywhere) reads this. Delete both together. */
 export const INTAKE_EXAMPLES_SHORT_SCREEN_COUNT = 3
 
 // -- One-tap start ---------------------------------------------------------------------------------------------
@@ -59,12 +61,14 @@ export interface IntakeQuickStart {
 }
 
 /**
- * Where the pills sit on the landing screen: 'above' = first thing after the headline lines, before the box (default);
- * 'below' = under the button, as in round 2. Set NEXT_PUBLIC_QUICK_START_POSITION=below and redeploy to go back; no code change.
+ * Where the pills sit on the landing screen: 'below' = under the button (default since round 4, so the box is the first thing
+ * on the screen); 'above' = first thing after the headline lines, before the box (round 3). Set
+ * NEXT_PUBLIC_QUICK_START_POSITION=above and redeploy to go back; no code change.
+ * If that variable is already set in Railway, it wins over this default: remove it, or set it to below.
  * Sent with starter_picked as `position`.
  */
 export const QUICK_START_POSITION: 'above' | 'below' =
-  process.env.NEXT_PUBLIC_QUICK_START_POSITION === 'below' ? 'below' : 'above'
+  process.env.NEXT_PUBLIC_QUICK_START_POSITION === 'above' ? 'above' : 'below'
 
 export const INTAKE_QUICK_STARTS: readonly IntakeQuickStart[] = [
   { id: 'qs_career',        label: 'Career',        text: 'It\u2019s about my career.' },

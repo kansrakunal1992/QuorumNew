@@ -21,9 +21,9 @@ import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 const PushEnablePrompt = dynamic(() => import('@/components/PushEnablePrompt'), { ssr: false })   // Phase 2: was only mounted in HomeClient
 import DecisionStarters from '@/components/DecisionStarters'
-import IntakeExamples from '@/components/IntakeExamples'           // landing: example openers visible without a tap
+import IntakeVideoLink from '@/components/IntakeVideoLink'         // landing: quiet "Watch the intro" link (round 4)
 import IntakeQuickStarts from '@/components/IntakeQuickStarts'     // landing: one-tap "what kind of decision" start
-import { INTAKE_EXAMPLES, QUICK_START_POSITION } from '@/lib/intake-examples'
+import { QUICK_START_POSITION } from '@/lib/intake-examples'
 import FAQModal from '@/components/FAQModal'
 import BehaviorAlerts from '@/components/BehaviorAlerts'           // item 6 plan, Phase 1
 import AuthPanel from '@/components/AuthPanel'                     // item 6 plan, Phase 3
@@ -48,7 +48,7 @@ import { parkText, dependencyParkText } from '@/lib/park-client'   // Examiner-i
 import type { CardSelection } from '@/lib/chat-intake-cards'
 import DecisionBriefPanel from '@/components/DecisionBriefPanel'   // v7: live "what I've got so far"
 import {
-  ENOUGH_LABEL, WALKTHROUGH_LABEL, WALKTHROUGH_LINE,
+  ENOUGH_LABEL,
   UNKNOWN_CHIP_LABEL, UNKNOWN_REPLY_TEXT, PLAYBACK_YES, scoreRichness,
 } from '@/lib/chat-intake-brief'
 import { isUnifiedSessionEnabled, isWatchlistEnabled } from '@/lib/feature-flags'
@@ -154,7 +154,9 @@ export default function ChatIntake({
   const parkedForDependencyRef = useRef(false)   // dependency-gate park fires once per chat
   const prefillAppliedRef = useRef<string | null>(null)   // Nov 2026: the ?decision= text we loaded into the box, if any (for decision_started's prefill_edited)
   const [parkedDependency, setParkedDependency] = useState<string | null>(null)   // set once the person parks at the gate
-  const [walkthrough, setWalkthrough] = useState(false)
+  // Round 4 (Nov 2026): the "Walk me through it" link is gone, so nothing sets this any more. The one-tap pills ask for
+  // guided mode per call instead (handleQuickStart -> send(..., { walkthrough: true })).
+  const [walkthrough] = useState(false)
   const quickRef = useRef<ChatQuickReplies | null>(null)
   // v8 analytics: when the current card group appeared, and when this chat's first message was sent.
   const cardShownAt   = useRef<number>(0)
@@ -236,19 +238,9 @@ export default function ChatIntake({
     if (!examplesOpen) track('starter_opened')
     setExamplesOpen(o => !o)
   }
-  // Landing: the always-visible example openers (components/IntakeExamples.tsx). Same effect as a starter chip (fills the
-  // box, never sends) and the same starter_picked event, tagged so it can be told apart from the category chips above.
-  // On a phone it does not focus the box: that would raise the keyboard over the "Help me decide" button.
-  function handleInlineExamplePick(id: string, text: string) {
-    track('starter_picked', { placement: 'inline', example: id })
-    setInput(text)
-    try { if (!window.matchMedia('(pointer: coarse)').matches) inputRef.current?.focus() } catch {}
-  }
-  const activeExampleId = INTAKE_EXAMPLES.find(ex => ex.text === input)?.id ?? null
-
   // Landing: one-tap start (components/IntakeQuickStarts.tsx). The tap IS the first message ("It's about my career."), sent
-  // in guided mode: the same walkthrough the "Walk me through it" link starts, which asks one small question at a time
-  // with tap-answers. The person chose to send it; nothing is sent on their behalf. Tagged on starter_picked so these
+  // in guided mode (the walkthrough: one small question at a time
+  // with tap-answers). The person chose to send it; nothing is sent on their behalf. Tagged on starter_picked so these
   // starts can be told apart from typed ones (decision_started itself is unchanged).
   function handleQuickStart(id: string, text: string) {
     track('starter_picked', { placement: 'quick_start', example: id, position: QUICK_START_POSITION })
@@ -1081,33 +1073,24 @@ export default function ChatIntake({
             </div>
             )}
 
-            {/* Example openers, visible without a tap (components/IntakeExamples.tsx). Directly under the button so the
-                input, the button and at least one example share the first screen. Never above the input. */}
-            {!gated && (
-              <div style={{ width: '100%', maxWidth: 440, marginTop: -2, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {QUICK_START_POSITION === 'below' && <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />}
-                <IntakeExamples onPick={handleInlineExamplePick} activeId={activeExampleId} />
+            {/* Round 4 (Nov 2026): the four example sentences are gone. The one-tap pills sit here, under the button (and under
+                the voice row, which lives inside the form), so the box stays the first thing on the screen. They are the one
+                fallback for "I can't put it into words". NEXT_PUBLIC_QUICK_START_POSITION=above puts them back out in front. */}
+            {!gated && QUICK_START_POSITION === 'below' && (
+              <div style={{ width: '100%', maxWidth: 440, marginTop: -2 }}>
+                <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />
               </div>
             )}
 
+            {/* One quiet line: the intro video (only when the file is there, and not for someone who already has a few
+                decisions on this device) and the longer list of examples. "Walk me through it" is gone: the pills do that job. */}
             {!gated && (
               <div style={{ width: '100%', maxWidth: 440, marginTop: -6 }}>
                 <div style={{
                   display: 'flex', alignItems: 'baseline', justifyContent: 'center', flexWrap: 'wrap',
                   gap: '4px 8px', fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5,
                 }}>
-                  {walkthrough ? (
-                    <span>{WALKTHROUGH_LINE}</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => { setWalkthrough(true); inputRef.current?.focus() }}
-                      style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, color: 'var(--text-3)', cursor: 'pointer', textDecoration: 'underline' }}
-                    >
-                      {WALKTHROUGH_LABEL}
-                    </button>
-                  )}
-                  <span aria-hidden="true">·</span>
+                  <IntakeVideoLink decisionCount={localDecisionCount} />
                   <button
                     type="button"
                     onClick={toggleExamples}

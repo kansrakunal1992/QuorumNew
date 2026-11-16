@@ -2,8 +2,8 @@
 
 // components/IntakeQuickStarts.tsx
 // -- Landing screen: start with one tap --------------------------------------------------------------------
-// Sits first on the landing screen, between the headline lines and the box (NEXT_PUBLIC_QUICK_START_POSITION=below moves
-// it under the button). For the visitor who does not yet know how to say it: pick the kind of decision and Quorum asks
+// Since round 4 it sits under the button and the voice row (NEXT_PUBLIC_QUICK_START_POSITION=above puts it back out in
+// front, between the headline lines and the box). For the visitor who does not yet know how to say it: pick the kind of decision and Quorum asks
 // the rest, one small question at a time (the guided mode that "Walk me through it" already starts). The categories are the same six the older example chips used.
 //
 // A tap sends the first message, so the pills are ordinary buttons (never links, never auto-fired) and are disabled

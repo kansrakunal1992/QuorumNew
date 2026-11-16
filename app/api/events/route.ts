@@ -75,6 +75,8 @@ const ALLOWED_EVENTS = new Set([
   'checkout_dismissed',
   'record_viewed',
   'outcome_recorded',
+  // round 4 (Nov 2026): landing screen
+  'intro_video_opened',
 ])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

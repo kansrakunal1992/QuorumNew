@@ -1,12 +1,14 @@
 // tests/first-screen-conversion.test.ts
-// ── Landing first screen: example openers, orientation line, sign-in never above the input, slim phone cookie bar ──
+// ── Landing first screen: orientation line, sign-in never above the input, slim phone cookie bar ──
+// Round 4 (Nov 2026): the four example sentences are no longer shown on the landing screen. Their data stays (it feeds the
+// ?scenario= campaign links), so section 1 still guards the copy, and section 2 guards that they are NOT rendered.
 // Same two kinds of test as the rest of the repo: pure rules (the example copy), and wiring guards that read the
 // component source so the decisions made here cannot quietly come back undone.
 
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { INTAKE_EXAMPLES, INTAKE_EXAMPLES_SHORT_SCREEN_COUNT } from '../lib/intake-examples'
+import { INTAKE_EXAMPLES } from '../lib/intake-examples'
 import { scoreRichness } from '../lib/chat-intake-brief'
 import { isGated, GATE_AFTER } from '../lib/auth-gate'
 import type { GateArm } from '../lib/auth-gate'
@@ -46,9 +48,9 @@ describe('1. the example openers', () => {
   it('at least one is a smaller call, so the screen does not say "big decisions only"', () => {
     expect(INTAKE_EXAMPLES.some(e => e.id === 'hard_conversation')).toBe(true)
   })
-  it('the first three are the ones kept on a short screen', () => {
-    expect(INTAKE_EXAMPLES_SHORT_SCREEN_COUNT).toBe(3)
-    expect(src('components/IntakeExamples.tsx')).toContain('max-height: 700px')
+  it('they feed the campaign links (?scenario=) and are not rendered on the landing screen any more', () => {
+    expect(src('lib/post-scenarios.ts')).toContain('INTAKE_EXAMPLES.map(')
+    expect(src('components/ChatIntake.tsx')).not.toContain('<IntakeExamples')
   })
 })
 
@@ -56,19 +58,20 @@ describe('2. wiring on the landing screen', () => {
   const ci = src('components/ChatIntake.tsx')
   const hero = ci.slice(ci.indexOf('Hero \u2014 "Quorum is ready to think with me,'))
 
-  it('the examples sit directly under the input and never above it', () => {
-    const input    = hero.indexOf('{inputForm}')
-    const examples = hero.indexOf('<IntakeExamples')
-    expect(input).toBeGreaterThan(-1)
-    expect(examples).toBeGreaterThan(input)
+  it('the four example sentences are gone from the landing screen, with their handler and their event', () => {
+    expect(ci).not.toContain("import IntakeExamples")
+    expect(ci).not.toContain('<IntakeExamples')
+    expect(ci).not.toContain('handleInlineExamplePick')
+    expect(ci).not.toContain('activeExampleId')
+    expect(ci).not.toContain("placement: 'inline'")
+    expect(hero).not.toContain('Not sure how to start? Tap one and edit it.')
+    expect(ci).not.toContain('INTAKE_EXAMPLES')
   })
-  it('picking one only fills the box: it never sends, and it reports starter_picked tagged as inline', () => {
-    const fn = ci.slice(ci.indexOf('function handleInlineExamplePick'), ci.indexOf('const activeExampleId'))
-    expect(fn).toContain("track('starter_picked', { placement: 'inline', example: id })")
-    expect(fn).toContain('setInput(text)')
-    expect(fn).not.toMatch(/\bsend\(/)
-    // phones: no focus, so the keyboard does not cover the button
-    expect(fn).toContain("(pointer: coarse)")
+  it('"Walk me through it" is gone from the screen; the pills start the same guided mode', () => {
+    expect(ci).not.toContain('WALKTHROUGH_LABEL')
+    expect(ci).not.toContain('WALKTHROUGH_LINE')
+    expect(ci).not.toContain('setWalkthrough')
+    expect(ci).toContain('void send(text, undefined, { walkthrough: true })')
   })
   it('the old category flow is still there, demoted to "More examples", with the same events', () => {
     expect(ci).toContain("{examplesOpen ? 'Fewer examples' : 'More examples'}")

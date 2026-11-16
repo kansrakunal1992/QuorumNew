@@ -84,24 +84,23 @@ describe('2. one-tap start', () => {
     expect(ci).toContain('walkthrough:    !chatIntakeId && (opts?.walkthrough ?? walkthrough) ? true : undefined,')
     expect(ci).toContain("track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION, ...prefillSendProps(prefillAppliedRef.current, trimmed) })")
   })
-  it('the pills come first, before the box (default), only when the sign-in gate is not showing, and lock while sending', () => {
+  it('the pills sit under the button (default since round 4), only when the sign-in gate is not showing, and lock while sending', () => {
     const hero = ci.slice(ci.indexOf('Hero \u2014 "Quorum is ready to think with me,'))
     const input = hero.indexOf('{inputForm}')
     const above = hero.indexOf("{!gated && QUICK_START_POSITION === 'above' && (")
-    const below = hero.indexOf("{QUICK_START_POSITION === 'below' && <IntakeQuickStarts")
-    const ex    = hero.indexOf('<IntakeExamples')
+    const below = hero.indexOf("{!gated && QUICK_START_POSITION === 'below' && (")
+    const row   = hero.indexOf('<IntakeVideoLink')
     expect(above).toBeGreaterThan(-1)
-    expect(above).toBeLessThan(input)                       // out in front of the box
-    expect(hero.indexOf('<IntakeQuickStarts')).toBe(hero.indexOf('<IntakeQuickStarts', above))   // first use is the 'above' one
-    expect(below).toBeGreaterThan(input)                    // the fallback sits under the button, beside the sentences
-    expect(below).toBeLessThan(ex)
+    expect(above).toBeLessThan(input)                       // the 'above' option is still there, out in front of the box
+    expect(below).toBeGreaterThan(input)                    // the default sits under the button (and the voice row, inside the form)
+    expect(below).toBeLessThan(row)                         // and above the one-line links row
     expect(hero.match(/<IntakeQuickStarts onPick=\{handleQuickStart\} disabled=\{sending\} \/>/g)).toHaveLength(2)
     expect(src('components/IntakeQuickStarts.tsx')).toContain("type=\"button\"")
   })
-  it('the position is a build-time switch that defaults to out in front, and it is reported on every tap', () => {
+  it('the position is a build-time switch that defaults to under the button, and it is reported on every tap', () => {
     const ex = src('lib/intake-examples.ts')
-    expect(ex).toContain("process.env.NEXT_PUBLIC_QUICK_START_POSITION === 'below' ? 'below' : 'above'")
-    expect(QUICK_START_POSITION).toBe('above')
+    expect(ex).toContain("process.env.NEXT_PUBLIC_QUICK_START_POSITION === 'above' ? 'above' : 'below'")
+    expect(QUICK_START_POSITION).toBe('below')
     expect(ci).toContain("track('starter_picked', { placement: 'quick_start', example: id, position: QUICK_START_POSITION })")
   })
   it('the label and pills claim nothing, and the pills are a comfortable tap size', () => {
