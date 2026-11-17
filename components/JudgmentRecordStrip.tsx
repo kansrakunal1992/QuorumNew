@@ -17,14 +17,22 @@
 // (HomeClient's shows 5) — this page's hero section is already dense, so
 // the preview stays shorter; "Show N more" still reveals the rest.
 //
+// Delete + Share (Nov 2026): each row has the same two small icon buttons the classic home page's record had. Delete is
+// one tap followed by a few seconds to Undo, not a confirm dialog: the row turns into a quiet "Decision deleted. Undo"
+// line in the same spot, and only when those seconds pass is anything actually deleted (the parent's onDeleteSession
+// removes it from the list, from this device and from the server). Leaving the page during that window counts as
+// "yes, delete": the pending ones are committed right away (the parent's request uses keepalive so it survives the
+// navigation). It works for every decision, including ones with a logged outcome, as on the classic page.
+//
 // Theming: every color below is one of this app's existing CSS custom
 // properties (same tokens HomeClient.tsx's own version uses) — nothing
 // hardcoded, so this follows light/dark automatically via
 // app/globals.css's [data-theme] rules, exactly like every other component
 // in this codebase.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ShareRecordButton from '@/components/ShareRecordButton'
 
 export interface JudgmentRecordSession {
   id:            string
@@ -37,6 +45,9 @@ export interface JudgmentRecordSession {
 }
 
 const PREVIEW_COUNT = 3
+
+/** How long the "Undo" stays before the decision is really deleted. */
+export const UNDO_WINDOW_MS = 6000
 
 const IconClock = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -54,6 +65,15 @@ const IconDot = () => (
   </svg>
 )
 
+const IconTrash = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M9 6V4h6v2" />
+  </svg>
+)
+
 const HELPED_COLOR: Record<string, string> = {
   yes:       'var(--outcome-yes)',
   partially: 'var(--outcome-partial)',
@@ -67,16 +87,62 @@ const HELPED_LABEL: Record<string, string> = {
 
 type Tab = 'all' | 'pending' | 'decided'
 
-export default function JudgmentRecordStrip({ sessions }: { sessions: JudgmentRecordSession[] }) {
+interface StripProps {
+  sessions: JudgmentRecordSession[]
+  /** Called when a delete is final (the Undo window passed, or the person left the page). Removes it everywhere. */
+  onDeleteSession?: (sessionId: string) => void
+}
+
+export default function JudgmentRecordStrip({ sessions, onDeleteSession }: StripProps) {
   const router = useRouter()
   const [tab, setTab]           = useState<Tab>('all')
   const [showAll, setShowAll]   = useState(false)
+  // Rows in their "Decision deleted. Undo" window. They stay in `sessions` (so the line sits in the same spot) until
+  // the parent really removes them.
+  const [deletingIds, setDeletingIds] = useState<string[]>([])
+  const timers        = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const onDeleteRef   = useRef(onDeleteSession)
+  useEffect(() => { onDeleteRef.current = onDeleteSession }, [onDeleteSession])
+
+  // Leaving the page (route change, tab closed, app backgrounded to a different page) with an Undo still showing = commit.
+  useEffect(() => {
+    const flush = () => {
+      for (const [id, t] of Array.from(timers.current.entries())) {
+        clearTimeout(t)
+        timers.current.delete(id)
+        onDeleteRef.current?.(id)
+      }
+    }
+    window.addEventListener('pagehide', flush)
+    return () => { window.removeEventListener('pagehide', flush); flush() }
+  }, [])
+
+  function startDelete(id: string) {
+    if (timers.current.has(id)) return
+    setDeletingIds(prev => [...prev, id])
+    timers.current.set(id, setTimeout(() => {
+      timers.current.delete(id)
+      setDeletingIds(prev => prev.filter(x => x !== id))
+      onDeleteRef.current?.(id)
+    }, UNDO_WINDOW_MS))
+  }
+
+  function undoDelete(id: string) {
+    const t = timers.current.get(id)
+    if (t) clearTimeout(t)
+    timers.current.delete(id)
+    setDeletingIds(prev => prev.filter(x => x !== id))
+  }
 
   if (!sessions.length) return null
 
-  const pending  = sessions.filter(s => !s.outcome)
-  const decided  = sessions.filter(s =>  s.outcome)
-  const filtered = tab === 'all' ? sessions : tab === 'pending' ? pending : decided
+  // Counts ignore rows that are being deleted; the list itself keeps them so the Undo line holds the row's place.
+  const live     = sessions.filter(s => !deletingIds.includes(s.id))
+  const pending  = live.filter(s => !s.outcome)
+  const decided  = live.filter(s =>  s.outcome)
+  const filtered = tab === 'all'
+    ? sessions
+    : sessions.filter(s => (tab === 'pending' ? !s.outcome : !!s.outcome))
   const shown    = showAll ? filtered : filtered.slice(0, PREVIEW_COUNT)
 
   function selectTab(t: Tab) {
@@ -110,7 +176,7 @@ export default function JudgmentRecordStrip({ sessions }: { sessions: JudgmentRe
                 cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
               }}
             >
-              {t === 'all'     ? `All ${sessions.length}` : null}
+              {t === 'all'     ? `All ${live.length}` : null}
               {t === 'pending' ? `Open ${pending.length}` : null}
               {t === 'decided' ? `Logged ${decided.length}` : null}
             </button>
@@ -121,6 +187,31 @@ export default function JudgmentRecordStrip({ sessions }: { sessions: JudgmentRe
       {/* Row list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {shown.map(s => {
+          if (deletingIds.includes(s.id)) {
+            return (
+              <div
+                key={s.id}
+                role="status"
+                aria-live="polite"
+                style={{
+                  border: '1px dashed var(--border-mid)', borderRadius: 12, padding: '10px 15px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                }}
+              >
+                <span style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Decision deleted.</span>
+                <button
+                  type="button"
+                  onClick={() => undoDelete(s.id)}
+                  style={{
+                    fontSize: 12, padding: '4px 13px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
+                    border: '1px solid var(--gold-dim)', background: 'rgba(201,168,76,0.1)', color: 'var(--gold)',
+                  }}
+                >
+                  Undo
+                </button>
+              </div>
+            )
+          }
           const date    = new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
           const snippet = s.decision_text.length > 110 ? s.decision_text.slice(0, 110) + '…' : s.decision_text
           return (
@@ -177,6 +268,41 @@ export default function JudgmentRecordStrip({ sessions }: { sessions: JudgmentRe
                     </span>
                   )}
                 </div>
+              </div>
+              {/* Share + Delete, as on the classic page. The wrapper stops the row's own click (open the record), which
+                  also covers the share dialog, since React bubbles from it through here. */}
+              <div
+                onClick={e => e.stopPropagation()}
+                style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, margin: '-4px -6px 0 0' }}
+              >
+                <ShareRecordButton sessionId={s.id} decisionText={s.decision_text} compact />
+                {onDeleteSession && (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); startDelete(s.id) }}
+                    title="Delete this decision"
+                    aria-label="Delete this decision"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 30, height: 30, borderRadius: 6,
+                      border: '1px solid transparent', background: 'transparent',
+                      color: 'var(--text-4)', cursor: 'pointer', transition: 'all 0.15s',
+                      flexShrink: 0, padding: 0,
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.color = '#c04040'
+                      e.currentTarget.style.borderColor = 'rgba(192,64,64,0.3)'
+                      e.currentTarget.style.background = 'rgba(192,64,64,0.07)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.color = 'var(--text-4)'
+                      e.currentTarget.style.borderColor = 'transparent'
+                      e.currentTarget.style.background = 'transparent'
+                    }}
+                  >
+                    <IconTrash />
+                  </button>
+                )}
               </div>
             </div>
           )

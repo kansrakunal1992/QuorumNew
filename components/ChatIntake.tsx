@@ -94,6 +94,8 @@ interface ChatIntakeProps {
   decidedCount:          number
   heroCards:             HeroCardId[]
   historySessions:       JudgmentRecordSession[]
+  /** Final delete of one record (the strip's Undo window has passed). Optional: without it the strip shows no trash icon. */
+  onDeleteSession?:      (sessionId: string) => void
 }
 
 function TypewriterLine({ text }: { text: string }) {
@@ -127,6 +129,7 @@ export default function ChatIntake({
   decidedCount,
   heroCards,
   historySessions,
+  onDeleteSession,
 }: ChatIntakeProps) {
   const [bubbles, setBubbles]   = useState<ChatBubble[]>([])
   const [input, setInput]       = useState('')
@@ -1214,7 +1217,7 @@ export default function ChatIntake({
               version — same tabs/data, deliberately NOT HeroCardCollapsible's
               look (see components/JudgmentRecordStrip.tsx's own header
               comment for why). Renders nothing when there's no history yet. */}
-          <JudgmentRecordStrip sessions={historySessions} />
+          <JudgmentRecordStrip sessions={historySessions} onDeleteSession={onDeleteSession} />
 
           {/* Item 6 plan, Phase 4 — reference content: read-whenever, not
               core to the current task, so it's the last thing on the

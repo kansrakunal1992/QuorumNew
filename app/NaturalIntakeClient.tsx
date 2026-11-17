@@ -23,6 +23,7 @@ import {
   getStoredUserEmail,
   getStoredSessionIds,
   getStoredDeviceId,
+  removeSessionId,
 } from '@/lib/storage'
 import { createClient } from '@/lib/supabase'
 import { isUnifiedSessionEnabled } from '@/lib/feature-flags'
@@ -161,6 +162,18 @@ export default function NaturalIntakeClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken, historyVersion])
 
+  // Final delete of one judgment-record row (JudgmentRecordStrip calls this once its Undo window has passed, or when the
+  // person leaves the page during it). Same three steps as the classic page's handleDeleteSession: out of the list (so the
+  // hero counts follow), out of this device's stored ids, and the server delete (the route checks ownership). `keepalive`
+  // lets the request finish if this is happening because the page is being left.
+  const handleDeleteSession = (sessionId: string) => {
+    setHistorySessions(prev => prev.filter(s => s.id !== sessionId))
+    removeSessionId(sessionId)
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`
+    fetch('/api/record', { method: 'DELETE', headers, body: JSON.stringify({ sessionId }), keepalive: true }).catch(() => {})
+  }
+
   const sessionCount   = mirrorStatus?.sessionCount ?? historySessions.length
   const mirrorUnlocked = mirrorStatus?.gateState === 'unlocked'
   const pendingOutcomesCount = historySessions.filter(s => !s.outcome).length
@@ -266,6 +279,7 @@ export default function NaturalIntakeClient() {
           decidedCount={decidedCount}
           heroCards={heroCards}
           historySessions={historySessions}
+          onDeleteSession={handleDeleteSession}
         />
       )}
       {phase === 'checkpoint' && chatIntakeId && (
