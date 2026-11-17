@@ -148,11 +148,11 @@ describe('4. the wait for a reply', () => {
     expect(p).toContain('PLANNER_MAX_TOKENS = 1400')
   })
   it('a delta is safe: merging only the new facts keeps everything already known', () => {
-    const slots = slotsFor('career').map(s => s.key)
+    const slots = slotsFor('job_offer').map(s => s.key)
     expect(slots.length).toBeGreaterThan(2)
     const [a, b] = slots
     const prior = {
-      decisionKind: 'career', decisionStatement: 'Should I take the offer?',
+      decisionKind: 'job_offer', decisionStatement: 'Should I take the offer?',
       facts: { [a]: 'the higher-paying offer' },
       options: [{ label: 'Take it', type: 'act' }, { label: 'Stay', type: 'dont_act' }],
       assumptions: ['I can negotiate'],
