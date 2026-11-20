@@ -30,8 +30,10 @@ import { verifyUnsubToken }    from '@/lib/nudge-token'
 
 // ── HTML responses ────────────────────────────────────────────────────────────
 
-function confirmedHtml(appUrl: string, type: 'daily' | 'validation' | 'weekly' | 'pattern'): string {
-  const message = type === 'validation'
+function confirmedHtml(appUrl: string, type: 'daily' | 'validation' | 'weekly' | 'pattern' | 'lifecycle'): string {
+  const message = type === 'lifecycle'
+    ? "You won&rsquo;t receive these product emails anymore."
+    : type === 'validation'
     ? "You won&rsquo;t receive validation check-in nudges anymore."
     : type === 'weekly'
       ? "You won&rsquo;t receive the weekly decision brief anymore."
@@ -127,6 +129,7 @@ export async function GET(req: Request) {
     type === 'validation' ? 'validation_nudge_opted_out'
     : type === 'weekly'   ? 'weekly_brief_opted_out'
     : type === 'pattern'  ? 'pattern_notice_opted_out'
+    : type === 'lifecycle' ? 'lifecycle_opted_out'
     :                       'daily_nudge_opted_out'
 
   const { error } = await supabase
@@ -138,7 +141,11 @@ export async function GET(req: Request) {
 
   if (error) {
     console.error(`[NudgeUnsub] DB error for user ${userId.slice(0, 8)}:`, error.message)
-    // Still return the confirmation page — worst case they get one more email
+    // Lifecycle emails are marketing-style: NEVER claim success if the opt-out was not recorded.
+    if (type === 'lifecycle') {
+      return new NextResponse(errorHtml(), { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    }
+    // Other types: still return the confirmation page — worst case they get one more email
     // and click again. Don't expose DB errors to the browser.
   } else {
     console.log(`[NudgeUnsub] Opted out user ${userId.slice(0, 8)} from '${type}' nudges`)

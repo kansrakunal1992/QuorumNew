@@ -21,7 +21,7 @@
 
 import { createHmac, timingSafeEqual } from 'crypto'
 
-export type NudgeUnsubType = 'daily' | 'validation' | 'weekly' | 'pattern'
+export type NudgeUnsubType = 'daily' | 'validation' | 'weekly' | 'pattern' | 'lifecycle'
 
 function getSecret(): string {
   const s = process.env.CRON_SECRET ?? ''
@@ -74,7 +74,7 @@ export function verifyUnsubToken(token: string): { userId: string; type: NudgeUn
     if (parts.length === 3) {
       const [userId, type, provided] = parts
       if (!userId || !provided) return null
-      if (type !== 'daily' && type !== 'validation' && type !== 'weekly' && type !== 'pattern') return null
+      if (type !== 'daily' && type !== 'validation' && type !== 'weekly' && type !== 'pattern' && type !== 'lifecycle') return null
       const expected = createHmac('sha256', getSecret()).update(`${userId}.${type}`).digest('hex')
       return safeCompare(provided, expected) ? { userId, type } : null
     }
