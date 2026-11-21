@@ -51,7 +51,10 @@ import {
   ENOUGH_LABEL,
   UNKNOWN_CHIP_LABEL, UNKNOWN_REPLY_TEXT, PLAYBACK_YES, scoreRichness,
 } from '@/lib/chat-intake-brief'
-import { isUnifiedSessionEnabled, isWatchlistEnabled } from '@/lib/feature-flags'
+import { isUnifiedSessionEnabled, isWatchlistEnabled, isDeskEnabled, isFrontDoorV15Enabled } from '@/lib/feature-flags'
+import { DeskTop, DeskBody } from '@/components/DecisionDesk'     // v15 Phase 2: the recurring home for people with decisions
+import FrontDoorExplainer from '@/components/FrontDoorExplainer'  // v15 Phase 3: first-visit "what happens" + example + compounding
+import { buildDesk } from '@/lib/desk'
 import WatchlistSection from '@/components/WatchlistSection'   // Phase 1: parked items need a visible home
 import ConnectCard from '@/components/ConnectCard'                 // Phase 3: optional connect-before-next-decision gate
 import AddToHomeScreenPrompt from '@/components/AddToHomeScreenPrompt'   // Phase 3
@@ -94,6 +97,8 @@ interface ChatIntakeProps {
   decidedCount:          number
   heroCards:             HeroCardId[]
   historySessions:       JudgmentRecordSession[]
+  /** v15: the first /api/history request has settled (or there was nothing to ask for). Holds the Desk's place meanwhile. */
+  historyLoaded?:        boolean
   /** Final delete of one record (the strip's Undo window has passed). Optional: without it the strip shows no trash icon. */
   onDeleteSession?:      (sessionId: string) => void
 }
@@ -129,6 +134,7 @@ export default function ChatIntake({
   decidedCount,
   heroCards,
   historySessions,
+  historyLoaded = true,
   onDeleteSession,
 }: ChatIntakeProps) {
   const [bubbles, setBubbles]   = useState<ChatBubble[]>([])
@@ -217,6 +223,14 @@ export default function ChatIntake({
     try { setLocalCount(Math.max(historySessions.length, getStoredSessionIds().length)) } catch {}
   }, [historySessions.length])
   const gated = !started && !authToken && !userEmail && (serverGated || isGated(localDecisionCount, gateArm))
+
+  // v15 Phase 2: anyone with decisions gets the Desk as their home instead of the first-visit screen. `deskPending` holds its
+  // place (no flash of the first-visit hero) while the first history request is in flight for a device that has decisions.
+  const deskOn      = isDeskEnabled()
+  const deskActive  = deskOn && !started && historySessions.length > 0
+  const deskPending = deskOn && !started && !historyLoaded && historySessions.length === 0 && localDecisionCount > 0
+  const deskModel   = useMemo(() => buildDesk(historySessions), [historySessions])
+  const frontDoorV15 = isFrontDoorV15Enabled()
   useEffect(() => {
     if (!gateArm) return
     try {
@@ -756,6 +770,19 @@ export default function ChatIntake({
           Quorum
         </span>
         <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
+        {/* v15: a returning visitor gets the two destinations by name (Desk is this screen). First visit keeps FAQ + Sign in. */}
+        {deskActive && (
+          <>
+            <span aria-current="page" style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, letterSpacing: '0.05em', color: 'var(--text-1)' }}>Desk</span>
+            <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
+            <Link href="/mirror" onClick={() => track('nav_clicked', { to: 'mirror', surface: 'home' })} style={{
+              fontFamily: 'var(--font-mono)', fontSize: 11.5, letterSpacing: '0.05em', color: 'var(--text-3)', textDecoration: 'none',
+            }}>
+              Mirror
+            </Link>
+            <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
+          </>
+        )}
         <button
           onClick={() => setFaqOpen(true)}
           style={{
@@ -765,8 +792,16 @@ export default function ChatIntake({
         >
           FAQ
         </button>
-        <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
-        <Link href="/mirror" style={{
+        {deskActive && !hasEmail && (
+          <>
+            <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />
+            <Link href="/mirror" style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, letterSpacing: '0.05em', color: 'var(--text-3)', textDecoration: 'none' }}>
+              Keep my record
+            </Link>
+          </>
+        )}
+        {!deskActive && <span style={{ width: 1, height: 14, background: 'var(--border-dim)' }} />}
+        {!deskActive && <Link href="/mirror" style={{
           fontFamily: 'var(--font-mono)', fontSize: 11.5, letterSpacing: '0.05em',
           color: 'var(--text-3)', textDecoration: 'none',
         }}>
@@ -776,7 +811,7 @@ export default function ChatIntake({
             // Phase 0: an anonymous visitor with decisions on this device
             // used to see a bare "Sign in" -- say what signing in keeps.
             : historySessions.length > 0 ? 'Keep my record' : 'Sign in'}
-        </Link>
+        </Link>}
       </div>
 
       {faqOpen && <FAQModal onClose={() => setFaqOpen(false)} />}
@@ -1035,6 +1070,29 @@ export default function ChatIntake({
               screen taller (a returning user with hero cards, AuthPanel,
               and/or the reference section all present). */}
           <div className="qi-hero-stack" style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+            {deskActive ? (
+              /* v15 Phase 2: the Decision Desk is the returning visitor's home. Due check-ins first; the box follows. */
+              <DeskTop model={deskModel} />
+            ) : deskPending ? (
+              <div aria-busy="true" style={{ minHeight: 120, display: 'flex', alignItems: 'center' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-4)', margin: 0 }}>Opening your desk…</p>
+              </div>
+            ) : frontDoorV15 ? (
+              /* v15 Phase 3: say what this is before anyone types. The Council is named here; the box is still the first
+                 thing to act on, and the fuller explanation sits below it (components/FrontDoorExplainer.tsx). */
+              <div>
+                <h1 style={{
+                  fontFamily: 'var(--font-display)', fontWeight: 400,
+                  fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
+                  color: 'var(--text-1)', margin: '0 0 10px', maxWidth: 440,
+                }}>
+                  Bring a hard decision. Have it challenged, and remembered.
+                </h1>
+                <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 410 }}>
+                  Six independent advisors and an Examiner pressure-test it. Quorum then checks back on what happened and, over time, shows you the patterns in how you decide.
+                </p>
+              </div>
+            ) : (
             <div>
               <h1 style={{
                 fontFamily: 'var(--font-display)', fontWeight: 400,
@@ -1047,6 +1105,7 @@ export default function ChatIntake({
                 Type it below. Quorum asks the questions that move it forward, then weighs your options.
               </p>
             </div>
+            )}
 
             {gated && (
               <div style={{ width: '100%', maxWidth: 440 }}>
@@ -1069,6 +1128,11 @@ export default function ChatIntake({
               <div style={{ width: '100%', maxWidth: 440 }}>
                 <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />
               </div>
+            )}
+            {!gated && deskActive && (
+              <p style={{ width: '100%', maxWidth: 440, textAlign: 'left', fontSize: 12.5, color: 'var(--text-3)', margin: '4px 0 -8px' }}>
+                Bring a decision
+              </p>
             )}
             {!gated && (
             <div style={{ width: '100%', maxWidth: 440 }}>
@@ -1122,7 +1186,17 @@ export default function ChatIntake({
             <p style={{ fontSize: 11.5, color: 'var(--text-4)', letterSpacing: '0.02em', margin: 0 }}>
               Private · nothing is shared without your permission
             </p>
+
+            {/* v15 Phase 3: first visit only -- what happens, an example result, how it builds. Below the box on purpose. */}
+            {frontDoorV15 && !deskActive && !deskPending && <FrontDoorExplainer />}
           </div>
+
+          {/* v15 Phase 2: the rest of the Desk (undecided, unexamined, waiting, one honest cross-decision line, record stage). */}
+          {deskActive && (
+            <div style={{ width: '100%', maxWidth: 440, marginTop: 24 }}>
+              <DeskBody model={deskModel} mirrorUnlocked={mirrorUnlocked} signedIn={!!authToken || hasEmail} />
+            </div>
+          )}
 
           {/* Item 6 plan, Phase 2 / round 2 — Mirror/status hero cards.
               Still at most two, picked dynamically (lib/hero-cards.ts), but
@@ -1233,7 +1307,7 @@ export default function ChatIntake({
             width: '100%', maxWidth: 440, marginTop: 28,
             paddingBottom: 'calc(52px + env(safe-area-inset-bottom, 0px))',
           }}>
-            <MeetTheCouncil />
+            {!deskActive && <MeetTheCouncil />}
           </div>
         </div>
       )}

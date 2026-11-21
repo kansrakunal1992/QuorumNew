@@ -23,6 +23,8 @@ const INTAKE_EVENTS = new Set([
   'record_viewed', 'outcome_recorded', 'guest_order_created', 'guest_order_paid',
   // Nov 2026: prepopulated decision link. Length and flags only; the sanitizer below drops any free text.
   'decision_prefill_loaded',
+  // v15: commit step, Decision Desk, front door. Counts and identifiers only.
+  'decision_locked', 'commit_deferred', 'desk_viewed', 'desk_card_clicked', 'nav_clicked', 'front_door_section_opened',
 ])
 
 const ALLOWED_KEYS = new Set([
@@ -42,6 +44,9 @@ const ALLOWED_KEYS = new Set([
   'source', 'helped', 'from_notification', 'founding',
   // Nov 2026: decision_prefill_loaded (number of characters loaded, and whether the link carried more than we keep)
   'prefill_chars', 'prefill_truncated',
+  // v15: commit step (days_out, signed_in, via), Desk (per-section counts, section, action), nav (to)
+  'days_out', 'signed_in', 'due_count', 'open_count', 'waiting_count', 'unexamined_count', 'parked_count', 'total_count',
+  'section', 'to',
 ])
 const CONTEXT_KEY_SET: ReadonlySet<string> = new Set(CONTEXT_KEYS)
 

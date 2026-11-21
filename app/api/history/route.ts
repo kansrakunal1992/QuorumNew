@@ -63,7 +63,9 @@ export async function POST(req: Request) {
     const [sessionsResult, outcomesResult] = await Promise.all([
       supabase
         .from('sessions')
-        .select('id, decision_text, created_at')
+        // v15: the Decision Desk (lib/desk.ts) needs to know whether the Council ran, whether a decision was committed and when
+        // the check-in is. These columns already exist and are read by other routes; existing callers ignore the extras.
+        .select('id, decision_text, created_at, status, session_depth, final_decision_locked_at, commitment_review_date')
         .in('id', allIds)
         .order('created_at', { ascending: false }),
       supabase

@@ -182,3 +182,25 @@ Short door that opens the app with the chat input focused (`/?q=1`).
 - After a one-click unsubscribe from the weekly note: "You unsubscribed from the weekly note. Choosing Weekly turns it back on."
 - Signed out: card "Sign in to manage notifications" -> "Connect your email".
 - Review-date reminders are deliberately not listed (each is tied to a date chosen for a specific decision).
+
+---
+
+## v15 addendum (21 Nov 2026) — supersedes the "never say Council / Examiner" rule for the FIRST-VISIT SCREEN only
+
+The rule above ("Never say: Examiner, Council, ...") was written for the chat itself and stays true there: inside the
+conversation the person is talking to Quorum, not being briefed on its machinery.
+
+It is lifted for the first-visit screen (the headline, sub-line and `components/FrontDoorExplainer.tsx`). A first-time visitor
+cannot want something they cannot see, and with the Council unnamed the product read as "an AI chatbot with a few personas".
+On that screen, name the Council, the Examiner and the six advisors, show an example result, and say how the record builds.
+
+What does NOT change, and is enforced by `tests/v15-journey.test.ts` and `tests/first-screen-conversion*.test.ts`:
+
+- No claims about price, sign-up, time taken, "instant", or guarantees.
+- Never say or imply Quorum knows, understands or predicts the person. Thin evidence is called "early".
+- An example result is labelled as invented. It never looks like a real person's decision.
+- Still never on any screen: ontology, rule engine, readiness gate and other engineering terms.
+- The box stays the first thing to act on; the explanation sits below it.
+
+Returning visitors (anyone with decisions this browser can recognise, or an account) see the Decision Desk instead, which does not
+repeat the explainer.

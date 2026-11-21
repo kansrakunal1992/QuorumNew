@@ -43,6 +43,7 @@ import PatternStore           from '@/components/PatternStore'
 import CohortInsightsCard     from '@/components/CohortInsightsCard'    // Institutional Sprint 3
 import StyleCalibration        from '@/components/StyleCalibration'
 import MirrorNav               from '@/components/MirrorNav'           // Sprint M2
+import AppNav                  from '@/components/AppNav'              // v15
 import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
 import AttentionZone          from '@/components/AttentionZone'         // Sprint M5
 import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprint M6
@@ -2099,6 +2100,11 @@ export default function MirrorPage() {
             </span>
           )}
           {status?.gateState !== 'unlocked' && <span style={{ width: 60 }} />}
+        </div>
+
+        {/* v15: Desk / Mirror / Bring a decision -- the only app-level navigation there is. */}
+        <div style={{ maxWidth: 680, margin: '0 auto' }}>
+          <AppNav current="mirror" surface="mirror" />
         </div>
 
         {/* ── Page header (teaser/unlocked only) ──────────────────────────── */}

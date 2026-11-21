@@ -54,6 +54,8 @@ interface Props {
    * Default: store it as a one-shot prefill and go to '/'.
    */
   onBringNow?:    (text: string) => void
+  /** v15: the reminder-channel card is already showing elsewhere on the page (the commit card); do not show a second one. */
+  suppressConnect?: boolean
 }
 
 type ParkState = 'idle' | 'saving' | 'parked_linked' | 'parked_pending' | 'error'
@@ -66,7 +68,7 @@ function explainer(n: number): string {
 
 export default function NextDecisionPrompt({
   surface, variant = 'full', emphasis = 'secondary', sessionId, reviewDate,
-  showExplainer = true, refreshKey, onBringNow,
+  showExplainer = true, refreshKey, onBringNow, suppressConnect = false,
 }: Props) {
   const router = useRouter()
   const [text,      setText]      = useState('')
@@ -241,7 +243,7 @@ export default function NextDecisionPrompt({
         <HabitSetupCard surface={surface} linked={linked} onSaved={setHabit} />
       )}
 
-      {linked === false && (
+      {linked === false && !suppressConnect && (
         <ConnectCard
           mode={count >= 2 ? 'd2_earned' : 'd1_soft'}
           surface={surface}

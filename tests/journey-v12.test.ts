@@ -72,7 +72,8 @@ describe('wiring guards', () => {
     expect(pr).toContain('role="radiogroup"')
     expect(pr).toContain('Something else')
     expect(pr).toContain('Your first lean')
-    expect(pr).toMatch(/chosenOptionLabel: chosenOption/)
+    // v15: the lock moved into lock(text, optionLabel, via); the tapped option's exact label is still what is sent.
+    expect(pr).toMatch(/chosenOptionLabel: optionLabel/)
   })
   it('the session page passes the same options, the exact first lean and the early-user flag', () => {
     expect(sv).toContain('optionLabels={parseOptionLabels(session.context_text)}')

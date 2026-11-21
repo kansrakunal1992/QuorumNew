@@ -204,3 +204,48 @@ export function isTeamsConnectorEnabled(): boolean {
 export function isPreTagEnabled(): boolean {
   return isNaturalIntakeEnabled() && process.env.NEXT_PUBLIC_PRETAG_ENABLED === 'true'
 }
+
+// ── v15: three journey flags, all default ON with an explicit "off" kill switch ───────────────────────────────────────
+// Unlike the flags above these are DEFAULT ON: they fix a leak rather than add an experiment. Each can be switched off in
+// Railway (set the var to `off`, then redeploy -- NEXT_PUBLIC_ vars are baked in at build time) and the previous behaviour
+// returns exactly.
+
+/**
+ * v15 Phase 1. Under the unified-session flag the Council page used to hide the Brief, "Save to Record", the Record Receipt
+ * and the whole continuity block (prediction tally, cross-decision line, "bring me another decision", the reminder-channel
+ * ask) until the person had locked a final decision AND a review date. In the 20 Nov snapshot 2 people finished a Council
+ * and 0 locked, so none of that was ever seen. With this ON, finishing the Council is enough to see all of it; committing
+ * stays one tap, prominent, and optional. NEXT_PUBLIC_LOCK_OPTIONAL=off restores the old hard gate.
+ */
+export function isLockOptionalEnabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_LOCK_OPTIONAL
+  return v !== 'off' && v !== 'false'
+}
+
+/**
+ * True when the lock still gates the Brief / Save / continuity block (unified session ON and the v15 relaxation OFF).
+ * The one place SessionView, SynthesisCard and PredictionReveal ask "is the lock mandatory?".
+ */
+export function isLockRequired(): boolean {
+  return isUnifiedSessionEnabled() && !isLockOptionalEnabled()
+}
+
+/**
+ * v15 Phase 2. The Decision Desk: for anyone with decisions on this device or account, `/` shows their open decisions,
+ * check-ins that are due, parked items and recent decisions around the "bring a decision" box, instead of the intake
+ * screen with a history strip underneath. Only applies on the natural-intake front door (the Desk lives inside it).
+ * NEXT_PUBLIC_DESK=off restores the previous returning-user screen.
+ */
+export function isDeskEnabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_DESK
+  return isNaturalIntakeEnabled() && v !== 'off' && v !== 'false'
+}
+
+/**
+ * v15 Phase 3. The first-visit front door names the Council, shows what happens next, an illustrative example result and how
+ * the record compounds. Copy-only; no behaviour changes. NEXT_PUBLIC_FRONT_DOOR_V15=off restores the previous hero copy.
+ */
+export function isFrontDoorV15Enabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_FRONT_DOOR_V15
+  return v !== 'off' && v !== 'false'
+}

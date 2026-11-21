@@ -23,14 +23,15 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain-here.com
 
 export const metadata: Metadata = {
   title: 'Quorum — Private Decision Intelligence',
+  // v15: matches the front door. Says what the product does; no claim that it knows or predicts the person.
   description:
-    'Convene your personal advisory council for the big calls, and the smaller ones you keep circling. Six AI advisors, one synthesis, and a Mirror that tracks whether your judgment compounds over time.',
+    'Bring a hard decision. Six independent advisors and an Examiner challenge it, Quorum checks back on what happened, and over time shows you the patterns in how you decide.',
   alternates: {
     canonical: APP_URL,
   },
   openGraph: {
     title: 'Quorum — Private Decision Intelligence',
-    description: 'Convene your personal advisory council for the big calls, and the smaller ones you keep circling.',
+    description: 'Bring a hard decision. Have it challenged by six independent advisors, and remembered.',
     url: APP_URL,
     siteName: 'Quorum',
     images: [{ url: `${APP_URL}/quorum-logo.png` }],
@@ -39,7 +40,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary',
     title: 'Quorum — Private Decision Intelligence',
-    description: 'Convene your personal advisory council for the big calls, and the smaller ones you keep circling.',
+    description: 'Bring a hard decision. Have it challenged by six independent advisors, and remembered.',
     images: [`${APP_URL}/quorum-logo.png`],
   },
 }

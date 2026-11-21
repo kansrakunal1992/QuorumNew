@@ -11,6 +11,12 @@
 // the same /api/session/commitment endpoint DecisionStateCard used, so
 // existing review-date nudge cron jobs pick it up identically either way.
 //
+// v15: committing is now ONE TAP for a tapped option (no separate Review step -- a tapped option cannot contain a typo;
+// typed text keeps its Review step), the review date is pre-filled, and "Not ready to decide" is a real choice that leaves
+// the decision open on the Desk. Finishing the Council no longer depends on this (see isLockRequired in lib/feature-flags.ts).
+// When the person is not signed in, the locked state asks where Quorum can reach them: without that, "Quorum will bring it
+// back on your review date" was a promise nothing could keep.
+//
 // Point 6: this is deliberately NOT the same moment as InitialInstinctCapture
 // — that locked a gut lean before Quorum said anything; this locks what you
 // are actually going to do, after seeing the full read.
@@ -21,6 +27,9 @@ import { useEffect, useRef, useState } from 'react'
 import SessionComposer from '@/components/SessionComposer'
 import { track } from '@/lib/track'   // Phase 1: first-party events
 import { finalChoicesFor } from '@/lib/final-choice'   // v12: the same options shown on the confirm screen, as taps
+import ConnectCard from '@/components/ConnectCard'       // v15: reminder channel at the moment of commitment
+import { isLockRequired } from '@/lib/feature-flags'
+import { hasFunctionalConsent } from '@/lib/storage'   // v15: is this browser able to remember the decision for the Desk?
 
 interface Props {
   sessionId:             string
@@ -49,6 +58,8 @@ interface Props {
    * history, so the reveal says so instead of implying it already knows them.
    */
   earlyUser?:            boolean
+  /** v15: "Not ready to decide" was chosen -- the decision stays open (it shows on the Desk). */
+  onDeferred?:           () => void
 }
 
 interface RevealState {
@@ -64,8 +75,9 @@ function todayPlusDays(days: number): string {
 
 export default function PredictionReveal({
   sessionId, authToken, predictedChoice, initialInstinctLabel, onDecided, alreadyDecided, initialMatched, defaultReviewDays,
-  optionLabels, firstLeanLabel, earlyUser,
+  optionLabels, firstLeanLabel, earlyUser, onDeferred,
 }: Props) {
+  const lockMandatory = isLockRequired()
   // v12: tappable options (same labels as the confirm screen) + "Something else" (free text). null -> text box only.
   const choices = finalChoicesFor(optionLabels, firstLeanLabel)
   const [picked, setPicked]             = useState<string | null>(null)   // a choice's full label, or 'other'
@@ -83,13 +95,15 @@ export default function PredictionReveal({
     if (!reviewTouched.current && defaultReviewDays) setReviewDate(todayPlusDays(defaultReviewDays))
   }, [defaultReviewDays])
   const [submitting, setSubmitting] = useState(false)
+  const [deferred, setDeferred]     = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [reveal, setReveal]         = useState<RevealState | null>(
     alreadyDecided ? { predictionMatched: !!initialMatched, patternCount: 0 } : null
   )
 
-  async function handleConfirmLock() {
-    if (!draftDecision.trim() || !reviewDate) return
+  /** Commit `text` as the final decision. `optionLabel` is the tapped option's full label (exact prediction match). */
+  async function lock(text: string, optionLabel: string | null, via: 'tap' | 'text') {
+    if (!text.trim() || !reviewDate) return
     setSubmitting(true)
     setError(null)
     try {
@@ -99,7 +113,7 @@ export default function PredictionReveal({
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ finalDecision: draftDecision.trim(), ...(chosenOption ? { chosenOptionLabel: chosenOption } : {}) }),
+        body: JSON.stringify({ finalDecision: text.trim(), ...(optionLabel ? { chosenOptionLabel: optionLabel } : {}) }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -116,14 +130,14 @@ export default function PredictionReveal({
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ sessionId, leaning: draftDecision.trim(), switch_condition: null, review_date: reviewDate }),
+        body: JSON.stringify({ sessionId, leaning: text.trim(), switch_condition: null, review_date: reviewDate }),
       }).catch(() => {})
 
       setReveal({ predictionMatched: data.predictionMatched, patternCount: data.patternCount })
-      track('review_date_chosen', {
-        days_out: Math.max(0, Math.round((new Date(`${reviewDate}T12:00:00`).getTime() - Date.now()) / 86_400_000)),
-        via_chip: reviewViaChip.current,
-      }, { sessionId })
+      const daysOut = Math.max(0, Math.round((new Date(`${reviewDate}T12:00:00`).getTime() - Date.now()) / 86_400_000))
+      track('review_date_chosen', { days_out: daysOut, via_chip: reviewViaChip.current }, { sessionId })
+      // v15: the explicit "a decision was committed" event (decision_completed now means "the Council finished").
+      track('decision_locked', { via, days_out: daysOut, signed_in: !!authToken }, { sessionId })
       onDecided?.({ reviewDate })
     } catch (e) {
       setError(e instanceof Error && e.message === 'Final decision already recorded for this session'
@@ -132,6 +146,31 @@ export default function PredictionReveal({
       setPhase('compose')
       setSubmitting(false)
     }
+  }
+
+  function handleConfirmLock() { return lock(draftDecision, chosenOption, chosenOption ? 'tap' : 'text') }
+
+  // v15: where Quorum can reach the person on the review date. ConnectCard hides itself when they are already signed in.
+  const reminder = (
+    <div style={{ marginTop: 14 }}>
+      <ConnectCard mode="d1_soft" surface="commit_reveal" reviewDate={reviewDate} sessionId={sessionId} defaultExpanded />
+    </div>
+  )
+
+  if (deferred && !reveal) {
+    return (
+      <div style={revealBoxStyle}>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em', color: 'var(--text-4)', textTransform: 'uppercase', margin: '0 0 10px' }}>
+          Left open
+        </p>
+        <p style={{ fontSize: 15, color: 'var(--text-1)', margin: '0 0 12px', lineHeight: 1.5 }}>
+          This one will wait on your Desk. Some decisions need a night’s sleep — commit when you are ready.
+        </p>
+        <button type="button" className="btn-ghost" style={{ minHeight: 44, fontSize: 13 }} onClick={() => setDeferred(false)}>
+          Commit now
+        </button>
+      </div>
+    )
   }
 
   if (reveal) {
@@ -143,8 +182,15 @@ export default function PredictionReveal({
             Decision locked
           </p>
           <p style={{ fontSize: 15, color: 'var(--text-1)', margin: 0, lineHeight: 1.5 }}>
-            That's recorded. Quorum will bring it back to you on your review date.
+            {authToken
+              ? 'That\u2019s recorded. Quorum will bring it back to you on your review date.'
+              : hasFunctionalConsent()
+                ? 'That\u2019s recorded on this device and will be on your desk when you return.'
+                // Without functional consent this browser cannot recognise the decision later (nothing is stored here), so
+                // "recorded on this device" would be untrue. Signing in below is what keeps it, and it is optional.
+                : 'That\u2019s recorded. This browser isn\u2019t set to remember your decisions, so sign in below to keep it on your desk.'}
           </p>
+          {reminder}
         </div>
       )
     }
@@ -179,6 +225,7 @@ export default function PredictionReveal({
             ? 'It doesn\u2019t know you yet \u2014 each decision is how it starts to learn the way you decide.'
             : 'Either way is useful -- this is about whether Quorum understands you, not about beating it.'}
         </p>
+        {reminder}
       </div>
     )
   }
@@ -190,7 +237,7 @@ export default function PredictionReveal({
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em',
           color: 'var(--text-4)', textTransform: 'uppercase', margin: '0 0 10px',
         }}>
-          Review before locking — this can\u2019t be edited after
+          Review before locking — this can’t be edited after
         </p>
         <p style={{ fontSize: 15, color: 'var(--text-1)', margin: '0 0 8px', lineHeight: 1.5 }}>
           {draftDecision}
@@ -223,8 +270,13 @@ export default function PredictionReveal({
         fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em',
         color: 'var(--text-4)', textTransform: 'uppercase', margin: '0 0 10px',
       }}>
-        Make your decision — required to close this record
+        {lockMandatory ? 'Make your decision \u2014 required to close this record' : 'Your call'}
       </p>
+      {!lockMandatory && (
+        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
+          Commit to what you will do and Quorum will check back on how it went. That is what lets it learn how you decide.
+        </p>
+      )}
       {initialInstinctLabel && (
         <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px', lineHeight: 1.5 }}>
           You started out {initialInstinctLabel}. Now that you've seen the full
@@ -273,9 +325,9 @@ export default function PredictionReveal({
             />
           )}
           {picked && picked !== 'other' && (
-            <button type="button" className="btn-primary" style={{ padding: '10px 20px', fontSize: 13, minHeight: 44 }}
-              onClick={() => { setDraft(picked); setChosenOption(picked); setPhase('review') }}>
-              Review
+            <button type="button" className="btn-primary" disabled={submitting} style={{ padding: '10px 20px', fontSize: 13, minHeight: 44 }}
+              onClick={() => { setDraft(picked); setChosenOption(picked); void lock(picked, picked, 'tap') }}>
+              {submitting ? 'Committing\u2026' : 'Commit to this'}
             </button>
           )}
         </>
@@ -288,7 +340,7 @@ export default function PredictionReveal({
         />
       )}
       <label style={{ display: 'block', fontSize: 11.5, color: 'var(--text-3)', margin: '12px 0 6px' }}>
-        When should Quorum bring this back to you? (required)
+        {lockMandatory ? 'When should Quorum bring this back to you? (required)' : 'When should Quorum check back?'}
       </label>
       {/* Phase 1: quick picks. A small decision resolves in days, not a month. */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '0 0 8px' }}>
@@ -333,6 +385,18 @@ export default function PredictionReveal({
         }}
         required
       />
+      {!lockMandatory && (
+        <div>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => { track('commit_deferred', { stage: 'council_result' }, { sessionId }); setDeferred(true); onDeferred?.() }}
+            style={{ marginTop: 14, minHeight: 44, fontSize: 12.5 }}
+          >
+            Not ready to decide — leave it open
+          </button>
+        </div>
+      )}
     </div>
   )
 }

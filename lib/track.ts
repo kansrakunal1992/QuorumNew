@@ -46,6 +46,13 @@ export type TrackEventName =
   | 'mirror_viewed'
   | 'return_visit'
   | 'decision_prefill_loaded'      // Nov 2026: a ?decision= link put text in the chat box (length + flags only, never the text)
+  // v15 (Nov 2026): the commit step, the Decision Desk and the front door. Known prop keys only (lib/event-props.ts).
+  | 'decision_locked'             // a final decision + review date was committed (via tap | text; days_out; signed_in)
+  | 'commit_deferred'             // "not ready to decide" chosen on the Council result
+  | 'desk_viewed'                 // the Decision Desk rendered (counts per section, never decision text)
+  | 'desk_card_clicked'           // a Desk row or action was opened (section, action)
+  | 'nav_clicked'                 // Desk / Mirror / new-decision navigation (to, surface)
+  | 'front_door_section_opened'   // example result / how-it-compounds / council panel opened on the first-visit screen
   // v8 — Natural Intake cards. Additive: every earlier event above still fires exactly as before.
   // Props are stable ids / counts / booleans only — never option wording, never free text.
   | 'intake_card_group_shown'

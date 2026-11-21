@@ -17,7 +17,7 @@ import type { Session, RegisterMode } from '@/lib/types'
 import type { PersonaKey } from '@/lib/types'
 import { createClient } from '@/lib/supabase'
 import { computeReadiness } from '@/lib/readiness'   // PR3/PR4 — readiness gate
-import { isUnifiedSessionEnabled, isEarlyCouncilStartEnabled } from '@/lib/feature-flags'
+import { isUnifiedSessionEnabled, isEarlyCouncilStartEnabled, isLockRequired } from '@/lib/feature-flags'
 import InitialInstinctCapture from '@/components/InitialInstinctCapture'
 import { parseOptionLabels, parseContextLine, LEAN_LINE_PREFIX } from '@/lib/chat-intake-context'
 import QuorumPrediction       from '@/components/QuorumPrediction'
@@ -1371,8 +1371,12 @@ export default function SessionView({ session: initialSession, initialMessages =
 
   // Phase 1: the continuity block (tally, "anything else on your plate?",
   // soft connect) replaces the ghost "New Decision" button once this decision
-  // is actually finished -- under the unified flag that means locked.
-  const showNextPrompt = synthesisDone && (!isUnifiedSessionEnabled() || decisionLocked)
+  // is actually finished. v15: finishing the Council is enough -- committing is one prominent tap, not a gate, because 2 of 2
+  // completed Councils never locked and so never saw any of this. NEXT_PUBLIC_LOCK_OPTIONAL=off restores the old rule
+  // (under the unified flag: only once locked). decision_completed therefore now means "the Council finished";
+  // decision_locked (PredictionReveal) is the commitment event.
+  const lockMandatory = isLockRequired()
+  const showNextPrompt = synthesisDone && (!lockMandatory || decisionLocked)
 
   // Phase 0: one decision_completed event per Council decision, deduped per
   // session in sessionStorage so revisiting the page does not recount it.
@@ -1418,7 +1422,7 @@ export default function SessionView({ session: initialSession, initialMessages =
     // clickable now regardless of lock state (see their disabled props
     // below); this guard is what replaces the old disabled-state gate,
     // and actually tells the user where to go instead of just refusing.
-    if (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked) {
+    if (lockMandatory && synthesisDone && !decisionLocked) {
       document.querySelector('[data-tour-id="council-make-decision"]')
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       setLockSectionPulse(true)
@@ -1795,7 +1799,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               disabled={saving || councilSettling}
               title={
                 councilSettling ? 'Council is still working — one moment.'
-                : (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)
+                : (lockMandatory && synthesisDone && !decisionLocked)
                   ? 'Lock in your decision and review date first — takes you there now.'
                   : undefined
               }
@@ -2141,7 +2145,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       </div>
                     ) : undefined
                   }
-                  decisionRequired={isUnifiedSessionEnabled()}
+                  decisionRequired={lockMandatory}
                   decisionLocked={decisionLocked}
                 />
               </div>
@@ -2156,7 +2160,7 @@ export default function SessionView({ session: initialSession, initialMessages =
               {/* Point 4: under the flag, also requires decisionLocked — this card reads
                   as a "you're done" signal, and nothing should say that before the
                   compulsory final-decision step actually happened. */}
-              {synthesisDone && (!isUnifiedSessionEnabled() || decisionLocked) && (
+              {synthesisDone && (!lockMandatory || decisionLocked) && (
                 <div className="sv-fade sv-fade-2" style={{ marginTop: 0 }}>
                   <RecordReceipt
                     sessionCount={totalSessionCount ?? getStoredSessionIds().length}
@@ -2555,6 +2559,8 @@ export default function SessionView({ session: initialSession, initialMessages =
                   surface="session_page"
                   sessionId={session.id}
                   reviewDate={lockedReviewDate}
+                  // v15: once committed, the reminder-channel ask already sits in the commit card above; do not ask twice.
+                  suppressConnect={decisionLocked && !!lockedReviewDate}
                   refreshKey={decisionLocked ? 'locked' : 'open'}
                   onBringNow={handleNewDecision}
                 />
@@ -2597,7 +2603,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                   disabled={saving || councilSettling}
                   title={
                     councilSettling ? 'Council is still working — one moment.'
-                    : (isUnifiedSessionEnabled() && synthesisDone && !decisionLocked)
+                    : (lockMandatory && synthesisDone && !decisionLocked)
                       ? 'Lock in your decision and review date above first — takes you there now.'
                       : undefined
                   }

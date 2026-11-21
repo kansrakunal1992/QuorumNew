@@ -15,6 +15,7 @@ import ReanalyzeDrawer from '@/components/ReanalyzeDrawer'
 import ShareRecordButton from '@/components/ShareRecordButton'
 import ReferralLink from '@/components/ReferralLink'          // item 6 plan, round 2 — moved here from the Natural Intake hero
 import BackButton from '@/components/BackButton'
+import AppNav from '@/components/AppNav'                // v15
 import { PERSONAS } from '@/lib/personas'
 import type { PersonaKey } from '@/lib/types'
 import { decrypt } from '@/lib/encryption'
@@ -993,6 +994,11 @@ export default async function RecordPage({ params }: Props) {
       <div style={{ minHeight: '100vh', background: 'var(--bg-void)', padding: '40px 16px 64px' }}>
         <div style={{ maxWidth: '48rem', margin: '0 auto' }}>
 
+          {/* v15: Desk / Mirror / Bring a decision (a record reached from an email had no way to the rest of the product). */}
+          <div style={{ margin: '-16px 0 8px -16px' }}>
+            <AppNav current="record" surface="record" />
+          </div>
+
           {/* ── Page Header ────────────────────────────────────── */}
           <div className="rec-header-row rec-fade rec-fade-1">
             <div>
@@ -1146,7 +1152,7 @@ export default async function RecordPage({ params }: Props) {
           )}
 
           {/* ── Outcome Tracker ────────────────────────────────── */}
-          <div className="rec-fade rec-fade-3" style={{ marginBottom: 12 }} data-tour-id="record-outcome">
+          <div id="outcome" className="rec-fade rec-fade-3" style={{ marginBottom: 12, scrollMarginTop: 72 }} data-tour-id="record-outcome">
             <OutcomeTracker
               sessionId={session.id}
               existingOutcome={outcome}

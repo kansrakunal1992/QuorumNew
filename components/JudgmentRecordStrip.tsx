@@ -42,6 +42,11 @@ export interface JudgmentRecordSession {
     council_helped: string
     what_decided:   string
   } | null
+  // v15: carried through from /api/history for the Decision Desk (lib/desk.ts). Optional; this strip does not read them.
+  status?:                   'active' | 'completed' | null
+  session_depth?:            'checkpoint' | 'council' | null
+  final_decision_locked_at?: string | null
+  commitment_review_date?:   string | null
 }
 
 const PREVIEW_COUNT = 3

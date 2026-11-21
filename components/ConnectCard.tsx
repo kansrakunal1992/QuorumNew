@@ -34,6 +34,11 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
+// v15: the Google round trip leaves the page, and /auth/callback links anonymous decisions from the stored id list. Someone who
+// has not accepted functional cookies has no stored list, so the decision they are signing in for is linked only if its id is
+// stashed at the moment they tap sign-in. That used to happen only in the sign-in-before-Council gate mode; the commit-time
+// reminder card (surface commit_reveal, mode d1_soft) and the other soft cards need it just as much, so it now runs in every
+// mode. It writes that one id, only as part of a sign-in the person has just asked for (same reasoning as the gate).
 import { getOrCreateDeviceId, getStoredSessionIds, getStoredUserEmail, getStoredUtm, pushSessionIdForSignIn } from '@/lib/storage'
 import { detectInApp } from '@/lib/event-context'   // v14: Google sign-in is refused inside in-app browsers (Instagram, Facebook, ...)
 import { getAuthHeaders } from '@/lib/auth-headers'
@@ -207,7 +212,7 @@ export default function ConnectCard({
         <p style={{ ...small, marginBottom: 10 }}>
           <strong style={{ color: 'var(--text-2)' }}>{email}</strong> signed up with Google. Use that to get back in.
         </p>
-        <GoogleSignInButton variant="compact" onStart={() => { if (isGate && sessionId) pushSessionIdForSignIn(sessionId); track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null }) }} />
+        <GoogleSignInButton variant="compact" onStart={() => { if (sessionId) pushSessionIdForSignIn(sessionId); track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null }) }} />
       </div>
     )
   }
@@ -242,7 +247,7 @@ export default function ConnectCard({
         </p>
       ) : (
         <>
-          <GoogleSignInButton variant="primary" onStart={() => { if (isGate && sessionId) pushSessionIdForSignIn(sessionId); track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null }) }} />
+          <GoogleSignInButton variant="primary" onStart={() => { if (sessionId) pushSessionIdForSignIn(sessionId); track('auth_started', { stage: mode, surface, method: 'google', arm: arm ?? null }) }} />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
         <div style={{ flex: 1, height: 1, background: 'var(--border-dim)' }} />

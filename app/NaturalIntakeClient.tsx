@@ -51,6 +51,11 @@ interface HistorySession {
     council_helped: string
     what_decided:   string
   } | null
+  // v15: the Decision Desk (lib/desk.ts) reads these; /api/history now returns them.
+  status?:                   'active' | 'completed' | null
+  session_depth?:            'checkpoint' | 'council' | null
+  final_decision_locked_at?: string | null
+  commitment_review_date?:   string | null
 }
 
 export default function NaturalIntakeClient() {
@@ -67,6 +72,9 @@ export default function NaturalIntakeClient() {
   const [mirrorStatus, setMirrorStatus]           = useState<MirrorStatus | null>(null)
   const [patternDimensions, setPatternDimensions] = useState<DimPattern[]>([])
   const [historySessions, setHistorySessions]     = useState<HistorySession[]>([])
+  // v15: true once the first history request has settled (or there is nothing to request). Lets the front door hold the
+  // Desk's place instead of flashing the first-visit screen at someone who has decisions.
+  const [historyLoaded, setHistoryLoaded]           = useState(false)
   const [showProfileCapture, setShowProfileCapture] = useState(false)
   // Phase 1: bumped when a new decision starts so the home history (and the
   // counts derived from it) refetch instead of staying frozen at page load.
@@ -150,13 +158,14 @@ export default function NaturalIntakeClient() {
         // user_id (its header says so), but this guard returned before ever calling
         // it -- so a signed-in person on a NEW device, with no local ids, saw no
         // history, no counts and no hero cards. Signed-in people now always ask.
-        if (!ids.length && !authToken) return
+        if (!ids.length && !authToken) { if (!cancelled) setHistoryLoaded(true); return }
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (authToken) headers['Authorization'] = `Bearer ${authToken}`
         const res  = await fetch('/api/history', { method: 'POST', headers, body: JSON.stringify({ ids }) })
         const data = await res.json()
         if (!cancelled) setHistorySessions(data.sessions ?? [])
       } catch {}
+      if (!cancelled) setHistoryLoaded(true)
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -279,6 +288,7 @@ export default function NaturalIntakeClient() {
           decidedCount={decidedCount}
           heroCards={heroCards}
           historySessions={historySessions}
+          historyLoaded={historyLoaded}
           onDeleteSession={handleDeleteSession}
         />
       )}
