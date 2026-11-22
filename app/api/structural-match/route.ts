@@ -26,6 +26,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import {
   retrieveStructuralMatches,
+  isEarlyRetrieval,
   scoreStructuralSimilarity,
   type OntologySnapshot,
 } from '@/lib/structural-retrieval'
@@ -117,6 +118,8 @@ export async function POST(req: Request) {
         decision_type_primary:  cachedSignals?.decision_type_primary  ?? null,
         stakes_reversibility:   cachedSignals?.stakes_reversibility   ?? null,
         best_match_date:    null,  // not stored in structural_matches — acceptable for cache hits
+        // v16: a match from fewer than MIN_SESSIONS past sessions is the light tier: one comparison, not a pattern.
+        early_match:        !!cached.threshold_met && isEarlyRetrieval(cached.session_count_used ?? 0),
       })
     }
 
@@ -422,6 +425,7 @@ export async function POST(req: Request) {
       best_match_session_id: result.threshold_met && result.matches.length > 0
         ? result.matches[0].session_id
         : null,
+      early_match:        result.early === true,   // v16: light tier -- labelled "early comparison" in the Council
     })
 
   } catch (err) {

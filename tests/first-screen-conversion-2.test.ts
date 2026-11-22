@@ -82,7 +82,7 @@ describe('2. one-tap start', () => {
   })
   it('the per-call walkthrough override reaches the server, and the typed path is unchanged', () => {
     expect(ci).toContain('walkthrough:    !chatIntakeId && (opts?.walkthrough ?? walkthrough) ? true : undefined,')
-    expect(ci).toContain("track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION, ...prefillSendProps(prefillAppliedRef.current, trimmed) })")
+    expect(ci).toContain("track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: flowVersionRef.current, ...prefillSendProps(prefillAppliedRef.current, trimmed) })")
   })
   it('the pills sit under the button (default since round 4), only when the sign-in gate is not showing, and lock while sending', () => {
     const hero = ci.slice(ci.indexOf('Hero \u2014 "Quorum is ready to think with me,'))

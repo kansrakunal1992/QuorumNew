@@ -25,6 +25,8 @@ const INTAKE_EVENTS = new Set([
   'decision_prefill_loaded',
   // v15: commit step, Decision Desk, front door. Counts and identifiers only.
   'decision_locked', 'commit_deferred', 'desk_viewed', 'desk_card_clicked', 'nav_clicked', 'front_door_section_opened',
+  // v16: Mirror overview. Counts and fixed labels only.
+  'mirror_overview_viewed', 'mirror_insight_expanded',
 ])
 
 const ALLOWED_KEYS = new Set([
@@ -47,6 +49,8 @@ const ALLOWED_KEYS = new Set([
   // v15: commit step (days_out, signed_in, via), Desk (per-section counts, section, action), nav (to)
   'days_out', 'signed_in', 'due_count', 'open_count', 'waiting_count', 'unexamined_count', 'parked_count', 'total_count',
   'section', 'to',
+  // v16: Mirror overview (confidence is one of early / emerging / established / fact)
+  'confidence', 'learned_count', 'watch_count', 'mode',
 ])
 const CONTEXT_KEY_SET: ReadonlySet<string> = new Set(CONTEXT_KEYS)
 

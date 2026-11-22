@@ -27,7 +27,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { track } from '@/lib/track'   // Phase 4: first-party events
 import { useRouter }     from 'next/navigation'
 import { createClient }  from '@/lib/supabase'
-import { getOrCreateDeviceId, getStoredSessionIds } from '@/lib/storage'
+import { getOrCreateDeviceId, getStoredDeviceId, getStoredSessionIds } from '@/lib/storage'
 import GoogleSignInButton from '@/components/GoogleSignInButton'
 import MirrorTimeline         from '@/components/MirrorTimeline'
 import BiasFingerprint        from '@/components/BiasFingerprint'
@@ -44,6 +44,7 @@ import CohortInsightsCard     from '@/components/CohortInsightsCard'    // Insti
 import StyleCalibration        from '@/components/StyleCalibration'
 import MirrorNav               from '@/components/MirrorNav'           // Sprint M2
 import AppNav                  from '@/components/AppNav'              // v15
+import MirrorOverview          from '@/components/MirrorOverview'      // v16
 import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
 import AttentionZone          from '@/components/AttentionZone'         // Sprint M5
 import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprint M6
@@ -2166,6 +2167,10 @@ export default function MirrorPage() {
           {!loading && !fetchError && status && (
             <>
               {status.gateState === 'auth'     && <AuthGate />}
+              {/* v16: the three questions, answered from what the record supports. Not behind the paywall. */}
+              {status.gateState !== 'auth' && (
+                <MirrorOverview authToken={authToken} deviceId={getStoredDeviceId()} surface="mirror" hasDetail={status.gateState === 'unlocked'} />
+              )}
               {status.gateState === 'locked'   && (
                 <LockedView
                   sessionCount={status.sessionCount}

@@ -53,6 +53,9 @@ export type TrackEventName =
   | 'desk_card_clicked'           // a Desk row or action was opened (section, action)
   | 'nav_clicked'                 // Desk / Mirror / new-decision navigation (to, surface)
   | 'front_door_section_opened'   // example result / how-it-compounds / council panel opened on the first-visit screen
+  // v16 (Nov 2026): the Mirror's three-question overview. Counts and labels only, never decision text.
+  | 'mirror_overview_viewed'      // the overview rendered (surface, total_count, learned_count, watch_count, mode)
+  | 'mirror_insight_expanded'     // someone opened the decisions behind an insight (kind, confidence, surface)
   // v8 — Natural Intake cards. Additive: every earlier event above still fires exactly as before.
   // Props are stable ids / counts / booleans only — never option wording, never free text.
   | 'intake_card_group_shown'

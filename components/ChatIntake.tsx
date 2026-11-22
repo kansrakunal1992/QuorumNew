@@ -169,6 +169,9 @@ export default function ChatIntake({
   const quickRef = useRef<ChatQuickReplies | null>(null)
   // v8 analytics: when the current card group appeared, and when this chat's first message was sent.
   const cardShownAt   = useRef<number>(0)
+  // v16: the cohort this chat belongs to ('v9_progressive_cards' or the fast path). The SERVER decides it on the first exchange and
+  // returns it; every intake event from then on carries it, so the two flows can be compared. Starts as the standard flow.
+  const flowVersionRef = useRef<string>(INTAKE_FLOW_VERSION)
   const lastApiMs     = useRef<number>(0)   // v14: how long the last chat turn took to come back (the wait the person felt)
   const chatStartedAt = useRef<number>(0)
   const cardGroupsAnswered = useRef<number>(0)
@@ -328,7 +331,7 @@ export default function ChatIntake({
       captureFirstTouch()
       track('decision_prefill_loaded', {
         surface: 'natural_intake', prefill_chars: chosen.text.length, prefill_truncated: urlPrefill.truncated,
-        flow_version: INTAKE_FLOW_VERSION,
+        flow_version: flowVersionRef.current,
       })
     }
     // A prefilled link does not grab focus: on a phone that would raise the keyboard over the text and the button.
@@ -398,8 +401,8 @@ export default function ChatIntake({
   useEffect(() => {
     if (!shownKey || !quick?.card) return
     cardShownAt.current = Date.now()
-    track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
-    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: 1 + (quick.companion ? 1 : 0) + (quick.companion2 ? 1 : 0), flow_version: INTAKE_FLOW_VERSION, viewport: viewportBucket() , api_ms: lastApiMs.current || null})
+    track('intake_card_group_shown', { ...cardShownProps(quick.card, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: flowVersionRef.current })
+    track('intake_step_shown', { chat_intake_id: chatIntakeId ?? null, intake_step: exchangeCount, group_count: 1 + (quick.companion ? 1 : 0) + (quick.companion2 ? 1 : 0), flow_version: flowVersionRef.current, viewport: viewportBucket() , api_ms: lastApiMs.current || null})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownKey])
 
@@ -450,6 +453,7 @@ export default function ChatIntake({
       apiStatus = res.status
       lastApiMs.current = Date.now() - apiStartedAt
       const data = await res.json()
+      if (typeof data?.flowVersion === 'string') flowVersionRef.current = data.flowVersion
       // Phase 3: the server says this device needs a linked email before a
       // new decision. Roll the optimistic bubble back and show the gate; the
       // typed text is put back so nothing is lost.
@@ -474,7 +478,7 @@ export default function ChatIntake({
           }
         } catch {}
         // Nov 2026: prefilled / prefill_edited only when the first message began as a ?decision= link (empty object otherwise).
-        track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION, ...prefillSendProps(prefillAppliedRef.current, trimmed) })
+        track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: flowVersionRef.current, ...prefillSendProps(prefillAppliedRef.current, trimmed) })
       }
       retrySel.current = null
       retrySel2.current = null
@@ -502,7 +506,7 @@ export default function ChatIntake({
           shown:          !!data.reflection.shown,
           reason:         data.reflection.reason ?? null,
           intake_step:    data.exchangeCount ?? null,
-          flow_version:   data.flowVersion ?? INTAKE_FLOW_VERSION,
+          flow_version:   data.flowVersion ?? flowVersionRef.current,
         })
       }
 
@@ -528,7 +532,7 @@ export default function ChatIntake({
           // v9: effort, reported separately so fewer chat turns can never disguise unchanged work.
           user_submissions:    submissionsRef.current,
           card_taps:           tapsRef.current,
-          flow_version:        data.flowVersion ?? INTAKE_FLOW_VERSION,
+          flow_version:        data.flowVersion ?? flowVersionRef.current,
           viewport:            viewportBucket(),
           stakes:              st.stakes ?? null,
           deferred_count:      st.deferredSlots?.length ?? 0,
@@ -573,7 +577,7 @@ export default function ChatIntake({
     retrySel.current = sel
     retrySel2.current = companionSel ?? null
     retrySel3.current = companion2Sel ?? null
-    track('intake_card_answered', { ...cardAnsweredProps(group, card, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
+    track('intake_card_answered', { ...cardAnsweredProps(group, card, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: flowVersionRef.current })
     cardGroupsAnswered.current += 1
     const kind = card.responseType === 'not_sure' ? 'unknown'
       : card.responseType === 'prefer_not' || card.responseType === 'skip' ? 'declined' : 'cards'
@@ -590,7 +594,7 @@ export default function ChatIntake({
       const cmeta = metaFor(g, gs)
       assign({ text: ctext, card: cmeta })
       message = `${message}\n${ctext}`
-      track('intake_card_answered', { ...cardAnsweredProps(g, cmeta, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION })
+      track('intake_card_answered', { ...cardAnsweredProps(g, cmeta, exchangeCount + 1, Date.now() - cardShownAt.current), chat_intake_id: chatIntakeId ?? null, flow_version: flowVersionRef.current })
       cardGroupsAnswered.current += 1
     }
     send(message, { kind, slotKey: group.slotKey, card, ...(comp ? { companion: comp } : {}), ...(comp2 ? { companion2: comp2 } : {}) })
@@ -893,7 +897,7 @@ export default function ChatIntake({
               onTap={() => { tapsRef.current += 1 }}
               onSubmit={(sel, sel2, sel3) => submitCards(quick.card as CardGroupSpec, sel, quick.companion ?? null, sel2, quick.companion2 ?? null, sel3)}
               onFreeTextOpen={g => track('intake_card_freetext_opened', { question_id: g.questionId, slot_key: g.slotKey, chat_intake_id: chatIntakeId ?? null })}
-              onCompanionShown={g => track('intake_card_group_shown', { ...cardShownProps(g, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: INTAKE_FLOW_VERSION, companion: true })}
+              onCompanionShown={g => track('intake_card_group_shown', { ...cardShownProps(g, exchangeCount), chat_intake_id: chatIntakeId ?? null, flow_version: flowVersionRef.current, companion: true })}
             />
           )}
           {quick && !quick.card && quick.chips.length > 0 && !sending && !closing && (

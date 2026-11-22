@@ -375,7 +375,7 @@ describe('12. decision_prefill_loaded fires once, and carries no text', () => {
   it('decision_started still fires on the real first send, with its original props, plus the prefill flags only when prefilled', () => {
     const chat = src('components/ChatIntake.tsx')
     expect((chat.match(/track\('decision_started'/g) ?? []).length).toBe(1)
-    expect(chat).toContain("track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: INTAKE_FLOW_VERSION, ...prefillSendProps(prefillAppliedRef.current, trimmed) })")
+    expect(chat).toContain("track('decision_started', { entry: 'chat', from_notification: fromNotification, flow_version: flowVersionRef.current, ...prefillSendProps(prefillAppliedRef.current, trimmed) })")
     // still inside send(), still guarded by "this is the first message of a brand-new chat"
     const sendStart = chat.indexOf('const send = useCallback(')
     const startedAt = chat.indexOf("track('decision_started'")

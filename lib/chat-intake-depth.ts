@@ -26,11 +26,59 @@ import { baseKindOf } from '@/lib/decision-playbooks'
 /** Written onto every new chat and every intake analytics event, so cohorts can be compared across redesigns. */
 export const INTAKE_FLOW_VERSION = 'v9_progressive_cards'
 
+// ── v16 Phase 5: the fast path ───────────────────────────────────────────────
+// The same engine, asked to stop sooner. It changes TWO things and nothing else:
+//   1. Ceilings are 3 / 4 / 5 exchanges (low / medium / high stakes) instead of 5 / 7 / 9.
+//   2. A required slot may be left to the Council ("not asked") below a weight bar for every stakes level, not only low
+//      stakes: 70 for low and medium, 60 for high.
+// What it does NOT change: a slot the person's own situation makes material stays CRITICAL (runway when income is at risk,
+// validation when they would build something of their own, who depends on them) and is still asked. A high-weight required slot
+// is still asked. Whatever is not asked reaches the Council marked "not asked", never as the person not knowing. And "Let me add
+// more" at the reflection step restores the standard ceilings, so the person can always ask for the longer conversation.
+//
+// It is a separate flow VERSION, not a switch on the old one, because every intake event already carries flow_version; the
+// two flows can therefore be compared without any new plumbing. Off unless INTAKE_FAST_MODE is set (see assignFlowVersion).
+export const INTAKE_FLOW_VERSION_FAST = 'v9_fast_path'
+
+/** off = everyone gets the standard flow (today). fast = everyone gets the fast path. experiment = half and half. */
+export type IntakeFastMode = 'off' | 'fast' | 'experiment'
+
+export function parseIntakeFastMode(raw: string | null | undefined): IntakeFastMode {
+  const v = String(raw ?? '').trim().toLowerCase()
+  return v === 'fast' || v === 'experiment' ? v : 'off'
+}
+
+function fnv1a(str: string): number {
+  let h = 2166136261
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return h >>> 0
+}
+
+/**
+ * Which flow a NEW chat gets. Decided once on the first exchange and stored on the chat, so it never changes mid-conversation.
+ * In experiment mode a known device id keeps the same person in the same arm across chats; without one (no functional
+ * cookies) the arm is random per chat, so such people can be in either arm on different days. `rand` is injectable for tests.
+ */
+export function assignFlowVersion(mode: IntakeFastMode, deviceId?: string | null, rand: () => number = Math.random): string {
+  if (mode === 'fast') return INTAKE_FLOW_VERSION_FAST
+  if (mode === 'experiment') {
+    const key = typeof deviceId === 'string' && deviceId.length >= 8 ? deviceId : null
+    const fast = key ? fnv1a(`intake-arm:${key}`) % 2 === 1 : rand() < 0.5
+    return fast ? INTAKE_FLOW_VERSION_FAST : INTAKE_FLOW_VERSION
+  }
+  return INTAKE_FLOW_VERSION
+}
+
+export const isFastFlow = (s: { flowVersion?: string | null }): boolean => s.flowVersion === INTAKE_FLOW_VERSION_FAST
+
 export type Stakes = 'low' | 'medium' | 'high'
 
 const CEILING_BY_STAKES: Record<Stakes, number> = { low: 5, medium: 7, high: 9 }
+const FAST_CEILING_BY_STAKES: Record<Stakes, number> = { low: 3, medium: 4, high: 5 }
 /** Required slots at or above this weight are never deferred on stakes alone. */
 const LOW_STAKES_KEEP_WEIGHT = 70
+/** Fast path: the same bar for low and medium stakes, a little lower when stakes are high. */
+const FAST_KEEP_WEIGHT: Record<Stakes, number> = { low: 70, medium: 70, high: 60 }
 
 export function effectiveStakes(s: ChatDecisionState): Stakes {
   let st: Stakes = s.stakes ?? 'medium'
@@ -39,9 +87,13 @@ export function effectiveStakes(s: ChatDecisionState): Stakes {
   return st
 }
 
-/** Safety limit on exchanges for this decision. Never a target. */
-export function ceilingFor(s: ChatDecisionState, base: number): number {
-  return Math.min(base, CEILING_BY_STAKES[effectiveStakes(s)])
+/**
+ * Safety limit on exchanges for this decision. Never a target.
+ * `extended` is the person's own "Let me add more" tap: on the fast path it restores the standard ceilings.
+ */
+export function ceilingFor(s: ChatDecisionState, base: number, extended = false): number {
+  const table = isFastFlow(s) && !extended ? FAST_CEILING_BY_STAKES : CEILING_BY_STAKES
+  return Math.min(base, table[effectiveStakes(s)])
 }
 
 // ── Evidence the person has already given ────────────────────────────────────
@@ -110,6 +162,8 @@ function deferrable(s: ChatDecisionState, kind: DecisionKind | null | undefined,
     if (incomeAtRisk(s)) return false
     return jobSecured(s) || STILL_EMPLOYED.test(chosenPath(s)) || st === 'low'
   }
+  // Fast path (v16): lower-weight required slots may be left to the Council at every stakes level.
+  if (isFastFlow(s)) return slot.weight < FAST_KEEP_WEIGHT[st]
   // Stakes-based: a low-stakes decision does not need its lower-weight required slots before the Council starts.
   return st === 'low' && slot.weight < LOW_STAKES_KEEP_WEIGHT
 }

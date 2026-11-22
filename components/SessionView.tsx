@@ -581,6 +581,7 @@ export default function SessionView({ session: initialSession, initialMessages =
   const [structuralMatchDate,     setStructuralMatchDate]     = useState<string | null>(null)
   // (d): matched past session's id, so the S1-07 echo banner can link to it
   const [structuralMatchSessionId, setStructuralMatchSessionId] = useState<string | null>(null)
+  const [structuralEarly, setStructuralEarly] = useState(false)   // v16: the match came from the light tier (one comparison, not a pattern)
 
   // S1-02: Sequential *reveal* — purely cosmetic entrance stagger for the six
   // persona cards. Originally this also GATED the underlying /api/persona
@@ -886,6 +887,7 @@ export default function SessionView({ session: initialSession, initialMessages =
             setStructuralContextActive(true)
             setStructuralMatchDate(data.best_match_date ?? null)
             setStructuralMatchSessionId(data.best_match_session_id ?? null)
+            setStructuralEarly(data.early_match === true)
             return
           }
           if (!data.ontology_ready && attempt < MAX_ATTEMPTS) {
@@ -2472,6 +2474,7 @@ export default function SessionView({ session: initialSession, initialMessages =
                       // contains a <structural> tag. No client-side eligibility list needed.
                       structuralMatchDate={structuralMatchDate}
                       structuralMatchSessionId={structuralMatchSessionId}
+                      structuralEarly={structuralEarly}
                     />
                     </div>
                   )

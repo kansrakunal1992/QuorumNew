@@ -45,7 +45,14 @@
 //   "Stage 5 dimension weights cannot be tested until retrieval uses the
 //   scored vector." — This implementation unblocks that research validation.
 //
-// MINIMUM SESSIONS: 5 past complete-tagged sessions required to activate.
+// MINIMUM SESSIONS: 5 past complete-tagged sessions required to activate the FULL tier.
+//
+// v16 LIGHT TIER (second decision onward): until five past sessions exist the Council used to get no history at all, so the
+// large majority of people (about 20% make a second decision) never saw the product use their earlier decisions. From one past
+// session the Council may now be given ONE comparison, under stricter rules than the full tier: a higher similarity bar
+// (60, not 45), a single match, and an explicit instruction that this is one comparison and not a pattern. The full tier is
+// unchanged. Server env vars, no rebuild: STRUCTURAL_LIGHT_MIN_SESSIONS (default 1; 0 switches the light tier off) and
+// STRUCTURAL_LIGHT_MATCH_THRESHOLD (default 60; never lower than MATCH_THRESHOLD).
 //
 // Sprint R1 changes:
 //
@@ -166,6 +173,36 @@ export interface StructuralRetrievalResult {
   context_block:      string
   session_count_used: number
   threshold_met:      boolean
+  /** v16: true when this came from the light tier (fewer than MIN_SESSIONS past sessions): one comparison, not a pattern. */
+  early?:             boolean
+}
+
+// ── v16: which tier applies for this many past sessions (pure, tested) ────────
+export type RetrievalMode = 'none' | 'light' | 'full'
+export interface RetrievalPlan { mode: RetrievalMode; threshold: number; maxMatches: number }
+
+export function retrievalPlan(
+  pastCount: number,
+  env: Record<string, string | undefined> = process.env,
+): RetrievalPlan {
+  const matchThreshold = Number(env.MATCH_THRESHOLD ?? '45')
+  const fullMin        = Number(env.MIN_SESSIONS ?? '5')
+  const lightMin       = Number(env.STRUCTURAL_LIGHT_MIN_SESSIONS ?? '1')
+  const lightThreshold = Math.max(matchThreshold, Number(env.STRUCTURAL_LIGHT_MATCH_THRESHOLD ?? '60'))
+  if (pastCount >= fullMin) return { mode: 'full', threshold: matchThreshold, maxMatches: 2 }
+  if (lightMin > 0 && pastCount >= lightMin) return { mode: 'light', threshold: lightThreshold, maxMatches: 1 }
+  return { mode: 'none', threshold: matchThreshold, maxMatches: 0 }
+}
+
+/** True when a result computed from `pastCount` past sessions is a light-tier (early) one. */
+export const isEarlyRetrieval = (pastCount: number, env: Record<string, string | undefined> = process.env): boolean =>
+  retrievalPlan(pastCount, env).mode === 'light'
+
+/** Prepended to the context block in the light tier. Tells the advisors how little this rests on. */
+export function earlyContextNote(pastCount: number): string {
+  return `EARLY HISTORY (read this first): this person has only ${pastCount} earlier decision${pastCount === 1 ? '' : 's'} on record. ` +
+    `The match below is a single comparison, not a pattern. Do not say it shows how they usually decide and do not generalise from it. ` +
+    `Mention it only if it genuinely sharpens your view of THIS decision, and call it an early comparison.\n\n`
 }
 
 // ── V2.0 Vector Scorer ────────────────────────────────────────────────────────
@@ -447,13 +484,11 @@ export async function retrieveStructuralMatches(
   currentSnapshot: OntologySnapshot,
   pastSnapshots:   OntologySnapshot[],
 ): Promise<StructuralRetrievalResult> {
-  // R11 fix: configurable via Railway env vars (no deploy needed to tune).
-  // Defaults match the original heuristic values. Re-evaluate at 100 + 250 sessions.
-  const MATCH_THRESHOLD = Number(process.env.MATCH_THRESHOLD ?? '45')
-  const MIN_SESSIONS    = Number(process.env.MIN_SESSIONS    ?? '5')
-  const MAX_MATCHES     = 2
+  // R11 fix: configurable via Railway env vars (no deploy needed to tune). v16: the tier (none / light / full) comes from
+  // retrievalPlan so the rule lives in one tested place.
+  const plan = retrievalPlan(pastSnapshots.length)
 
-  if (pastSnapshots.length < MIN_SESSIONS) {
+  if (plan.mode === 'none') {
     return {
       matches:            [],
       context_block:      '',
@@ -467,9 +502,9 @@ export async function retrieveStructuralMatches(
       past,
       breakdown: scoreStructuralSimilarity(currentSnapshot, past),
     }))
-    .filter(s => s.breakdown.total >= MATCH_THRESHOLD)
+    .filter(s => s.breakdown.total >= plan.threshold)
     .sort((a, b) => b.breakdown.total - a.breakdown.total)
-    .slice(0, MAX_MATCHES)
+    .slice(0, plan.maxMatches)
 
   if (scored.length === 0) {
     return {
@@ -504,9 +539,10 @@ export async function retrieveStructuralMatches(
   return {
     matches:            annotated,
     // Sprint R1: pastSnapshots.length passed so buildContextBlock selects tier mode
-    context_block:      buildContextBlock(annotated, pastSnapshots.length),
+    context_block:      (plan.mode === 'light' ? earlyContextNote(pastSnapshots.length) : '') + buildContextBlock(annotated, pastSnapshots.length),
     session_count_used: pastSnapshots.length,
     threshold_met:      true,
+    early:              plan.mode === 'light',
   }
 }
 

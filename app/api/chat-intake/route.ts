@@ -34,7 +34,7 @@ import type { PlannerOutput } from '@/lib/chat-intake-plan-parse'
 import { decideTurn, preprocessTurn } from '@/lib/chat-intake-turn'
 import type { QuickReplyKind, QuickReplyMeta, TurnResult } from '@/lib/chat-intake-turn'
 import { fetchIntakeBackground } from '@/lib/chat-intake-memory'
-import { INTAKE_FLOW_VERSION, ceilingFor, councilReadiness, readinessLine } from '@/lib/chat-intake-depth'
+import { assignFlowVersion, ceilingFor, councilReadiness, parseIntakeFastMode, readinessLine } from '@/lib/chat-intake-depth'
 import { reflectionDue } from '@/lib/chat-intake-reflection'
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
 import { getGateMode, resolveArm, GATE_AFTER } from '@/lib/auth-gate'   // Phase 3: optional connect-before-next-decision gate
@@ -215,8 +215,13 @@ export async function POST(req: Request) {
 
     const exchangeCount = existingCount + 1
     // v9: the ceiling is a SAFETY limit that scales with stakes (5 / 7 / 9) — never a number of questions to ask.
-    const state0: ChatDecisionState = { ...(priorState ?? {}), flowVersion: priorState?.flowVersion ?? INTAKE_FLOW_VERSION }
-    const ceiling       = ceilingFor(state0, Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES))
+    // v16: which flow a NEW chat gets (standard / fast path) is decided here, once, from INTAKE_FAST_MODE (server env: off | fast |
+    // experiment; no rebuild needed) and then stored on the chat so it cannot change mid-conversation.
+    const state0: ChatDecisionState = {
+      ...(priorState ?? {}),
+      flowVersion: priorState?.flowVersion ?? assignFlowVersion(parseIntakeFastMode(process.env.INTAKE_FAST_MODE), deviceId),
+    }
+    const ceiling       = ceilingFor(state0, Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES), !!extraExchanges)
     const closing       = closingLine()
 
     // ── 1. Read the reply (chips, "I don't know", yes / no, "enough") — no model ─

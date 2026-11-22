@@ -72,3 +72,56 @@ export async function countDecisionsThrough(
   if (session.device_id && DEVICE_RE.test(session.device_id)) await run('device_id', session.device_id)
   return ids.size
 }
+
+// ── v16: rows for the Mirror overview (lib/mirror-insights.ts) ────────────────
+// Same identity merge as loadDecisionRows (user_id, plus rows that only share the device_id), with the extra facts the
+// "watch" insights need: whether the Council ran, whether a decision was committed, the check-in date, and whether an outcome
+// was recorded. `withSnippets` decrypts the first words of each decision for the evidence list; only pass it for the
+// signed-in owner. Anonymous callers get counts and no text (see app/api/mirror/overview/route.ts).
+const INSIGHT_COLS = `${COLS}, decision_text, session_depth, final_decision_locked_at, commitment_review_date`
+
+export async function loadInsightRows(
+  supabase: SupabaseClient,
+  who: { userId?: string | null; deviceId?: string | null },
+  opts: { limit?: number; withSnippets?: boolean } = {},
+): Promise<import('@/lib/mirror-insights').InsightRow[]> {
+  const limit = opts.limit ?? 12
+  const merged = new Map<string, any>()
+
+  const run = async (col: 'user_id' | 'device_id', value: string) => {
+    const { data, error } = await supabase.from('sessions').select(INSIGHT_COLS).eq(col, value)
+      .order('created_at', { ascending: false }).limit(limit)
+    if (error) { console.warn('[decision-history] insight query failed:', error.message); return }
+    for (const r of data ?? []) merged.set(r.id as string, r)
+  }
+  if (who.userId) await run('user_id', who.userId)
+  if (who.deviceId && DEVICE_RE.test(who.deviceId)) await run('device_id', who.deviceId)
+
+  const rows = Array.from(merged.values())
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, limit)
+  if (rows.length === 0) return []
+
+  // Which of these have an outcome recorded? If this lookup FAILS we do not know, and "unknown" must never read as "none recorded":
+  // that would tell someone a check-in is waiting when they already answered it. So on failure every row is treated as having an
+  // outcome, which only hides the "watch" insights (the safe direction) and leaves the learned ones untouched.
+  const outcomeIds = new Set<string>()
+  const { data: outs, error: outErr } = await supabase.from('outcomes').select('session_id').in('session_id', rows.map(r => r.id as string))
+  if (outErr) console.warn('[decision-history] outcomes lookup failed:', outErr.message)
+  const outcomesKnown = !outErr
+  for (const o of outs ?? []) outcomeIds.add(o.session_id as string)
+
+  return rows.map(r => ({
+    id:                       r.id as string,
+    created_at:               r.created_at as string,
+    optimization_priority:    (r.optimization_priority as string | null) ?? null,
+    initial_instinct:         (r.initial_instinct as string | null) ?? null,
+    final_decision_plain:     r.final_decision ? (decrypt(r.final_decision as string) ?? null) : null,
+    prediction_matched_final: (r.prediction_matched_final as boolean | null) ?? null,
+    decision_snippet:         opts.withSnippets && r.decision_text ? (decrypt(r.decision_text as string) ?? null) : null,
+    session_depth:            (r.session_depth as 'checkpoint' | 'council' | null) ?? null,
+    locked:                   !!r.final_decision_locked_at,
+    review_date:              (r.commitment_review_date as string | null) ?? null,
+    has_outcome:              outcomesKnown ? outcomeIds.has(r.id as string) : true,
+  }))
+}

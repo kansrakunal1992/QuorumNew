@@ -14,16 +14,18 @@
 //
 // What this deliberately is not: a task board. No priorities, no columns, no overdue-red, no streaks, no counts of "things to
 // do". Dates shown are only the review dates the person chose. Everything is derived by lib/desk.ts from fields that already
-// exist; the only network call is the existing cross-decision line (counts-only, no decision text).
+// exist; the only network call is the Mirror overview insight (v16: deterministic, counts-only; no decision text when loaded by
+// session id, so it works without an account).
 //
 // Parked items (the Watchlist) and the full record (JudgmentRecordStrip, with delete and share) stay where they were on the
 // front door, directly below this.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { deskHeadline, formatWhen, recordStage } from '@/lib/desk'
 import type { DeskItem, DeskModel } from '@/lib/desk'
 import { track } from '@/lib/track'
+import MirrorOverview from '@/components/MirrorOverview'   // v16
 
 const MAX_PER_SECTION = 3
 
@@ -132,40 +134,6 @@ export function DeskTop({ model }: { model: DeskModel }) {
   )
 }
 
-// ── One cross-decision line, honestly labelled ───────────────────────────────
-function Noticed({ latestId, total }: { latestId: string | null; total: number }) {
-  const [obs, setObs] = useState<{ line: string; kind: string } | null>(null)
-
-  useEffect(() => {
-    if (!latestId || total < 2) return
-    let cancelled = false
-    fetch(`/api/session/${latestId}/cross-decision`)
-      .then(r => r.json())
-      .then(d => {
-        if (cancelled || !d?.line) return
-        setObs({ line: String(d.line), kind: String(d.kind ?? 'none') })
-        track('observation_seen', { kind: d.kind, n: d.decisionCount ?? total, surface: 'desk' })
-      })
-      .catch(() => { /* nothing to show is fine */ })
-    return () => { cancelled = true }
-  }, [latestId, total])
-
-  if (!obs) return null
-  return (
-    <div style={{ ...cardStyle, display: 'block', borderColor: 'var(--gold-dim)' }}>
-      <p style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--text-4)', margin: '0 0 6px' }}>
-        {total < 5 ? 'Quorum noticed · early' : 'Quorum noticed'}
-      </p>
-      <p style={{ fontSize: 14.5, lineHeight: 1.5, color: 'var(--text-1)', margin: 0 }}>{obs.line}</p>
-      <p style={{ fontSize: 11.5, color: 'var(--text-4)', margin: '8px 0 0' }}>
-        {total < 5
-          ? 'A count across your decisions, not yet a pattern.'
-          : 'A count across your decisions.'}
-      </p>
-    </div>
-  )
-}
-
 // ── Body: everything else on the desk ────────────────────────────────────────
 export function DeskBody({ model, mirrorUnlocked, signedIn = true }: { model: DeskModel; mirrorUnlocked: boolean; signedIn?: boolean }) {
   const latestId = [...model.due, ...model.open, ...model.unexamined, ...model.waiting, ...model.closed]
@@ -178,7 +146,11 @@ export function DeskBody({ model, mirrorUnlocked, signedIn = true }: { model: De
       <RowGroup title="Saved, not examined" items={model.unexamined} section="unexamined" />
       <RowGroup title="Waiting for a check-in" items={model.waiting} section="waiting" />
 
-      <Noticed latestId={latestId} total={model.total} />
+      {/* v16: the single strongest thing the record supports, with how much evidence it rests on. Renders nothing when
+          nothing clears its threshold. Loaded by session id so it works without an account; never lists the decisions. */}
+      {latestId && model.total >= 2 && (
+        <MirrorOverview sessionId={latestId} surface="desk" compact signedIn={signedIn} />
+      )}
 
       <div style={{ ...cardStyle, display: 'block' }}>
         <p style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--text-4)', margin: '0 0 6px' }}>

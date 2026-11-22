@@ -36,6 +36,8 @@ const ALLOWED_EVENTS = new Set([
   'review_date_chosen',
   // v15
   'decision_locked', 'commit_deferred', 'desk_viewed', 'desk_card_clicked', 'nav_clicked', 'front_door_section_opened',
+  // v16
+  'mirror_overview_viewed', 'mirror_insight_expanded',
   // Phase 2/3
   'gate_arm_assigned',
   'observation_seen',

@@ -98,6 +98,8 @@ interface Props {
       eligible persona. The citation badge itself is gated on this persona's own
       structuralCitationText (parsed from its <structural> tag), not on this flag. */
   structuralMatchDate?: string | null
+  /** v16: the match came from the light tier (second to fourth decision): one comparison, not a pattern. */
+  structuralEarly?: boolean
   /** (d): matched past session's id — lets the echo badge link to that decision's record page */
   structuralMatchSessionId?: string | null
   /** P1 fix: fires when a pushback reply carries a fresh <lean> classification
@@ -139,7 +141,7 @@ interface Props {
 
 type PanelState = 'idle' | 'streaming' | 'done' | 'error'
 
-export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, authToken, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed, onCollapseChange, expandRequestToken }: Props) {
+export default function PersonaPanel({ persona, sessionId, decisionText, contextText, registerMode, authToken, onComplete, examinerContext, structuralContext, onShareContext, onExaminerUpdateComplete, initialContent, canStream, initialExaminerContext, onPersonaComplete, structuralMatchDate, structuralEarly, structuralMatchSessionId, onLeanUpdate, currentLean, anyCardChallenged, onFirstChallengeUsed, onCollapseChange, expandRequestToken }: Props) {
   // Hydrated content is the serialized thread (original + [Pushback…]/[Updated…] segments,
   // see lib/persona-history.ts) — `response` is only ever the ORIGINAL analysis.
   const [response, setResponse]           = useState(initialContent ? parsePersonaContent(initialContent).initial : '')
@@ -977,7 +979,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
         alignItems:    'center',
         gap:           5,
       }}>
-        <span aria-hidden="true">↺</span> Structural echo
+        <span aria-hidden="true">↺</span> {structuralEarly ? 'Early comparison' : 'Structural echo'}
       </p>
       <p style={{
         fontSize:   12,
@@ -992,6 +994,7 @@ export default function PersonaPanel({ persona, sessionId, decisionText, context
           <span style={{ fontSize: 11, color: 'var(--success-text)', opacity: 0.85 }}>
             From a decision you brought in{' '}
             {new Date(structuralMatchDate).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+            {structuralEarly ? '. One comparison, not a pattern.' : ''}
           </span>
           {structuralMatchSessionId && (
             <a
