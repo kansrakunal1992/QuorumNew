@@ -307,7 +307,8 @@ describe('4. The Mirror overview: wired, free of the paywall, and careful about 
   it('a failed lookup degrades to an empty overview, never an error page or a guess', () => {
     expect(route).toContain("const EMPTY: MirrorOverviewData = { decisionCount: 0, learned: [], watch: [], next: [] }")
     expect(route).toContain('catch (err)')
-    expect(src('lib/decision-history.ts')).toContain('has_outcome:              outcomesKnown ? outcomeIds.has(r.id as string) : true')
+    // v17: the lookup now also carries the confidence and quality fields, but unknown still reads as "has an outcome" (hides, never invents).
+    expect(src('lib/decision-history.ts')).toContain('has_outcome:              outcomesKnown ? outcomeBySession.has(r.id as string) : true')
   })
   it('the Mirror page shows it to everyone signed in, above the existing sections; the Desk shows one compact insight', () => {
     const m = src('app/mirror/page.tsx')

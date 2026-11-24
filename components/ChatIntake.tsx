@@ -1076,7 +1076,7 @@ export default function ChatIntake({
           <div className="qi-hero-stack" style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
             {deskActive ? (
               /* v15 Phase 2: the Decision Desk is the returning visitor's home. Due check-ins first; the box follows. */
-              <DeskTop model={deskModel} />
+              <DeskTop model={deskModel} signedIn={!!authToken || hasEmail} />
             ) : deskPending ? (
               <div aria-busy="true" style={{ minHeight: 120, display: 'flex', alignItems: 'center' }}>
                 <p style={{ fontSize: 13, color: 'var(--text-4)', margin: 0 }}>Opening your desk…</p>

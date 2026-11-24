@@ -26,6 +26,7 @@ import { deskHeadline, formatWhen, recordStage } from '@/lib/desk'
 import type { DeskItem, DeskModel } from '@/lib/desk'
 import { track } from '@/lib/track'
 import MirrorOverview from '@/components/MirrorOverview'   // v16
+import ConnectCard from '@/components/ConnectCard'          // v17
 
 const MAX_PER_SECTION = 3
 
@@ -104,7 +105,7 @@ function RowGroup({ title, items, section }: { title: string; items: DeskItem[];
 }
 
 // ── Top: headline + due check-ins ────────────────────────────────────────────
-export function DeskTop({ model }: { model: DeskModel }) {
+export function DeskTop({ model, signedIn = true }: { model: DeskModel; signedIn?: boolean }) {
   const tracked = useRef(false)
   useEffect(() => {
     if (tracked.current) return
@@ -130,6 +131,11 @@ export function DeskTop({ model }: { model: DeskModel }) {
         </h1>
       </div>
       <RowGroup title="Ready for a check-in" items={model.due} section="due" />
+      {/* v17: a check-in is waiting and Quorum has no way to reach this person. This is the moment the email has an obvious use. The
+          card hides itself when they are signed in or dismissed it in the last 72 hours; it is never a requirement to see the Desk. */}
+      {!signedIn && model.due.length > 0 && (
+        <ConnectCard mode="d1_soft" surface="desk_due" reason="check_in_due" />
+      )}
     </div>
   )
 }
@@ -169,7 +175,7 @@ export function DeskBody({ model, mirrorUnlocked, signedIn = true }: { model: De
           onClick={() => track('nav_clicked', { to: 'mirror', surface: 'desk' })}
           style={{ fontSize: 13, color: 'var(--gold)', textDecoration: 'none', fontWeight: 600, display: 'inline-block', minHeight: 32, lineHeight: '32px' }}
         >
-          {mirrorUnlocked ? 'Open your Mirror' : 'See how the Mirror works'}
+          {mirrorUnlocked ? 'Open your Mirror' : signedIn ? 'Open your Mirror' : 'See a first look at your Mirror'}
         </Link>
       </div>
     </div>

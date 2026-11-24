@@ -7,6 +7,9 @@
 // so there is nothing costly to protect and no reason to hide the first evidence-backed look from someone deciding whether the
 // Mirror is worth having. The deeper Mirror (fingerprint, rules, contradictions, calibration) stays behind its existing gate.
 //
+// v17: the owner form also carries at most one stored contradiction (labelled as Quorum's reading, dismissable) and the calibration
+// insights; the anonymous form carries the counts-only ones. Contradictions are never in the anonymous form.
+//
 // Two ways in, with deliberately different reach:
 //
 //   Authorization: Bearer <token>   the signed-in OWNER. Gets the decisions each insight rests on (ids + first words of each
@@ -21,8 +24,8 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { checkLimit, getClientIP, LIMITS } from '@/lib/rate-limit'
 import { getUserFromBearer } from '@/lib/audit'
-import { loadInsightRows } from '@/lib/decision-history'
-import { buildInsights } from '@/lib/mirror-insights'
+import { loadInsightRows, loadStoredContradictions } from '@/lib/decision-history'
+import { buildContradictionInsight, buildInsights } from '@/lib/mirror-insights'
 import type { MirrorOverviewData } from '@/lib/mirror-insights'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -44,7 +47,17 @@ export async function GET(req: Request) {
         { userId: user.id, deviceId: url.searchParams.get('did') },
         { limit: 12, withSnippets: true },
       )
-      return NextResponse.json({ mode: 'owner', ...buildInsights(rows, { withEvidence: true }) }, { headers: NO_STORE })
+      const overview = buildInsights(rows, { withEvidence: true })
+      // v17: one stored contradiction, if one is safe to show. Owner only: it quotes the person's own words, and it is a model's
+      // reading rather than a count, so it is never part of the anonymous (session id) form below.
+      // Runtime switch (no rebuild): MIRROR_OVERVIEW_CONTRADICTIONS=off hides it. It is the one insight here that is a model's reading.
+      try {
+        if (process.env.MIRROR_OVERVIEW_CONTRADICTIONS === 'off') throw new Error('disabled')
+        const { stored, sessions } = await loadStoredContradictions(supabase, user.id)
+        const c = buildContradictionInsight(stored, sessions)
+        if (c) overview.watch.push(c)
+      } catch (e) { console.warn('[api/mirror/overview] contradictions skipped:', e) }
+      return NextResponse.json({ mode: 'owner', ...overview }, { headers: NO_STORE })
     }
 
     const sid = url.searchParams.get('sid') ?? ''

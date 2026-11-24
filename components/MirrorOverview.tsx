@@ -47,7 +47,7 @@ const card: React.CSSProperties = {
 }
 const groupLabel: React.CSSProperties = { fontSize: 12.5, color: 'var(--text-3)', margin: '0 0 8px', letterSpacing: '0.01em' }
 
-const CONF_LABEL: Record<Confidence, string> = { early: 'Early', emerging: 'Emerging', established: 'Established', fact: 'On your record' }
+const CONF_LABEL: Record<Confidence, string> = { early: 'Early', emerging: 'Emerging', established: 'Established', fact: 'On your record', reading: 'Quorum’s reading' }
 
 function ConfidenceChip({ c }: { c: Confidence }) {
   return (
@@ -60,9 +60,28 @@ function ConfidenceChip({ c }: { c: Confidence }) {
   )
 }
 
-function InsightCard({ insight, mode, surface }: { insight: Insight; mode: Mode; surface: Props['surface'] }) {
+function InsightCard({ insight, mode, surface, authToken }: { insight: Insight; mode: Mode; surface: Props['surface']; authToken?: string | null }) {
   const [open, setOpen] = useState(false)
+  const [gone, setGone] = useState(false)
+  const [dismissError, setDismissError] = useState(false)
   const canList = mode === 'owner' && insight.evidence.length > 0
+
+  // v17: a contradiction is Quorum's model-made reading. If it is wrong the person can say so; this uses the existing dismiss
+  // endpoint (sets dismissed_at), which only needs the signed-in owner, so it works for people who have not paid.
+  async function dismiss() {
+    if (!insight.dismissId || !authToken) return
+    setDismissError(false)
+    try {
+      const r = await fetch(`/api/mirror/contradictions?id=${encodeURIComponent(insight.dismissId)}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (!r.ok) throw new Error()
+      track('mirror_insight_dismissed', { kind: insight.kind, surface })
+      setGone(true)
+    } catch { setDismissError(true) }
+  }
+  if (gone) return null
+
   return (
     <div style={card}>
       <div style={{ marginBottom: 8 }}><ConfidenceChip c={insight.confidence} /></div>
@@ -87,6 +106,7 @@ function InsightCard({ insight, mode, surface }: { insight: Insight; mode: Mode;
               {insight.evidence.map(e => (
                 <li key={e.id} style={{ borderTop: '1px solid var(--border-dim)' }}>
                   <Link href={`/record/${e.id}`} style={{ display: 'block', padding: '10px 0', textDecoration: 'none', color: 'var(--text-2)', fontSize: 13.5, lineHeight: 1.4, minHeight: 44, boxSizing: 'border-box' }}>
+                    {e.role && <span style={{ display: 'block', fontSize: 11, letterSpacing: '0.04em', color: 'var(--text-4)', marginBottom: 2 }}>{e.role}</span>}
                     {e.label}
                     <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
                       {new Date(e.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -102,6 +122,15 @@ function InsightCard({ insight, mode, surface }: { insight: Insight; mode: Mode;
           Based on {insight.evidenceCount} {insight.evidenceCount === 1 ? 'decision' : 'decisions'}.
           {mode === 'session' ? ' Sign in to see which ones.' : ''}
         </p>
+      )}
+
+      {insight.dismissId && mode === 'owner' && authToken && (
+        <div style={{ marginTop: 6 }}>
+          <button type="button" onClick={dismiss} style={{ minHeight: 44, padding: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--text-3)', textDecoration: 'underline' }}>
+            That’s not right
+          </button>
+          {dismissError && <span style={{ fontSize: 12, color: 'var(--text-4)', marginLeft: 10 }}>Couldn’t dismiss it. Try again.</span>}
+        </div>
       )}
 
       {insight.nextTime && (
@@ -175,7 +204,7 @@ export default function MirrorOverview({ authToken, sessionId, deviceId, surface
         <div>
           <p style={groupLabel}>What Quorum has learned about how you decide</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {data.learned.map(i => <InsightCard key={i.id} insight={i} mode={data.mode} surface={surface} />)}
+            {data.learned.map(i => <InsightCard key={i.id} insight={i} mode={data.mode} surface={surface} authToken={authToken} />)}
           </div>
         </div>
       )}
@@ -184,7 +213,7 @@ export default function MirrorOverview({ authToken, sessionId, deviceId, surface
         <div>
           <p style={groupLabel}>What to watch for</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {data.watch.map(i => <InsightCard key={i.id} insight={i} mode={data.mode} surface={surface} />)}
+            {data.watch.map(i => <InsightCard key={i.id} insight={i} mode={data.mode} surface={surface} authToken={authToken} />)}
           </div>
         </div>
       )}

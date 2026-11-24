@@ -56,6 +56,12 @@ export type TrackEventName =
   // v16 (Nov 2026): the Mirror's three-question overview. Counts and labels only, never decision text.
   | 'mirror_overview_viewed'      // the overview rendered (surface, total_count, learned_count, watch_count, mode)
   | 'mirror_insight_expanded'     // someone opened the decisions behind an insight (kind, confidence, surface)
+  | 'mirror_insight_dismissed'    // someone said a contradiction reading was wrong (kind, surface)
+  | 'mirror_preview_viewed'       // a signed-out visitor saw the Mirror preview (surface, total_count = decisions saved on this device)
+  // v17 (Nov 2026): "something we didn't ask" on the Council result. Counts and the flow cohort only, never the answers.
+  | 'left_out_shown'              // the card appeared (items_count, flow_version, surface)
+  | 'left_out_submitted'          // answers were sent to the Council (answered_count, items_count, flow_version)
+  | 'left_out_dismissed'          // "Not now" (items_count, flow_version)
   // v8 — Natural Intake cards. Additive: every earlier event above still fires exactly as before.
   // Props are stable ids / counts / booleans only — never option wording, never free text.
   | 'intake_card_group_shown'

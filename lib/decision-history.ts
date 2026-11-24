@@ -78,7 +78,7 @@ export async function countDecisionsThrough(
 // "watch" insights need: whether the Council ran, whether a decision was committed, the check-in date, and whether an outcome
 // was recorded. `withSnippets` decrypts the first words of each decision for the evidence list; only pass it for the
 // signed-in owner. Anonymous callers get counts and no text (see app/api/mirror/overview/route.ts).
-const INSIGHT_COLS = `${COLS}, decision_text, session_depth, final_decision_locked_at, commitment_review_date`
+const INSIGHT_COLS = `${COLS}, decision_text, session_depth, final_decision_locked_at, commitment_review_date, pre_decision_confidence`
 
 export async function loadInsightRows(
   supabase: SupabaseClient,
@@ -105,11 +105,19 @@ export async function loadInsightRows(
   // Which of these have an outcome recorded? If this lookup FAILS we do not know, and "unknown" must never read as "none recorded":
   // that would tell someone a check-in is waiting when they already answered it. So on failure every row is treated as having an
   // outcome, which only hides the "watch" insights (the safe direction) and leaves the learned ones untouched.
-  const outcomeIds = new Set<string>()
-  const { data: outs, error: outErr } = await supabase.from('outcomes').select('session_id').in('session_id', rows.map(r => r.id as string))
+  // v17: the same lookup also carries the retrospective confidence and the outcome quality the calibration insights rest on.
+  const outcomeBySession = new Map<string, { retro: number | null; quality: string | null }>()
+  const { data: outs, error: outErr } = await supabase.from('outcomes')
+    .select('session_id, retrospective_confidence, outcome_quality')
+    .in('session_id', rows.map(r => r.id as string))
   if (outErr) console.warn('[decision-history] outcomes lookup failed:', outErr.message)
   const outcomesKnown = !outErr
-  for (const o of outs ?? []) outcomeIds.add(o.session_id as string)
+  for (const o of outs ?? []) {
+    outcomeBySession.set(o.session_id as string, {
+      retro:   typeof o.retrospective_confidence === 'number' ? o.retrospective_confidence : null,
+      quality: (o.outcome_quality as string | null) ?? null,
+    })
+  }
 
   return rows.map(r => ({
     id:                       r.id as string,
@@ -122,6 +130,40 @@ export async function loadInsightRows(
     session_depth:            (r.session_depth as 'checkpoint' | 'council' | null) ?? null,
     locked:                   !!r.final_decision_locked_at,
     review_date:              (r.commitment_review_date as string | null) ?? null,
-    has_outcome:              outcomesKnown ? outcomeIds.has(r.id as string) : true,
+    has_outcome:              outcomesKnown ? outcomeBySession.has(r.id as string) : true,
+    // Calibration needs an outcome we actually read. If the lookup failed these stay null, so no calibration insight is made.
+    pre_confidence:           typeof r.pre_decision_confidence === 'number' ? r.pre_decision_confidence : null,
+    retro_confidence:         outcomesKnown ? (outcomeBySession.get(r.id as string)?.retro ?? null) : null,
+    outcome_quality:          outcomesKnown ? (outcomeBySession.get(r.id as string)?.quality ?? null) : null,
   }))
+}
+
+
+// ── v17: stored contradictions, for the signed-in owner only ─────────────────
+// Reads what the existing detector already wrote (contradictions table), never runs it. Returns the non-dismissed rows plus the
+// two decisions each refers to (first words, decrypted), restricted to sessions that belong to this user. The caller
+// (lib/mirror-insights.ts buildContradictionInsight) decides whether any is safe to show.
+export async function loadStoredContradictions(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ stored: import('@/lib/mirror-insights').StoredContradiction[]; sessions: import('@/lib/mirror-insights').ContradictionSession[] }> {
+  const { data: rows, error } = await supabase
+    .from('contradictions')
+    .select('id, principle_text, principle_session_id, violation_text, violation_session_id, severity, generated_at')
+    .eq('user_id', userId)
+    .is('dismissed_at', null)
+    .order('generated_at', { ascending: false })
+    .limit(5)
+  if (error || !rows?.length) return { stored: [], sessions: [] }
+
+  const ids = Array.from(new Set(rows.flatMap(r => [r.principle_session_id, r.violation_session_id]).filter(Boolean) as string[]))
+  const { data: sess } = await supabase.from('sessions').select('id, decision_text, created_at').eq('user_id', userId).in('id', ids)
+  return {
+    stored: rows as import('@/lib/mirror-insights').StoredContradiction[],
+    sessions: (sess ?? []).map(x => ({
+      id: x.id as string,
+      snippet: ((x.decision_text ? decrypt(x.decision_text as string) : '') ?? '').trim().replace(/\s+/g, ' ').slice(0, 80),
+      created_at: x.created_at as string,
+    })),
+  }
 }

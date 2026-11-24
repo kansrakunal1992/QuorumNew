@@ -249,3 +249,12 @@ export function isFrontDoorV15Enabled(): boolean {
   const v = process.env.NEXT_PUBLIC_FRONT_DOOR_V15
   return v !== 'off' && v !== 'false'
 }
+
+/**
+ * v17 Phase 6. A signed-out visitor to /mirror sees a first look (built from the decisions saved on this browser) before the ask
+ * to link an email, instead of the email box alone. NEXT_PUBLIC_MIRROR_PREVIEW=off restores the email box alone.
+ */
+export function isMirrorPreviewEnabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_MIRROR_PREVIEW
+  return v !== 'off' && v !== 'false'
+}

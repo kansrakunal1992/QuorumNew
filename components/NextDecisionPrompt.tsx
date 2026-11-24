@@ -255,6 +255,7 @@ export default function NextDecisionPrompt({
           reviewDate={reviewDate}
           parkedText={parkState === 'parked_pending' ? parkedText : null}
           sessionId={sessionId}
+          reason={count >= 2 ? 'compare' : undefined}
           lead={habit?.cadence === 'weekly'
             ? 'Weekly needs somewhere to send it. Where should Quorum reach you?'
             : null}

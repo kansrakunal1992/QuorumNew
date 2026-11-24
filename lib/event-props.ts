@@ -27,6 +27,8 @@ const INTAKE_EVENTS = new Set([
   'decision_locked', 'commit_deferred', 'desk_viewed', 'desk_card_clicked', 'nav_clicked', 'front_door_section_opened',
   // v16: Mirror overview. Counts and fixed labels only.
   'mirror_overview_viewed', 'mirror_insight_expanded',
+  // v17: "something we didn't ask". Counts and the flow cohort only.
+  'left_out_shown', 'left_out_submitted', 'left_out_dismissed', 'mirror_insight_dismissed', 'mirror_preview_viewed',
 ])
 
 const ALLOWED_KEYS = new Set([
@@ -51,6 +53,8 @@ const ALLOWED_KEYS = new Set([
   'section', 'to',
   // v16: Mirror overview (confidence is one of early / emerging / established / fact)
   'confidence', 'learned_count', 'watch_count', 'mode',
+  // v17
+  'items_count', 'answered_count',
 ])
 const CONTEXT_KEY_SET: ReadonlySet<string> = new Set(CONTEXT_KEYS)
 

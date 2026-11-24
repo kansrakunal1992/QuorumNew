@@ -23,6 +23,7 @@ import { parseOptionLabels, parseContextLine, LEAN_LINE_PREFIX } from '@/lib/cha
 import QuorumPrediction       from '@/components/QuorumPrediction'
 import PredictionReveal       from '@/components/PredictionReveal'
 import SpecificityCheck       from '@/components/SpecificityCheck'   // v10: one tap after the Council — did it feel specific?
+import LeftOutCard from '@/components/LeftOutCard'   // v17
 import SynthesisChallenge     from '@/components/SynthesisChallenge'
 import RecordReceipt from './RecordReceipt'
 import NextDecisionPrompt from '@/components/NextDecisionPrompt'   // Phase 1: continuity ending
@@ -2156,6 +2157,19 @@ export default function SessionView({ session: initialSession, initialMessages =
                   First few decisions only, once per session, takes no space until synthesis is done. */}
               {synthesisDone && (totalSessionCount ?? 0) <= 5 && (
                 <SpecificityCheck sessionId={session.id} />
+              )}
+
+              {/* v17: "something we didn't ask". Questions the intake left to the Council (the fast path on purpose, any chat that hit its
+                  ceiling by necessity). Optional; renders nothing when there are none. Answers go through the same in-session
+                  new-information pipeline as the Challenge box: all six advisors re-read, one new synthesis version, no new decision. */}
+              {synthesisDone && (
+                <div className="sv-fade sv-fade-2" style={{ marginBottom: 12 }}>
+                  <LeftOutCard
+                    sessionId={session.id}
+                    busy={pendingAdvisorUpdates > 0}
+                    onSubmit={(text) => handleShareContext('synthesis', text)}
+                  />
+                </div>
               )}
 
               {/* ── 1b. Record Receipt (appears after synthesis completes) ── */}

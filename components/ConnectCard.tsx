@@ -67,6 +67,21 @@ interface Props {
   lead?: string | null
   /** Optional onboarding-tour anchor (data-tour-id) — set on whichever state the card is rendering. */
   tourId?: string
+  /**
+   * v17: WHY an email is being asked for, in the person's terms. Picks the sentence when no explicit `lead` or parked item is given.
+   *   compare        after a second or later decision: Quorum can only compare decisions it can tell are the same person's
+   *   open_decision  after "not ready to decide": Quorum can hold it and bring it back
+   *   check_in_due   on the Desk, when a check-in is waiting for someone Quorum cannot yet reach
+   */
+  reason?: 'compare' | 'open_decision' | 'check_in_due'
+}
+
+// v17: the sentences for each reason. They say what the email is for and nothing else: no "unlock", no urgency, no claim
+// beyond what linking actually does (reminders on the date, holding a decision, recognising the person across decisions).
+export const CONNECT_REASON_LINES: Record<NonNullable<Props['reason']>, string> = {
+  compare:       'Quorum can compare your next decision with this one and your earlier ones, and bring each back for a check-in, but only if it can tell they are yours. Where should it reach you?',
+  open_decision: 'Quorum can hold this and bring it back to you when you are ready. Where should it reach you?',
+  check_in_due:  'A check-in is waiting for you here. Add your email and Quorum can bring check-ins to you, instead of waiting for you to come back. Where should it reach you?',
 }
 
 type SendState = 'idle' | 'sending' | 'sent' | 'wrong_provider' | 'error'
@@ -88,7 +103,7 @@ function shorten(text: string, n = 60): string {
 
 export default function ConnectCard({
   mode = 'd1_soft', surface, reviewDate, parkedText, defaultExpanded = false, sessionId,
-  decisionCount, arm, lead, tourId,
+  decisionCount, arm, lead, tourId, reason,
 }: Props) {
   const tourAttr = tourId ? { 'data-tour-id': tourId } : {}
   const skippable = mode !== 'd3_gate' && mode !== 'convene_gate'
@@ -114,7 +129,7 @@ export default function ConnectCard({
         const auth = await getAuthHeaders()
         if (cancelled || auth.Authorization) return
         setVisible(true)
-        track('auth_prompt_seen', { stage: mode, surface, has_review_date: !!reviewDate, has_parked: !!parkedText, arm: arm ?? null })
+        track('auth_prompt_seen', { stage: mode, surface, has_review_date: !!reviewDate, has_parked: !!parkedText, arm: arm ?? null, reason: reason ?? null })
       } catch { /* storage unavailable -- do not show */ }
     })()
     return () => { cancelled = true }
@@ -132,9 +147,11 @@ export default function ConnectCard({
     : mode === 'd3_gate'
     ? `Your record has ${decisionCount ?? 'several'} decision${decisionCount === 1 ? '' : 's'}. Connect to keep going. Quorum will hold your record, remind you on your review dates, and tell you when it finds something.`
     : mode === 'd2_earned'
-    ? (lead || 'Keep your record connected and Quorum can tell you when it finds something. Where should it reach you?')
+    ? (lead || (reason ? CONNECT_REASON_LINES[reason] : 'Keep your record connected and Quorum can tell you when it finds something. Where should it reach you?'))
     : parkedText
     ? `Parked. Quorum will hold \u201C${shorten(parkedText)}\u201D and bring it back to you. Where should it reach you?`
+    : (lead || reason) && !formattedDate
+    ? (lead || CONNECT_REASON_LINES[reason as NonNullable<Props['reason']>])
     : formattedDate
       ? `Quorum will bring this decision back to you on ${formattedDate}. Where should it reach you?`
       : 'Quorum can remember your decisions and tell you when it finds something. Where should it reach you?'

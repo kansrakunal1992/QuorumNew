@@ -45,6 +45,8 @@ import StyleCalibration        from '@/components/StyleCalibration'
 import MirrorNav               from '@/components/MirrorNav'           // Sprint M2
 import AppNav                  from '@/components/AppNav'              // v15
 import MirrorOverview          from '@/components/MirrorOverview'      // v16
+import AnonymousMirrorPreview  from '@/components/AnonymousMirrorPreview' // v17
+import { isMirrorPreviewEnabled } from '@/lib/feature-flags'              // v17
 import MirrorSummaryCard      from '@/components/MirrorSummaryCard'    // Sprint M1
 import AttentionZone          from '@/components/AttentionZone'         // Sprint M5
 import MirrorInsightCard      from '@/components/MirrorInsightCard'     // Sprint M6
@@ -167,7 +169,7 @@ function useScrollToMirrorCTA() {
 }
 
 // ── Gate: Not authenticated ───────────────────────────────────────────────────
-function AuthGate() {
+function AuthGate({ preview = false }: { preview?: boolean }) {
   const [email,    setEmail]    = useState('')
   const [sending,  setSending]  = useState(false)
   const [sent,     setSent]     = useState(false)
@@ -222,6 +224,18 @@ function AuthGate() {
       alignItems:     'center',
       gap:            20,
     }}>
+      {preview ? (
+        // v17: a preview sits above this, so the generic introduction is not repeated. This is the ask: keep it.
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 400, fontFamily: 'var(--font-display)', color: 'var(--text-1)', margin: '0 0 8px' }}>
+            Keep this, and see what it rests on
+          </h2>
+          <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.6, margin: 0 }}>
+            Link your email and Quorum can show the decisions behind each point, remind you when a check-in is due, and keep your record if you change device.
+          </p>
+        </div>
+      ) : (
+        <>
       <div style={{
         width:         64,
         height:        64,
@@ -247,6 +261,8 @@ function AuthGate() {
           activated biases, and whether your judgment is evolving across time.
         </p>
       </div>
+        </>
+      )}
 
       {wrongProvider ? (
         <div style={{
@@ -2166,7 +2182,10 @@ export default function MirrorPage() {
           {/* Gate states */}
           {!loading && !fetchError && status && (
             <>
-              {status.gateState === 'auth'     && <AuthGate />}
+              {/* v17: signed out is no longer a blank wall. A first look from this browser's own decisions (or an honest explanation
+                  when there are none), then the ask to keep it. */}
+              {status.gateState === 'auth'     && isMirrorPreviewEnabled() && <AnonymousMirrorPreview />}
+              {status.gateState === 'auth'     && <AuthGate preview={isMirrorPreviewEnabled()} />}
               {/* v16: the three questions, answered from what the record supports. Not behind the paywall. */}
               {status.gateState !== 'auth' && (
                 <MirrorOverview authToken={authToken} deviceId={getStoredDeviceId()} surface="mirror" hasDetail={status.gateState === 'unlocked'} />

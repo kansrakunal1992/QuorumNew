@@ -169,6 +169,11 @@ export default function PredictionReveal({
         <button type="button" className="btn-ghost" style={{ minHeight: 44, fontSize: 13 }} onClick={() => setDeferred(false)}>
           Commit now
         </button>
+        {/* v17: someone who leaves a decision open and cannot be reached has nothing to bring it back. The card hides itself when
+            they are signed in or said "Not now" in the last 72 hours, so it is never a second ask. */}
+        <div style={{ marginTop: 14 }}>
+          <ConnectCard mode="d1_soft" surface="commit_deferred" reason="open_decision" sessionId={sessionId} />
+        </div>
       </div>
     )
   }
