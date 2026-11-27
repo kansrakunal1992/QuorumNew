@@ -70,11 +70,14 @@ export interface IntakeQuickStart {
 export const QUICK_START_POSITION: 'above' | 'below' =
   process.env.NEXT_PUBLIC_QUICK_START_POSITION === 'above' ? 'above' : 'below'
 
+// v18: reordered, nothing removed. Business now leads (the commercial message is consequential business decisions) and "Smaller
+// calls" is "Something smaller": the capability is unchanged, but it is no longer presented as a headline category. These now
+// sit under the six founder starters (components/FounderStarters.tsx) as "Something else".
 export const INTAKE_QUICK_STARTS: readonly IntakeQuickStart[] = [
-  { id: 'qs_career',        label: 'Career',        text: 'It\u2019s about my career.' },
-  { id: 'qs_money',         label: 'Money',         text: 'It\u2019s about money.' },
-  { id: 'qs_business',      label: 'Business',      text: 'It\u2019s about my business.' },
-  { id: 'qs_relationships', label: 'Relationships', text: 'It\u2019s about a relationship.' },
-  { id: 'qs_personal',      label: 'Personal',      text: 'It\u2019s a personal life decision.' },
-  { id: 'qs_small',         label: 'Smaller calls', text: 'It\u2019s a smaller, everyday decision.' },
+  { id: 'qs_business',      label: 'Business',        text: 'It\u2019s about my business.' },
+  { id: 'qs_career',        label: 'Career',          text: 'It\u2019s about my career.' },
+  { id: 'qs_money',         label: 'Money',           text: 'It\u2019s about money.' },
+  { id: 'qs_relationships', label: 'Relationships',   text: 'It\u2019s about a relationship.' },
+  { id: 'qs_personal',      label: 'Personal',        text: 'It\u2019s a personal life decision.' },
+  { id: 'qs_small',         label: 'Something smaller', text: 'It\u2019s a smaller, everyday decision.' },
 ]

@@ -25,6 +25,7 @@
 // No internal terms ("Examiner", "rule_id", "structural read") ever reach this component's copy — see
 // docs/COPY_AND_STRUCTURE_LOCK_v1.md.
 
+import { baseKindLabel, segmentOfKind } from '@/lib/segment'   // v18: label the checkpoint event with the decision's topic group
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ChatDecisionState } from '@/lib/types'
@@ -282,7 +283,7 @@ export default function DecisionCheckpoint({ chatIntakeId, onBackToChat, onSessi
     sessionIdRef.current = data.sessionId
     leanSavedRef.current = !!data.leanSaved
     setSessionId(data.sessionId)
-    if (!data.resumed) track('decision_checkpointed', { signed_in: !!authToken, flow_version: state.flowVersion ?? null }, { sessionId: data.sessionId })
+    if (!data.resumed) track('decision_checkpointed', { signed_in: !!authToken, flow_version: state.flowVersion ?? null, decision_kind: baseKindLabel(state.decisionKind), segment: segmentOfKind(state.decisionKind) }, { sessionId: data.sessionId })
     return data.sessionId
   }
 

@@ -35,7 +35,7 @@ import {
 } from './chat-intake-gates'
 import { quantityChipsFor } from '@/lib/chat-intake-quantity'
 import { classifyDecision } from '@/lib/decision-taxonomy'   // deterministic read of the person's own words
-import { classifyPlaybook, isPlaybookId } from '@/lib/decision-playbooks'
+import { baseKindOf, classifyPlaybook, isPlaybookId } from '@/lib/decision-playbooks'
 import { allSelectedNote, buildCardGroup, recordCardAnswer, sanitizeCardMeta } from './chat-intake-cards'
 import { criticalOpen, duplicatesKnown, effectiveStakes, finalizeForCouncil, gapIsOpen, isSmartFriendGap } from './chat-intake-depth'
 import type { SmartFriendGap } from './chat-intake-depth'
@@ -113,7 +113,12 @@ export function mergeNotes(
   let s: ChatDecisionState = { ...prior }
 
   if (notes.decisionStatement) s.decisionStatement = notes.decisionStatement
-  if (isDecisionKind(notes.decisionKind)) s.decisionKind = notes.decisionKind
+  if (isDecisionKind(notes.decisionKind)) {
+    // v18: a specific playbook (chosen by a starter, or by the deterministic read) is not downgraded to its own parent type by the
+    // planner restating the broad kind. A genuinely different kind, or another playbook, still wins.
+    const keepsPlaybook = isPlaybookId(s.decisionKind) && !isPlaybookId(notes.decisionKind) && baseKindOf(s.decisionKind) === notes.decisionKind
+    if (!keepsPlaybook) s.decisionKind = notes.decisionKind
+  }
   // Nov 2026: recognise the situation from the person's own words (lib/decision-taxonomy.ts + lib/decision-playbooks.ts).
   //   - no kind at all (planner down, slow or unusable): take a deterministic first read instead of the generic `other`;
   //   - only a broad type, and nothing answered yet: sharpen it into the specific situation inside that type

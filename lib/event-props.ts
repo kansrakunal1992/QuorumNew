@@ -55,6 +55,8 @@ const ALLOWED_KEYS = new Set([
   'confidence', 'learned_count', 'watch_count', 'mode',
   // v17
   'items_count', 'answered_count',
+  // v18: the topic group of a decision (a fixed small set of labels, never text)
+  'decision_kind', 'segment',
 ])
 const CONTEXT_KEY_SET: ReadonlySet<string> = new Set(CONTEXT_KEYS)
 

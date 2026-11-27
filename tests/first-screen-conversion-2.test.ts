@@ -94,7 +94,8 @@ describe('2. one-tap start', () => {
     expect(above).toBeLessThan(input)                       // the 'above' option is still there, out in front of the box
     expect(below).toBeGreaterThan(input)                    // the default sits under the button (and the voice row, inside the form)
     expect(below).toBeLessThan(row)                         // and above the one-line links row
-    expect(hero.match(/<IntakeQuickStarts onPick=\{handleQuickStart\} disabled=\{sending\} \/>/g)).toHaveLength(2)
+    // v18: the 'below' instance also passes a heading, so match the opening of the element, not its closing
+    expect(hero.match(/<IntakeQuickStarts onPick=\{handleQuickStart\} disabled=\{sending\}/g)).toHaveLength(2)
     expect(src('components/IntakeQuickStarts.tsx')).toContain("type=\"button\"")
   })
   it('the position is a build-time switch that defaults to under the button, and it is reported on every tap', () => {

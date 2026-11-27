@@ -258,3 +258,14 @@ export function isMirrorPreviewEnabled(): boolean {
   const v = process.env.NEXT_PUBLIC_MIRROR_PREVIEW
   return v !== 'off' && v !== 'false'
 }
+
+/**
+ * v18. The first-visit screen leads with consequential business decisions: the headline and sub-line, six founder starting points
+ * above the existing category pills, and a founder sample result. The product itself is not narrowed: the box accepts anything,
+ * every existing category remains, and personal decisions are supported. NEXT_PUBLIC_FOUNDER_FRONT_DOOR=off restores the v15
+ * first-visit screen exactly. Build-time (NEXT_PUBLIC_): needs a fresh build.
+ */
+export function isFounderFrontDoorEnabled(): boolean {
+  const v = process.env.NEXT_PUBLIC_FOUNDER_FRONT_DOOR
+  return v !== 'off' && v !== 'false'
+}

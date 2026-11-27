@@ -31,7 +31,27 @@ export const SCENARIO_SLUG = /^[a-z0-9_]{2,40}$/
 
 const FROM_EXAMPLES: PostScenario[] = INTAKE_EXAMPLES.map(e => ({ slug: e.id, title: e.label, text: e.text }))
 
+// v18: the founder scenarios, for campaign links. Each is the founder-starter question (lib/founder-starters.ts) with one concrete
+// fact and one worry, so it grades medium or better and the chat asks fewer follow-ups. The facts are illustrative and the person
+// edits them before sending, like every other scenario here. They lead the list because the commercial message is consequential
+// business decisions; the personal scenarios below are unchanged.
+const FOUNDER_SCENARIOS: PostScenario[] = [
+  { slug: 'raise_or_bootstrap', title: 'Raise funding or keep bootstrapping',
+    text: 'We have about 14 months of runway and an investor has shown interest. Should we raise funding now or keep bootstrapping? I\u2019m worried about giving up control, and about running short if growth slows.' },
+  { slug: 'hire_senior_leader', title: 'Hire a senior leader or keep managing it myself',
+    text: 'I have been running sales myself and it takes about 20 hours a week. Should I hire a senior leader for it, or keep managing the function myself for another two quarters? I\u2019m worried about hiring the wrong person.' },
+  { slug: 'new_market', title: 'Enter a new market or focus on the existing one',
+    text: 'We are doing well in India and 3 US customers have asked for us. Should we enter the US now, or focus on our home market first? I\u2019m worried about stretching a team of 40.' },
+  { slug: 'add_cofounder', title: 'Bring on a co-founder or continue independently',
+    text: 'I have run the company alone for three years and a former colleague wants to join as co-founder. Should I bring them on, or continue independently? I\u2019m worried about equity and about a bad fit.' },
+  { slug: 'change_pricing', title: 'Change pricing or packaging',
+    text: 'We have not changed our pricing in 2 years, and 6 of our 20 best customers are on custom deals. Should we change our pricing or packaging now? I\u2019m worried about losing the customers we already have.' },
+  { slug: 'sell_or_scale', title: 'Sell the company or keep scaling',
+    text: 'An acquirer has made an offer and wants an answer by the end of the quarter. Should I sell the company or keep scaling it? I\u2019m not sure whether I\u2019m tired or whether it is the right price.' },
+]
+
 export const POST_SCENARIOS: readonly PostScenario[] = [
+  ...FOUNDER_SCENARIOS,
   ...FROM_EXAMPLES,
   {
     slug: 'move_city', title: 'A promotion that means moving',

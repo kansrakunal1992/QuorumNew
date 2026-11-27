@@ -36,6 +36,7 @@ import type { QuickReplyKind, QuickReplyMeta, TurnResult } from '@/lib/chat-inta
 import { fetchIntakeBackground } from '@/lib/chat-intake-memory'
 import { assignFlowVersion, ceilingFor, councilReadiness, parseIntakeFastMode, readinessLine } from '@/lib/chat-intake-depth'
 import { reflectionDue } from '@/lib/chat-intake-reflection'
+import { getPlaybook } from '@/lib/decision-playbooks'   // v18: validate a starter's playbook hint
 import type { ChatDecisionState, ChatIntakeMessage } from '@/lib/types'
 import { getGateMode, resolveArm, GATE_AFTER } from '@/lib/auth-gate'   // Phase 3: optional connect-before-next-decision gate
 
@@ -81,6 +82,7 @@ export async function POST(req: Request) {
       quickReply,
       walkthrough,
       action,
+      starterPlaybook,
     } = (await req.json()) as {
       chatIntakeId?:    string
       message?:         string
@@ -90,6 +92,7 @@ export async function POST(req: Request) {
       quickReply?:      { kind?: string; slotKey?: string | null; card?: unknown; companion?: unknown; companion2?: unknown }   // a tapped chip / card answer / "not sure" / playback answer
       walkthrough?:     boolean   // person chose "Walk me through it" on the first message
       action?:          'enough'  // "That's enough, show me" — wrap now, no new message
+      starterPlaybook?: string    // v18: a founder starter's playbook id. Used for a NEW chat only, and only if it is a real playbook.
     }
 
     const QUICK_KINDS: QuickReplyKind[] = ['chip', 'cards', 'unknown', 'declined', 'playback_yes', 'playback_no', 'enough']
@@ -220,6 +223,12 @@ export async function POST(req: Request) {
     const state0: ChatDecisionState = {
       ...(priorState ?? {}),
       flowVersion: priorState?.flowVersion ?? assignFlowVersion(parseIntakeFastMode(process.env.INTAKE_FAST_MODE), deviceId),
+    }
+    // v18: a founder starter says which playbook it is. Honoured only on the first exchange of a new chat, and only for a playbook that
+    // exists (anything else is ignored, so a made-up value cannot set the question set). Everything after that is the normal flow;
+    // the planner may still refine, but it can no longer downgrade the playbook to its parent type (lib/chat-intake-turn.ts).
+    if (!priorState && typeof starterPlaybook === 'string' && getPlaybook(starterPlaybook)) {
+      state0.decisionKind = starterPlaybook as ChatDecisionState['decisionKind']
     }
     const ceiling       = ceilingFor(state0, Math.min(DEFAULT_MAX_EXCHANGES + (extraExchanges ? 3 : 0), ABSOLUTE_MAX_EXCHANGES), !!extraExchanges)
     const closing       = closingLine()

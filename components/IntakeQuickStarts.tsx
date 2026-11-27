@@ -14,13 +14,15 @@ import { INTAKE_QUICK_STARTS } from '@/lib/intake-examples'
 interface Props {
   onPick: (id: string, text: string) => void
   disabled?: boolean
+  /** v18: the line above the pills. The founder first-visit screen says "Something else?" because six founder decisions come first. */
+  heading?: string
 }
 
-export default function IntakeQuickStarts({ onPick, disabled = false }: Props) {
+export default function IntakeQuickStarts({ onPick, disabled = false, heading = 'Start with a tap: what kind of decision is it?' }: Props) {
   return (
     <div className="qi-quickstarts" style={{ width: '100%' }}>
       <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 0 8px', textAlign: 'center' }}>
-        Start with a tap: what kind of decision is it?
+        {heading}
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
         {INTAKE_QUICK_STARTS.map(q => (

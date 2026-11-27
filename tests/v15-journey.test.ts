@@ -284,7 +284,7 @@ describe('7. Phase 3: the front door names the Council and says what happens, wi
     expect(ci).toContain('Bring a hard decision. Have it challenged, and remembered.')
     expect(ci).toContain('Six independent advisors and an Examiner pressure-test it.')
     expect(ci).toContain("What's the decision you're circling?")           // flag-off fallback
-    expect(ci).toContain('{frontDoorV15 && !deskActive && !deskPending && <FrontDoorExplainer />}')
+    expect(ci).toContain('{(frontDoorV15 || founderFrontDoor) && !deskActive && !deskPending && <FrontDoorExplainer />}')   // v18: the founder variant shows it too
   })
   it('first-screen copy has no free / sign-up / timing / instant / guarantee claims', () => {
     const copy = withoutComments(fd)

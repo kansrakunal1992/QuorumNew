@@ -51,9 +51,11 @@ import {
   ENOUGH_LABEL,
   UNKNOWN_CHIP_LABEL, UNKNOWN_REPLY_TEXT, PLAYBACK_YES, scoreRichness,
 } from '@/lib/chat-intake-brief'
-import { isUnifiedSessionEnabled, isWatchlistEnabled, isDeskEnabled, isFrontDoorV15Enabled } from '@/lib/feature-flags'
+import { isUnifiedSessionEnabled, isWatchlistEnabled, isDeskEnabled, isFrontDoorV15Enabled, isFounderFrontDoorEnabled } from '@/lib/feature-flags'
 import { DeskTop, DeskBody } from '@/components/DecisionDesk'     // v15 Phase 2: the recurring home for people with decisions
 import FrontDoorExplainer from '@/components/FrontDoorExplainer'  // v15 Phase 3: first-visit "what happens" + example + compounding
+import FounderStarters from '@/components/FounderStarters'          // v18: six founder decisions, one tap each
+import type { FounderStarter } from '@/lib/founder-starters'
 import { buildDesk } from '@/lib/desk'
 import WatchlistSection from '@/components/WatchlistSection'   // Phase 1: parked items need a visible home
 import ConnectCard from '@/components/ConnectCard'                 // Phase 3: optional connect-before-next-decision gate
@@ -234,6 +236,7 @@ export default function ChatIntake({
   const deskPending = deskOn && !started && !historyLoaded && historySessions.length === 0 && localDecisionCount > 0
   const deskModel   = useMemo(() => buildDesk(historySessions), [historySessions])
   const frontDoorV15 = isFrontDoorV15Enabled()
+  const founderFrontDoor = isFounderFrontDoorEnabled()   // v18: lead with consequential business decisions (the box still takes anything)
   useEffect(() => {
     if (!gateArm) return
     try {
@@ -265,6 +268,12 @@ export default function ChatIntake({
   function handleQuickStart(id: string, text: string) {
     track('starter_picked', { placement: 'quick_start', example: id, position: QUICK_START_POSITION })
     void send(text, undefined, { walkthrough: true })
+  }
+  // v18: a founder starter. The sentence is the first message, exactly as a typed one would be, plus its playbook so the intake asks
+  // the right questions (the server validates it and uses it for a new chat only). Not guided mode: these are full questions.
+  function handleFounderStarter(st: FounderStarter) {
+    track('starter_picked', { placement: 'founder_starter', example: st.id, position: 'below' })
+    void send(st.text, undefined, { playbook: st.playbook })
   }
 
   // Voice: the transcript arrives as the whole dictation so far, not as new words, so it REPLACES the dictated part
@@ -409,7 +418,7 @@ export default function ChatIntake({
   const send = useCallback(async (
     text: string,
     meta?: { kind: 'chip' | 'cards' | 'unknown' | 'declined' | 'playback_yes' | 'playback_no'; slotKey?: string | null; card?: ChatCardResponseMeta; companion?: { text: string; card: ChatCardResponseMeta }; companion2?: { text: string; card: ChatCardResponseMeta } },
-    opts?: { enough?: boolean; walkthrough?: boolean },
+    opts?: { enough?: boolean; walkthrough?: boolean; playbook?: string },
   ) => {
     const trimmed = text.trim()
     const enough  = !!opts?.enough
@@ -448,6 +457,8 @@ export default function ChatIntake({
           action:         enough ? 'enough' : undefined,
           // Only meaningful on the very first message of a brand-new chat.
           walkthrough:    !chatIntakeId && (opts?.walkthrough ?? walkthrough) ? true : undefined,
+          // v18: only meaningful on the very first message of a brand-new chat; the server validates it.
+          starterPlaybook: !chatIntakeId ? opts?.playbook : undefined,
         }),
       })
       apiStatus = res.status
@@ -1081,6 +1092,21 @@ export default function ChatIntake({
               <div aria-busy="true" style={{ minHeight: 120, display: 'flex', alignItems: 'center' }}>
                 <p style={{ fontSize: 13, color: 'var(--text-4)', margin: 0 }}>Opening your desk…</p>
               </div>
+            ) : founderFrontDoor ? (
+              /* v18: the first-visit message is consequential business decisions, sold as a repeatable review, not as advisors. The
+                 product is not narrowed: the box takes anything, every category remains, and the last sentence says so. */
+              <div>
+                <h1 style={{
+                  fontFamily: 'var(--font-display)', fontWeight: 400,
+                  fontSize: 'clamp(24px, 6vw, 32px)', lineHeight: 1.28,
+                  color: 'var(--text-1)', margin: '0 0 10px', maxWidth: 440,
+                }}>
+                  Review a hard business decision before you commit.
+                </h1>
+                <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5, margin: '0 auto', maxWidth: 420 }}>
+                  Quorum structures the decision, exposes the assumptions you are relying on, has independent perspectives challenge it, and gives you a documented brief. Then it tracks what happened. Anything you are weighing works too.
+                </p>
+              </div>
             ) : frontDoorV15 ? (
               /* v15 Phase 3: say what this is before anyone types. The Council is named here; the box is still the first
                  thing to act on, and the fuller explanation sits below it (components/FrontDoorExplainer.tsx). */
@@ -1147,9 +1173,16 @@ export default function ChatIntake({
             {/* Round 4 (Nov 2026): the four example sentences are gone. The one-tap pills sit here, under the button (and under
                 the voice row, which lives inside the form), so the box stays the first thing on the screen. They are the one
                 fallback for "I can't put it into words". NEXT_PUBLIC_QUICK_START_POSITION=above puts them back out in front. */}
+            {/* v18: six founder decisions first-visit only; a returning visitor's home is the Desk. */}
+            {!gated && founderFrontDoor && !deskActive && !deskPending && (
+              <div style={{ width: '100%', maxWidth: 440, marginTop: 4 }}>
+                <FounderStarters onPick={handleFounderStarter} disabled={sending} />
+              </div>
+            )}
             {!gated && QUICK_START_POSITION === 'below' && (
-              <div style={{ width: '100%', maxWidth: 440, marginTop: -2 }}>
-                <IntakeQuickStarts onPick={handleQuickStart} disabled={sending} />
+              <div style={{ width: '100%', maxWidth: 440, marginTop: founderFrontDoor && !deskActive ? 10 : -2 }}>
+                <IntakeQuickStarts onPick={handleQuickStart} disabled={sending}
+                  heading={founderFrontDoor && !deskActive ? 'Something else? Pick the kind of decision:' : undefined} />
               </div>
             )}
 
@@ -1192,7 +1225,7 @@ export default function ChatIntake({
             </p>
 
             {/* v15 Phase 3: first visit only -- what happens, an example result, how it builds. Below the box on purpose. */}
-            {frontDoorV15 && !deskActive && !deskPending && <FrontDoorExplainer />}
+            {(frontDoorV15 || founderFrontDoor) && !deskActive && !deskPending && <FrontDoorExplainer />}
           </div>
 
           {/* v15 Phase 2: the rest of the Desk (undecided, unexamined, waiting, one honest cross-decision line, record stage). */}

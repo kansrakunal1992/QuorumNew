@@ -14,7 +14,8 @@ describe('1. what is left on the landing screen', () => {
   const ci = src('components/ChatIntake.tsx')
   const hero = ci.slice(ci.indexOf('Hero \u2014 "Quorum is ready to think with me,'))
   it('keeps the six pills, unchanged, under the button by default', () => {
-    expect(INTAKE_QUICK_STARTS.map(q => q.label)).toEqual(['Career', 'Money', 'Business', 'Relationships', 'Personal', 'Smaller calls'])
+    // v18: reordered (Business first) and "Smaller calls" renamed "Something smaller"; all six remain, none removed.
+    expect(INTAKE_QUICK_STARTS.map(q => q.label)).toEqual(['Business', 'Career', 'Money', 'Relationships', 'Personal', 'Something smaller'])
     expect(QUICK_START_POSITION).toBe('below')
   })
   it('keeps "More examples" with its panel and events, and the voice row exactly as it was', () => {
